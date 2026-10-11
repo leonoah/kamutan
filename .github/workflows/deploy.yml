@@ -54,7 +54,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       sha: ${{ steps.meta.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -85,7 +85,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
           ref: ${{ needs.build-images.outputs.sha }}
@@ -125,7 +125,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
       - name: Guard — production deploys only from a tag on main
