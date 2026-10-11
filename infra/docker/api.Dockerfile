@@ -8,7 +8,7 @@
 ARG PNPM_VERSION=9.15.0
 
 # ---------- build ----------
-FROM node:22-slim AS build
+FROM node:25-slim AS build
 ARG PNPM_VERSION
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
@@ -34,7 +34,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
  && rm -rf /out/src /out/test /out/*.md /out/.env*
 
 # ---------- runtime ----------
-FROM node:22-slim AS runtime
+FROM node:25-slim AS runtime
 ENV NODE_ENV=production \
     PORT=3001 \
     NODE_OPTIONS="--enable-source-maps --max-old-space-size=768"
