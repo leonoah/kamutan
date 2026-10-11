@@ -1,0 +1,74 @@
+{
+  "$ref": "#/definitions/ApiError",
+  "definitions": {
+    "ApiError": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "bad_request",
+                "validation_failed",
+                "unauthorized",
+                "forbidden",
+                "mfa_required",
+                "not_found",
+                "conflict",
+                "payload_too_large",
+                "unsupported_file_type",
+                "upload_expired",
+                "upload_missing",
+                "rate_limited",
+                "internal_error",
+                "service_unavailable"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "requestId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "message"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "requestId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ApiError.json"
+}

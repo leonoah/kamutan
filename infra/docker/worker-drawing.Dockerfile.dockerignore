@@ -1,0 +1,25 @@
+# BuildKit per-Dockerfile ignore file (context = repo root).
+**/node_modules
+**/.venv
+**/dist
+**/.turbo
+**/__pycache__
+**/.pytest_cache
+**/coverage
+.git
+.github
+docs
+benchmark
+supabase
+**/.env
+**/.env.*
+!**/.env.example
+# SEC-54: never ship customer drawings in an image
+**/*.pdf
+**/*.dwg
+**/*.dxf
+**/*.xls
+**/*.xlsx
+data
+apps
+packages

@@ -1,0 +1,392 @@
+# Kamutan CI — runs on every PR and on push to main.
+#
+# Security notes (06_security.md SEC-44..SEC-50):
+# - Workflow-level permissions are read-only; jobs widen only what they need.
+# - Never add `pull_request_target` here (SEC-48).
+# - Actions are pinned by major tag for Sprint 0.
+#   TODO(sprint-1, SEC-48): pin every third-party action to a full commit SHA
+#   (keep the tag as a trailing comment, e.g. `uses: org/action@<sha> # v4.2.2`);
+#   Dependabot (github-actions ecosystem) keeps SHA pins updated.
+# - The single status check to mark as "required" in branch protection is `ci-gate`.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "9.15.0"
+  TURBO_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Path filters (used by benchmark + docker jobs)
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      bench: ${{ steps.filter.outputs.bench }}
+      docker: ${{ steps.filter.outputs.docker }}
+      python: ${{ steps.filter.outputs.python }}
+    steps:
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@v3 # TODO: pin SHA
+        id: filter
+        with:
+          filters: |
+            bench:
+              - 'workers/**'
+              - 'benchmark/**'
+            docker:
+              - 'infra/docker/**'
+              - 'apps/api/**'
+              - 'workers/**'
+              - 'packages/**'
+              - 'pnpm-lock.yaml'
+            python:
+              - 'workers/**'
+              - 'benchmark/**'
+              - '.github/workflows/ci.yml'
+
+  # ---------------------------------------------------------------------------
+  # TypeScript: lint, typecheck, test, build via turbo
+  # ---------------------------------------------------------------------------
+  node:
+    name: Node (lint, typecheck, test, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4 # TODO: pin SHA
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4 # TODO: pin SHA
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen lockfile, SEC-44)
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm turbo run lint --filter='!@kamutan/db-tests'
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+      - name: Test
+        # DB/RLS suite runs in its own job below.
+        run: pnpm turbo run test --filter='!@kamutan/db-tests'
+      - name: Build
+        run: pnpm turbo run build
+      - name: Generated contracts are up to date
+        # 04_architecture: `turbo run gen` in CI, a non-empty diff fails the build.
+        # Activates automatically once a `gen` task is declared in turbo.json.
+        run: |
+          if jq -e '.tasks.gen' turbo.json >/dev/null; then
+            pnpm turbo run gen
+            git diff --exit-code || {
+              echo "::error::Generated files are stale. Run 'pnpm turbo run gen' and commit."; exit 1; }
+          else
+            echo "::notice::No 'gen' task in turbo.json yet — skipping generated-files check."
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Python: ruff, mypy, pytest (uv) — workers/drawing and benchmark
+  # ---------------------------------------------------------------------------
+  python:
+    name: Python (${{ matrix.project }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [workers/drawing, benchmark]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    env:
+      UV_LOCKED: "1"
+      RUFF_VERSION: "0.17.0"
+      MYPY_VERSION: "2.4.0"
+      BANDIT_VERSION: "1.9.4"
+    steps:
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6 # TODO: pin SHA
+        with:
+          enable-cache: true
+          cache-dependency-glob: ${{ matrix.project }}/uv.lock
+      - name: System packages (Tesseract heb+eng)
+        if: matrix.project == 'workers/drawing'
+        working-directory: .
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-heb tesseract-ocr-eng
+          tesseract --list-langs
+      - name: Install (uv sync --locked)
+        run: uv sync --locked --all-groups
+      - name: Ruff (lint)
+        run: uvx ruff@${{ env.RUFF_VERSION }} check .
+      - name: Ruff (format check)
+        run: uvx ruff@${{ env.RUFF_VERSION }} format --check .
+      - name: Mypy
+        run: uv run --with "mypy==${{ env.MYPY_VERSION }}" mypy src
+      - name: Bandit (SAST, SEC-50)
+        run: uvx bandit@${{ env.BANDIT_VERSION }} -q -r src -ll
+      - name: Pytest
+        # KAMUTAN_DATA_DIR is intentionally unset: tests that need real drawings must skip.
+        # Exit code 5 = "no tests collected" (allowed during Sprint 0 scaffolding).
+        run: |
+          set +e
+          uv run pytest -q
+          rc=$?
+          if [ "$rc" -eq 5 ]; then echo "::warning::No tests collected in ${{ matrix.project }}"; exit 0; fi
+          exit $rc
+
+  # ---------------------------------------------------------------------------
+  # DB: RLS / isolation suite (vitest + PGlite) — SEC-06, SEC-09
+  # ---------------------------------------------------------------------------
+  db:
+    name: DB (RLS suite)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4 # TODO: pin SHA
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4 # TODO: pin SHA
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: RLS + isolation tests
+        run: pnpm --filter @kamutan/db-tests test
+
+  # ---------------------------------------------------------------------------
+  # Security: secrets, SCA (SEC-24, SEC-45, SEC-50)
+  # ---------------------------------------------------------------------------
+  secrets-scan:
+    name: Security / gitleaks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: "8.21.2"
+    steps:
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (verified checksum)
+        run: |
+          set -euo pipefail
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tgz="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "$base/$tgz"
+          curl -sSfL "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o checksums.txt
+          grep " ${tgz}\$" checksums.txt | sha256sum -c -
+          tar -xzf "$tgz" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f "$tgz" checksums.txt gitleaks
+      - name: gitleaks (full history)
+        run: gitleaks git . --config .gitleaks.toml --redact --no-banner --exit-code 1
+
+  semgrep:
+    name: Security / Semgrep
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep:latest # TODO(SEC-46): pin by digest
+    steps:
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        with:
+          persist-credentials: false
+      - name: Semgrep CE (OWASP Top 10 + TS + Python + custom Kamutan rules)
+        env:
+          SEMGREP_SEND_METRICS: "off"
+        run: |
+          semgrep scan \
+            --config p/owasp-top-ten \
+            --config p/typescript \
+            --config p/python \
+            --config p/github-actions \
+            --config .semgrep.yml \
+            --exclude benchmark/.venv --exclude workers/drawing/.venv \
+            --metrics off --error --severity ERROR --severity WARNING
+
+  osv:
+    name: Security / osv-scanner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      OSV_VERSION: "2.2.3"
+    steps:
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        with:
+          persist-credentials: false
+      - name: Install osv-scanner (verified checksum)
+        run: |
+          set -euo pipefail
+          base="https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}"
+          bin="osv-scanner_linux_amd64"
+          curl -sSfLO "$base/$bin"
+          curl -sSfL "$base/osv-scanner_SHA256SUMS" -o sums.txt
+          grep " ${bin}\$" sums.txt | sha256sum -c -
+          sudo install -m 0755 "$bin" /usr/local/bin/osv-scanner
+          rm -f "$bin" sums.txt
+      - name: Scan lockfiles
+        run: |
+          args=()
+          for f in pnpm-lock.yaml workers/drawing/uv.lock benchmark/uv.lock; do
+            [ -f "$f" ] && args+=(-L "$f")
+          done
+          osv-scanner scan source "${args[@]}"
+
+  # ---------------------------------------------------------------------------
+  # Container images: build (no push) + Trivy (SEC-45). Only when relevant paths change.
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker build + Trivy (${{ matrix.image }})
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            dockerfile: infra/docker/api.Dockerfile
+            requires: apps/api/package.json
+          - image: worker-drawing
+            dockerfile: infra/docker/worker-drawing.Dockerfile
+            requires: workers/drawing/pyproject.toml
+    steps:
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        with:
+          persist-credentials: false
+      - name: Check that the service exists yet
+        id: exists
+        run: |
+          if [ -f "${{ matrix.requires }}" ]; then echo "ok=true" >> "$GITHUB_OUTPUT";
+          else echo "ok=false" >> "$GITHUB_OUTPUT"; echo "::notice::${{ matrix.requires }} missing — skipping ${{ matrix.image }} image"; fi
+      - uses: docker/setup-buildx-action@v3 # TODO: pin SHA
+        if: steps.exists.outputs.ok == 'true'
+      - uses: docker/build-push-action@v6 # TODO: pin SHA
+        if: steps.exists.outputs.ok == 'true'
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: kamutan/${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - name: Trivy (block on fixable CRITICAL/HIGH)
+        if: steps.exists.outputs.ok == 'true'
+        uses: aquasecurity/trivy-action@0.28.0 # TODO: pin SHA
+        with:
+          image-ref: kamutan/${{ matrix.image }}:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # ---------------------------------------------------------------------------
+  # Benchmark gate (placeholder). Runs only when workers/** or benchmark/** change.
+  # Skips gracefully when the KAMUTAN_DATA_* secrets are absent (forks, Sprint 0).
+  # Customer drawings are NEVER stored in the repo or uploaded as artifacts (SEC-54).
+  # ---------------------------------------------------------------------------
+  benchmark:
+    name: Benchmark (kbench)
+    needs: changes
+    if: needs.changes.outputs.bench == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check benchmark data secrets
+        id: data
+        env:
+          DATA_URL: ${{ secrets.KAMUTAN_DATA_URL }}
+          DATA_KEY: ${{ secrets.KAMUTAN_DATA_KEY }}
+        run: |
+          if [ -n "$DATA_URL" ] && [ -n "$DATA_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::KAMUTAN_DATA_URL/KAMUTAN_DATA_KEY not configured — benchmark skipped."
+            echo "### Benchmark skipped: data secrets not configured" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@v4 # TODO: pin SHA
+        if: steps.data.outputs.available == 'true'
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6 # TODO: pin SHA
+        if: steps.data.outputs.available == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: benchmark/uv.lock
+      - name: Fetch + decrypt benchmark dataset (placeholder)
+        if: steps.data.outputs.available == 'true'
+        env:
+          DATA_URL: ${{ secrets.KAMUTAN_DATA_URL }}
+          DATA_KEY: ${{ secrets.KAMUTAN_DATA_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          dest="$RUNNER_TEMP/kamutan-data"
+          mkdir -p "$dest"
+          # TODO(sprint-1): download an age-encrypted tarball from the private bucket
+          # (short-lived signed URL in KAMUTAN_DATA_URL) and decrypt with KAMUTAN_DATA_KEY:
+          #   curl -sSfL "$DATA_URL" -o "$RUNNER_TEMP/data.tar.age"
+          #   age -d -i <(printf '%s' "$DATA_KEY") "$RUNNER_TEMP/data.tar.age" | tar -x -C "$dest"
+          echo "KAMUTAN_DATA_DIR=$dest" >> "$GITHUB_ENV"
+      - name: Run kbench (placeholder)
+        if: steps.data.outputs.available == 'true'
+        working-directory: benchmark
+        run: |
+          uv sync --locked
+          # TODO(sprint-1): uv run kbench run --data "$KAMUTAN_DATA_DIR" --baseline main --out "$RUNNER_TEMP/kbench-report"
+          # and fail on regressions per 07_test_plan thresholds.
+          uv run python -c "import kbench; print('kbench import ok')"
+      - name: Wipe dataset
+        if: always() && steps.data.outputs.available == 'true'
+        run: rm -rf "$RUNNER_TEMP/kamutan-data" "$RUNNER_TEMP/data.tar.age"
+
+  # ---------------------------------------------------------------------------
+  # Single required check for branch protection.
+  # ---------------------------------------------------------------------------
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs: [changes, node, python, db, secrets-scan, semgrep, osv, docker, benchmark]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: All required jobs succeeded (skipped is OK for path-filtered jobs)
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          bad=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result=="failure" or .value.result=="cancelled")] | length')
+          if [ "$bad" != "0" ]; then echo "::error::$bad job(s) failed or were cancelled"; exit 1; fi

@@ -1,0 +1,26 @@
+{
+  "$ref": "#/definitions/FinalizeUploadRequest",
+  "definitions": {
+    "FinalizeUploadRequest": {
+      "type": "object",
+      "properties": {
+        "uploadToken": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 4096
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      "required": [
+        "uploadToken"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/FinalizeUploadRequest.json"
+}

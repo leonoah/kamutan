@@ -1,0 +1,45 @@
+# gitleaks configuration (SEC-24). Runs in pre-commit and in CI (.github/workflows/ci.yml).
+# Extends the upstream default ruleset; only narrowly-scoped allowlists are added here.
+# Any change to this file requires CODEOWNERS (human) approval.
+
+title = "Kamutan gitleaks config"
+
+[extend]
+useDefault = true
+
+# Extra rule: Supabase service_role / secret keys assigned in code or config.
+[[rules]]
+id = "kamutan-supabase-service-role"
+description = "Supabase service_role / secret key assignment"
+regex = '''(?i)(SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|service_role_key)\s*[:=]\s*["']?(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|sb_secret_[A-Za-z0-9_-]{20,})'''
+keywords = ["service_role", "supabase_secret", "sb_secret_"]
+
+# Extra rule: Postgres URLs with an inline password (worker role, SEC-24 / ADR-0003).
+[[rules]]
+id = "kamutan-postgres-url-with-password"
+description = "Postgres connection string with inline password"
+regex = '''postgres(?:ql)?://[^:\s/]+:([^@\s]{6,})@[^\s"']+'''
+secretGroup = 1
+keywords = ["postgres://", "postgresql://"]
+  [[rules.allowlists]]
+  description = "Local Supabase CLI default password and obvious placeholders"
+  regexTarget = "match"
+  regexes = [
+    '''postgres(?:ql)?://postgres:postgres@(localhost|127\.0\.0\.1|host\.docker\.internal|db|supabase_db_[a-z0-9_-]+)(:\d+)?/''',
+    '''://[^:]+:(CHANGE_ME|changeme|password|<[^>]+>|\$\{?[A-Z_]+\}?)@''',
+  ]
+
+[allowlist]
+description = "Global allowlist: example env files and lockfiles only"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)\.env\.[a-z]+\.example$''',
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''(^|/)uv\.lock$''',
+]
+# Code references, not secrets: dotted identifier paths such as `opts.hs256Secret`,
+# `process.env.FOO`, `cfg.UPLOAD_TOKEN_SECRET` (matched against the captured secret only).
+regexTarget = "secret"
+regexes = [
+  '''^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)+$''',
+]

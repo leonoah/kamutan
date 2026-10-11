@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kamutan.local/schema/boq_truth.schema.json",
+  "title": "Kamutan per-project BOQ (truth or prediction)",
+  "description": "Per-project bill of quantities. Item codes are TEXT and must never be round-tripped through floats (\"4.10\" != \"4.1\").",
+  "type": "object",
+  "required": ["schema_version", "project_id", "lines"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "project_id": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["truth", "prediction"]},
+    "gt_version": {"type": "string"},
+    "model_version": {"type": "string"},
+    "status": {"enum": ["draft", "verified", "adjudicated"]},
+    "source": {
+      "type": "object",
+      "properties": {
+        "file": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sheet": {"type": "string"}
+      }
+    },
+    "generated_by": {"type": "string"},
+    "notes": {"type": "array", "items": {"type": "string"}},
+    "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}},
+    "change_orders": {"type": "array", "items": {"$ref": "#/$defs/line"}},
+    "auxiliary": {"type": "object", "description": "Free-form auxiliary tables (e.g. AutoCAD block counts) kept for dispute resolution"}
+  },
+  "$defs": {
+    "code": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$"},
+    "line": {
+      "type": "object",
+      "required": ["code", "description", "unit", "quantity"],
+      "properties": {
+        "code": {"$ref": "#/$defs/code"},
+        "chapter": {"type": "string"},
+        "description": {"type": "string"},
+        "unit": {"type": "string", "description": "יחידה | מ\"ר | מ\"א | קומפלט"},
+        "quantity": {"type": "number", "minimum": 0},
+        "evidence": {"type": "array", "items": {"type": "string"}, "description": "Feature ids (or room ids) composing the quantity"},
+        "derivation": {"type": "string", "description": "e.g. count(socket_double, lifecycle=new)"},
+        "breakdown": {"type": "object", "additionalProperties": {"type": "number"}, "description": "Quantity per floor"},
+        "gt_status": {"enum": ["draft", "confirmed", "disputed", "user_input"]},
+        "dispute_id": {"type": "string", "pattern": "^GT-D-[0-9]{3}$"},
+        "category": {"enum": ["count", "flooring", "cladding", "area", "length", "lump_sum", "other"]},
+        "tolerance_pe": {"type": "number", "minimum": 0},
+        "source": {"enum": ["boq_original", "manual_count", "user_answer", "model"]},
+        "source_row": {"type": "integer", "minimum": 0},
+        "raw_code": {"type": ["number", "string"], "description": "Code exactly as stored in the source file (xls stores floats)"},
+        "flags": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "level": {"enum": ["green", "yellow", "red"]}
+      },
+      "additionalProperties": true
+    }
+  }
+}

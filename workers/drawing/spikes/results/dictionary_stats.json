@@ -1,0 +1,78 @@
+{
+ "n_lines": 3058,
+ "n_lines_rot90": 172,
+ "n_glyph_instances": 14026,
+ "n_unique_shapes": 1635,
+ "n_unique_seen_ge2": 733,
+ "n_singletons": 902,
+ "n_labelled_clusters": 1511,
+ "n_distinct_labels": 104,
+ "instances_covered_by_labelled": 0.9819,
+ "shapes_per_label_top": [
+  [
+   "0",
+   116
+  ],
+  [
+   "-",
+   85
+  ],
+  [
+   "א",
+   80
+  ],
+  [
+   "2",
+   66
+  ],
+  [
+   "ו",
+   52
+  ],
+  [
+   "6",
+   51
+  ],
+  [
+   "5",
+   46
+  ],
+  [
+   ".",
+   44
+  ],
+  [
+   "ל",
+   37
+  ],
+  [
+   "|",
+   37
+  ],
+  [
+   "ה",
+   37
+  ],
+  [
+   "ר",
+   33
+  ],
+  [
+   "ס",
+   32
+  ],
+  [
+   "כ",
+   31
+  ],
+  [
+   "י",
+   31
+  ]
+ ],
+ "timing": {
+  "ocr_heb_s": 35.9,
+  "ocr_eng_s": 39.5,
+  "propagated": 101
+ }
+}

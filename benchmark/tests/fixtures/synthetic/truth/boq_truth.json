@@ -1,0 +1,77 @@
+{
+ "schema_version": "1.0",
+ "project_id": "synth",
+ "kind": "truth",
+ "gt_version": "gt-synth-1",
+ "lines": [
+  {
+   "code": "1.01",
+   "description": "lump",
+   "unit": "קומפלט",
+   "quantity": 1,
+   "gt_status": "confirmed",
+   "derivation": "lump_sum"
+  },
+  {
+   "code": "4.00",
+   "description": "single",
+   "unit": "יחידה",
+   "quantity": 2,
+   "evidence": [
+    "g1",
+    "g2"
+   ],
+   "gt_status": "confirmed"
+  },
+  {
+   "code": "4.01",
+   "description": "double",
+   "unit": "יחידה",
+   "quantity": 1,
+   "evidence": [
+    "g3"
+   ],
+   "gt_status": "confirmed"
+  },
+  {
+   "code": "4.03",
+   "description": "power",
+   "unit": "יחידה",
+   "quantity": 1,
+   "evidence": [
+    "g6"
+   ],
+   "gt_status": "disputed",
+   "dispute_id": "GT-D-001"
+  },
+  {
+   "code": "4.10",
+   "description": "draft line",
+   "unit": "יחידה",
+   "quantity": 5,
+   "gt_status": "draft"
+  },
+  {
+   "code": "5.02",
+   "description": "flooring",
+   "unit": "מ\"ר",
+   "quantity": 4.0,
+   "evidence": [
+    "g5"
+   ],
+   "gt_status": "confirmed",
+   "category": "flooring",
+   "derivation": "sum(area)"
+  },
+  {
+   "code": "9.01",
+   "description": "luminaires",
+   "unit": "יחידה",
+   "quantity": 1,
+   "evidence": [
+    "g4"
+   ],
+   "gt_status": "confirmed"
+  }
+ ]
+}

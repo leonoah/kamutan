@@ -1,0 +1,38 @@
+{
+  "$ref": "#/definitions/HealthResponse",
+  "definitions": {
+    "HealthResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "degraded"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "fail",
+              "skipped"
+            ]
+          }
+        }
+      },
+      "required": [
+        "status",
+        "version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/HealthResponse.json"
+}

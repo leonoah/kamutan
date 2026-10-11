@@ -1,0 +1,66 @@
+{
+  "$ref": "#/definitions/CreateUploadResponse",
+  "definitions": {
+    "CreateUploadResponse": {
+      "type": "object",
+      "properties": {
+        "uploadId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "uploadToken": {
+          "type": "string",
+          "minLength": 16
+        },
+        "uploadUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "method": {
+          "type": "string",
+          "const": "PUT"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "storagePath": {
+          "type": "string"
+        },
+        "fileKind": {
+          "type": "string",
+          "enum": [
+            "pdf",
+            "dwg",
+            "dxf",
+            "png"
+          ]
+        },
+        "maxBytes": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uploadId",
+        "uploadToken",
+        "uploadUrl",
+        "method",
+        "headers",
+        "storagePath",
+        "fileKind",
+        "maxBytes",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/CreateUploadResponse.json"
+}

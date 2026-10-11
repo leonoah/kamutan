@@ -1,0 +1,49 @@
+{
+ "schema_version": "1.0",
+ "project_id": "synth",
+ "kind": "prediction",
+ "lines": [
+  {
+   "code": "4.00",
+   "description": "single",
+   "unit": "יחידה",
+   "quantity": 1
+  },
+  {
+   "code": "4.01",
+   "description": "double",
+   "unit": "יחידה",
+   "quantity": 2
+  },
+  {
+   "code": "4.03",
+   "description": "power",
+   "unit": "יחידה",
+   "quantity": 1
+  },
+  {
+   "code": "4.1",
+   "description": "wrong code text",
+   "unit": "יחידה",
+   "quantity": 5
+  },
+  {
+   "code": "5.02",
+   "description": "flooring",
+   "unit": "מ\"ר",
+   "quantity": 4.05
+  },
+  {
+   "code": "7.77",
+   "description": "extra",
+   "unit": "יחידה",
+   "quantity": 3
+  },
+  {
+   "code": "9.01",
+   "description": "luminaires",
+   "unit": "יחידה",
+   "quantity": 1
+  }
+ ]
+}

@@ -1,0 +1,24 @@
+{
+  "schemas": [
+    "AccessTokenClaims.json",
+    "ApiError.json",
+    "CreateOrgRequest.json",
+    "CreateProjectRequest.json",
+    "CreateUploadRequest.json",
+    "CreateUploadResponse.json",
+    "FileKind.json",
+    "FinalizeUploadRequest.json",
+    "FinalizeUploadResponse.json",
+    "HealthResponse.json",
+    "IngestSheetVersionJob.json",
+    "MeResponse.json",
+    "Membership.json",
+    "Org.json",
+    "Project.json",
+    "ProjectPage.json",
+    "Role.json",
+    "SheetSet.json",
+    "SheetVersion.json",
+    "UpdateProjectRequest.json"
+  ]
+}

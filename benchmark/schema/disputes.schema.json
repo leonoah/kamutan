@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kamutan.local/schema/disputes.schema.json",
+  "title": "Kamutan ground-truth disputes (defects register)",
+  "description": "Open contradictions inside the ground truth. Lines referenced by an open dispute are excluded from gating metrics until resolved.",
+  "type": "object",
+  "required": ["schema_version", "project_id", "disputes"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "project_id": {"type": "string"},
+    "disputes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "lines", "status"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^GT-D-[0-9]{3}$"},
+          "title": {"type": "string"},
+          "summary": {"type": "string"},
+          "lines": {"type": "array", "items": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]+)*$"}, "minItems": 1},
+          "values": {"type": "object", "description": "Competing quantities by source"},
+          "questions": {"type": "array", "items": {"type": "string"}},
+          "interim_rule": {"type": "string"},
+          "status": {"enum": ["open — awaiting owner", "resolved", "withdrawn"]},
+          "resolution": {
+            "type": ["object", "null"],
+            "properties": {
+              "by": {"type": "string"},
+              "at": {"type": "string"},
+              "decision": {"type": "string"}
+            }
+          },
+          "evidence": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

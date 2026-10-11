@@ -1,0 +1,67 @@
+{
+  "$ref": "#/definitions/IngestSheetVersionJob",
+  "definitions": {
+    "IngestSheetVersionJob": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "sheetVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "orgId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "projectId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "storagePath": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\/upload\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "fileKind": {
+          "type": "string",
+          "enum": [
+            "pdf",
+            "dwg",
+            "dxf",
+            "png"
+          ]
+        },
+        "traceparent": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "sheetVersionId",
+        "orgId",
+        "projectId",
+        "storagePath",
+        "sha256",
+        "fileKind",
+        "traceparent"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/IngestSheetVersionJob.json"
+}

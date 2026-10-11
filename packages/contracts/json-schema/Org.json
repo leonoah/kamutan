@@ -1,0 +1,77 @@
+{
+  "$ref": "#/definitions/Org",
+  "definitions": {
+    "Org": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+        },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "green_threshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "block_export_on_red": {
+              "type": "boolean"
+            },
+            "llm_enabled": {
+              "type": "boolean"
+            },
+            "llm_provider": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "llm_monthly_budget_usd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "training_opt_in": {
+              "type": "boolean"
+            },
+            "default_waste_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "slug",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/Org.json"
+}

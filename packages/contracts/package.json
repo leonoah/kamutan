@@ -1,0 +1,37 @@
+{
+  "name": "@kamutan/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kamutan shared Zod contracts (source of truth for API DTOs and job payloads)",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "json-schema"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "node scripts/clean.cjs && tsc -p tsconfig.cjs.json && tsc -p tsconfig.esm.json && tsc -p tsconfig.types.json && node scripts/write-pkg-markers.cjs",
+    "gen": "pnpm run build && node scripts/gen-json-schema.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^3.25.28"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3",
+    "vitest": "^3.2.4",
+    "zod-to-json-schema": "^3.25.2"
+  }
+}

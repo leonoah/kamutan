@@ -1,0 +1,78 @@
+{
+  "$ref": "#/definitions/AccessTokenClaims",
+  "definitions": {
+    "AccessTokenClaims": {
+      "type": "object",
+      "properties": {
+        "sub": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "role": {
+          "type": "string"
+        },
+        "aud": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "exp": {
+          "type": "integer"
+        },
+        "iat": {
+          "type": "integer"
+        },
+        "iss": {
+          "type": "string"
+        },
+        "aal": {
+          "type": "string",
+          "enum": [
+            "aal1",
+            "aal2"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "org_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "org_roles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "editor",
+              "reviewer",
+              "viewer"
+            ]
+          },
+          "propertyNames": {
+            "format": "uuid"
+          }
+        }
+      },
+      "required": [
+        "sub",
+        "exp"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/AccessTokenClaims.json"
+}

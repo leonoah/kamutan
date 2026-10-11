@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kamutan.local/schema/sheet_annotations.schema.json",
+  "title": "Kamutan per-sheet annotations (ground truth or predictions)",
+  "description": "GeoJSON FeatureCollection, one per sheet. Coordinates are PAPER MILLIMETRES of the displayed page (page rotation already applied), origin top-left, y axis pointing DOWN (workplan v2, decision 8). Predictions use the same schema and add confidence/level.",
+  "type": "object",
+  "required": ["type", "kamutan", "features"],
+  "properties": {
+    "type": {"const": "FeatureCollection"},
+    "kamutan": {"$ref": "#/$defs/sheetMeta"},
+    "features": {"type": "array", "items": {"$ref": "#/$defs/feature"}}
+  },
+  "$defs": {
+    "sheetMeta": {
+      "type": "object",
+      "required": ["schema_version", "project_id", "sheet_id", "units", "y_axis"],
+      "properties": {
+        "schema_version": {"const": "1.0"},
+        "project_id": {"type": "string", "minLength": 1},
+        "sheet_id": {"type": "string", "minLength": 1},
+        "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "page_size_mm": {"type": "array", "items": {"type": "number", "exclusiveMinimum": 0}, "minItems": 2, "maxItems": 2},
+        "units": {"const": "mm"},
+        "y_axis": {"const": "down"},
+        "scale": {"type": "number", "exclusiveMinimum": 0, "description": "Drawing scale denominator, e.g. 50 for 1:50"},
+        "input_type": {"enum": ["vector", "raster", "dwg"]},
+        "scale_conflict": {"type": "boolean"},
+        "discipline": {"type": "string"},
+        "floors": {"type": "array", "items": {"type": "string"}},
+        "kind": {"enum": ["truth", "prediction"]},
+        "gt_version": {"type": "string"},
+        "model_version": {"type": "string"},
+        "notes": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "position": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+    "ring": {"type": "array", "items": {"$ref": "#/$defs/position"}, "minItems": 4},
+    "geometry": {
+      "oneOf": [
+        {"type": "object", "required": ["type", "coordinates"], "properties": {"type": {"const": "Point"}, "coordinates": {"$ref": "#/$defs/position"}}},
+        {"type": "object", "required": ["type", "coordinates"], "properties": {"type": {"const": "LineString"}, "coordinates": {"type": "array", "items": {"$ref": "#/$defs/position"}, "minItems": 2}}},
+        {"type": "object", "required": ["type", "coordinates"], "properties": {"type": {"const": "Polygon"}, "coordinates": {"type": "array", "items": {"$ref": "#/$defs/ring"}, "minItems": 1}}}
+      ]
+    },
+    "feature": {
+      "type": "object",
+      "required": ["type", "geometry", "properties"],
+      "properties": {
+        "type": {"const": "Feature"},
+        "id": {"type": "string"},
+        "geometry": {"$ref": "#/$defs/geometry"},
+        "properties": {"$ref": "#/$defs/featureProps"}
+      }
+    },
+    "featureProps": {
+      "type": "object",
+      "required": ["id", "class", "floor", "lifecycle", "supply", "annotator", "status"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$", "description": "Stable across versions: <sheet>-<class>-<n>"},
+        "class": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Global taxonomy class, see classes.json"},
+        "kind": {"enum": ["symbol", "area", "linear", "context"], "default": "symbol"},
+        "legend_entry": {"type": ["string", "null"], "description": "Legend row the symbol matches; null = not in legend"},
+        "room_id": {"type": ["string", "null"]},
+        "floor": {"type": "string", "minLength": 1, "description": "basement | ground | first | ... (free text, project specific)"},
+        "lifecycle": {"enum": ["existing", "new", "demolish"]},
+        "supply": {"enum": ["contractor", "client", "existing"], "description": "Who supplies the item (workplan v2, decision 11)"},
+        "link_group": {"type": "array", "items": {"type": "string"}, "description": "Link groups (switch<->fixtures, fixtures->point)"},
+        "boq_code": {"type": ["string", "null"], "pattern": "^[0-9]+(\\.[0-9]+)*$", "description": "BOQ line code as TEXT (\"4.10\" != \"4.1\")"},
+        "domain": {"enum": ["electrical", "lighting", "plumbing", "tiling", "drywall", "other"]},
+        "quantity": {"type": "number", "minimum": 0, "description": "Real-world quantity this item contributes (m2 / m); default 1 for symbols"},
+        "difficulty": {"type": "array", "items": {"enum": ["overlap", "rotated", "partial", "text_collision", "raster"]}},
+        "annotator": {"type": "string", "minLength": 1, "description": "human:<name> | agent:<role> | model:<version>"},
+        "status": {"enum": ["draft", "verified", "adjudicated"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Predictions only: calibrated score"},
+        "level": {"enum": ["green", "yellow", "red"], "description": "Predictions only: confidence level"},
+        "notes": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

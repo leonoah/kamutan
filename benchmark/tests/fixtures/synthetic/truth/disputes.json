@@ -1,0 +1,15 @@
+{
+ "schema_version": "1.0",
+ "project_id": "synth",
+ "disputes": [
+  {
+   "id": "GT-D-001",
+   "title": "synthetic dispute",
+   "lines": [
+    "4.03"
+   ],
+   "status": "open — awaiting owner",
+   "resolution": null
+  }
+ ]
+}

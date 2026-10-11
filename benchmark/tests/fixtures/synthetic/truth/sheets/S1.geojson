@@ -1,0 +1,334 @@
+{
+ "type": "FeatureCollection",
+ "kamutan": {
+  "schema_version": "1.0",
+  "project_id": "synth",
+  "sheet_id": "S1",
+  "page_size_mm": [
+   420,
+   297
+  ],
+  "units": "mm",
+  "y_axis": "down",
+  "scale": 50,
+  "input_type": "vector",
+  "kind": "truth"
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "id": "g1",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       10,
+       10
+      ],
+      [
+       14,
+       10
+      ],
+      [
+       14,
+       14
+      ],
+      [
+       10,
+       14
+      ],
+      [
+       10,
+       10
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "g1",
+    "class": "socket_single",
+    "kind": "symbol",
+    "legend_entry": null,
+    "room_id": null,
+    "floor": "ground",
+    "lifecycle": "new",
+    "supply": "contractor",
+    "link_group": [],
+    "boq_code": "4.00",
+    "annotator": "synthetic",
+    "status": "verified"
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "g2",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       30,
+       10
+      ],
+      [
+       34,
+       10
+      ],
+      [
+       34,
+       14
+      ],
+      [
+       30,
+       14
+      ],
+      [
+       30,
+       10
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "g2",
+    "class": "socket_single",
+    "kind": "symbol",
+    "legend_entry": null,
+    "room_id": null,
+    "floor": "ground",
+    "lifecycle": "new",
+    "supply": "contractor",
+    "link_group": [],
+    "boq_code": "4.00",
+    "annotator": "synthetic",
+    "status": "verified"
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "g3",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       50,
+       10
+      ],
+      [
+       54,
+       10
+      ],
+      [
+       54,
+       14
+      ],
+      [
+       50,
+       14
+      ],
+      [
+       50,
+       10
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "g3",
+    "class": "socket_double",
+    "kind": "symbol",
+    "legend_entry": null,
+    "room_id": null,
+    "floor": "ground",
+    "lifecycle": "new",
+    "supply": "contractor",
+    "link_group": [],
+    "boq_code": "4.01",
+    "annotator": "synthetic",
+    "status": "verified"
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "g4",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       70,
+       10
+      ],
+      [
+       74,
+       10
+      ],
+      [
+       74,
+       14
+      ],
+      [
+       70,
+       14
+      ],
+      [
+       70,
+       10
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "g4",
+    "class": "luminaire_ceiling",
+    "kind": "symbol",
+    "legend_entry": null,
+    "room_id": null,
+    "floor": "ground",
+    "lifecycle": "new",
+    "supply": "contractor",
+    "link_group": [],
+    "boq_code": "9.01",
+    "annotator": "synthetic",
+    "status": "verified"
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "g5",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       100,
+       100
+      ],
+      [
+       140,
+       100
+      ],
+      [
+       140,
+       140
+      ],
+      [
+       100,
+       140
+      ],
+      [
+       100,
+       100
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "g5",
+    "class": "floor_tiling",
+    "kind": "area",
+    "legend_entry": null,
+    "room_id": "r1",
+    "floor": "ground",
+    "lifecycle": "new",
+    "supply": "contractor",
+    "link_group": [],
+    "boq_code": "5.02",
+    "annotator": "synthetic",
+    "status": "verified"
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "g6",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       90,
+       10
+      ],
+      [
+       94,
+       10
+      ],
+      [
+       94,
+       14
+      ],
+      [
+       90,
+       14
+      ],
+      [
+       90,
+       10
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "g6",
+    "class": "socket_power",
+    "kind": "symbol",
+    "legend_entry": null,
+    "room_id": null,
+    "floor": "ground",
+    "lifecycle": "new",
+    "supply": "contractor",
+    "link_group": [],
+    "boq_code": "4.03",
+    "annotator": "synthetic",
+    "status": "verified"
+   }
+  },
+  {
+   "type": "Feature",
+   "id": "ctx",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       0,
+       0
+      ],
+      [
+       200,
+       0
+      ],
+      [
+       200,
+       200
+      ],
+      [
+       0,
+       200
+      ],
+      [
+       0,
+       0
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "id": "ctx",
+    "class": "region",
+    "kind": "context",
+    "legend_entry": null,
+    "room_id": null,
+    "floor": "ground",
+    "lifecycle": "new",
+    "supply": "contractor",
+    "link_group": [],
+    "boq_code": null,
+    "annotator": "synthetic",
+    "status": "verified"
+   }
+  }
+ ]
+}

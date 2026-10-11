@@ -1,0 +1,55 @@
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-background text-body text-foreground font-sans antialiased;
+    min-height: 100dvh;
+  }
+  * {
+    @apply border-border;
+  }
+  /* Visible focus everywhere: 2px --primary ring + 2px offset (spec §נגישות 3) */
+  :focus-visible {
+    outline: 2px solid rgb(var(--primary));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .tabular,
+  td,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Engineering-paper texture used behind the drawing placeholder and the dropzone. */
+  .paper-grid {
+    background-color: rgb(var(--canvas-bg));
+    background-image:
+      linear-gradient(rgb(15 76 129 / 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(15 76 129 / 0.06) 1px, transparent 1px),
+      linear-gradient(rgb(15 76 129 / 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(15 76 129 / 0.03) 1px, transparent 1px);
+    background-size: 50px 50px, 50px 50px, 10px 10px, 10px 10px;
+  }
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:top-2 focus:start-2 focus:z-50 focus:rounded focus:bg-surface focus:px-3 focus:py-2 focus:shadow-float;
+  }
+}

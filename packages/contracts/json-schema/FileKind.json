@@ -1,0 +1,16 @@
+{
+  "$ref": "#/definitions/FileKind",
+  "definitions": {
+    "FileKind": {
+      "type": "string",
+      "enum": [
+        "pdf",
+        "dwg",
+        "dxf",
+        "png"
+      ]
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/FileKind.json"
+}

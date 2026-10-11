@@ -1,0 +1,148 @@
+# Kamutan custom Semgrep rules (SEC-08, SEC-24, SEC-31, SEC-39, ADR-0002, ADR-0003, ADR-0007).
+# Run together with registry packs, see .github/workflows/ci.yml:
+#   semgrep scan --config p/owasp-top-ten --config p/typescript --config p/python --config .semgrep.yml
+rules:
+  # --- SEC-39: no raw HTML from OCR / DXF / LLM text --------------------------------------
+  - id: kamutan-no-dangerously-set-inner-html
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      dangerouslySetInnerHTML is forbidden (SEC-39). Text from OCR, DXF or LLM must be rendered as
+      plain React text.
+    pattern-either:
+      - pattern: <$EL dangerouslySetInnerHTML={...} />
+      - pattern: <$EL dangerouslySetInnerHTML={...}>...</$EL>
+      - pattern: "{dangerouslySetInnerHTML: ...}"
+    paths:
+      include: ["apps/**", "packages/**"]
+
+  # --- SEC-08: service_role only inside the dedicated wrapper modules --------------------
+  - id: kamutan-service-role-outside-wrapper
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      The Supabase service_role key may only be referenced in apps/api/src/config/** (env schema),
+      apps/api/src/privileged/** (queue manager, offboarding, audit writer) and
+      apps/api/src/**/storage/** (signed URLs issued after an authz check, SEC-20). Everywhere else use
+      the user-scoped client so RLS applies (SEC-08). These paths are CODEOWNERS-protected.
+    pattern-either:
+      - pattern: process.env.SUPABASE_SERVICE_ROLE_KEY
+      - pattern: process.env["SUPABASE_SERVICE_ROLE_KEY"]
+      - pattern-regex: \b(SUPABASE_SERVICE_ROLE_KEY|serviceRoleKey)\b
+    paths:
+      include: ["apps/**", "packages/**"]
+      exclude:
+        - "apps/api/src/config/**"
+        - "apps/api/src/privileged/**"
+        - "apps/api/src/**/storage/**"
+        - "**/*.spec.ts"
+        - "**/*.test.ts"
+        - "**/*.md"
+        - "**/.env.example"
+
+  # --- ADR-0003 / SEC-24: the drawing worker never gets service_role ---------------------
+  - id: kamutan-worker-no-service-role
+    languages: [python]
+    severity: ERROR
+    message: >-
+      The drawing worker must connect with its dedicated limited Postgres role
+      (KAMUTAN_WORKER_DB_URL), never with the Supabase service_role key (ADR-0003, SEC-24).
+    pattern-either:
+      - pattern: os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+      - pattern: os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ...)
+      - pattern: os.getenv("SUPABASE_SERVICE_ROLE_KEY", ...)
+      - pattern-regex: \bSUPABASE_SERVICE_ROLE_KEY\b
+    paths:
+      include: ["workers/**"]
+
+  # --- ADR-0002: PyMuPDF is AGPL, use pypdfium2 ----------------------------------------
+  - id: kamutan-no-pymupdf
+    languages: [python]
+    severity: ERROR
+    message: >-
+      PyMuPDF/MuPDF (fitz) is AGPL-licensed and not allowed (ADR-0002). Use pypdfium2.
+    pattern-either:
+      - pattern: import fitz
+      - pattern: from fitz import $X
+      - pattern: import pymupdf
+      - pattern: from pymupdf import $X
+
+  # --- ADR-0002: LibreDWG (GPLv3) only as an isolated CLI subprocess ---------------------
+  - id: kamutan-no-libredwg-linking
+    languages: [python]
+    severity: ERROR
+    message: >-
+      LibreDWG is GPLv3: never import/link it (ctypes/cffi/bindings). Call the CLI
+      (dwg2dxf/dwgread) as a sandboxed subprocess only (ADR-0002).
+    pattern-either:
+      - pattern: import LibreDWG
+      - pattern: import libredwg
+      - pattern: ctypes.CDLL("=~/.*redwg.*/")
+      - pattern: ctypes.cdll.LoadLibrary("=~/.*redwg.*/")
+
+  # --- ADR-0007 / SEC-30..34: LLM SDKs only inside llm_gateway ---------------------------
+  - id: kamutan-llm-sdk-outside-gateway
+    languages: [python]
+    severity: ERROR
+    message: >-
+      LLM/VLM SDKs may only be imported inside workers/drawing/**/llm_gateway/** (ADR-0007).
+      Call llm_gateway.call(purpose, org_id, payload) instead.
+    pattern-either:
+      - pattern: import anthropic
+      - pattern: from anthropic import $X
+      - pattern: import openai
+      - pattern: from openai import $X
+      - pattern: import litellm
+      - pattern: from litellm import $X
+      - pattern: import google.generativeai
+      - pattern: from google import genai
+      - pattern: import vertexai
+    paths:
+      exclude: ["**/llm_gateway/**"]
+
+  - id: kamutan-llm-sdk-in-typescript
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      LLM SDKs are not allowed in TS code; all LLM calls go through the Python llm_gateway (ADR-0007).
+    pattern-either:
+      - pattern: import $X from "@anthropic-ai/sdk"
+      - pattern: import $X from "openai"
+      - pattern: import { $X } from "@google/generative-ai"
+      - pattern: require("@anthropic-ai/sdk")
+      - pattern: require("openai")
+
+  # --- SEC-34: never log prompts / LLM content --------------------------------------------
+  - id: kamutan-no-logging-llm-content
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Do not log prompts, images or full LLM responses (SEC-34). Log request id, model, tokens,
+      cost and latency only.
+    pattern-either:
+      - pattern: $LOG.$M(..., prompt=$P, ...)
+      - pattern: $LOG.$M(..., response=$P, ...)
+      - pattern: print($P.content)
+    paths:
+      include: ["workers/**"]
+
+  # --- SEC-17: parsers must not shell out through a shell -------------------------------
+  - id: kamutan-subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >-
+      subprocess with shell=True is forbidden in workers (SEC-17). Pass an argv list.
+    pattern-either:
+      - pattern: subprocess.$F(..., shell=True, ...)
+      - pattern: os.system(...)
+    paths:
+      include: ["workers/**", "benchmark/**"]
+
+  # --- SEC-48: no pull_request_target in workflows ---------------------------------------
+  - id: kamutan-no-pull-request-target
+    languages: [yaml]
+    severity: ERROR
+    message: pull_request_target is forbidden in Kamutan workflows (SEC-48).
+    pattern-regex: '(?m)^\s*pull_request_target\s*:'
+    paths:
+      include: [".github/workflows/**"]

@@ -1,0 +1,106 @@
+# Local development stack: api + drawing worker + redis.
+#
+# Supabase (Postgres, Auth, Storage, Realtime) is NOT part of this file — run it with the
+# Supabase CLI from the repo root:
+#     supabase start            # prints the local API URL, anon key and DB URL
+# The containers reach it through host.docker.internal (ports 54321 API / 54322 Postgres).
+#
+# Usage (from repo root):
+#     cp apps/api/.env.example apps/api/.env         # never commit .env (SEC-24)
+#     docker compose -f infra/docker/docker-compose.dev.yml up --build
+#
+# Sample drawings are mounted read-only from KAMUTAN_DATA_DIR (outside the repo, SEC-54).
+
+name: kamutan-dev
+
+x-hardening: &hardening
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --requirepass
+      - ${REDIS_PASSWORD:-kamutan-dev-only}
+    # Not published to the host by default; uncomment for debugging only.
+    # ports: ["127.0.0.1:6379:6379"]
+    networks: [backend]
+    read_only: true
+    tmpfs: [/data]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD:-kamutan-dev-only}\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-kamutan-dev-only}
+
+  api:
+    <<: *hardening
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    env_file:
+      - path: ../../apps/api/.env
+        required: false
+    environment:
+      NODE_ENV: development
+      PORT: "3001"
+      QUEUE_DRIVER: bullmq
+      REDIS_URL: redis://:${REDIS_PASSWORD:-kamutan-dev-only}@redis:6379
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@host.docker.internal:54322/postgres}
+    ports:
+      - "127.0.0.1:3001:3001"
+    tmpfs: [/tmp]
+    networks: [backend, frontend]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker-drawing:
+    <<: *hardening
+    build:
+      context: ../..
+      dockerfile: infra/docker/worker-drawing.Dockerfile
+    environment:
+      KAMUTAN_WORKER_POOL: ${KAMUTAN_WORKER_POOL:-cpu-heavy}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-kamutan-dev-only}@redis:6379
+      # Dedicated limited DB role (ADR-0003) — never the service_role key.
+      KAMUTAN_WORKER_DB_URL: ${KAMUTAN_WORKER_DB_URL:-postgresql://kamutan_worker:CHANGE_ME@host.docker.internal:54322/postgres}
+      KAMUTAN_DATA_DIR: /data/kamutan
+      KAMUTAN_LLM_ENABLED: "false"
+    volumes:
+      - type: bind
+        source: ${KAMUTAN_DATA_DIR:-/tmp/kamutan-data-empty}
+        target: /data/kamutan
+        read_only: true
+        bind:
+          create_host_path: true
+    tmpfs:
+      - /work:size=2g,mode=1777
+    # SEC-17 resource limits (per container; per-parse limits are applied by the sandbox).
+    mem_limit: 4g
+    cpus: 2
+    pids_limit: 256
+    networks: [backend]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+networks:
+  # backend: api <-> redis <-> worker. Has host access only for the local Supabase.
+  backend: {}
+  frontend: {}

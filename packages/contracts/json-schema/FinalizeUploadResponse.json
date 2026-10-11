@@ -1,0 +1,244 @@
+{
+  "$ref": "#/definitions/FinalizeUploadResponse",
+  "definitions": {
+    "FinalizeUploadResponse": {
+      "type": "object",
+      "properties": {
+        "sheetSet": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orgId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "projectId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "uploadedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sourceFilePath": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sourceSha256": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fileKind": {
+              "type": "string",
+              "enum": [
+                "pdf",
+                "dwg",
+                "dxf",
+                "png"
+              ]
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "orgId",
+            "projectId",
+            "name",
+            "uploadedBy",
+            "sourceFilePath",
+            "sourceSha256",
+            "fileKind",
+            "createdAt"
+          ],
+          "additionalProperties": false
+        },
+        "sheetVersion": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "orgId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "sheetId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "versionNo": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "sourceSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "storagePath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "pageIndex": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "uploaded",
+                "queued",
+                "processing",
+                "ready",
+                "failed"
+              ]
+            },
+            "widthMm": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "heightMm": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "scale": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "isRaster": {
+              "type": "boolean"
+            },
+            "pipelineState": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "queued",
+                      "running",
+                      "done",
+                      "failed",
+                      "skipped"
+                    ]
+                  },
+                  "stageVersion": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "error": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "orgId",
+            "sheetId",
+            "versionNo",
+            "sourceSha256",
+            "storagePath",
+            "pageIndex",
+            "status",
+            "widthMm",
+            "heightMm",
+            "scale",
+            "isRaster",
+            "pipelineState",
+            "createdAt"
+          ],
+          "additionalProperties": false
+        },
+        "deduplicated": {
+          "type": "boolean"
+        },
+        "jobId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sheetSet",
+        "sheetVersion",
+        "deduplicated",
+        "jobId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/FinalizeUploadResponse.json"
+}

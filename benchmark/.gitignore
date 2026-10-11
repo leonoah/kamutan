@@ -1,0 +1,11 @@
+.hypothesis/
+.pytest_cache/
+.venv/
+results/
+# never commit customer data
+*.pdf
+*.png
+*.xls
+*.xlsx
+*.dwg
+*.dxf
