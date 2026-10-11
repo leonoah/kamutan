@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.turbo/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+coverage/
+.pytest_cache/
+# Never commit customer drawings (SEC-54)
+*.pdf
+*.dwg
+*.dxf
+data/
