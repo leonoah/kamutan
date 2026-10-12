@@ -1,0 +1,73 @@
+{
+  "$ref": "#/definitions/MyOrg",
+  "definitions": {
+    "MyOrg": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "llmEnabled": {
+              "type": "boolean"
+            },
+            "blockExportOnRed": {
+              "type": "boolean"
+            },
+            "greenThreshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "trainingOptIn": {
+              "type": "boolean"
+            },
+            "llmMonthlyBudgetUsd": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "llmEnabled",
+            "blockExportOnRed",
+            "greenThreshold"
+          ],
+          "additionalProperties": false
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "editor",
+            "reviewer",
+            "viewer"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "settings",
+        "createdAt",
+        "role"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/MyOrg.json"
+}

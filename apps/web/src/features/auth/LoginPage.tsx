@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { KeyRound, MailCheck, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,25 @@ import { Ltr } from "@/components/Ltr";
 import { env } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
-import { AuthError, getAuthService } from "./authService";
+import { AuthError, MOCK_EMAIL_LINK, getAuthService } from "./authService";
+
+export function authErrorText(err: unknown, t: (k: string) => string): string {
+  if (!(err instanceof AuthError)) return t("auth.errorGeneric");
+  switch (err.code) {
+    case "invalid_credentials":
+      return t("auth.errorInvalid");
+    case "too_many_requests":
+      return t("auth.errorTooMany");
+    case "user_disabled":
+      return t("auth.errorDisabled");
+    case "popup_closed":
+      return t("auth.errorPopup");
+    case "invalid_link":
+      return t("auth.completeInvalid");
+    default:
+      return t("auth.errorGeneric");
+  }
+}
 
 type Mode = "password" | "magic";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -49,13 +67,24 @@ export function LoginPage() {
         await auth.signInWithPassword(trimmed, password);
         navigate(from, { replace: true });
       } else {
-        await auth.sendMagicLink(trimmed, `${window.location.origin}/projects`);
+        await auth.sendMagicLink(trimmed);
         setSentTo(trimmed);
       }
     } catch (err) {
-      setErrors({
-        form: err instanceof AuthError && err.code === "invalid_credentials" ? t("auth.errorInvalid") : t("auth.errorGeneric"),
-      });
+      setErrors({ form: authErrorText(err, t) });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function onGoogle() {
+    setErrors({});
+    setSubmitting(true);
+    try {
+      await getAuthService().signInWithGoogle();
+      navigate(from, { replace: true });
+    } catch (err) {
+      setErrors({ form: authErrorText(err, t) });
     } finally {
       setSubmitting(false);
     }
@@ -98,7 +127,17 @@ export function LoginPage() {
           {sentTo ? (
             <div role="status" className="mt-6 flex items-start gap-3 rounded border border-conf-high/30 bg-conf-high/[0.06] p-4">
               <MailCheck className="mt-0.5 size-5 shrink-0 text-conf-high" aria-hidden />
-              <p className="text-body text-foreground">{t("auth.magicSent", { email: `⁨${sentTo}⁩` })}</p>
+              <div className="flex flex-col gap-2">
+                <p className="text-body text-foreground">{t("auth.magicSent", { email: `⁨${sentTo}⁩` })}</p>
+                {env.useMocks ? (
+                  <p className="text-meta text-muted-foreground">
+                    {t("auth.mockLinkHint")}{" "}
+                    <Link to={MOCK_EMAIL_LINK} className="font-medium text-primary hover:underline">
+                      {t("auth.mockLinkOpen")}
+                    </Link>
+                  </p>
+                ) : null}
+              </div>
             </div>
           ) : (
             <form onSubmit={onSubmit} noValidate className="mt-6 flex flex-col gap-4" aria-label={t("auth.title")}>
@@ -140,14 +179,38 @@ export function LoginPage() {
               <Button type="submit" size="lg" disabled={submitting} className="mt-2">
                 {submitting ? t("auth.submitting") : mode === "password" ? t("auth.submit") : t("auth.magicSubmit")}
               </Button>
-              {env.useMocks ? <p className="text-meta text-muted-foreground">{t("auth.mockHint")}</p> : null}
+              {env.useMocks && mode === "password" ? (
+                <p className="text-meta text-muted-foreground">{t("auth.mockHint")}</p>
+              ) : null}
             </form>
           )}
+
+          <div className="my-6 flex items-center gap-3 text-meta text-muted-foreground">
+            <span aria-hidden className="h-px flex-1 bg-border" />
+            {t("auth.or")}
+            <span aria-hidden className="h-px flex-1 bg-border" />
+          </div>
+          <Button variant="secondary" size="lg" onClick={() => void onGoogle()} disabled={submitting}>
+            <GoogleMark />
+            {t("auth.google")}
+          </Button>
         </div>
         <p className="text-meta text-muted-foreground">{t("auth.footer")}</p>
       </main>
       <LoginVisual />
     </div>
+  );
+}
+
+/** Google "G" mark (brand colours, never mirrored). */
+function GoogleMark() {
+  return (
+    <svg viewBox="0 0 18 18" aria-hidden focusable="false" className="size-4">
+      <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
+      <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" />
+      <path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.05l3.01-2.33z" />
+      <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z" />
+    </svg>
   );
 }
 

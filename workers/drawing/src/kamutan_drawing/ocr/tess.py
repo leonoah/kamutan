@@ -30,7 +30,7 @@ def run_tesseract(img: Image.Image, lang: str = "heb", psm: int = 7, extra: list
         p = Path(d) / "in.png"
         img.save(p)
         cmd = [TESSERACT, str(p), "stdout", "-l", lang, "--psm", str(psm), *(extra or [])]
-        r = subprocess.run(cmd, capture_output=True, text=True, env={**os.environ, "OMP_THREAD_LIMIT": "1"})
+        r = subprocess.run(cmd, capture_output=True, text=True, check=False, env={**os.environ, "OMP_THREAD_LIMIT": "1"})
         return r.stdout
 
 

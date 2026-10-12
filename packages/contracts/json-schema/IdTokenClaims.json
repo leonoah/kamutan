@@ -1,0 +1,43 @@
+{
+  "$ref": "#/definitions/IdTokenClaims",
+  "definitions": {
+    "IdTokenClaims": {
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string"
+        },
+        "email_verified": {
+          "type": "boolean"
+        },
+        "firebase": {
+          "type": "object",
+          "properties": {
+            "sign_in_provider": {
+              "type": "string"
+            },
+            "sign_in_second_factor": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sign_in_provider"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "uid",
+        "firebase"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/IdTokenClaims.json"
+}

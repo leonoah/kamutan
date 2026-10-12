@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// Kamutan — Cloud Storage for Firebase rules (ADR 0008).
+// Bucket: kamutan-fba67.firebasestorage.app
+//
+//   orgs/{orgId}/uploads/{uid}/{fileId}   client upload: editor/admin of org, own uid folder only,
+//                                         create-only (no overwrite / delete), ≤ 100 MB, drawing types.
+//                                         Readable by org members.
+//   orgs/{orgId}/derived/**               tiles / artifacts written by the worker (admin SDK);
+//                                         readable by org members, never client-writable.
+//   everything else                       denied.
+//
+// Membership is checked cross-service against Firestore orgs/{orgId}/members/{uid}.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null && request.auth.uid is string;
+    }
+    function memberPath(orgId) {
+      return /databases/(default)/documents/orgs/$(orgId)/members/$(request.auth.uid);
+    }
+    function isMember(orgId) {
+      return signedIn() && firestore.exists(memberPath(orgId));
+    }
+    function canUpload(orgId) {
+      return isMember(orgId) && firestore.get(memberPath(orgId)).data.role in ['admin', 'editor'];
+    }
+    function allowedType() {
+      return request.resource.contentType.matches(
+        '^(application/pdf|image/png|application/dxf|image/vnd\\.dxf|image/x-dxf|application/acad|image/vnd\\.dwg|image/x-dwg|application/octet-stream)$');
+    }
+
+    // default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /orgs/{orgId}/uploads/{uid}/{fileId} {
+      allow read: if isMember(orgId);
+      allow create: if signedIn()
+                    && request.auth.uid == uid
+                    && canUpload(orgId)
+                    && resource == null
+                    && request.resource.size > 0
+                    && request.resource.size <= 100 * 1024 * 1024
+                    && allowedType();
+      allow update, delete: if false;
+    }
+
+    match /orgs/{orgId}/derived/{rest=**} {
+      allow read: if isMember(orgId);
+      allow write: if false;
+    }
+  }
+}

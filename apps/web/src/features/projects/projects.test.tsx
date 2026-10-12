@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { axe } from "@/test/axe";
 import { renderApp } from "@/test/utils";
@@ -16,6 +16,21 @@ describe("Projects list", () => {
     expect(within(row).getByText("בבדיקה")).toBeInTheDocument();
     expect(within(row).getByText("87%")).toBeInTheDocument();
     expect(within(row).getByRole("link", { name: /לסביבת הבדיקה/ })).toHaveAttribute("href", "/projects/p-noah/review");
+  });
+
+  it("shows live processing progress from the org jobs listener", async () => {
+    const { backend } = await renderApp("/projects", { signedIn: true, jobTickMs: 10_000 });
+    const row = (await screen.findByRole("link", { name: "דירת לוי — שיפוץ מטבח ורחצה" })).closest("tr")!;
+    expect(within(row).getByText("טיוטה")).toBeInTheDocument();
+    const up = await backend.api.createUpload("p-levi", { filename: "a.pdf", sizeBytes: 5 });
+    await new Promise<void>((resolve) => {
+      const h = backend.uploads.start(up.storagePath, new File(["%PDF-"], "a.pdf"), up.contentType, () => {});
+      void h.done.then(resolve);
+    });
+    await act(async () => {
+      await backend.api.finalizeUpload("p-levi", { uploadToken: up.uploadToken });
+    });
+    expect(await within(row).findByText("בעיבוד · 0%")).toBeInTheDocument();
   });
 
   it("creates a project from the dialog and navigates to it", async () => {

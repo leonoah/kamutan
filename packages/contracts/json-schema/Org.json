@@ -6,58 +6,45 @@
       "properties": {
         "id": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "name": {
           "type": "string",
           "minLength": 1,
           "maxLength": 200
         },
-        "slug": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 63,
-          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
-        },
         "settings": {
           "type": "object",
           "properties": {
-            "green_threshold": {
+            "llmEnabled": {
+              "type": "boolean"
+            },
+            "blockExportOnRed": {
+              "type": "boolean"
+            },
+            "greenThreshold": {
               "type": "number",
               "minimum": 0,
               "maximum": 1
             },
-            "block_export_on_red": {
+            "trainingOptIn": {
               "type": "boolean"
             },
-            "llm_enabled": {
-              "type": "boolean"
-            },
-            "llm_provider": {
-              "type": "string",
-              "maxLength": 64
-            },
-            "llm_monthly_budget_usd": {
+            "llmMonthlyBudgetUsd": {
               "type": "number",
               "minimum": 0
-            },
-            "training_opt_in": {
-              "type": "boolean"
-            },
-            "default_waste_pct": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 100
             }
           },
-          "additionalProperties": false,
-          "default": {}
+          "required": [
+            "llmEnabled",
+            "blockExportOnRed",
+            "greenThreshold"
+          ],
+          "additionalProperties": false
         },
         "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
           "type": "string",
           "format": "date-time"
         }
@@ -65,9 +52,8 @@
       "required": [
         "id",
         "name",
-        "slug",
-        "createdAt",
-        "updatedAt"
+        "settings",
+        "createdAt"
       ],
       "additionalProperties": false
     }

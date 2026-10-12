@@ -4,71 +4,63 @@ import { loadConfig } from '../../src/config/config';
 import { createTestApp } from '../support/app';
 import { testConfig } from '../support/helpers';
 
-const base = {
-  SUPABASE_JWT_SECRET: 'x'.repeat(32),
-  UPLOAD_TOKEN_SECRET: 'y'.repeat(32),
-};
+const secret = { UPLOAD_TOKEN_SECRET: 'y'.repeat(32) };
 
 describe('config', () => {
-  it('development defaults run without Postgres/Redis only when told so', () => {
-    expect(() => loadConfig({ ...base, DATA_DRIVER: 'memory' })).not.toThrow();
-    expect(() => loadConfig({ ...base })).toThrow(/DATABASE_URL/);
+  it('defaults to Firebase project kamutan-fba67, Firestore, Storage and Pub/Sub', () => {
+    const cfg = loadConfig({ ...secret });
+    expect(cfg).toMatchObject({
+      GOOGLE_CLOUD_PROJECT: 'kamutan-fba67',
+      FIREBASE_STORAGE_BUCKET: 'kamutan-fba67.firebasestorage.app',
+      DATA_DRIVER: 'firestore',
+      STORAGE_DRIVER: 'firebase',
+      QUEUE_DRIVER: 'pubsub',
+      INGEST_TOPIC: 'ingest',
+      CORS_ORIGINS: [],
+    });
   });
 
-  it('refuses insecure production settings and never echoes secret values', () => {
+  it('requires the upload secret and never echoes values', () => {
+    expect(() => loadConfig({})).toThrow(/UPLOAD_TOKEN_SECRET/);
     let msg = '';
     try {
-      loadConfig({ ...base, NODE_ENV: 'production', DATA_DRIVER: 'memory', CORS_ORIGINS: '*' });
+      loadConfig({ UPLOAD_TOKEN_SECRET: 'short-secret-value' });
     } catch (e) {
       msg = (e as Error).message;
     }
-    expect(msg).toMatch(/DATA_DRIVER/);
-    expect(msg).toMatch(/QUEUE_DRIVER/);
-    expect(msg).toMatch(/STORAGE_DRIVER/);
-    expect(msg).toMatch(/CORS_ORIGINS/);
-    expect(msg).not.toContain('x'.repeat(32));
+    expect(msg).not.toContain('short-secret-value');
   });
 
-  it('accepts a complete production config', () => {
-    const cfg = loadConfig({
-      NODE_ENV: 'production',
-      SUPABASE_URL: 'https://proj.supabase.co',
-      JWT_USE_JWKS: 'true',
-      DATABASE_URL: 'postgres://u:p@db:5432/postgres',
-      DATABASE_SSL: 'require',
-      QUEUE_DRIVER: 'bullmq',
-      REDIS_URL: 'rediss://default:p@redis:6380',
-      STORAGE_DRIVER: 'supabase',
-      SUPABASE_SERVICE_ROLE_KEY: 'k',
-      UPLOAD_TOKEN_SECRET: 'y'.repeat(32),
-      CORS_ORIGINS: 'https://app.kamutan.co.il, https://staging.kamutan.co.il',
-    });
-    expect(cfg.CORS_ORIGINS).toEqual(['https://app.kamutan.co.il', 'https://staging.kamutan.co.il']);
+  it('refuses memory drivers and wildcard CORS in production', () => {
+    let msg = '';
+    try {
+      loadConfig({ ...secret, NODE_ENV: 'production', DATA_DRIVER: 'memory', STORAGE_DRIVER: 'memory', QUEUE_DRIVER: 'memory', CORS_ORIGINS: '*' });
+    } catch (e) {
+      msg = (e as Error).message;
+    }
+    for (const k of ['DATA_DRIVER', 'STORAGE_DRIVER', 'QUEUE_DRIVER', 'CORS_ORIGINS']) expect(msg).toContain(k);
+    expect(() => loadConfig({ ...secret, NODE_ENV: 'production' })).not.toThrow();
   });
 });
 
 describe('OpenAPI', () => {
-  it('documents the Sprint 0 endpoints with Zod-derived schemas', async () => {
+  it('documents the Sprint 0 endpoints under /api/v1', async () => {
     const t = await createTestApp(testConfig());
     try {
       const doc = buildOpenApi(t.app);
       expect(Object.keys(doc.paths).sort()).toEqual(
         [
-          '/v1/health',
-          '/v1/health/ready',
-          '/v1/me',
-          '/v1/orgs',
-          '/v1/orgs/{orgId}',
-          '/v1/projects',
-          '/v1/projects/{projectId}',
-          '/v1/projects/{projectId}/sheet-sets',
-          '/v1/projects/{projectId}/uploads',
+          '/api/v1/health',
+          '/api/v1/health/ready',
+          '/api/v1/me',
+          '/api/v1/orgs',
+          '/api/v1/orgs/{orgId}',
+          '/api/v1/projects',
+          '/api/v1/projects/{projectId}',
+          '/api/v1/projects/{projectId}/sheet-sets',
+          '/api/v1/projects/{projectId}/uploads',
         ].sort(),
       );
-      const body = doc.paths['/v1/projects/{projectId}/uploads']?.post?.requestBody as {
-        content: Record<string, { schema: { properties: Record<string, unknown> } }>;
-      };
-      expect(Object.keys(body.content['application/json']?.schema.properties ?? {})).toEqual(['filename', 'sizeBytes', 'sha256']);
     } finally {
       await t.app.close();
     }

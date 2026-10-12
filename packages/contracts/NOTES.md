@@ -1,24 +1,28 @@
-# @kamutan/contracts — Sprint 0 notes
+# @kamutan/contracts — notes (Firebase, ADR 0008)
 
-Zod schemas + inferred TS types shared by web, api and (via JSON Schema) the Python workers.
+Zod schemas + inferred TS types shared by web, api and (via JSON Schema) the Python worker. Field names mirror
+`firebase/model.ts` (DB agent); **this package is the TS source of truth**. DTO convention: Firestore doc fields +
+`id` (+ `orgId`/`projectId` where useful); Firestore `Timestamp`s are ISO-8601 strings in DTOs.
 
 - `roles` — `admin | editor | reviewer | viewer`, `ROLE_RANK`, `roleSatisfies()`.
-- `org` — Org, OrgSettings, Membership, MyOrg, MeResponse, CreateOrgRequest.
-- `project` — Project, Create/UpdateProjectRequest, ListProjectsQuery, ProjectPage (cursor pagination).
-- `sheets` — FileKind (`pdf|dwg|dxf|png`; DB stores png as `image` → `DB_FILE_KIND`, `fileKindFromDb`), SheetSet,
-  SheetVersion (+ status enum matching `public.sheet_version_status`), PipelineState.
-- `uploads` — limits (`MAX_UPLOAD_BYTES` 100MB, `UPLOAD_TTL_SECONDS` 600), StoragePath (`{orgId}/upload/{uuid}`),
-  CreateUpload request/response, FinalizeUpload request/response.
-- `jobs` — queue names, `JOB_TYPES.ingestSheetVersion = 'ingest.sheet_version'`, `IngestSheetVersionJobSchema`
-  (`schemaVersion, sheetVersionId, orgId, projectId, storagePath, sha256, fileKind, traceparent`; storagePath must be
-  inside the org prefix), JobStatus (matches `public.job_status`).
-- `errors` — `ApiErrorSchema` (`{error: {code, message, requestId, issues?}}`) and the error code enum.
-- `auth` — AccessTokenClaims (Supabase JWT claims the API relies on).
+- `org` — `DocIdSchema`, `UidSchema`, Org (+ `OrgSettings`, `DEFAULT_ORG_SETTINGS`), Member, MyOrg, MeResponse, CreateOrgRequest.
+- `project` — Project (+ FloorMeta, stats), Create/UpdateProjectRequest, ListProjectsQuery (`orgId` required), ProjectPage.
+- `sheets` — FileKind `pdf|dwg|dxf|png`, SheetSet, Sheet (+ FloorRegion), SheetVersion, status enums.
+- `review` — ConfidenceLevel, ReviewItem, Correction, client-writable field list.
+- `boq` — BoqLine (`code` is TEXT, `ItemCodeSchema`), status enum + `BOQ_LINE_TRANSITIONS`.
+- `share` — ShareLink (tokenHash only), default/max days.
+- `firestore` — `fsPaths` (doc paths), `storagePaths` (`upload`, `source`, `derived`), `UPLOAD_PATH_RE`, `SOURCE_PATH_RE`.
+- `uploads` — limits (100MB, 10 min), `KIND_TO_CONTENT_TYPE`, CreateUpload / FinalizeUpload request+response.
+- `jobs` — `TOPICS.ingest`, `JOB_TYPES`, **`IngestSheetVersionJobSchema`** (Pub/Sub message data, schemaVersion 2:
+  `type, jobId, orgId, projectId, sheetSetId, sheetId, versionId, storagePath (sources path), sha256, fileKind,
+  traceparent`), Job doc, JobStatus.
+- `errors` — `ApiErrorSchema` + codes. `auth` — `IdTokenClaimsSchema` (Firebase ID token claims).
 
-Build: `pnpm --filter @kamutan/contracts build` → `dist/cjs` (require), `dist/esm` (import), `dist/types`.
-JSON Schema: `pnpm --filter @kamutan/contracts gen` → `json-schema/<Name>.json` + `index.json` (draft-07,
-inlined refs) for `datamodel-code-generator` → `py-packages/kamutan_contracts`. Registry: `src/registry.ts`.
-Tests: `pnpm --filter @kamutan/contracts test`.
+Build: `pnpm --filter @kamutan/contracts build` → `dist/cjs`, `dist/esm`, `dist/types`.
+JSON Schema: `pnpm --filter @kamutan/contracts gen` → `json-schema/<Name>.json` + `index.json` (27 schemas) for
+`datamodel-code-generator`. Tests: `pnpm --filter @kamutan/contracts test`.
 
-Gap: some refinements (filename extension check, storagePath-in-org-prefix) are `.refine()` and do not appear in the
-JSON Schema; Python must re-check them (the worker validates ids against the DB anyway).
+The API does not list this package as an npm dependency (Cloud Functions build); it bundles it — see apps/api/NOTES.md.
+
+Gap: `.refine()` checks (filename extension, storagePath ↔ org/project/sha) are not expressible in JSON Schema; the
+Python side must re-check them.

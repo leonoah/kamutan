@@ -1,80 +1,196 @@
 /**
- * Thin, app-local DTOs. These mirror the planned Zod contracts in packages/contracts
- * (docs/spec/04_architecture.md §API) and will be replaced by imports from
- * @kamutan/contracts once that package is published. Keep field names identical.
+ * App-local DTOs mirroring @kamutan/contracts (packages/contracts/src/*.ts) field-for-field.
+ * Kept local so the web app builds without the contracts package; switch to
+ * `import type { … } from "@kamutan/contracts"` once its build is wired into turbo for web.
  */
-export type ProjectStatus = "draft" | "uploading" | "processing" | "review" | "approved";
+export type Role = "admin" | "editor" | "reviewer" | "viewer";
+export type FileKind = "pdf" | "dwg" | "dxf" | "png";
 
-export interface Project {
+export interface MyOrg {
   id: string;
   name: string;
-  address: string | null;
-  status: ProjectStatus;
-  /** % of BOQ rows at level "green" (מאומת), 0–100. Computed by rows, not items. */
-  verifiedPct: number;
-  sheetsCount: number;
-  toReviewCount: number;
-  updatedAt: string; // ISO
+  role: Role;
+}
+export interface MeResponse {
+  uid: string;
+  mfa: boolean;
+  orgs: MyOrg[];
+}
+
+export interface ProjectStats {
+  sheets: number;
+  reviewOpen: number;
+  boqLines: number;
+  red: number;
+  yellow: number;
+  green: number;
+}
+
+/** contracts ProjectSchema */
+export interface Project {
+  id: string;
+  orgId: string;
+  name: string;
+  address?: string;
+  templateId?: string | null;
+  floors: { code: string; name: string; sortOrder: number }[];
+  stats?: ProjectStats;
+  status: "active" | "archived";
+  createdBy: string;
+  createdAt: string; // ISO
 }
 
 export interface CreateProjectInput {
+  orgId: string;
   name: string;
-  address?: string | null;
-  boqTemplateId?: string | null;
+  address?: string;
 }
 
-export type FileKind = "pdf" | "dwg" | "dxf" | "png";
-
-export interface UploadRequest {
-  fileName: string;
+/** POST /api/v1/projects/:projectId/uploads */
+export interface CreateUploadRequest {
+  filename: string;
   sizeBytes: number;
-  kind: FileKind;
+  sha256?: string;
 }
-
-/** Returned by POST /v1/projects/:id/uploads — a short-lived signed URL into the quarantine bucket. */
-export interface UploadTarget {
-  uploadId: string;
-  url: string;
-  method: "PUT" | "POST";
-  headers: Record<string, string>;
+export interface CreateUploadResponse {
+  fileId: string;
+  /** orgs/{orgId}/uploads/{uid}/{fileId} */
+  storagePath: string;
+  uploadToken: string;
+  contentType: string;
+  fileKind: FileKind;
+  maxBytes: number;
   expiresAt: string;
 }
 
+/** POST /api/v1/projects/:projectId/sheet-sets */
+export interface FinalizeUploadRequest {
+  uploadToken: string;
+  name?: string;
+}
+export type SheetSetStatus = "uploaded" | "splitting" | "ready" | "failed";
+export type SheetVersionStatus = "uploaded" | "queued" | "processing" | "ready" | "failed";
+
 export interface SheetSet {
   id: string;
+  orgId: string;
   projectId: string;
-  name: string;
-  fileCount: number;
+  fileKind: FileKind;
+  sha256: string;
+  storagePath: string;
+  status: SheetSetStatus;
+  name?: string;
+  uploadedBy: string;
   createdAt: string;
 }
-
-export interface ApiErrorShape {
-  status: number;
-  code: string;
-  message: string;
+export interface Sheet {
+  id: string;
+  logicalKey: string;
+  sheetSetId: string;
+  currentVersionId: string | null;
+  titleBlock?: { sheetTitle?: string; sheetNumber?: string; scaleText?: string };
+}
+export interface SheetVersion {
+  id: string;
+  sheetId: string;
+  versionNo: number;
+  status: SheetVersionStatus;
+  createdAt: string;
+}
+export interface FinalizeUploadResponse {
+  sheetSet: SheetSet;
+  sheet: Sheet;
+  sheetVersion: SheetVersion;
+  deduplicated: boolean;
+  jobId: string;
 }
 
-export class ApiError extends Error implements ApiErrorShape {
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+/** jobs/{jobId} */
+export interface Job {
+  id: string;
+  orgId: string;
+  projectId?: string;
+  versionId?: string;
+  type: string;
+  status: JobStatus;
+  progress: number; // 0–100
+  stage?: string;
+  error?: { code: string; message: string } | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+/** contracts ApiErrorSchema body: { error: { code, message, requestId } } */
+export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
     message: string,
+    public requestId: string | null = null,
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-export type UploadProgress = (loadedBytes: number, totalBytes: number) => void;
-
 export interface ApiClient {
-  listProjects(): Promise<Project[]>;
+  getMe(): Promise<MeResponse>;
+  listProjects(orgId: string): Promise<Project[]>;
   getProject(id: string): Promise<Project>;
   createProject(input: CreateProjectInput): Promise<Project>;
-  listSheetSets(projectId: string): Promise<SheetSet[]>;
-  createUpload(projectId: string, req: UploadRequest): Promise<UploadTarget>;
-  /** PUTs the bytes to the signed URL. Resolves when the object is stored. */
-  uploadFile(target: UploadTarget, file: File, onProgress: UploadProgress, signal?: AbortSignal): Promise<void>;
-  /** After all uploads finish: registers the set and triggers ingest. */
-  createSheetSet(projectId: string, uploadIds: string[], name: string): Promise<SheetSet>;
+  createUpload(projectId: string, req: CreateUploadRequest): Promise<CreateUploadResponse>;
+  finalizeUpload(projectId: string, req: FinalizeUploadRequest): Promise<FinalizeUploadResponse>;
+}
+
+/* ---------- Storage (resumable uploads) ---------- */
+
+export type UploadTaskState = "running" | "paused" | "success" | "canceled" | "error";
+
+export interface UploadHandle {
+  pause(): boolean;
+  resume(): boolean;
+  cancel(): boolean;
+  /** Resolves on success; rejects with `UploadCanceledError` or a transport error. */
+  done: Promise<void>;
+}
+
+export class UploadCanceledError extends Error {
+  constructor() {
+    super("upload canceled");
+    this.name = "UploadCanceledError";
+  }
+}
+
+export interface UploadTransport {
+  start(
+    storagePath: string,
+    file: Blob,
+    contentType: string,
+    onProgress: (bytesTransferred: number, totalBytes: number, state: UploadTaskState) => void,
+  ): UploadHandle;
+}
+
+/* ---------- Realtime (Firestore listeners) ---------- */
+
+export type Unsubscribe = () => void;
+export type OnError = (err: Error) => void;
+
+export interface RealtimeSource {
+  /** jobs where orgId == X (and projectId == Y if given), newest first. */
+  jobs(orgId: string, projectId: string | null, onData: (jobs: Job[]) => void, onError: OnError): Unsubscribe;
+  sheetSets(orgId: string, projectId: string, onData: (sets: SheetSet[]) => void, onError: OnError): Unsubscribe;
+  /** Sheets of a project joined with their current version (status). */
+  sheets(
+    orgId: string,
+    projectId: string,
+    onData: (rows: { sheet: Sheet; version: SheetVersion | null }[]) => void,
+    onError: OnError,
+  ): Unsubscribe;
+}
+
+export interface Backend {
+  api: ApiClient;
+  uploads: UploadTransport;
+  realtime: RealtimeSource;
 }

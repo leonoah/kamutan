@@ -8,10 +8,17 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.143.0",
     "numpy>=2.5.4",
     "pillow>=12.3.0",
+    "pydantic>=2.14.1",
     "pypdfium2>=5.14.0",
     "scipy>=1.18.1",
+]
+
+[project.optional-dependencies]
+serve = [
+    "uvicorn>=0.54.0",
 ]
 
 [build-system]
@@ -21,6 +28,17 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "ezdxf>=1.4.4",
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "reportlab>=5.0.1",
 ]
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+"spikes/**" = ["SIM115"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -14,3 +14,4 @@ coverage/
 *.dwg
 *.dxf
 data/
+!apps/web/.env.firebase

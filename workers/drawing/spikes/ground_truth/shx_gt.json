@@ -1,0 +1,4071 @@
+{
+ "items": [
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    286.6,
+    120.3,
+    293.6,
+    122.8
+   ],
+   "text": "מקרא:"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    269.5,
+    124.7,
+    281.1,
+    127.8
+   ],
+   "text": "נק' רמקול"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    224.7,
+    124.4,
+    237.1,
+    126.8
+   ],
+   "text": "ראה הערה"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    241.4,
+    130.9,
+    249.0,
+    133.5
+   ],
+   "text": "BEZEK"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    269.4,
+    130.9,
+    281.7,
+    133.6
+   ],
+   "text": "שקע בודד"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    220.7,
+    130.5,
+    237.2,
+    133.5
+   ],
+   "text": "נק' קצה לבזק"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    284.4,
+    137.3,
+    287.3,
+    139.9
+   ],
+   "text": "2X"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    265.2,
+    137.2,
+    282.0,
+    140.0
+   ],
+   "text": "שקע בהרכבים"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    241.4,
+    137.3,
+    249.0,
+    139.8
+   ],
+   "text": "כ.רשת"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    214.6,
+    136.8,
+    237.9,
+    139.9
+   ],
+   "text": "נק' קצה לכבל רשת"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    246.0,
+    143.9,
+    249.0,
+    146.4
+   ],
+   "text": "TV"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    216.8,
+    143.3,
+    237.4,
+    146.3
+   ],
+   "text": "נק' קצה לטלויזיה"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    272.8,
+    143.7,
+    282.1,
+    146.4
+   ],
+   "text": "שקע כח"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    245.3,
+    150.3,
+    249.6,
+    152.8
+   ],
+   "text": "TEL"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    261.9,
+    149.8,
+    282.8,
+    152.9
+   ],
+   "text": "נק' מאור תקרתית"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    219.3,
+    149.7,
+    237.7,
+    152.7
+   ],
+   "text": "נק' קצה לטלפון"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    258.3,
+    156.5,
+    282.8,
+    159.3
+   ],
+   "text": "מאור תקרתי+מאוורר"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    219.6,
+    156.4,
+    238.1,
+    159.1
+   ],
+   "text": "אביזר מוגן מים"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    254.6,
+    162.8,
+    282.9,
+    165.7
+   ],
+   "text": "גוף תאורה שקוע מהקיר"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    232.7,
+    162.5,
+    238.8,
+    165.4
+   ],
+   "text": "מחלף"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    269.0,
+    168.9,
+    282.8,
+    171.5
+   ],
+   "text": "מתג הפעלה"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    233.0,
+    169.1,
+    239.2,
+    171.8
+   ],
+   "text": "מצלב"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    269.3,
+    175.4,
+    282.7,
+    178.1
+   ],
+   "text": "מתג לתריס"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    214.9,
+    175.3,
+    239.9,
+    178.4
+   ],
+   "text": "צינור קוברה 50 מ\"מ"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    254.9,
+    181.8,
+    282.9,
+    185.2
+   ],
+   "text": "לוח חשמל/לוח תקשורת"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "legend_elec",
+   "bbox": [
+    214.7,
+    181.9,
+    243.4,
+    184.6
+   ],
+   "text": "תנור חימום לחדר רחצה"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    255.6,
+    117.0,
+    281.9,
+    120.4
+   ],
+   "text": "טבלת תאורה:"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    288.1,
+    123.0,
+    291.8,
+    126.0
+   ],
+   "text": "מס'"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    279.7,
+    123.1,
+    283.4,
+    125.7
+   ],
+   "text": "סוג"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    248.7,
+    123.0,
+    255.4,
+    125.6
+   ],
+   "text": "מידות"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    216.1,
+    122.9,
+    238.6,
+    126.2
+   ],
+   "text": "צבע חיצוני/שקוע"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    195.3,
+    123.1,
+    202.8,
+    125.6
+   ],
+   "text": "הערות"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    128.0,
+    291.8,
+    131.2
+   ],
+   "text": "1"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    128.0,
+    285.9,
+    131.2
+   ],
+   "text": "פס לד"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    128.0,
+    256.0,
+    131.2
+   ],
+   "text": "200"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    128.0,
+    240.0,
+    131.2
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    128.0,
+    227.5,
+    131.2
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    131.8,
+    291.8,
+    135.1
+   ],
+   "text": "2"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    131.8,
+    285.9,
+    135.1
+   ],
+   "text": "פס לד תלוי"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    131.8,
+    256.0,
+    135.1
+   ],
+   "text": "200"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    131.8,
+    240.0,
+    135.1
+   ],
+   "text": "צהוב"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    131.8,
+    227.5,
+    135.1
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    131.8,
+    214.6,
+    135.1
+   ],
+   "text": "תלוי ע\"ג 2 חוטים"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    138.9,
+    291.8,
+    142.4
+   ],
+   "text": "3"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    138.9,
+    285.9,
+    142.4
+   ],
+   "text": "צילינדר לד"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    138.9,
+    256.0,
+    142.4
+   ],
+   "text": "Ø6"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    138.9,
+    240.0,
+    142.4
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    138.9,
+    227.5,
+    142.4
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    138.9,
+    214.6,
+    142.4
+   ],
+   "text": "גובה 10 ס\"מ"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    143.4,
+    291.8,
+    146.3
+   ],
+   "text": "4"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    143.4,
+    285.9,
+    146.3
+   ],
+   "text": "פס צבירה"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    143.4,
+    256.0,
+    146.3
+   ],
+   "text": "500"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    143.4,
+    240.0,
+    146.3
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    143.4,
+    227.5,
+    146.3
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    143.4,
+    214.6,
+    146.3
+   ],
+   "text": "8 ספוטים"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    147.0,
+    291.8,
+    151.0
+   ],
+   "text": "5"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    147.0,
+    285.9,
+    151.0
+   ],
+   "text": "קוביה שחורה"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    147.0,
+    256.0,
+    151.0
+   ],
+   "text": "10/10"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    147.0,
+    240.0,
+    151.0
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    147.0,
+    214.6,
+    151.0
+   ],
+   "text": "UP DOWN"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    151.6,
+    291.8,
+    155.0
+   ],
+   "text": "6"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    151.6,
+    285.9,
+    155.0
+   ],
+   "text": "פאנל לד שטוח"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    151.6,
+    256.0,
+    155.0
+   ],
+   "text": "Ø20"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    151.6,
+    240.0,
+    155.0
+   ],
+   "text": "לבן"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    151.6,
+    227.5,
+    155.0
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    151.6,
+    214.6,
+    155.0
+   ],
+   "text": "\"שפה דקה\""
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    155.5,
+    291.8,
+    158.8
+   ],
+   "text": "7"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    155.5,
+    285.9,
+    158.8
+   ],
+   "text": "בסיס עגול מהקיר"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    155.5,
+    240.0,
+    158.8
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    155.5,
+    227.5,
+    158.8
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    155.5,
+    214.6,
+    158.8
+   ],
+   "text": "+חוט שחור מטפס לתקרה"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    162.5,
+    291.8,
+    166.0
+   ],
+   "text": "8"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    162.5,
+    285.9,
+    166.0
+   ],
+   "text": "צילינדר מוגן מים"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    162.5,
+    256.0,
+    166.0
+   ],
+   "text": "Ø15"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    162.5,
+    240.0,
+    166.0
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    166.5,
+    291.8,
+    169.8
+   ],
+   "text": "9"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    166.5,
+    285.9,
+    169.8
+   ],
+   "text": "גוף מוגם מים משולש"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    166.5,
+    240.0,
+    169.8
+   ],
+   "text": "לבן"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    166.5,
+    227.5,
+    169.8
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    166.5,
+    214.6,
+    169.8
+   ],
+   "text": "E1405"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    170.6,
+    291.8,
+    173.7
+   ],
+   "text": "10"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    170.6,
+    285.9,
+    173.7
+   ],
+   "text": "דוקרנים מוגני מים"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    170.6,
+    240.0,
+    173.7
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    170.6,
+    227.5,
+    173.7
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    174.6,
+    291.8,
+    177.8
+   ],
+   "text": "11"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    174.6,
+    285.9,
+    177.8
+   ],
+   "text": "פרוז'קטור לד"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    174.6,
+    240.0,
+    177.8
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    174.6,
+    227.5,
+    177.8
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    174.6,
+    214.6,
+    177.8
+   ],
+   "text": "W50"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    178.6,
+    291.8,
+    181.8
+   ],
+   "text": "12"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    178.6,
+    285.9,
+    181.8
+   ],
+   "text": "פרוז'קטור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    178.6,
+    240.0,
+    181.8
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    178.6,
+    227.5,
+    181.8
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    178.6,
+    214.6,
+    181.8
+   ],
+   "text": "עם גלאי תנועה"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    183.0,
+    291.8,
+    186.6
+   ],
+   "text": "13"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    183.0,
+    285.9,
+    186.6
+   ],
+   "text": "פאנל לד"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    183.0,
+    256.0,
+    186.6
+   ],
+   "text": "Ø50"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    183.0,
+    240.0,
+    186.6
+   ],
+   "text": "לבן"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    218.5,
+    183.0,
+    227.5,
+    186.6
+   ],
+   "text": "חיצוני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    187.0,
+    291.8,
+    191.2
+   ],
+   "text": "15"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    187.0,
+    285.9,
+    191.2
+   ],
+   "text": "פאנל לד מרובע"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    187.0,
+    256.0,
+    191.2
+   ],
+   "text": "22/22"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    187.0,
+    240.0,
+    191.2
+   ],
+   "text": "לבן"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    191.3,
+    291.8,
+    194.6
+   ],
+   "text": "16"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    191.3,
+    285.9,
+    194.6
+   ],
+   "text": "גוף תלוי פעמון מיני"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    191.3,
+    240.0,
+    194.6
+   ],
+   "text": "צהוב"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    191.3,
+    214.6,
+    194.6
+   ],
+   "text": "תחתית הגוף H=180"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    195.4,
+    291.8,
+    198.4
+   ],
+   "text": "17"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    195.4,
+    285.9,
+    198.4
+   ],
+   "text": "מאוורר תקרה"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    199.4,
+    291.8,
+    203.0
+   ],
+   "text": "19"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    199.4,
+    285.9,
+    203.0
+   ],
+   "text": "צילינדר"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    199.4,
+    256.0,
+    203.0
+   ],
+   "text": "Ø6"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    199.4,
+    240.0,
+    203.0
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    199.4,
+    214.6,
+    203.0
+   ],
+   "text": "אורך 30 ס\"מ"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    203.9,
+    291.8,
+    207.2
+   ],
+   "text": "20"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    203.9,
+    285.9,
+    207.2
+   ],
+   "text": "צמוד קיר"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    203.9,
+    256.0,
+    207.2
+   ],
+   "text": "60"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    207.5,
+    291.8,
+    211.2
+   ],
+   "text": "21"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    207.5,
+    285.9,
+    211.2
+   ],
+   "text": "בסיס+חוט+צילינדר"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    207.5,
+    256.0,
+    211.2
+   ],
+   "text": "Ø60"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    207.5,
+    240.0,
+    211.2
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    207.5,
+    214.6,
+    211.2
+   ],
+   "text": "אורך 15 ס\"מ, גובה תחתון H=130"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    211.9,
+    291.8,
+    215.3
+   ],
+   "text": "22"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    211.9,
+    285.9,
+    215.3
+   ],
+   "text": "גוף עגול צמוד"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    211.9,
+    240.0,
+    215.3
+   ],
+   "text": "לבן"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    211.9,
+    214.6,
+    215.3
+   ],
+   "text": "מהבית של נח"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    216.2,
+    291.8,
+    219.3
+   ],
+   "text": "23"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    216.2,
+    285.9,
+    219.3
+   ],
+   "text": "ספוט"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    216.2,
+    240.0,
+    219.3
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    220.2,
+    291.8,
+    223.3
+   ],
+   "text": "27"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    220.2,
+    285.9,
+    223.3
+   ],
+   "text": "בסיס קיר"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    220.2,
+    214.6,
+    223.3
+   ],
+   "text": "מתפצל ל-2 נורות"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    226.7,
+    291.8,
+    231.0
+   ],
+   "text": "28"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    226.7,
+    285.9,
+    231.0
+   ],
+   "text": "צמוד קיר UP DOWN"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    226.7,
+    256.0,
+    231.0
+   ],
+   "text": "6/6"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    233.0,
+    226.7,
+    240.0,
+    231.0
+   ],
+   "text": "שחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    286.5,
+    231.2,
+    291.8,
+    234.3
+   ],
+   "text": "29"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    258.0,
+    231.2,
+    285.9,
+    234.3
+   ],
+   "text": "שנאי+פס לד"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    243.8,
+    231.2,
+    256.0,
+    234.3
+   ],
+   "text": "295"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    135.4,
+    214.6,
+    138.3
+   ],
+   "text": "גובה תחתון H=120"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    158.8,
+    214.6,
+    161.9
+   ],
+   "text": "ונופל לקיר H=190 +נורת פחם"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "legend_light",
+   "bbox": [
+    176.5,
+    223.4,
+    214.6,
+    226.4
+   ],
+   "text": "גובה תחתון H=160"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    385.5,
+    271.6,
+    415.2,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    387.8,
+    277.2,
+    414.6,
+    280.8
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    403.6,
+    281.8,
+    408.4,
+    285.4
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    354.0,
+    271.0,
+    380.4,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    322.5,
+    271.4,
+    333.7,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    322.6,
+    279.9,
+    332.0,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    301.1,
+    271.6,
+    317.3,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    295.5,
+    279.9,
+    315.2,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    269.7,
+    271.6,
+    286.0,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    274.2,
+    279.7,
+    283.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    269.1,
+    285.3,
+    283.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    270.5,
+    290.2,
+    283.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    222.6,
+    271.6,
+    254.6,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    357.8,
+    277.2,
+    379.8,
+    280.8
+   ],
+   "text": "ת. מאסטר"
+  },
+  {
+   "sheet": "08222cb2",
+   "group": "titleblock",
+   "bbox": [
+    354.0,
+    282.1,
+    379.8,
+    286.3
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    385.5,
+    271.6,
+    415.2,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    388.3,
+    277.0,
+    415.1,
+    280.6
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    404.0,
+    281.6,
+    408.9,
+    285.2
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    353.0,
+    271.0,
+    379.4,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    322.5,
+    271.4,
+    333.7,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    322.6,
+    279.9,
+    332.0,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    301.1,
+    271.6,
+    317.3,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    295.5,
+    279.9,
+    315.2,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    269.7,
+    271.6,
+    286.0,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    274.2,
+    279.7,
+    283.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    269.1,
+    285.3,
+    283.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    270.5,
+    290.2,
+    283.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    220.3,
+    271.6,
+    252.3,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    361.4,
+    279.8,
+    378.9,
+    283.4
+   ],
+   "text": "ת. בניה"
+  },
+  {
+   "sheet": "1470f005",
+   "group": "titleblock",
+   "bbox": [
+    353.0,
+    286.0,
+    378.9,
+    290.2
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    267.4,
+    394.8,
+    296.6,
+    399.3
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    270.3,
+    400.3,
+    296.6,
+    403.9
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    286.0,
+    404.9,
+    290.9,
+    408.5
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    235.9,
+    394.1,
+    262.3,
+    399.5
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    219.4,
+    394.6,
+    230.5,
+    399.3
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    219.5,
+    403.0,
+    228.9,
+    406.5
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    198.0,
+    394.8,
+    214.2,
+    399.5
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    192.3,
+    403.0,
+    212.1,
+    406.5
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    166.6,
+    394.8,
+    182.9,
+    398.7
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    171.1,
+    402.8,
+    180.2,
+    406.9
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    166.0,
+    408.4,
+    180.2,
+    411.9
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    167.4,
+    413.4,
+    180.2,
+    416.9
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    120.4,
+    394.8,
+    152.4,
+    398.7
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    244.0,
+    402.9,
+    262.7,
+    406.5
+   ],
+   "text": "ת.תאורה"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    233.1,
+    408.8,
+    262.7,
+    412.9
+   ],
+   "text": "קומת מרתף+"
+  },
+  {
+   "sheet": "1bbe4113",
+   "group": "titleblock",
+   "bbox": [
+    236.9,
+    413.4,
+    262.7,
+    417.5
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    384.0,
+    271.6,
+    413.7,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    386.9,
+    277.1,
+    413.7,
+    280.8
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    402.6,
+    281.8,
+    407.5,
+    285.4
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    352.4,
+    271.0,
+    378.8,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    321.0,
+    271.4,
+    332.2,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    321.2,
+    279.9,
+    330.5,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    299.7,
+    271.6,
+    315.8,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    293.9,
+    279.9,
+    313.7,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    268.2,
+    271.6,
+    284.6,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    272.7,
+    279.7,
+    281.8,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    267.6,
+    285.3,
+    281.8,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    269.0,
+    290.2,
+    281.8,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    223.0,
+    271.6,
+    254.9,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    347.5,
+    279.4,
+    378.3,
+    283.5
+   ],
+   "text": "ת. אינסטלציה"
+  },
+  {
+   "sheet": "24ab0ea0",
+   "group": "titleblock",
+   "bbox": [
+    352.3,
+    284.9,
+    378.3,
+    289.0
+   ],
+   "text": "קומת מרתף"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    384.0,
+    271.6,
+    413.7,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    386.9,
+    277.1,
+    413.7,
+    280.8
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    402.6,
+    281.8,
+    407.5,
+    285.4
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    352.4,
+    271.0,
+    378.8,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    321.0,
+    271.4,
+    332.2,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    321.2,
+    279.9,
+    330.5,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    299.7,
+    271.6,
+    315.8,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    293.9,
+    279.9,
+    313.7,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    268.2,
+    271.6,
+    284.6,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    272.7,
+    279.7,
+    281.8,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    267.6,
+    285.3,
+    281.8,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    269.0,
+    290.2,
+    281.8,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    223.0,
+    271.6,
+    254.9,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    347.5,
+    279.4,
+    378.3,
+    283.5
+   ],
+   "text": "ת. אינסטלציה"
+  },
+  {
+   "sheet": "2a308827",
+   "group": "titleblock",
+   "bbox": [
+    361.0,
+    284.3,
+    378.3,
+    289.0
+   ],
+   "text": "קומה א'"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    267.4,
+    394.8,
+    296.6,
+    399.3
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    270.3,
+    400.3,
+    296.6,
+    403.9
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    286.0,
+    404.9,
+    290.9,
+    408.5
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    235.9,
+    394.1,
+    262.3,
+    399.5
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    219.4,
+    394.6,
+    230.5,
+    399.3
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    219.5,
+    403.0,
+    228.9,
+    406.5
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    198.0,
+    394.8,
+    214.2,
+    399.5
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    192.3,
+    403.0,
+    212.1,
+    406.5
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    166.6,
+    394.8,
+    182.9,
+    398.7
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    171.1,
+    402.8,
+    180.2,
+    406.9
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    166.0,
+    408.4,
+    180.2,
+    411.9
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    167.4,
+    413.4,
+    180.2,
+    416.9
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    240.7,
+    402.9,
+    262.7,
+    406.5
+   ],
+   "text": "ת. מאסטר"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    233.1,
+    408.8,
+    262.7,
+    412.9
+   ],
+   "text": "קומת מרתף+"
+  },
+  {
+   "sheet": "6fa88f92",
+   "group": "titleblock",
+   "bbox": [
+    236.9,
+    413.4,
+    262.7,
+    417.5
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    385.5,
+    271.6,
+    415.2,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    388.4,
+    280.1,
+    415.2,
+    283.7
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    404.1,
+    284.7,
+    409.0,
+    288.3
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    354.0,
+    271.0,
+    380.4,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    322.5,
+    271.4,
+    333.7,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    322.6,
+    279.9,
+    332.0,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    301.1,
+    271.6,
+    317.3,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    295.5,
+    279.9,
+    315.2,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    269.7,
+    271.6,
+    286.0,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    274.2,
+    279.7,
+    283.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    269.1,
+    285.3,
+    283.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    270.5,
+    290.2,
+    283.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    220.5,
+    271.6,
+    252.6,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    358.8,
+    279.8,
+    379.8,
+    283.4
+   ],
+   "text": "ת. הריסה"
+  },
+  {
+   "sheet": "70a5c3e0",
+   "group": "titleblock",
+   "bbox": [
+    354.0,
+    285.2,
+    379.8,
+    289.3
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    385.5,
+    271.6,
+    415.2,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    388.3,
+    277.0,
+    415.1,
+    280.6
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    404.0,
+    281.6,
+    408.9,
+    285.2
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    353.0,
+    271.0,
+    379.4,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    322.5,
+    271.4,
+    333.7,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    322.6,
+    279.9,
+    332.0,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    301.1,
+    271.6,
+    317.3,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    295.5,
+    279.9,
+    315.2,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    269.7,
+    271.6,
+    286.0,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    274.2,
+    279.7,
+    283.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    269.1,
+    285.3,
+    283.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    270.5,
+    290.2,
+    283.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    220.3,
+    271.6,
+    252.3,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    361.4,
+    279.8,
+    378.9,
+    283.4
+   ],
+   "text": "ת. בניה"
+  },
+  {
+   "sheet": "8099ab2c",
+   "group": "titleblock",
+   "bbox": [
+    361.5,
+    285.5,
+    378.9,
+    290.2
+   ],
+   "text": "קומה א'"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    384.0,
+    271.6,
+    413.7,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    386.9,
+    277.1,
+    413.7,
+    280.8
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    402.6,
+    281.8,
+    407.5,
+    285.4
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    352.4,
+    271.0,
+    378.8,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    321.0,
+    271.4,
+    332.2,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    321.2,
+    279.9,
+    330.5,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    299.7,
+    271.6,
+    315.8,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    293.9,
+    279.9,
+    313.7,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    268.2,
+    271.6,
+    284.6,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    272.7,
+    279.7,
+    281.8,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    267.6,
+    285.3,
+    281.8,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    269.0,
+    290.2,
+    281.8,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    223.0,
+    271.6,
+    254.9,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    347.5,
+    279.4,
+    378.3,
+    283.5
+   ],
+   "text": "ת. אינסטלציה"
+  },
+  {
+   "sheet": "8d51ed5a",
+   "group": "titleblock",
+   "bbox": [
+    352.5,
+    284.9,
+    378.3,
+    289.0
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    385.5,
+    271.6,
+    415.2,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    388.3,
+    277.0,
+    415.1,
+    280.6
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    404.0,
+    281.6,
+    408.9,
+    285.2
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    353.0,
+    271.0,
+    379.4,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    322.5,
+    271.4,
+    333.7,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    322.6,
+    279.9,
+    332.0,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    301.1,
+    271.6,
+    317.3,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    295.5,
+    279.9,
+    315.2,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    269.7,
+    271.6,
+    286.0,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    274.2,
+    279.7,
+    283.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    269.1,
+    285.3,
+    283.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    270.5,
+    290.2,
+    283.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    220.3,
+    271.6,
+    252.3,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    361.4,
+    279.8,
+    378.9,
+    283.4
+   ],
+   "text": "ת. בניה"
+  },
+  {
+   "sheet": "ad257a1c",
+   "group": "titleblock",
+   "bbox": [
+    352.8,
+    286.0,
+    378.9,
+    290.2
+   ],
+   "text": "קומת מרתף"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    385.5,
+    271.6,
+    415.2,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    388.4,
+    280.1,
+    415.2,
+    283.7
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    404.1,
+    284.7,
+    409.0,
+    288.3
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    354.0,
+    271.0,
+    380.4,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    322.5,
+    271.4,
+    333.7,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    322.6,
+    279.9,
+    332.0,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    301.1,
+    271.6,
+    317.3,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    295.5,
+    279.9,
+    315.2,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    269.7,
+    271.6,
+    286.0,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    274.2,
+    279.7,
+    283.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    269.1,
+    285.3,
+    283.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    270.5,
+    290.2,
+    283.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    220.5,
+    271.6,
+    252.6,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    358.8,
+    279.8,
+    379.8,
+    283.4
+   ],
+   "text": "ת. הריסה"
+  },
+  {
+   "sheet": "af849ec4",
+   "group": "titleblock",
+   "bbox": [
+    362.5,
+    284.6,
+    379.8,
+    289.3
+   ],
+   "text": "קומה א'"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    387.0,
+    271.6,
+    416.7,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    389.8,
+    276.8,
+    416.6,
+    280.4
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    405.6,
+    281.5,
+    410.5,
+    285.1
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    355.5,
+    271.0,
+    381.8,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    339.2,
+    271.4,
+    350.4,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    339.4,
+    279.9,
+    348.7,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    317.9,
+    271.6,
+    334.0,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    312.2,
+    279.9,
+    331.9,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    289.7,
+    271.6,
+    306.0,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    294.2,
+    279.7,
+    303.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    289.1,
+    285.3,
+    303.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    290.5,
+    290.2,
+    303.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    243.4,
+    271.6,
+    275.5,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    359.8,
+    279.8,
+    381.3,
+    283.4
+   ],
+   "text": "ת. תאורה"
+  },
+  {
+   "sheet": "b2046277",
+   "group": "titleblock",
+   "bbox": [
+    355.5,
+    284.9,
+    381.3,
+    289.0
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    267.4,
+    394.8,
+    296.6,
+    399.3
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    270.3,
+    400.3,
+    296.6,
+    403.9
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    286.0,
+    404.9,
+    290.9,
+    408.5
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    235.9,
+    394.1,
+    262.3,
+    399.5
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    219.4,
+    394.6,
+    230.5,
+    399.3
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    219.5,
+    403.0,
+    228.9,
+    406.5
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    198.0,
+    394.8,
+    214.2,
+    399.5
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    192.3,
+    403.0,
+    212.1,
+    406.5
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    166.6,
+    394.8,
+    182.9,
+    398.7
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    171.1,
+    402.8,
+    180.2,
+    406.9
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    166.0,
+    408.4,
+    180.2,
+    411.9
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    167.4,
+    413.4,
+    180.2,
+    416.9
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    120.4,
+    394.8,
+    152.4,
+    398.7
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    243.0,
+    402.5,
+    262.7,
+    406.6
+   ],
+   "text": "ת. חשמל"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    233.1,
+    408.8,
+    262.7,
+    412.9
+   ],
+   "text": "קומת מרתף+"
+  },
+  {
+   "sheet": "c054fd3a",
+   "group": "titleblock",
+   "bbox": [
+    236.9,
+    413.4,
+    262.7,
+    417.5
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    387.6,
+    271.6,
+    417.2,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    390.4,
+    277.1,
+    417.2,
+    280.8
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    406.2,
+    281.8,
+    411.0,
+    285.4
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    356.0,
+    271.0,
+    382.4,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    339.5,
+    271.4,
+    350.7,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    339.7,
+    279.9,
+    349.0,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    318.2,
+    271.6,
+    334.3,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    312.5,
+    279.9,
+    332.2,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    286.7,
+    271.6,
+    303.1,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    291.2,
+    279.7,
+    300.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    286.2,
+    285.3,
+    300.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    287.6,
+    290.2,
+    300.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    240.6,
+    271.6,
+    272.6,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    363.2,
+    279.4,
+    382.9,
+    283.5
+   ],
+   "text": "ת. חשמל"
+  },
+  {
+   "sheet": "eb8be8a3",
+   "group": "titleblock",
+   "bbox": [
+    357.1,
+    285.7,
+    382.9,
+    289.8
+   ],
+   "text": "קומת קרקע"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    385.5,
+    271.6,
+    415.2,
+    276.2
+   ],
+   "text": "שם הפרויקט:"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    388.4,
+    280.1,
+    415.2,
+    283.7
+   ],
+   "text": "בית משפחת"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    404.1,
+    284.7,
+    409.0,
+    288.3
+   ],
+   "text": "נח"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    354.0,
+    271.0,
+    380.4,
+    276.4
+   ],
+   "text": "שם הגיליון:"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    322.5,
+    271.4,
+    333.7,
+    276.2
+   ],
+   "text": "קנ\"מ:"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    322.6,
+    279.9,
+    332.0,
+    283.4
+   ],
+   "text": "1:50"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    301.1,
+    271.6,
+    317.3,
+    276.4
+   ],
+   "text": "תאריך:"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    295.5,
+    279.9,
+    315.2,
+    283.4
+   ],
+   "text": "22.12.16"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    269.7,
+    271.6,
+    286.0,
+    275.6
+   ],
+   "text": "סטטוס:"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    274.2,
+    279.7,
+    283.3,
+    283.8
+   ],
+   "text": "לעיון"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    269.1,
+    285.3,
+    283.3,
+    288.8
+   ],
+   "text": "לתמחור"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    270.5,
+    290.2,
+    283.3,
+    293.8
+   ],
+   "text": "לביצוע"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    220.5,
+    271.6,
+    252.6,
+    275.6
+   ],
+   "text": "תאור והערות:"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    358.8,
+    279.8,
+    379.8,
+    283.4
+   ],
+   "text": "ת. הריסה"
+  },
+  {
+   "sheet": "f14c7573",
+   "group": "titleblock",
+   "bbox": [
+    353.8,
+    285.2,
+    379.8,
+    289.3
+   ],
+   "text": "קומת מרתף"
+  }
+ ],
+ "note": "Hand transcription by visual inspection of rendered crops. legend_* = legend tables, titleblock = title-block cells.",
+ "titleblock_unmatched": [
+  [
+   "6fa88f92",
+   "תאור והערות:",
+   0.18181818181818177
+  ]
+ ]
+}

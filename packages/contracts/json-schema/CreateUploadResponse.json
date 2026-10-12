@@ -4,29 +4,20 @@
     "CreateUploadResponse": {
       "type": "object",
       "properties": {
-        "uploadId": {
+        "fileId": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "storagePath": {
+          "type": "string"
         },
         "uploadToken": {
           "type": "string",
           "minLength": 16
         },
-        "uploadUrl": {
-          "type": "string",
-          "format": "uri"
-        },
-        "method": {
-          "type": "string",
-          "const": "PUT"
-        },
-        "headers": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        },
-        "storagePath": {
+        "contentType": {
           "type": "string"
         },
         "fileKind": {
@@ -48,12 +39,10 @@
         }
       },
       "required": [
-        "uploadId",
-        "uploadToken",
-        "uploadUrl",
-        "method",
-        "headers",
+        "fileId",
         "storagePath",
+        "uploadToken",
+        "contentType",
         "fileKind",
         "maxBytes",
         "expiresAt"

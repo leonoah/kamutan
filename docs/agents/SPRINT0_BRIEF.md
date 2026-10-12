@@ -14,3 +14,11 @@ Environment limits:
 - Languages: code/identifiers English; user-facing UI strings Hebrew.
 - Every deliverable needs tests that pass locally; report the exact commands you ran and their results.
 - Write a short `NOTES.md` in your directory: what you built, how to run it, known gaps.
+
+---
+## UPDATE 11.10.2026 — PLATFORM MOVED TO FIREBASE (read docs/adr/0008-firebase-platform.md — it overrides Supabase/Railway/Vercel/BullMQ/RLS/PostGIS mentions anywhere)
+- Firebase project id: `kamutan-fba67`; Storage bucket `kamutan-fba67.firebasestorage.app`; region europe-west1; Firestore location eur3.
+- Public web config (not secret) is in `apps/web/.env.firebase` (created by orchestrator). The admin service-account key lives ONLY at /home/claude/kamutan-data/secrets/firebase-sa.json — NEVER copy, print, log or commit it; code must read credentials from GOOGLE_APPLICATION_CREDENTIALS / ADC.
+- Google APIs and the Firebase emulator downloads are BLOCKED from this sandbox. So: unit tests use in-memory fakes; emulator-based tests (rules, integration) must be written so they run in GitHub Actions (`firebase emulators:exec`), and be skipped locally when `FIRESTORE_EMULATOR_HOST` is unset. firebase-tools 13 is installed globally.
+- The repo is now on GitHub: leonoah/kamutan (origin, branch main). Still: do NOT commit/push — orchestrator does.
+- File ownership for the port: `firebase/` (firestore.rules, storage.rules, firestore.indexes.json, rules tests) = DB agent; `firebase.json` + `.firebaserc` + `.github/**` + `infra/**` = DevOps agent; `apps/api` + `packages/contracts` = API agent; `apps/web` = Web agent; `workers/drawing` = Ingest agent.

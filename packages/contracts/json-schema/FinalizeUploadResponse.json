@@ -9,54 +9,21 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid"
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
             },
             "orgId": {
               "type": "string",
-              "format": "uuid"
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
             },
             "projectId": {
               "type": "string",
-              "format": "uuid"
-            },
-            "name": {
-              "type": "string",
               "minLength": 1,
-              "maxLength": 255
-            },
-            "uploadedBy": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "sourceFilePath": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1024
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "sourceSha256": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}$"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
             },
             "fileKind": {
               "type": "string",
@@ -67,6 +34,34 @@
                 "png"
               ]
             },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "storagePath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "uploaded",
+                "splitting",
+                "ready",
+                "failed"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "uploadedBy": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
             "createdAt": {
               "type": "string",
               "format": "date-time"
@@ -76,78 +71,82 @@
             "id",
             "orgId",
             "projectId",
-            "name",
-            "uploadedBy",
-            "sourceFilePath",
-            "sourceSha256",
             "fileKind",
+            "sha256",
+            "storagePath",
+            "status",
+            "uploadedBy",
             "createdAt"
           ],
           "additionalProperties": false
         },
-        "sheetVersion": {
+        "sheet": {
           "type": "object",
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid"
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
             },
-            "orgId": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "sheetId": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "versionNo": {
-              "type": "integer",
-              "exclusiveMinimum": 0
-            },
-            "sourceSha256": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            },
-            "storagePath": {
+            "logicalKey": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 1024
+              "maxLength": 200
             },
-            "pageIndex": {
-              "type": "integer",
-              "minimum": 0
+            "discipline": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 50
+              }
             },
-            "status": {
-              "type": "string",
-              "enum": [
-                "uploaded",
-                "queued",
-                "processing",
-                "ready",
-                "failed"
-              ]
-            },
-            "widthMm": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "exclusiveMinimum": 0
+            "floorRegions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "floor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16
+                  },
+                  "scale": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "polygon": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    }
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ]
+                  }
                 },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "heightMm": {
-              "anyOf": [
-                {
-                  "type": "number",
-                  "exclusiveMinimum": 0
-                },
-                {
-                  "type": "null"
-                }
-              ]
+                "required": [
+                  "floor",
+                  "scale",
+                  "polygon",
+                  "source"
+                ],
+                "additionalProperties": false
+              }
             },
             "scale": {
               "anyOf": [
@@ -160,42 +159,145 @@
                 }
               ]
             },
-            "isRaster": {
-              "type": "boolean"
-            },
-            "pipelineState": {
+            "titleBlock": {
               "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "pending",
-                      "queued",
-                      "running",
-                      "done",
-                      "failed",
-                      "skipped"
-                    ]
-                  },
-                  "stageVersion": {
-                    "type": "string"
-                  },
-                  "updatedAt": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "error": {
-                    "type": "string",
-                    "maxLength": 2000
-                  }
+              "properties": {
+                "sheetTitle": {
+                  "type": "string"
                 },
-                "required": [
-                  "status"
-                ],
-                "additionalProperties": false
-              }
+                "sheetNumber": {
+                  "type": "string"
+                },
+                "discipline": {
+                  "type": "string"
+                },
+                "scaleText": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "currentVersionId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sheetSetId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          },
+          "required": [
+            "id",
+            "logicalKey",
+            "discipline",
+            "floorRegions",
+            "scale",
+            "currentVersionId",
+            "sheetSetId"
+          ],
+          "additionalProperties": false
+        },
+        "sheetVersion": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "sheetId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "versionNo": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "uploaded",
+                "queued",
+                "processing",
+                "ready",
+                "failed"
+              ]
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "pageIndex": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "widthMm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "heightMm": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "artifacts": {
+              "type": "object",
+              "properties": {
+                "primitives": {
+                  "type": "string"
+                },
+                "tiles": {
+                  "type": "string"
+                },
+                "detections": {
+                  "type": "string"
+                },
+                "rooms": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "stats": {
+              "type": "object",
+              "properties": {
+                "detections": {
+                  "type": "integer"
+                },
+                "green": {
+                  "type": "integer"
+                },
+                "yellow": {
+                  "type": "integer"
+                },
+                "red": {
+                  "type": "integer"
+                },
+                "rooms": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "detections",
+                "green",
+                "yellow",
+                "red",
+                "rooms"
+              ],
+              "additionalProperties": false
             },
             "createdAt": {
               "type": "string",
@@ -204,18 +306,12 @@
           },
           "required": [
             "id",
-            "orgId",
             "sheetId",
             "versionNo",
-            "sourceSha256",
-            "storagePath",
-            "pageIndex",
             "status",
-            "widthMm",
-            "heightMm",
-            "scale",
-            "isRaster",
-            "pipelineState",
+            "sha256",
+            "pageIndex",
+            "artifacts",
             "createdAt"
           ],
           "additionalProperties": false
@@ -224,14 +320,15 @@
           "type": "boolean"
         },
         "jobId": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         }
       },
       "required": [
         "sheetSet",
+        "sheet",
         "sheetVersion",
         "deduplicated",
         "jobId"

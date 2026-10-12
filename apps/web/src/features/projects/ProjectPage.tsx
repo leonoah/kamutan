@@ -2,17 +2,14 @@ import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Layers, MapPin, PanelsTopLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Ltr } from "@/components/Ltr";
 import { Dropzone } from "@/features/upload/Dropzone";
-import { formatDate } from "@/lib/format";
-import { useProject, useSheetSets } from "./queries";
+import { useProject, projectPhase } from "./queries";
+import { ProcessingPanel } from "./ProcessingPanel";
 
 export function ProjectPage() {
   const { projectId = "" } = useParams();
   const { t } = useTranslation();
   const project = useProject(projectId);
-  const sets = useSheetSets(projectId);
 
   if (project.isLoading) {
     return (
@@ -55,11 +52,11 @@ export function ProjectPage() {
                 {p.address}
               </span>
             ) : null}
-            <span>{t(`projects.status.${p.status}`)}</span>
-            {p.sheetsCount > 0 ? (
+            <span>{t(`projects.status.${projectPhase(p)}`)}</span>
+            {p.stats && p.stats.sheets > 0 ? (
               <span className="inline-flex items-center gap-1">
                 <Layers className="size-3.5" aria-hidden />
-                {t("projects.sheetsCount", { count: p.sheetsCount })}
+                {t("projects.sheetsCount", { count: p.stats.sheets })}
               </span>
             ) : null}
           </div>
@@ -75,27 +72,7 @@ export function ProjectPage() {
       <h2 className="sr-only">{t("upload.title")}</h2>
       <Dropzone projectId={p.id} />
 
-      <Card className="mt-8">
-        <CardHeader>
-          <CardTitle>{t("project.sheetSets")}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {sets.data && sets.data.length > 0 ? (
-            <ul className="divide-y divide-border">
-              {sets.data.map((s) => (
-                <li key={s.id} className="flex items-center justify-between py-2.5 text-dense">
-                  <span className="text-foreground">{s.name}</span>
-                  <span className="text-muted-foreground">
-                    {t("project.filesCount", { count: s.fileCount })} · <Ltr>{formatDate(s.createdAt)}</Ltr>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-dense text-muted-foreground">{t("project.noSets")}</p>
-          )}
-        </CardContent>
-      </Card>
+      <ProcessingPanel orgId={p.orgId} projectId={p.id} />
     </div>
   );
 }

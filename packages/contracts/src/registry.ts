@@ -1,17 +1,15 @@
 import type { ZodTypeAny } from 'zod';
-import { AccessTokenClaimsSchema } from './auth.js';
+import { IdTokenClaimsSchema } from './auth.js';
+import { BoqLineSchema } from './boq.js';
 import { ApiErrorSchema } from './errors.js';
 import { HealthResponseSchema } from './health.js';
-import { IngestSheetVersionJobSchema } from './jobs.js';
-import { CreateOrgRequestSchema, MeResponseSchema, MembershipSchema, OrgSchema } from './org.js';
-import {
-  CreateProjectRequestSchema,
-  ProjectPageSchema,
-  ProjectSchema,
-  UpdateProjectRequestSchema,
-} from './project.js';
+import { IngestSheetVersionJobSchema, JobSchema } from './jobs.js';
+import { CreateOrgRequestSchema, MeResponseSchema, MemberSchema, MyOrgSchema, OrgSchema } from './org.js';
+import { CreateProjectRequestSchema, ProjectPageSchema, ProjectSchema, UpdateProjectRequestSchema } from './project.js';
+import { CorrectionSchema, ReviewItemSchema } from './review.js';
 import { RoleSchema } from './roles.js';
-import { FileKindSchema, SheetSetSchema, SheetVersionSchema } from './sheets.js';
+import { ShareLinkSchema } from './share.js';
+import { FileKindSchema, SheetSchema, SheetSetSchema, SheetVersionSchema } from './sheets.js';
 import {
   CreateUploadRequestSchema,
   CreateUploadResponseSchema,
@@ -21,14 +19,14 @@ import {
 
 /**
  * Schemas exported as JSON Schema (packages/contracts/json-schema/*.json) for
- * Python codegen (datamodel-code-generator → py-packages/kamutan_contracts).
- * Key = output file name / model name.
+ * Python codegen (datamodel-code-generator -> py-packages/kamutan_contracts).
  */
 export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.freeze({
   Role: RoleSchema,
   FileKind: FileKindSchema,
   Org: OrgSchema,
-  Membership: MembershipSchema,
+  Member: MemberSchema,
+  MyOrg: MyOrgSchema,
   MeResponse: MeResponseSchema,
   CreateOrgRequest: CreateOrgRequestSchema,
   Project: ProjectSchema,
@@ -36,13 +34,19 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   CreateProjectRequest: CreateProjectRequestSchema,
   UpdateProjectRequest: UpdateProjectRequestSchema,
   SheetSet: SheetSetSchema,
+  Sheet: SheetSchema,
   SheetVersion: SheetVersionSchema,
+  Job: JobSchema,
+  ReviewItem: ReviewItemSchema,
+  Correction: CorrectionSchema,
+  BoqLine: BoqLineSchema,
+  ShareLink: ShareLinkSchema,
   CreateUploadRequest: CreateUploadRequestSchema,
   CreateUploadResponse: CreateUploadResponseSchema,
   FinalizeUploadRequest: FinalizeUploadRequestSchema,
   FinalizeUploadResponse: FinalizeUploadResponseSchema,
   IngestSheetVersionJob: IngestSheetVersionJobSchema,
   ApiError: ApiErrorSchema,
-  AccessTokenClaims: AccessTokenClaimsSchema,
+  IdTokenClaims: IdTokenClaimsSchema,
   HealthResponse: HealthResponseSchema,
 });

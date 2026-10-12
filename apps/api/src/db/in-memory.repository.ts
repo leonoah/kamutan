@@ -1,275 +1,358 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import {
-  roleSatisfies,
-  type MyOrg,
+  DEFAULT_ORG_SETTINGS,
+  fsPaths,
+  type Member,
   type Org,
   type Project,
   type Role,
+  type Sheet,
   type SheetSet,
   type SheetVersion,
   type SheetVersionStatus,
 } from '@kamutan/contracts';
-import type { AuthContext } from '../auth/auth-context';
-import { conflict } from '../common/api-exception';
-import {
-  decodeCursor,
-  encodeCursor,
-  type AuditEntry,
-  type NewJob,
-  type NewProject,
-  type NewSheetSetUpload,
-  type ProjectListOptions,
-  type ProjectPatch,
-  type Repository,
-  type RepositoryTx,
-  type SheetSetWithVersion,
-} from './repository';
+import { auditHash } from './audit-chain';
+import type { AuditInput, NewSheetSet, Repository, SheetSetBundle } from './repository';
 
-/** Error mimicking a Postgres RLS violation (SQLSTATE 42501). */
-export class RlsViolation extends Error {
-  readonly code = '42501';
-  constructor(what: string) {
-    super(`new row violates row-level security policy for ${what}`);
-  }
+type Doc = Record<string, unknown>;
+
+/** Firestore-like 20-char auto id. */
+export function autoId(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = randomBytes(20);
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('');
 }
 
-interface Store {
-  orgs: Map<string, Org>;
-  memberships: Map<string, Role>; // key `${orgId}:${userId}`
-  projects: Map<string, Project>;
-  sheetSets: Map<string, SheetSet>;
-  sheetVersions: Map<string, SheetVersion & { sheetSetId: string }>;
-  jobs: Map<string, NewJob & { id: string; createdAt: number }>;
-  audit: (AuditEntry & { actorId: string })[];
-}
-
-const now = () => new Date().toISOString();
+const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d));
 
 /**
- * In-process repository for tests and DB-less local dev (DATA_DRIVER=memory,
- * never in production). Emulates the RLS rules the API depends on: rows of
- * orgs you are not a member of are invisible; writes need editor or admin.
+ * In-process repository with the exact ADR 0008 document paths, for tests and
+ * offline dev (DATA_DRIVER=memory; refused in production). Like the admin SDK
+ * it performs NO authorization — that is the service layer's job.
  */
 export class InMemoryRepository implements Repository {
-  readonly store: Store = {
-    orgs: new Map(),
-    memberships: new Map(),
-    projects: new Map(),
-    sheetSets: new Map(),
-    sheetVersions: new Map(),
-    jobs: new Map(),
-    audit: [],
-  };
-  private seq = 0;
+  /** Full document path → data (timestamps as Date). */
+  readonly docs = new Map<string, Doc>();
   private chain: Promise<unknown> = Promise.resolve();
+  private clock = 0;
 
-  /** Test helper: create an org with members. */
-  seedOrg(org: { id?: string; name: string; slug: string }, members: Record<string, Role> = {}): Org {
-    const o: Org = { id: org.id ?? randomUUID(), name: org.name, slug: org.slug, settings: {}, createdAt: now(), updatedAt: now() };
-    this.store.orgs.set(o.id, o);
-    for (const [userId, role] of Object.entries(members)) this.store.memberships.set(`${o.id}:${userId}`, role);
-    return o;
+  private now(): Date {
+    // Strictly increasing timestamps keep ordering deterministic.
+    this.clock = Math.max(this.clock + 1, Date.now());
+    return new Date(this.clock);
   }
 
-  /** Transactions are serialized and all-or-nothing (snapshot + restore on error). */
-  run<T>(user: AuthContext, fn: (tx: RepositoryTx) => Promise<T>): Promise<T> {
-    const next = this.chain.then(async () => {
-      const snapshot = this.snapshot();
+  /** Serialized, all-or-nothing unit of work (like a Firestore transaction). */
+  private tx<T>(fn: () => T | Promise<T>): Promise<T> {
+    const run = this.chain.then(async () => {
+      const snapshot = new Map(this.docs);
       try {
-        return await fn(new InMemoryTx(this, user.userId));
+        return await fn();
       } catch (err) {
-        this.restore(snapshot);
+        this.docs.clear();
+        for (const [k, v] of snapshot) this.docs.set(k, v);
         throw err;
       }
     });
-    this.chain = next.catch(() => undefined);
-    return next;
+    this.chain = run.catch(() => undefined);
+    return run;
   }
 
-  async ping(): Promise<void> {}
-  async close(): Promise<void> {}
-
-  nextSeq(): number {
-    return ++this.seq;
+  /** Direct children docs of a collection path. */
+  private children(collectionPath: string): Array<[string, Doc]> {
+    const prefix = `${collectionPath}/`;
+    return [...this.docs.entries()].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'));
   }
 
-  private snapshot(): Store {
-    return {
-      orgs: new Map(this.store.orgs),
-      memberships: new Map(this.store.memberships),
-      projects: new Map(this.store.projects),
-      sheetSets: new Map(this.store.sheetSets),
-      sheetVersions: new Map(this.store.sheetVersions),
-      jobs: new Map(this.store.jobs),
-      audit: [...this.store.audit],
-    };
+  private group(collectionId: string): Array<[string, Doc]> {
+    return [...this.docs.entries()].filter(([k]) => k.split('/').at(-2) === collectionId);
   }
 
-  private restore(s: Store): void {
-    Object.assign(this.store, s);
-  }
-}
-
-class InMemoryTx implements RepositoryTx {
-  constructor(
-    private readonly repo: InMemoryRepository,
-    private readonly userId: string,
-  ) {}
-
-  private get s(): Store {
-    return this.repo.store;
+  // --- test helpers ---------------------------------------------------------
+  seedOrg(name: string, members: Record<string, Role> = {}, id = autoId()): Org {
+    const createdAt = this.now();
+    this.docs.set(fsPaths.org(id), { name, settings: { ...DEFAULT_ORG_SETTINGS }, createdAt });
+    for (const [uid, role] of Object.entries(members)) this.docs.set(fsPaths.member(id, uid), { uid, role, createdAt });
+    return { id, name, settings: { ...DEFAULT_ORG_SETTINGS }, createdAt: createdAt.toISOString() };
   }
 
-  private role(orgId: string): Role | null {
-    return this.s.memberships.get(`${orgId}:${this.userId}`) ?? null;
+  setMember(orgId: string, uid: string, role: Role): void {
+    this.docs.set(fsPaths.member(orgId, uid), { uid, role, createdAt: this.now() });
   }
 
-  private canWrite(orgId: string, what: string): void {
-    const r = this.role(orgId);
-    if (!r || !roleSatisfies(r, 'editor')) throw new RlsViolation(what);
+  // --- orgs & members -------------------------------------------------------
+  async getMember(orgId: string, uid: string): Promise<Member | null> {
+    const d = this.docs.get(fsPaths.member(orgId, uid));
+    return d ? toMember(d) : null;
   }
 
-  async listMyOrgs(): Promise<MyOrg[]> {
-    return [...this.s.orgs.values()]
-      .filter((o) => this.role(o.id))
-      .map((o) => ({ ...o, role: this.role(o.id) as Role }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+  async listMembershipsOf(uid: string): Promise<Array<{ orgId: string; role: Role }>> {
+    return this.group('members')
+      .filter(([, d]) => d.uid === uid)
+      .map(([k, d]) => ({ orgId: k.split('/')[1] as string, role: d.role as Role }));
   }
 
   async getOrg(orgId: string): Promise<Org | null> {
-    return this.role(orgId) ? (this.s.orgs.get(orgId) ?? null) : null;
+    const d = this.docs.get(fsPaths.org(orgId));
+    return d ? toOrg(orgId, d) : null;
   }
 
-  async createOrg(name: string, slug: string): Promise<Org> {
-    if ([...this.s.orgs.values()].some((o) => o.slug === slug)) throw conflict('org slug already taken');
-    return this.repo.seedOrg({ name, slug }, { [this.userId]: 'admin' });
+  createOrgWithAdmin(name: string, admin: { uid: string; email?: string }): Promise<Org> {
+    return this.tx(() => {
+      const id = autoId();
+      const createdAt = this.now();
+      const org = { name, settings: { ...DEFAULT_ORG_SETTINGS }, createdAt };
+      this.docs.set(fsPaths.org(id), org);
+      this.docs.set(fsPaths.member(id, admin.uid), {
+        uid: admin.uid,
+        role: 'admin',
+        ...(admin.email ? { email: admin.email } : {}),
+        addedBy: admin.uid,
+        createdAt,
+      });
+      this.appendAuditSync(id, { actorId: admin.uid, entity: 'orgs', entityId: id, action: 'create' });
+      return toOrg(id, org);
+    });
   }
 
-  async getMyRole(orgId: string): Promise<Role | null> {
-    return this.role(orgId);
+  // --- projects -------------------------------------------------------------
+  async findProjectOrgId(projectId: string): Promise<string | null> {
+    const hit = this.group('projects').find(([, d]) => d.projectId === projectId);
+    return hit ? (hit[0].split('/')[1] as string) : null;
   }
 
-  async listProjects(opts: ProjectListOptions): Promise<{ items: Project[]; nextCursor: string | null }> {
-    const cur = opts.cursor ? decodeCursor(opts.cursor) : null;
-    const all = [...this.s.projects.values()]
-      .filter((p) => this.role(p.orgId) && p.status !== ('deleted' as string))
-      .filter((p) => !opts.orgId || p.orgId === opts.orgId)
-      .sort((a, b) => (a.createdAt === b.createdAt ? b.id.localeCompare(a.id) : b.createdAt.localeCompare(a.createdAt)))
-      .filter((p) => !cur || p.createdAt < cur.createdAt || (p.createdAt === cur.createdAt && p.id < cur.id));
-    const items = all.slice(0, opts.limit);
-    const last = items[items.length - 1];
-    return { items, nextCursor: all.length > opts.limit && last ? encodeCursor(last.createdAt, last.id) : null };
+  async getProject(orgId: string, projectId: string): Promise<Project | null> {
+    const d = this.docs.get(fsPaths.project(orgId, projectId));
+    return d ? toProject(projectId, d) : null;
   }
 
-  async getProject(projectId: string): Promise<Project | null> {
-    const p = this.s.projects.get(projectId);
-    return p && this.role(p.orgId) ? p : null;
+  async listProjects(orgId: string, opts: { limit: number; cursor?: string }) {
+    const all = this.children(`orgs/${orgId}/projects`)
+      .map(([k, d]) => toProject(k.split('/').at(-1) as string, d))
+      .sort((a, b) => (a.createdAt === b.createdAt ? b.id.localeCompare(a.id) : b.createdAt.localeCompare(a.createdAt)));
+    let start = 0;
+    if (opts.cursor) {
+      const idx = all.findIndex((p) => p.id === opts.cursor);
+      start = idx >= 0 ? idx + 1 : all.length;
+    }
+    const items = all.slice(start, start + opts.limit);
+    const more = all.length > start + opts.limit;
+    return { items, nextCursor: more && items.length ? (items.at(-1) as Project).id : null };
   }
 
-  async createProject(input: NewProject): Promise<Project> {
-    this.canWrite(input.orgId, 'projects');
-    // Distinct, strictly increasing timestamps keep cursor pagination deterministic.
-    const t = new Date(Date.now() + this.repo.nextSeq()).toISOString();
-    const p: Project = {
-      id: randomUUID(),
-      orgId: input.orgId,
-      name: input.name,
-      address: input.address,
-      status: 'active',
-      createdBy: this.userId,
-      createdAt: t,
-      updatedAt: t,
+  createProject(orgId: string, input: { name: string; address?: string }, actorUid: string): Promise<Project> {
+    return this.tx(() => {
+      if (!this.docs.has(fsPaths.org(orgId))) throw new Error(`org ${orgId} does not exist`);
+      const id = autoId();
+      const doc: Doc = {
+        projectId: id,
+        orgId,
+        name: input.name,
+        ...(input.address ? { address: input.address } : {}),
+        templateId: null,
+        floors: [],
+        status: 'active',
+        createdBy: actorUid,
+        createdAt: this.now(),
+      };
+      this.docs.set(fsPaths.project(orgId, id), doc);
+      this.appendAuditSync(orgId, { actorId: actorUid, entity: 'projects', entityId: id, action: 'create' });
+      return toProject(id, doc);
+    });
+  }
+
+  updateProject(orgId: string, projectId: string, patch: { name?: string; address?: string; status?: Project['status'] }, actorUid: string) {
+    return this.tx(() => {
+      const path = fsPaths.project(orgId, projectId);
+      const d = this.docs.get(path);
+      if (!d) return null;
+      const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+      const next = { ...d, ...clean, updatedAt: this.now() };
+      this.docs.set(path, next);
+      this.appendAuditSync(orgId, { actorId: actorUid, entity: 'projects', entityId: projectId, action: 'update', after: clean });
+      return toProject(projectId, next);
+    });
+  }
+
+  // --- sheet sets -------------------------------------------------------------
+  async findSheetSetBySha(orgId: string, projectId: string, sha256: string): Promise<SheetSetBundle | null> {
+    return this.bundleFor(orgId, projectId, sha256);
+  }
+
+  private bundleFor(orgId: string, projectId: string, setId: string): SheetSetBundle | null {
+    const set = this.docs.get(fsPaths.sheetSet(orgId, projectId, setId));
+    if (!set) return null;
+    const sheetHit = this.children(`orgs/${orgId}/projects/${projectId}/sheets`).find(([, d]) => d.sheetSetId === setId);
+    if (!sheetHit) return null;
+    const sheetId = sheetHit[0].split('/').at(-1) as string;
+    const versionId = sheetHit[1].currentVersionId as string;
+    const version = this.docs.get(fsPaths.version(orgId, projectId, sheetId, versionId));
+    if (!version) return null;
+    return {
+      sheetSet: toSheetSet(orgId, projectId, setId, set),
+      sheet: toSheet(sheetId, sheetHit[1]),
+      sheetVersion: toVersion(sheetId, versionId, version),
+      jobId: set.ingestJobId as string,
     };
-    this.s.projects.set(p.id, p);
-    return p;
   }
 
-  async updateProject(projectId: string, patch: ProjectPatch): Promise<Project | null> {
-    const p = await this.getProject(projectId);
-    if (!p) return null;
-    this.canWrite(p.orgId, 'projects');
-    const next: Project = { ...p, ...stripUndefined(patch), updatedAt: now() };
-    this.s.projects.set(p.id, next);
-    return next;
+  createSheetSetBundle(orgId: string, projectId: string, input: NewSheetSet) {
+    return this.tx(() => {
+      const existing = this.bundleFor(orgId, projectId, input.sha256);
+      if (existing) return { bundle: existing, deduplicated: true };
+      if (!this.docs.has(fsPaths.project(orgId, projectId))) throw new Error('project does not exist');
+      const now = this.now();
+      const setId = input.sha256;
+      const sheetId = autoId();
+      const versionId = autoId();
+      const jobId = autoId();
+      const set: Doc = {
+        fileKind: input.fileKind,
+        sha256: input.sha256,
+        storagePath: input.storagePath,
+        status: 'uploaded',
+        name: input.name,
+        uploadedBy: input.uploadedBy,
+        sizeBytes: input.sizeBytes,
+        ingestJobId: jobId,
+        createdAt: now,
+      };
+      const sheet: Doc = {
+        logicalKey: `upload:${setId.slice(0, 12)}`,
+        discipline: [],
+        floorRegions: [],
+        scale: null,
+        currentVersionId: versionId,
+        sheetSetId: setId,
+      };
+      const version: Doc = { versionNo: 1, status: 'uploaded', sha256: input.sha256, pageIndex: 0, artifacts: {}, createdAt: now };
+      this.docs.set(fsPaths.sheetSet(orgId, projectId, setId), set);
+      this.docs.set(fsPaths.sheet(orgId, projectId, sheetId), sheet);
+      this.docs.set(fsPaths.version(orgId, projectId, sheetId, versionId), version);
+      this.docs.set(fsPaths.job(jobId), {
+        orgId,
+        projectId,
+        versionId,
+        sheetId,
+        sheetSetId: setId,
+        type: input.jobType,
+        status: 'queued',
+        progress: 0,
+        createdAt: now,
+      });
+      this.appendAuditSync(orgId, {
+        actorId: input.uploadedBy,
+        entity: 'sheetSets',
+        entityId: setId,
+        action: 'upload',
+        after: { projectId, fileKind: input.fileKind, sha256: input.sha256, sizeBytes: input.sizeBytes },
+      });
+      return {
+        bundle: {
+          sheetSet: toSheetSet(orgId, projectId, setId, set),
+          sheet: toSheet(sheetId, sheet),
+          sheetVersion: toVersion(sheetId, versionId, version),
+          jobId,
+        },
+        deduplicated: false,
+      };
+    });
   }
 
-  async lockProjectFile(): Promise<void> {
-    // Transactions are already serialized.
+  async setVersionStatus(orgId: string, projectId: string, sheetId: string, versionId: string, status: SheetVersionStatus) {
+    const path = fsPaths.version(orgId, projectId, sheetId, versionId);
+    const d = this.docs.get(path);
+    if (!d) throw new Error('version not found');
+    this.docs.set(path, { ...d, status });
   }
 
-  async findSheetSetBySha(projectId: string, sha256: string): Promise<SheetSetWithVersion | null> {
-    const ss = [...this.s.sheetSets.values()].find(
-      (x) => x.projectId === projectId && x.sourceSha256 === sha256 && this.role(x.orgId),
+  // --- audit --------------------------------------------------------------------
+  appendAudit(orgId: string, event: AuditInput): Promise<void> {
+    return this.tx(() => this.appendAuditSync(orgId, event));
+  }
+
+  private appendAuditSync(orgId: string, event: AuditInput): void {
+    const log = this.children(`orgs/${orgId}/auditLog`).sort(
+      ([, a], [, b]) => (a.at as Date).getTime() - (b.at as Date).getTime(),
     );
-    if (!ss) return null;
-    const sv = [...this.s.sheetVersions.values()].find((v) => v.sheetSetId === ss.id && v.sourceSha256 === sha256);
-    if (!sv) return null;
-    const { sheetSetId: _ignored, ...sheetVersion } = sv;
-    return { sheetSet: ss, sheetVersion };
-  }
-
-  async createSheetSetWithVersion(input: NewSheetSetUpload): Promise<SheetSetWithVersion> {
-    this.canWrite(input.orgId, 'sheet_sets');
-    if (!input.storagePath.startsWith(`${input.orgId}/`)) throw new Error('storage_path outside org prefix');
-    const sheetSet: SheetSet = {
-      id: randomUUID(),
-      orgId: input.orgId,
-      projectId: input.projectId,
-      name: input.name,
-      uploadedBy: this.userId,
-      sourceFilePath: input.storagePath,
-      sourceSha256: input.sha256,
-      fileKind: input.fileKind,
-      createdAt: now(),
+    const prevHash = (log.at(-1)?.[1].hash as string | undefined) ?? null;
+    const at = this.now();
+    const body = {
+      actorId: event.actorId,
+      actorKind: 'user',
+      entity: event.entity,
+      entityId: event.entityId,
+      action: event.action,
+      after: event.after ?? null,
+      at: at.toISOString(),
     };
-    const sheetVersion: SheetVersion = {
-      id: randomUUID(),
-      orgId: input.orgId,
-      sheetId: randomUUID(),
-      versionNo: 1,
-      sourceSha256: input.sha256,
-      storagePath: input.storagePath,
-      pageIndex: 0,
-      status: 'uploaded',
-      widthMm: null,
-      heightMm: null,
-      scale: null,
-      isRaster: false,
-      pipelineState: {},
-      createdAt: now(),
-    };
-    this.s.sheetSets.set(sheetSet.id, sheetSet);
-    this.s.sheetVersions.set(sheetVersion.id, { ...sheetVersion, sheetSetId: sheetSet.id });
-    return { sheetSet, sheetVersion };
+    this.docs.set(fsPaths.auditEvent(orgId, autoId()), { ...body, at, prevHash, hash: auditHash(prevHash, body) });
   }
 
-  async setSheetVersionStatus(sheetVersionId: string, status: SheetVersionStatus): Promise<void> {
-    const sv = this.s.sheetVersions.get(sheetVersionId);
-    if (!sv || !this.role(sv.orgId)) return;
-    this.canWrite(sv.orgId, 'sheet_versions');
-    this.s.sheetVersions.set(sheetVersionId, { ...sv, status });
-  }
-
-  async createJob(input: NewJob): Promise<string> {
-    this.canWrite(input.orgId, 'jobs');
-    const id = randomUUID();
-    this.s.jobs.set(id, { ...input, id, createdAt: this.repo.nextSeq() });
-    return id;
-  }
-
-  async findJobId(sheetVersionId: string, type: string): Promise<string | null> {
-    const jobs = [...this.s.jobs.values()]
-      .filter((j) => j.sheetVersionId === sheetVersionId && j.type === type && this.role(j.orgId))
-      .sort((a, b) => b.createdAt - a.createdAt);
-    return jobs[0]?.id ?? null;
-  }
-
-  async writeAudit(entry: AuditEntry): Promise<void> {
-    if (!this.role(entry.orgId)) throw new RlsViolation('audit_log');
-    this.s.audit.push({ ...entry, actorId: this.userId });
-  }
+  async ping(): Promise<void> {}
 }
 
-function stripUndefined<T extends object>(o: T): Partial<T> {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+function toOrg(id: string, d: Doc): Org {
+  return { id, name: String(d.name), settings: d.settings as Org['settings'], createdAt: iso(d.createdAt) };
 }
+function toMember(d: Doc): Member {
+  return {
+    uid: String(d.uid),
+    role: d.role as Role,
+    ...(d.email ? { email: String(d.email) } : {}),
+    ...(d.addedBy ? { addedBy: String(d.addedBy) } : {}),
+    createdAt: iso(d.createdAt),
+  };
+}
+function toProject(id: string, d: Doc): Project {
+  return {
+    id,
+    orgId: String(d.orgId),
+    name: String(d.name),
+    ...(typeof d.address === 'string' ? { address: d.address } : {}),
+    templateId: (d.templateId as string | null | undefined) ?? null,
+    floors: (d.floors as Project['floors']) ?? [],
+    status: d.status as Project['status'],
+    createdBy: String(d.createdBy),
+    createdAt: iso(d.createdAt),
+  };
+}
+function toSheetSet(orgId: string, projectId: string, id: string, d: Doc): SheetSet {
+  return {
+    id,
+    orgId,
+    projectId,
+    fileKind: d.fileKind as SheetSet['fileKind'],
+    sha256: String(d.sha256),
+    storagePath: String(d.storagePath),
+    status: d.status as SheetSet['status'],
+    ...(typeof d.name === 'string' ? { name: d.name } : {}),
+    uploadedBy: String(d.uploadedBy),
+    createdAt: iso(d.createdAt),
+  };
+}
+function toSheet(id: string, d: Doc): Sheet {
+  return {
+    id,
+    logicalKey: String(d.logicalKey),
+    discipline: (d.discipline as string[]) ?? [],
+    floorRegions: (d.floorRegions as Sheet['floorRegions']) ?? [],
+    scale: (d.scale as number | null) ?? null,
+    currentVersionId: (d.currentVersionId as string | null) ?? null,
+    sheetSetId: String(d.sheetSetId),
+  };
+}
+function toVersion(sheetId: string, id: string, d: Doc): SheetVersion {
+  return {
+    id,
+    sheetId,
+    versionNo: Number(d.versionNo),
+    status: d.status as SheetVersion['status'],
+    sha256: String(d.sha256),
+    pageIndex: Number(d.pageIndex),
+    artifacts: (d.artifacts as SheetVersion['artifacts']) ?? {},
+    createdAt: iso(d.createdAt),
+  };
+}
+
+export const mappers = { toOrg, toMember, toProject, toSheetSet, toSheet, toVersion };

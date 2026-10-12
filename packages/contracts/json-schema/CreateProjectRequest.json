@@ -6,7 +6,9 @@
       "properties": {
         "orgId": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "name": {
           "type": "string",
@@ -14,15 +16,8 @@
           "maxLength": 200
         },
         "address": {
-          "anyOf": [
-            {
-              "type": "string",
-              "maxLength": 500
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "string",
+          "maxLength": 500
         }
       },
       "required": [

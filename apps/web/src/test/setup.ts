@@ -33,6 +33,7 @@ Element.prototype.releasePointerCapture ??= () => {};
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
+  localStorage.clear();
 });
 
 // axe probes canvas for icon-ligature detection; jsdom doesn't implement it.

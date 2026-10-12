@@ -1,125 +1,136 @@
-# @kamutan/api — Sprint 0 notes
+# @kamutan/api — Sprint 0 notes (Firebase, ADR 0008)
 
-NestJS 10 (TypeScript strict, CommonJS build) Core API for Sprint 0: **login → create project → upload & store a file**.
-Contracts (Zod, the source of truth for DTOs and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
+NestJS 10 (TypeScript strict) Core API: **login → create project → upload & store a file**.
+Runs as Cloud Functions 2nd gen `api` (europe-west1) behind the Firebase Hosting rewrite `/api/**`
+(same origin → no CORS needed), and locally via `src/main.ts`. Contracts (Zod, source of truth for DTOs,
+Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
 
-## Endpoints (all under `/v1`, JSON, `Authorization: Bearer <Supabase access token>`)
+## Endpoints (all under `/api/v1`, JSON, `Authorization: Bearer <Firebase ID token>`)
 
 | Method | Path | Min role | Notes |
 | --- | --- | --- | --- |
 | GET | `/health` | public | Liveness. |
-| GET | `/health/ready` | public | DB + queue reachability; 503 when degraded. |
-| GET | `/me` | any user | `userId`, `aal`, orgs with my role. |
+| GET | `/health/ready` | public | Firestore reachability (Pub/Sub check is a no-op); 503 when degraded. |
+| GET | `/me` | any user | `uid`, `mfa`, orgs with my role (collection-group query on `members.uid`). |
 | GET | `/orgs` | any user | My orgs. |
-| POST | `/orgs` | any user | `{name, slug}` → creates org via `app.create_org`; caller becomes admin. 409 on slug clash. |
+| POST | `/orgs` | any user | `{name}` → `orgs/{id}` + `members/{uid}` (admin) + audit, one transaction. |
 | GET | `/orgs/:orgId` | viewer | 404 for non-members. |
-| GET | `/projects?orgId=&limit=&cursor=` | member | Projects of my orgs, newest first, cursor pagination. |
-| POST | `/projects` | editor (of `body.orgId`) | `{orgId, name, address?}`. Audited (`projects/create`). |
-| GET | `/projects/:projectId` | viewer | |
-| PATCH | `/projects/:projectId` | editor | `{name?, address?, status?: active\|archived}`. |
-| POST | `/projects/:projectId/uploads` | editor | `{filename, sizeBytes ≤ 100MB, sha256?}` → signed upload target + `uploadToken` (10 min). Stricter rate limit. |
-| POST | `/projects/:projectId/sheet-sets` | editor | `{uploadToken, name?}` → verify, hash, dedupe, create rows, enqueue ingest. Stricter rate limit. |
-| PUT | `/local-storage/:token` | signed token | **Dev/test only** (`STORAGE_DRIVER=local`): receives the raw bytes. Not mounted with Supabase storage. |
+| GET | `/projects?orgId=&limit=&cursor=` | viewer of `orgId` | `orgId` required; newest first; cursor = last project id. |
+| POST | `/projects` | editor of `body.orgId` | `{orgId, name, address?}`; audited. |
+| GET | `/projects/:projectId` | viewer | Project → org resolved by collection-group query on `projects.projectId`. |
+| PATCH | `/projects/:projectId` | editor | `{name?, address?, status?: active\|archived}`; audited. |
+| POST | `/projects/:projectId/uploads` | editor | `{filename, sizeBytes ≤ 100MB, sha256?}` → `{fileId, storagePath, uploadToken (HMAC, 10 min), contentType, fileKind, maxBytes, expiresAt}`. Stricter rate limit. |
+| POST | `/projects/:projectId/sheet-sets` | editor | `{uploadToken, name?}` → verify + dedupe + docs + publish. Stricter rate limit. |
 
-OpenAPI: `GET /docs` (UI) and `/docs/openapi.json` when `SWAGGER_ENABLED=true` and not production.
-A static copy is generated with `pnpm --filter @kamutan/api openapi` → `apps/api/openapi.json`.
+OpenAPI: `/api/docs` (UI) and `/api/docs/openapi.json` when `SWAGGER_ENABLED=true` and not production; static copy
+`apps/api/openapi.json` (`pnpm --filter @kamutan/api openapi` after build).
 
-Errors always use the contract shape `{"error": {"code", "message", "requestId", "issues?"}}`
-(`ApiErrorSchema`); the UI maps `code` to Hebrew strings. Non-members get **404** (no existence leak), members
-with an insufficient role get **403**, MFA-gated actions return `403 mfa_required` (aal2, SEC-02; no Sprint 0
-endpoint needs it yet, the `RequireRole(..., {requireMfa: true})` option is ready).
+Errors always use `{"error": {"code", "message", "requestId", "issues?"}}` (`ApiErrorSchema`). Non-members → **404**,
+insufficient role → **403**, MFA-gated → `403 mfa_required`.
+
+## Authorization model
+
+- `AuthGuard` (global): `IdTokenVerifier` port; prod = `FirebaseIdTokenVerifier` → `getAuth().verifyIdToken(token, true)`
+  (signature, aud/iss = project, expiry, **revocation / disabled users**). Anonymous sign-ins are rejected. MFA =
+  `firebase.sign_in_second_factor` present. Tests use `test/support/fake-verifier.ts`.
+- `AccessService` (service layer, **mandatory**): reads `orgs/{orgId}/members/{uid}` (Firestore is authoritative,
+  never token claims; cached per request). firebase-admin bypasses Security Rules, so every service method calls
+  `requireRole` / `requireProjectRole` before touching data, and every repository method takes `orgId` and only
+  addresses `orgs/{orgId}/...` (or `jobs/*` with `orgId`). Proven by `test/unit/access-isolation.test.ts`
+  (services called directly, no guards) and the emulator suite.
+- `RolesGuard` + `@RequireRole(minRole, {from: param|body|query|project-param}, {requireMfa})`: early route-level check
+  through the same `AccessService`. Guard order: auth → per-user throttle → roles.
+
+## Firestore / Storage mapping (ADR 0008)
+
+| Data | Path | Written by API |
+| --- | --- | --- |
+| Org | `orgs/{orgId}` `{name, settings{llmEnabled, blockExportOnRed, greenThreshold, ...}, createdAt}` | create org |
+| Member | `orgs/{orgId}/members/{uid}` `{uid, role, email?, addedBy, createdAt}` | create org (admin) |
+| Project | `orgs/{orgId}/projects/{projectId}` `{projectId, orgId, name, address?, templateId, floors[], status, createdBy, createdAt}` | create/update |
+| SheetSet | `.../projects/{pid}/sheetSets/{sha256}` `{fileKind, sha256, storagePath, status, name, uploadedBy, sizeBytes, ingestJobId, createdAt}` | finalize (doc id = sha256 → atomic per-project dedupe) |
+| Sheet | `.../projects/{pid}/sheets/{sheetId}` `{logicalKey: "upload:<sha12>", discipline[], floorRegions[], scale, currentVersionId, sheetSetId}` | finalize (placeholder; the worker splits pages) |
+| SheetVersion | `.../sheets/{sheetId}/versions/{versionId}` `{versionNo:1, status: uploaded→queued, sha256, pageIndex:0, artifacts{}, createdAt}` | finalize |
+| Job | `jobs/{jobId}` `{orgId, projectId, sheetSetId, sheetId, versionId, type:"ingest.sheet_version", status:"queued", progress:0, createdAt}` | finalize |
+| Audit | `orgs/{orgId}/auditLog/{eventId}` `{actorId, actorKind, entity, entityId, action, after, at, prevHash, hash}` | every write above; per-org SHA-256 chain computed in the same transaction |
+| Upload object | Storage `orgs/{orgId}/uploads/{uid}/{fileId}` | client (resumable, storage.rules); deleted by API after finalize |
+| Source object | Storage `orgs/{orgId}/projects/{pid}/sources/{sha256}.{ext}` | API copy (admin SDK), `Content-Disposition: attachment` |
 
 ## Upload flow
 
-1. `POST /projects/:id/uploads` — validates extension (pdf/dwg/dxf/png) and declared size; picks a server-generated
-   path `{orgId}/upload/{uuid}` in the private `drawings` bucket (no user filename in the path, SEC-13); returns a
-   signed upload URL and an HMAC-signed, stateless `uploadToken` (org, project, user, path, sanitized name, kind, exp).
-2. Client `PUT`s the bytes to `uploadUrl` with the returned headers.
-3. `POST /projects/:id/sheet-sets {uploadToken}` — token must match project + user + org; the API streams the object
-   once: sha256, size (aborts > 100MB → 413), and the first 4KB for **magic bytes** (SEC-14): `%PDF-n`, PNG
-   signature + `IHDR`, DWG `AC10xx`, DXF text (`0/SECTION/2/<known section>` after optional `999` comments/BOM) or
-   binary DXF sentinel. Detected kind must equal the extension's kind, else 415 and the object is deleted.
-4. In one RLS transaction (as the user): advisory lock on (project, sha256) → if the same bytes already exist in the
-   project, return the existing set/version/job (`deduplicated: true`, duplicate object deleted); otherwise insert
-   `sheet_sets` + placeholder `sheets` (`logical_key = upload:{sheetSetId}`, the ingest worker splits pages into real
-   sheets) + `sheet_versions` v1 (`status=uploaded`) + `jobs` row (`queued`) + `audit_log` (`app.write_audit`).
-5. After commit: enqueue `ingest.sheet_version` on queue `ingest` with `jobId = jobs.id` (idempotent), then set the
-   version to `queued`. If enqueue fails → 503 and the version stays `uploaded`; retrying finalize re-enqueues.
-
-Job payload (`IngestSheetVersionJobSchema`, ids only per SEC-24):
-`{schemaVersion: 1, sheetVersionId, orgId, projectId, storagePath, sha256, fileKind, traceparent}`.
-
-## Architecture
-
-- `src/auth` — `AuthGuard` (global) verifies Supabase JWTs with `jose`: HS256 (`SUPABASE_JWT_SECRET`) and/or
-  JWKS (RS256/ES256/EdDSA; `JWT_USE_JWKS` / `SUPABASE_JWKS_URL`); audience + issuer checked; **only
-  `role=authenticated` tokens** (anon/service_role keys rejected); alg confusion prevented (HS256 only with a secret,
-  asymmetric only with JWKS). `RolesGuard` (global) + `@RequireRole(minRole, {from: param|body|query|project-param})`
-  reads membership **from the DB through RLS** (authoritative; role changes apply immediately).
-  `UserThrottlerGuard` rate-limits per user (hashed IP for public routes); `@StrictRateLimit()` for uploads.
-  Guard order: auth → throttle → roles.
-- `src/db` — `Repository.run(user, fn)` = one transaction per operation with
-  `set_config('request.jwt.claims', <verified claims>, true)` + `set local role authenticated`, so Supabase RLS applies
-  (SEC-08). `PgRepository` over a tiny `SqlDatabase` port (`PgPoolDatabase` in prod, PGlite adapter in tests).
-  `InMemoryRepository` (emulates the RLS rules we rely on) for e2e tests and DB-less dev (`DATA_DRIVER=memory`).
-- `src/queue` — `IngestQueue` port: `BullMqIngestQueue` (`QUEUE_DRIVER=bullmq`, 3 attempts, exponential backoff
-  10s) or `InMemoryIngestQueue` (`memory`, default; nothing consumes it).
-- `src/uploads/storage` — `ObjectStorage` port: `SupabaseObjectStorage` (REST + service-role key; the only place the
-  key is used) or `LocalObjectStorage` (filesystem + `PUT /v1/local-storage/:token`).
-- Cross-cutting: pino via `nestjs-pino` (JSON; logs only request id, method, path, status, timing, userId/orgId — no
-  headers, bodies, query strings, IPs, filenames or tokens), `X-Request-Id` accepted/minted and echoed, helmet
-  (CSP `default-src 'none'` for the API, HSTS, no-referrer), `Cache-Control: no-store`, exact-match CORS allowlist
-  without credentials, JSON body limit 256kb, Zod validation pipe (`.strict()` schemas reject unknown keys),
-  OpenAPI generated from the Zod contracts. Config is Zod-validated; production refuses memory drivers, local storage,
-  non-TLS Postgres/Redis and wildcard CORS.
+1. `POST .../uploads` — checks editor role, extension (pdf/dwg/dxf/png) and declared size; returns
+   `storagePath = orgs/{orgId}/uploads/{uid}/{fileId}` (no user filename in the path) + signed upload token
+   (org, project, uid, path, sanitized name, kind, exp).
+2. Client uploads the bytes with the Firebase JS SDK (`uploadBytesResumable`, contentType from step 1).
+3. `POST .../sheet-sets` — token must match project + uid + org; streams the object once via admin Storage:
+   sha256, size (> 100MB → 413), first 4KB → magic bytes (`%PDF-n`, PNG + IHDR, DWG `AC10xx`, DXF text/binary) must
+   equal the extension's kind (else 415 + upload deleted). Dedupe by sha256 in the project; otherwise copy to
+   `sources/{sha256}.{ext}`, then one transaction creates sheetSet/sheet/version/job + audit (re-checks dedupe → race
+   safe). Then publish `ingest` (Pub/Sub, payload `IngestSheetVersionJobSchema`, attributes `type, jobId, orgId,
+   schemaVersion`), set version `queued`, delete the upload object. If publishing fails → 503, the upload object is
+   kept and the version stays `uploaded`; retrying finalize re-publishes with the same `jobId` (worker must be
+   idempotent on `jobs/{jobId}`, Pub/Sub is at-least-once).
 
 ## Running
 
 ```bash
-# from repo root
+# repo root
 flock /tmp/kamutan-pnpm.lock pnpm install
-pnpm --filter @kamutan/contracts build          # API consumes the built contracts
-cp apps/api/.env.example apps/api/.env          # fill SUPABASE_JWT_SECRET / UPLOAD_TOKEN_SECRET
-
-# DB-less local dev (no Postgres/Redis/Supabase):
-cd apps/api && set -a && . ./.env && set +a && DATA_DRIVER=memory pnpm dev
-# against local Supabase (supabase start) + Redis: DATA_DRIVER=pg QUEUE_DRIVER=bullmq REDIS_URL=redis://...
-
-pnpm --filter @kamutan/api build && node apps/api/dist/main.js   # production-style start
-pnpm --filter @kamutan/api test        # vitest: unit + e2e + PGlite integration
+pnpm --filter @kamutan/contracts build            # API typecheck/build use the built contracts (turbo does this)
+pnpm --filter @kamutan/api build                  # tsc → esbuild bundle: dist/function.js, dist/main.js
+pnpm --filter @kamutan/api test                   # vitest (unit + e2e); emulator suite skipped without emulators
 pnpm --filter @kamutan/api typecheck
-pnpm --filter @kamutan/contracts gen   # build + JSON Schema → packages/contracts/json-schema/
+pnpm --filter @kamutan/api test:emulator          # CI: firebase emulators:exec (firestore, storage, pubsub)
+
+# offline local run (no Google access)
+cd apps/api && DATA_DRIVER=memory STORAGE_DRIVER=memory QUEUE_DRIVER=memory \
+  UPLOAD_TOKEN_SECRET=$(openssl rand -base64 48) node dist/main.js   # http://localhost:3001/api/v1/health
+# against emulators: set FIRESTORE_EMULATOR_HOST / FIREBASE_AUTH_EMULATOR_HOST / FIREBASE_STORAGE_EMULATOR_HOST /
+# PUBSUB_EMULATOR_HOST and GOOGLE_CLOUD_PROJECT=demo-kamutan; real project: ADC only (never a key file in the repo).
 ```
+
+### Deploying (`firebase deploy --only functions`, source `apps/api`)
+
+- `package.json`: `"main": "dist/function.js"`, `"engines": {"node": "22"}`. `src/function.ts` exports
+  `api = onRequest({region: 'europe-west1', memory: '1GiB', timeoutSeconds: 120, concurrency: 40,
+  secrets: [UPLOAD_TOKEN_SECRET], invoker: 'public'})` and boots Nest once per instance (cached promise).
+- Cloud Build runs `npm install` on `apps/api/package.json`, which cannot resolve pnpm `workspace:` deps. Therefore
+  `@kamutan/contracts` is **not** a package.json dependency: `scripts/build.cjs` compiles with tsc (keeps decorator
+  metadata) and then esbuild-bundles `@kamutan/contracts` into `dist/*.js` (all npm packages stay external; the build
+  fails if the bundle still requires the workspace package). Types resolve via tsconfig `paths` to
+  `packages/contracts/dist/types`; vitest aliases to `packages/contracts/src`; `apps/api/turbo.json` makes
+  build/typecheck/test depend on `@kamutan/contracts#build`.
+- The build must run before deploy (DevOps: `functions.predeploy` → `pnpm --filter @kamutan/api build`), and
+  `functions.ignore` should exclude `src`, `test`, `scripts`, `*.map`, `.env*`, `node_modules`.
+- Runtime SA needs: Firestore user, Storage object admin on the bucket, Pub/Sub publisher on `ingest`,
+  Firebase Auth (verifyIdToken with checkRevoked reads the user record). Secret `UPLOAD_TOKEN_SECRET` in Secret Manager.
 
 ## Tests (`apps/api/test`)
 
-- `unit/guards.test.ts` — JwtVerifier (HS256, JWKS/ES256, expiry, audience, issuer, service_role/anon rejection,
-  alg=none, alg confusion), AuthGuard, RolesGuard (403/404/400, project→org resolution, aal2).
-- `unit/magic-bytes.test.ts` — pdf/png/dwg/dxf(text, binary) positives and look-alike negatives.
-- `unit/filename-token.test.ts` — filename sanitization (paths, bidi override, Hebrew), upload token tamper/expiry,
-  streaming inspect with size limit.
-- `unit/uploads.service.test.ts` — finalize flow, **dedupe** (same project / not across projects), 415 + delete on
-  spoofed content, 409/400 token mismatches, enqueue failure → retry idempotency.
-- `unit/config-openapi.test.ts` — production config guards; OpenAPI paths.
-- `e2e/app.e2e.test.ts` — supertest against the real `AppModule` with fake repository + in-memory queue + local
-  storage: headers, CORS, request ids, auth, orgs, projects (roles, isolation, pagination), full upload flow, rate limit 429.
-- `integration/pg-repository.test.ts` — **production SQL** against PGlite + PostGIS with the real
-  `supabase/migrations` and test stub (read-only), as role `authenticated` → RLS exercised (viewer write denied,
-  outsider invisible, `file_kind` png→`image`, audit row). Skipped automatically if migrations are absent. ~40s.
+- `unit/guards.test.ts` — FirebaseIdTokenVerifier (mocked firebase-admin: `checkRevoked=true`, error mapping,
+  malformed tokens, anonymous rejected, MFA claim), AuthGuard, RolesGuard (403/404/400, project→org, MFA,
+  role change effective immediately).
+- `unit/access-isolation.test.ts` — **cross-org access rejected at service level** (no guards): read, list, create,
+  update, upload, finalize with a foreign token; in-org role checks; malformed ids.
+- `unit/uploads.service.test.ts` — full finalize (paths, docs, job, audit chain, Pub/Sub payload + attributes),
+  dedupe (same project / not across projects), all 4 kinds, 415 + delete, 409/400, publish failure → retry.
+- `unit/magic-bytes.test.ts`, `unit/filename-token.test.ts` — validators, sanitizer, upload token, streaming inspect.
+- `unit/function.test.ts` — the exported Cloud Function handler driven through Express (cached boot, pre-parsed body).
+- `unit/config-openapi.test.ts` — defaults (kamutan-fba67), production guards, OpenAPI paths under `/api/v1`.
+- `e2e/app.e2e.test.ts` — supertest on the real AppModule with fake auth + in-memory Firestore/Storage/PubSub.
+- `integration/firestore.emulator.test.ts` — FirestoreRepository + services on the emulator: org/member/audit,
+  collection-group lookups, cross-org rejection, pagination, concurrent dedupe (transaction), audit hash-chain
+  verification; Storage-emulator finalize; Pub/Sub-emulator publish. **Skipped locally** (no emulator download).
 
 ## Known gaps / follow-ups
 
-- **Quarantine bucket (SEC-13/15):** the DB migration defines a single private bucket `drawings` with `{org_id}/…`
-  names and `sheet_versions.storage_path like org_id || '/%'`; uploads therefore go to `drawings/{orgId}/upload/{uuid}`.
-  The `quarantine → originals` move after ClamAV is Sprint 1 (worker side).
-- Supabase signed upload URLs are valid 2h (not configurable); the 10-minute window is enforced by the upload token.
-  Resumable (TUS) uploads not implemented yet.
-- `sheet_sets.file_kind` uses `image` for PNG in the DB; contracts use `png` and map via `DB_FILE_KIND` / `fileKindFromDb`.
-- Finalize streams the whole object through the API to hash it (≤100MB). Fine for Sprint 0; consider worker-side hashing later.
-- Throttler storage is in-memory (per instance). SEC-42 asks for Redis-backed limits + per-org quotas → Sprint 1.
-- No OpenTelemetry yet: `traceparent` is propagated from the request header or minted.
-- No DELETE project (admin + MFA, soft delete) and no membership/invite endpoints yet.
-- The DB role in `DATABASE_URL` must be able to `SET ROLE authenticated` (Supabase `postgres` can). Don't use the
-  service_role key for API DB access.
-- `org_roles` JWT claim is parsed but not trusted; memberships come from the DB on every guarded request
-  (one extra query per request).
+- Emulator suite has not run yet (blocked here) — first CI run is its real check.
+- Needs a **collection-group field override on `projects.projectId`** (DB agent owns `firestore.indexes.json`;
+  `members.uid` is already there).
+- No package-lock for Cloud Build (`npm install` resolves ranges at deploy time). Recommend CI generating
+  `apps/api/package-lock.json` (`npm install --package-lock-only`) or deploying from `pnpm deploy` output (SEC-44).
+- Throttling is in-memory per function instance; shared store + per-org quotas (SEC-42) are a follow-up.
+- Finalize streams the object through the function (≤100MB, 1GiB memory, 120s timeout). ClamAV scan before the
+  source copy (SEC-15) is Sprint 1 (worker side).
+- No OpenTelemetry yet (`traceparent` propagated or minted). No member/invite, delete-project or share endpoints yet.
+- In Functions the JSON body is parsed by the framework (its own limit), so the 256kb API limit only applies locally.

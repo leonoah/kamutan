@@ -1,129 +1,86 @@
 import type {
   FileKind,
-  MyOrg,
+  Member,
   Org,
   Project,
   ProjectStatus,
   Role,
+  Sheet,
   SheetSet,
   SheetVersion,
   SheetVersionStatus,
 } from '@kamutan/contracts';
-import type { AuthContext } from '../auth/auth-context';
 
 export const REPOSITORY = Symbol('REPOSITORY');
 
-export interface ProjectListOptions {
-  orgId?: string;
-  limit: number;
-  /** Opaque cursor from a previous page. */
-  cursor?: string;
+/**
+ * Data access over Firestore (ADR 0008 layout). firebase-admin bypasses
+ * Security Rules, so this layer does NOT authorize: every tenant method takes
+ * the `orgId` and only ever touches documents under `orgs/{orgId}/...`
+ * (or `jobs/*` with `orgId` set). Callers (services) must have checked the
+ * caller's membership/role via AccessService first.
+ */
+export interface Repository {
+  // --- orgs & members ---------------------------------------------------
+  getMember(orgId: string, uid: string): Promise<Member | null>;
+  /** Collection-group query members where uid == uid. */
+  listMembershipsOf(uid: string): Promise<Array<{ orgId: string; role: Role }>>;
+  getOrg(orgId: string): Promise<Org | null>;
+  /** Creates orgs/{id} + members/{uid}(admin) + audit event atomically. */
+  createOrgWithAdmin(name: string, admin: { uid: string; email?: string }): Promise<Org>;
+
+  // --- projects ---------------------------------------------------------
+  /** Collection-group lookup projects where projectId == id → orgId (ids are unguessable auto ids). */
+  findProjectOrgId(projectId: string): Promise<string | null>;
+  getProject(orgId: string, projectId: string): Promise<Project | null>;
+  listProjects(orgId: string, opts: { limit: number; cursor?: string }): Promise<{ items: Project[]; nextCursor: string | null }>;
+  createProject(orgId: string, input: { name: string; address?: string }, actorUid: string): Promise<Project>;
+  updateProject(
+    orgId: string,
+    projectId: string,
+    patch: { name?: string; address?: string; status?: ProjectStatus },
+    actorUid: string,
+  ): Promise<Project | null>;
+
+  // --- sheet sets / ingest ----------------------------------------------
+  findSheetSetBySha(orgId: string, projectId: string, sha256: string): Promise<SheetSetBundle | null>;
+  /**
+   * In one transaction: if sheetSets/{sha256} exists return it (deduplicated),
+   * else create sheetSet + sheet + version (status `uploaded`) + jobs/{jobId}
+   * (status `queued`) + audit event.
+   */
+  createSheetSetBundle(orgId: string, projectId: string, input: NewSheetSet): Promise<{ bundle: SheetSetBundle; deduplicated: boolean }>;
+  setVersionStatus(orgId: string, projectId: string, sheetId: string, versionId: string, status: SheetVersionStatus): Promise<void>;
+
+  // --- audit ------------------------------------------------------------
+  /** Appends to orgs/{orgId}/auditLog with a per-org hash chain (SEC-35). */
+  appendAudit(orgId: string, event: AuditInput): Promise<void>;
+
+  ping(): Promise<void>;
 }
 
-export interface NewProject {
-  orgId: string;
+export interface NewSheetSet {
   name: string;
-  address: string | null;
-}
-
-export interface ProjectPatch {
-  name?: string;
-  address?: string | null;
-  status?: ProjectStatus;
-}
-
-export interface NewSheetSetUpload {
-  orgId: string;
-  projectId: string;
-  name: string;
-  storagePath: string;
   sha256: string;
   fileKind: FileKind;
+  /** Verified source object: orgs/{orgId}/projects/{projectId}/sources/{sha256}.{ext} */
+  storagePath: string;
+  uploadedBy: string;
+  sizeBytes: number;
+  jobType: string;
 }
 
-export interface SheetSetWithVersion {
+export interface SheetSetBundle {
   sheetSet: SheetSet;
+  sheet: Sheet;
   sheetVersion: SheetVersion;
+  jobId: string;
 }
 
-export interface NewJob {
-  orgId: string;
-  projectId: string;
-  sheetVersionId: string;
-  type: string;
-  inputHash: string;
-}
-
-/**
- * Data access executed **as the end user** (RLS enforced). Every method runs in
- * the transaction opened by `Repository.run`.
- */
-export interface RepositoryTx {
-  listMyOrgs(): Promise<MyOrg[]>;
-  getOrg(orgId: string): Promise<Org | null>;
-  /** Creates an org; the caller becomes its admin (app.create_org). */
-  createOrg(name: string, slug: string): Promise<Org>;
-  /** The caller's role in an org, or null when not a member. */
-  getMyRole(orgId: string): Promise<Role | null>;
-
-  listProjects(opts: ProjectListOptions): Promise<{ items: Project[]; nextCursor: string | null }>;
-  getProject(projectId: string): Promise<Project | null>;
-  createProject(input: NewProject): Promise<Project>;
-  updateProject(projectId: string, patch: ProjectPatch): Promise<Project | null>;
-
-  /**
-   * Serializes concurrent finalizations of the same file in a project
-   * (transaction-scoped advisory lock).
-   */
-  lockProjectFile(projectId: string, sha256: string): Promise<void>;
-  /** An existing upload of the same bytes in the project (dedupe), if any. */
-  findSheetSetBySha(projectId: string, sha256: string): Promise<SheetSetWithVersion | null>;
-  /** Creates sheet_set + placeholder sheet + sheet_version v1 (status `uploaded`). */
-  createSheetSetWithVersion(input: NewSheetSetUpload): Promise<SheetSetWithVersion>;
-  setSheetVersionStatus(sheetVersionId: string, status: SheetVersionStatus): Promise<void>;
-  /** Inserts a `jobs` row (status queued) and returns its id. */
-  createJob(input: NewJob): Promise<string>;
-  /** Latest job id of a type for a sheet version. */
-  findJobId(sheetVersionId: string, type: string): Promise<string | null>;
-
-  /** Append-only audit entry (app.write_audit, SEC-35). Never pass file content or PII. */
-  writeAudit(entry: AuditEntry): Promise<void>;
-}
-
-export interface AuditEntry {
-  orgId: string;
+export interface AuditInput {
+  actorId: string | null;
   entity: string;
-  entityId: string;
+  entityId: string | null;
   action: string;
-  after?: Record<string, unknown>;
-}
-
-export interface Repository {
-  /** Runs `fn` in one DB transaction as `user` (RLS: request.jwt.claims + role authenticated). */
-  run<T>(user: AuthContext, fn: (tx: RepositoryTx) => Promise<T>): Promise<T>;
-  ping(): Promise<void>;
-  close(): Promise<void>;
-}
-
-export function encodeCursor(createdAt: string, id: string): string {
-  return Buffer.from(JSON.stringify([createdAt, id]), 'utf8').toString('base64url');
-}
-
-export function decodeCursor(cursor: string): { createdAt: string; id: string } | null {
-  try {
-    const v: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    if (
-      Array.isArray(v) &&
-      v.length === 2 &&
-      typeof v[0] === 'string' &&
-      typeof v[1] === 'string' &&
-      !Number.isNaN(Date.parse(v[0])) &&
-      /^[0-9a-f-]{36}$/i.test(v[1])
-    ) {
-      return { createdAt: v[0], id: v[1] };
-    }
-  } catch {
-    /* fallthrough */
-  }
-  return null;
+  after?: Record<string, unknown> | null;
 }

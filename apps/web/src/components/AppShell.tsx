@@ -17,12 +17,16 @@ import { useAuthStore } from "@/stores/authStore";
 import { useThemeStore, type ThemePref } from "@/stores/themeStore";
 import { getAuthService } from "@/features/auth/authService";
 import { env } from "@/lib/env";
+import { useCurrentOrg } from "@/features/org/useCurrentOrg";
+import { useOrgStore } from "@/stores/orgStore";
 import { cn } from "@/lib/utils";
 
 export function UserMenu() {
   const { t } = useTranslation();
   const session = useAuthStore((s) => s.session);
   const { pref, setPref } = useThemeStore();
+  const { org, orgs } = useCurrentOrg();
+  const selectOrg = useOrgStore((s) => s.select);
   const initial = (session?.email ?? "?").slice(0, 1).toUpperCase();
   return (
     <DropdownMenu dir="rtl">
@@ -36,10 +40,25 @@ export function UserMenu() {
         <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel>
+        <DropdownMenuLabel className="flex flex-col gap-0.5">
+          {session?.displayName ? <span className="text-dense text-foreground">{session.displayName}</span> : null}
           <bdi dir="ltr">{session?.email}</bdi>
+          {org ? <span className="text-foreground">{org.name}</span> : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {orgs.length > 1 ? (
+          <>
+            <DropdownMenuLabel>{t("org.switch")}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={org?.id ?? ""} onValueChange={(v) => selectOrg(v)}>
+              {orgs.map((o) => (
+                <DropdownMenuRadioItem key={o.id} value={o.id}>
+                  {o.name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuLabel>{t("app.theme")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={pref} onValueChange={(v) => setPref(v as ThemePref)}>
           <DropdownMenuRadioItem value="system">

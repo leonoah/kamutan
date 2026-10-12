@@ -2,6 +2,8 @@ import { createBrowserRouter, Navigate, Outlet, type RouteObject } from "react-r
 import { AppShell } from "@/components/AppShell";
 import { AuthProvider, RequireAuth } from "@/features/auth/AuthProvider";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { CompleteEmailLinkPage } from "@/features/auth/CompleteEmailLinkPage";
+import { RequireOrg } from "@/features/org/RequireOrg";
 import { ProjectsPage } from "@/features/projects/ProjectsPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
 import { ReviewPage } from "@/features/review/ReviewPage";
@@ -16,10 +18,13 @@ export const routes: RouteObject[] = [
     ),
     children: [
       { path: "/login", element: <LoginPage /> },
+      { path: "/auth/complete", element: <CompleteEmailLinkPage /> },
       {
         element: (
           <RequireAuth>
-            <Outlet />
+            <RequireOrg>
+              <Outlet />
+            </RequireOrg>
           </RequireAuth>
         ),
         children: [

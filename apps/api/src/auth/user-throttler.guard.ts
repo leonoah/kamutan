@@ -39,8 +39,8 @@ export class UserThrottlerGuard extends ThrottlerGuard {
   }
 
   protected override async getTracker(req: Record<string, unknown>): Promise<string> {
-    const auth = req.auth as { userId?: string } | undefined;
-    if (auth?.userId) return `u:${auth.userId}`;
+    const auth = req.auth as { uid?: string } | undefined;
+    if (auth?.uid) return `u:${auth.uid}`;
     const ip = typeof req.ip === 'string' ? req.ip : 'unknown';
     // Hash so raw IPs never land in the throttler store.
     return `ip:${createHash('sha256').update(ip).digest('hex').slice(0, 32)}`;

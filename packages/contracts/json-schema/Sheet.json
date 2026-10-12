@@ -1,0 +1,135 @@
+{
+  "$ref": "#/definitions/Sheet",
+  "definitions": {
+    "Sheet": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "logicalKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "discipline": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 50
+          }
+        },
+        "floorRegions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "floor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16
+              },
+              "scale": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "polygon": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                }
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "manual"
+                ]
+              }
+            },
+            "required": [
+              "floor",
+              "scale",
+              "polygon",
+              "source"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "titleBlock": {
+          "type": "object",
+          "properties": {
+            "sheetTitle": {
+              "type": "string"
+            },
+            "sheetNumber": {
+              "type": "string"
+            },
+            "discipline": {
+              "type": "string"
+            },
+            "scaleText": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "currentVersionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sheetSetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "id",
+        "logicalKey",
+        "discipline",
+        "floorRegions",
+        "scale",
+        "currentVersionId",
+        "sheetSetId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/Sheet.json"
+}

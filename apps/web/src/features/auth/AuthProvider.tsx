@@ -1,22 +1,28 @@
 import { useEffect, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
+import { useUploadStore } from "@/features/upload/uploadStore";
 import { getAuthService } from "./authService";
 
-/** Hydrates the auth store from the active AuthService and keeps it in sync. */
+/** Session store is driven by AuthService.onChange (Firebase onAuthStateChanged). */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const setSession = useAuthStore((s) => s.setSession);
+  const qc = useQueryClient();
   useEffect(() => {
-    const svc = getAuthService();
-    let alive = true;
-    void svc.getSession().then((s) => alive && setSession(s));
-    const off = svc.onChange((s) => setSession(s));
-    return () => {
-      alive = false;
-      off();
-    };
-  }, [setSession]);
+    let prevUid: string | null | undefined;
+    return getAuthService().onChange((s) => {
+      const uid = s?.uid ?? null;
+      // User switched or signed out: never leak cached tenant data or in-flight uploads to the next user.
+      if (prevUid !== undefined && prevUid !== uid) {
+        qc.clear();
+        for (const e of useUploadStore.getState().entries) useUploadStore.getState().remove(e.id);
+      }
+      prevUid = uid;
+      setSession(s);
+    });
+  }, [setSession, qc]);
   return <>{children}</>;
 }
 

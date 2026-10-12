@@ -30,7 +30,8 @@ def visual_to_logical(visual: str) -> str:
     n = len(rev)
     while i < n:
         ch = rev[i]
-        if _LTR_CORE.match(ch) or (ch in _LTR_JOIN and i + 1 < n and _LTR_CORE.match(rev[i + 1])):
+        joiner_starts = ch in _LTR_JOIN and i + 1 < n and _LTR_CORE.match(rev[i + 1]) and not (i > 0 and is_hebrew(rev[i - 1]))
+        if _LTR_CORE.match(ch) or joiner_starts:
             j = i
             while j < n and (_LTR_CORE.match(rev[j]) or rev[j] in _LTR_JOIN or rev[j] == " "):
                 # a space only continues the run if more LTR follows

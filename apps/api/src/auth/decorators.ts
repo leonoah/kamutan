@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import type { AuthContext, OrgAccess } from './auth-context';
 
 export const IS_PUBLIC = 'kamutan:isPublic';
-/** Skips authentication (health checks, token-authenticated local uploads). */
+/** Skips authentication (health checks). */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
 
 /** Where RolesGuard finds the org that the route operates on. */
@@ -12,19 +12,22 @@ export type OrgSource =
   | { from: 'param'; key: string }
   | { from: 'body'; key: string }
   | { from: 'query'; key: string }
-  /** Look up the project's org_id (via RLS-scoped repository). */
+  /** Resolve the project's org (collection-group lookup), then check membership. */
   | { from: 'project-param'; key: string };
 
 export interface RoleRequirement {
   minRole: Role;
   org: OrgSource;
-  /** Require MFA (aal2) — admin-level operations (SEC-02). */
+  /** Require an MFA session (firebase.sign_in_second_factor) — admin-level actions (SEC-02). */
   requireMfa?: boolean;
 }
 
 export const ROLE_REQUIREMENT = 'kamutan:roleRequirement';
 
-/** Requires membership of at least `minRole` in the org resolved from `org`. */
+/**
+ * Route-level role check (early 403/404). Services re-check through
+ * AccessService, so a missing decorator can never expose another org's data.
+ */
 export const RequireRole = (minRole: Role, org: OrgSource, opts: { requireMfa?: boolean } = {}) =>
   SetMetadata(ROLE_REQUIREMENT, { minRole, org, requireMfa: opts.requireMfa } satisfies RoleRequirement);
 

@@ -25,7 +25,7 @@ export class AppModule {
       imports: [
         ConfigModule.forRoot(cfg),
         LoggerModule.forRoot(loggerParams(cfg)),
-        // In-memory store; per-instance limits. Redis storage is a Sprint 1 item (see NOTES.md).
+        // In-memory store: per function instance. Shared store + per-org quotas are a follow-up (NOTES.md).
         ThrottlerModule.forRoot([{ name: 'default', ttl: cfg.THROTTLE_TTL_MS, limit: cfg.THROTTLE_LIMIT }]),
         DatabaseModule,
         QueueModule,
@@ -33,7 +33,7 @@ export class AppModule {
         HealthModule,
         OrgsModule,
         ProjectsModule,
-        UploadsModule.forRoot(cfg),
+        UploadsModule,
       ],
       providers: [
         // Order matters: authenticate → rate-limit per user → authorize.

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
-import { useApi } from "@/api/client";
+import { useBackend } from "@/api/client";
+import { useOrgId } from "@/features/org/useCurrentOrg";
 import { useUploadStore } from "@/features/upload/uploadStore";
 import { useCreateProject } from "./queries";
 
@@ -22,7 +23,8 @@ export function CreateProjectDialog({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const api = useApi();
+  const backend = useBackend();
+  const orgId = useOrgId();
   const create = useCreateProject();
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -42,13 +44,13 @@ export function CreateProjectDialog({
     }
     let project;
     try {
-      project = await create.mutateAsync({ name: name.trim(), address: address.trim() || null });
+      project = await create.mutateAsync({ orgId, name: name.trim(), ...(address.trim() ? { address: address.trim() } : {}) });
     } catch {
       setError(t("createProject.errorGeneric"));
       return;
     }
     toast({ title: t("createProject.created", { name: project.name }), tone: "success" });
-    if (pendingFiles?.length) void useUploadStore.getState().addFiles(api, project.id, pendingFiles);
+    if (pendingFiles?.length) void useUploadStore.getState().addFiles(backend, project.id, pendingFiles);
     onOpenChange(false);
     reset();
     navigate(`/projects/${project.id}`);

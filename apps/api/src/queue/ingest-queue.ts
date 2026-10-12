@@ -1,45 +1,38 @@
-import { IngestSheetVersionJobSchema, JOB_TYPES, QUEUE_NAMES, type IngestSheetVersionJob } from '@kamutan/contracts';
-import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import { PubSub, type Topic } from '@google-cloud/pubsub';
+import { IngestSheetVersionJobSchema, JOB_TYPES, type IngestSheetVersionJob } from '@kamutan/contracts';
 
 export const INGEST_QUEUE = Symbol('INGEST_QUEUE');
 
-export interface EnqueuedJob {
-  jobId: string;
-  /** False when a job with the same id already existed (idempotent re-enqueue). */
-  created: boolean;
-}
-
-/** Port for scheduling ingest work. Payload is validated against the contract before enqueue. */
+/** Port for scheduling ingest work. Payload is validated against the contract before publishing. */
 export interface IngestQueue {
-  enqueueIngest(payload: IngestSheetVersionJob, opts: { jobId: string }): Promise<EnqueuedJob>;
+  publish(payload: IngestSheetVersionJob): Promise<{ messageId: string }>;
   ping(): Promise<void>;
   close(): Promise<void>;
 }
 
-export interface InMemoryJob {
-  id: string;
-  name: string;
-  queue: string;
-  payload: IngestSheetVersionJob;
-  enqueuedAt: Date;
+export interface PublishedMessage {
+  messageId: string;
+  topic: string;
+  attributes: Record<string, string>;
+  data: IngestSheetVersionJob;
 }
 
-/** Process-local queue for tests and Redis-less dev. Nothing consumes it. */
-export class InMemoryIngestQueue implements IngestQueue {
-  readonly jobs: InMemoryJob[] = [];
+/** Attributes let the push subscription / worker route and dedupe without parsing data. */
+export function attributesFor(p: IngestSheetVersionJob): Record<string, string> {
+  return { type: JOB_TYPES.ingestSheetVersion, jobId: p.jobId, orgId: p.orgId, schemaVersion: String(p.schemaVersion) };
+}
 
-  async enqueueIngest(payload: IngestSheetVersionJob, opts: { jobId: string }): Promise<EnqueuedJob> {
+/** Process-local queue for tests and offline dev. Nothing consumes it. */
+export class InMemoryIngestQueue implements IngestQueue {
+  readonly messages: PublishedMessage[] = [];
+
+  constructor(private readonly topic = 'ingest') {}
+
+  async publish(payload: IngestSheetVersionJob): Promise<{ messageId: string }> {
     const data = IngestSheetVersionJobSchema.parse(payload);
-    if (this.jobs.some((j) => j.id === opts.jobId)) return { jobId: opts.jobId, created: false };
-    this.jobs.push({
-      id: opts.jobId,
-      name: JOB_TYPES.ingestSheetVersion,
-      queue: QUEUE_NAMES.ingest,
-      payload: data,
-      enqueuedAt: new Date(),
-    });
-    return { jobId: opts.jobId, created: true };
+    const messageId = String(this.messages.length + 1);
+    this.messages.push({ messageId, topic: this.topic, attributes: attributesFor(data), data });
+    return { messageId };
   }
 
   async ping(): Promise<void> {}
@@ -47,42 +40,29 @@ export class InMemoryIngestQueue implements IngestQueue {
 }
 
 /**
- * BullMQ producer for queue `ingest` (consumed by the Python drawing worker via
- * the official `bullmq` Python package). The job id is the `jobs` row id, so
- * re-enqueueing the same job is a no-op (BullMQ dedupes by job id).
+ * Pub/Sub publisher for topic `ingest` (push subscription → Cloud Run worker,
+ * with DLQ; ADR 0008). Delivery is at-least-once: the worker must treat
+ * jobs/{jobId} as the idempotency key. Credentials: ADC; honours PUBSUB_EMULATOR_HOST.
  */
-export class BullMqIngestQueue implements IngestQueue {
-  private readonly connection: IORedis;
-  private readonly queue: Queue;
+export class PubSubIngestQueue implements IngestQueue {
+  private readonly client: PubSub;
+  private readonly topic: Topic;
 
-  constructor(redisUrl: string) {
-    this.connection = new IORedis(redisUrl, { maxRetriesPerRequest: null, enableOfflineQueue: false, lazyConnect: false });
-    this.connection.on('error', () => undefined); // surfaced via ping()/enqueue errors
-    this.queue = new Queue(QUEUE_NAMES.ingest, {
-      connection: this.connection,
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 10_000 },
-        removeOnComplete: { age: 24 * 3600, count: 1000 },
-        removeOnFail: { age: 7 * 24 * 3600 },
-      },
-    });
+  constructor(projectId: string, topicName: string, client?: PubSub) {
+    this.client = client ?? new PubSub({ projectId });
+    this.topic = this.client.topic(topicName, { batching: { maxMessages: 1, maxMilliseconds: 0 } });
   }
 
-  async enqueueIngest(payload: IngestSheetVersionJob, opts: { jobId: string }): Promise<EnqueuedJob> {
+  async publish(payload: IngestSheetVersionJob): Promise<{ messageId: string }> {
     const data = IngestSheetVersionJobSchema.parse(payload);
-    const existing = await this.queue.getJob(opts.jobId);
-    if (existing) return { jobId: opts.jobId, created: false };
-    const job = await this.queue.add(JOB_TYPES.ingestSheetVersion, data, { jobId: opts.jobId });
-    return { jobId: job.id ?? opts.jobId, created: true };
+    const messageId = await this.topic.publishMessage({ json: data, attributes: attributesFor(data) });
+    return { messageId };
   }
 
-  async ping(): Promise<void> {
-    await this.connection.ping();
-  }
+  /** Readiness: the API's SA only needs pubsub.publisher, so we don't call admin APIs here. */
+  async ping(): Promise<void> {}
 
   async close(): Promise<void> {
-    await this.queue.close();
-    await this.connection.quit().catch(() => undefined);
+    await this.client.close();
   }
 }

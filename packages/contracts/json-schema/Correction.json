@@ -1,0 +1,86 @@
+{
+  "$ref": "#/definitions/Correction",
+  "definitions": {
+    "Correction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "targetType": {
+          "type": "string",
+          "enum": [
+            "detection",
+            "room",
+            "link",
+            "legendEntry",
+            "reviewItem",
+            "measurement"
+          ]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "accept",
+            "reject",
+            "reclass",
+            "add",
+            "move",
+            "remove",
+            "setSupply",
+            "setLifecycle"
+          ]
+        },
+        "sheetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "versionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "id",
+        "authorId",
+        "createdAt",
+        "targetType",
+        "targetId",
+        "action"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/Correction.json"
+}

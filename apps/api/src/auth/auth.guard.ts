@@ -1,18 +1,18 @@
-import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Inject, Injectable, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { unauthorized } from '../common/api-exception';
 import { IS_PUBLIC } from './decorators';
-import { InvalidTokenError, JwtVerifier } from './jwt-verifier';
+import { ID_TOKEN_VERIFIER, InvalidTokenError, type IdTokenVerifier } from './id-token-verifier';
 
-/** Global guard: every route requires a valid Supabase Bearer token unless @Public(). */
+/** Global guard: every route requires a valid Firebase ID token unless @Public(). */
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger('AuthGuard');
 
   constructor(
     private readonly reflector: Reflector,
-    private readonly verifier: JwtVerifier,
+    @Inject(ID_TOKEN_VERIFIER) private readonly verifier: IdTokenVerifier,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -31,7 +31,7 @@ export class AuthGuard implements CanActivate {
     } catch (err) {
       if (err instanceof InvalidTokenError) {
         // Reason only (never the token) — feeds SEC-43 alerting.
-        this.logger.warn({ reason: err.reason }, 'rejected access token');
+        this.logger.warn({ reason: err.reason }, 'rejected id token');
         throw unauthorized('invalid or expired token');
       }
       throw err;

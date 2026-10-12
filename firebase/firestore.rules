@@ -1,0 +1,208 @@
+rules_version = '2';
+
+// Kamutan — Cloud Firestore security rules (ADR 0008).
+//
+// Principles
+//  * Tenant = path: every tenant document lives under orgs/{orgId}; membership is
+//    exists(orgs/{orgId}/members/{uid}). A document can never move between orgs.
+//  * Clients READ their org's data; clients WRITE only in three places:
+//      1. projects/*/corrections       create-only (editor/reviewer/admin), immutable
+//      2. projects/*/reviewItems       status/resolution fields only (editor/reviewer/admin)
+//      3. projects/*/boqLines          status transitions only (reviewer/admin)
+//    Everything else is written by the API / worker with firebase-admin (bypasses rules).
+//  * shareLinks (hash only) readable by admin/editor; auditLog readable by admin only.
+//  * External share viewers never touch Firestore (API only).
+//  * Default deny.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------ helpers
+    function signedIn() {
+      return request.auth != null && request.auth.uid is string;
+    }
+    function memberDoc(orgId) {
+      return /databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid);
+    }
+    function isMember(orgId) {
+      return signedIn() && exists(memberDoc(orgId));
+    }
+    function roleIn(orgId, roles) {
+      return isMember(orgId) && get(memberDoc(orgId)).data.role in roles;
+    }
+    function isAdmin(orgId)     { return roleIn(orgId, ['admin']); }
+    function canEditShare(orgId){ return roleIn(orgId, ['admin', 'editor']); }
+    function canCorrect(orgId)  { return roleIn(orgId, ['admin', 'editor', 'reviewer']); }
+    function canApprove(orgId)  { return roleIn(orgId, ['admin', 'reviewer']); }
+
+    function str(v, maxLen) {
+      return v is string && v.size() > 0 && v.size() <= maxLen;
+    }
+    function optStr(data, key, maxLen) {
+      return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= maxLen);
+    }
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function newVal(key) { return request.resource.data.get(key, null); }
+
+    // ------------------------------------------------------------------ default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------------ jobs (top level)
+    // Server/worker-written. Readable only by members of the job's org; list
+    // queries must filter by orgId (where('orgId', '==', X)).
+    match /jobs/{jobId} {
+      allow get, list: if signedIn() && resource.data.orgId is string && isMember(resource.data.orgId);
+      allow write: if false;
+    }
+
+    // "Which orgs am I in?" — collection-group query on members where uid == me.
+    match /{path=**}/members/{memberId} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ------------------------------------------------------------------ orgs
+    match /orgs/{orgId} {
+      allow read: if isMember(orgId);
+      allow write: if false;                       // API only
+
+      match /members/{uid} {
+        allow read: if isMember(orgId);
+        allow write: if false;                     // memberships managed by admin via API
+      }
+
+      match /auditLog/{eventId} {
+        allow read: if isAdmin(orgId);
+        allow write: if false;                     // append-only, server-written (create/update/delete denied)
+      }
+
+      match /itemLibrary/{itemId} {
+        allow read: if isMember(orgId);
+        allow write: if false;
+      }
+      match /boqTemplates/{templateId} {
+        allow read: if isMember(orgId);
+        allow write: if false;
+      }
+      match /symbolMappings/{mappingId} {
+        allow read: if isMember(orgId);
+        allow write: if false;
+      }
+
+      // ---------------------------------------------------------------- projects
+      match /projects/{projectId} {
+        allow read: if isMember(orgId);
+        allow write: if false;                     // create/update via API
+
+        match /sheetSets/{setId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+
+        match /sheets/{sheetId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+
+          match /versions/{versionId} {
+            allow read: if isMember(orgId);
+            allow write: if false;
+          }
+        }
+
+        match /legendEntries/{entryId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+
+        // Share links: token stored as SHA-256 only; created/revoked via API.
+        match /shareLinks/{linkId} {
+          allow read: if canEditShare(orgId);
+          allow write: if false;
+        }
+
+        // -------------------------------------------------------------- corrections
+        // Create-only, author == caller, createdAt == server time, immutable.
+        match /corrections/{correctionId} {
+          allow read: if isMember(orgId);
+          allow create: if canCorrect(orgId) && validCorrection(request.resource.data);
+          allow update, delete: if false;
+
+          function validCorrection(d) {
+            return d.keys().hasAll(['authorId', 'createdAt', 'targetType', 'targetId', 'action'])
+              && d.keys().hasOnly(['authorId', 'createdAt', 'targetType', 'targetId', 'action',
+                                   'sheetId', 'versionId', 'payload', 'note'])
+              && d.authorId == request.auth.uid
+              && d.createdAt == request.time
+              && d.targetType in ['detection', 'room', 'link', 'legendEntry', 'reviewItem', 'measurement']
+              && d.action in ['accept', 'reject', 'reclass', 'add', 'move', 'remove', 'setSupply', 'setLifecycle']
+              && str(d.targetId, 128)
+              && optStr(d, 'sheetId', 128)
+              && optStr(d, 'versionId', 128)
+              && optStr(d, 'note', 2000)
+              && (!('payload' in d) || (d.payload is map && d.payload.size() <= 20));
+          }
+        }
+
+        // -------------------------------------------------------------- reviewItems
+        // Server creates; editor/reviewer/admin may change only status + resolution.
+        match /reviewItems/{itemId} {
+          allow read: if isMember(orgId);
+          allow create, delete: if false;
+          allow update: if canCorrect(orgId) && validReviewUpdate();
+
+          function validReviewUpdate() {
+            return changed().hasOnly(['status', 'resolution', 'resolvedBy', 'resolvedAt'])
+              && newVal('status') in ['open', 'resolved', 'dismissed']
+              && optStr(request.resource.data, 'resolution', 2000)
+              && (
+                   (newVal('status') in ['resolved', 'dismissed']
+                     && newVal('resolvedBy') == request.auth.uid
+                     && newVal('resolvedAt') == request.time)
+                || (newVal('status') == 'open'
+                     && newVal('resolvedBy') == null
+                     && newVal('resolvedAt') == null)
+              );
+          }
+        }
+
+        // -------------------------------------------------------------- boqLines
+        // Server creates/edits content. Clients (reviewer/admin) only move status:
+        //   draft -> reviewed        reviewedBy == uid, reviewedAt == request.time
+        //   reviewed -> approved     approvedBy == uid, approvedAt == request.time
+        //   reviewed -> draft        clears reviewedBy/At
+        //   approved -> reviewed     un-approve: clears approvedBy/At
+        // Approved lines are otherwise immutable. No client create/delete.
+        match /boqLines/{lineId} {
+          allow read: if isMember(orgId);
+          allow create, delete: if false;
+          allow update: if canApprove(orgId) && validNote() && validTransition(resource.data.status, newVal('status'));
+
+          function validNote() {
+            return optStr(request.resource.data, 'note', 2000);
+          }
+          function validTransition(from, to) {
+            return (from == 'draft' && to == 'reviewed'
+                    && changed().hasOnly(['status', 'reviewedBy', 'reviewedAt', 'note'])
+                    && newVal('reviewedBy') == request.auth.uid
+                    && newVal('reviewedAt') == request.time)
+              || (from == 'reviewed' && to == 'approved'
+                    && changed().hasOnly(['status', 'approvedBy', 'approvedAt', 'note'])
+                    && newVal('approvedBy') == request.auth.uid
+                    && newVal('approvedAt') == request.time)
+              || (from == 'reviewed' && to == 'draft'
+                    && changed().hasOnly(['status', 'reviewedBy', 'reviewedAt', 'note'])
+                    && newVal('reviewedBy') == null
+                    && newVal('reviewedAt') == null)
+              || (from == 'approved' && to == 'reviewed'
+                    && changed().hasOnly(['status', 'approvedBy', 'approvedAt', 'note'])
+                    && newVal('approvedBy') == null
+                    && newVal('approvedAt') == null);
+          }
+        }
+      }
+    }
+  }
+}

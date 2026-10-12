@@ -18,13 +18,11 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-import numpy as np
-
 from kamutan_drawing.ingest.pdf_vector import extract_pdf
 from kamutan_drawing.ocr.dictionary import GlyphDictionary, contact_sheet
 from kamutan_drawing.ocr.glyphs import TextLine, extract_text_lines
 from kamutan_drawing.ocr.tess import ocr_text, render_line
-from kamutan_drawing.ocr.textutil import cer_counts, normalize
+from kamutan_drawing.ocr.textutil import cer_counts
 from kamutan_drawing.render.raster import render_region
 
 HERE = Path(__file__).resolve().parent

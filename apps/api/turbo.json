@@ -1,0 +1,9 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": { "dependsOn": ["@kamutan/contracts#build"], "outputs": ["dist/**"] },
+    "typecheck": { "dependsOn": ["@kamutan/contracts#build"] },
+    "test": { "dependsOn": ["@kamutan/contracts#build"] }
+  }
+}

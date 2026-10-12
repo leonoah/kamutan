@@ -8,9 +8,9 @@ import { ApiZodResponse } from '../common/zod-openapi';
 import { REPOSITORY, type Repository } from '../db/repository';
 import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
 
-const VERSION = process.env.APP_VERSION ?? '0.1.0';
+const VERSION = process.env.APP_VERSION ?? '0.2.0';
 
-async function check(fn: () => Promise<void>, timeoutMs = 2000): Promise<'ok' | 'fail'> {
+async function check(fn: () => Promise<void>, timeoutMs = 3000): Promise<'ok' | 'fail'> {
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
@@ -44,7 +44,7 @@ export class HealthController {
     return { status: 'ok', version: VERSION };
   }
 
-  /** Readiness: DB and queue reachable. */
+  /** Readiness: Firestore reachable (queue check is a no-op for Pub/Sub). */
   @Get('ready')
   @ApiZodResponse(200, HealthResponseSchema)
   @ApiZodResponse(503, HealthResponseSchema)

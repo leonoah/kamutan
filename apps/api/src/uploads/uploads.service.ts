@@ -1,23 +1,26 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import {
   JOB_TYPES,
+  KIND_TO_CONTENT_TYPE,
   MAX_UPLOAD_BYTES,
+  storagePaths,
   UPLOAD_TTL_SECONDS,
   type CreateUploadRequest,
   type CreateUploadResponse,
   type FinalizeUploadRequest,
   type FinalizeUploadResponse,
 } from '@kamutan/contracts';
-import type { AuthContext, OrgAccess } from '../auth/auth-context';
+import { AccessService } from '../access/access.service';
+import type { AuthContext } from '../auth/auth-context';
 import { ApiException } from '../common/api-exception';
-import { REPOSITORY, type Repository, type SheetSetWithVersion } from '../db/repository';
+import { autoId } from '../db/in-memory.repository';
+import { REPOSITORY, type Repository } from '../db/repository';
 import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
 import { kindFromFilename, sanitizeFilename } from './filename';
 import { inspectStream, TooLargeError } from './inspect';
 import { detectFileKind } from './magic-bytes';
 import { OBJECT_STORAGE, type ObjectStorage } from './storage/object-storage';
-import { UploadTokenError, UploadTokenSigner } from './upload-token';
+import { UploadTokenError, UploadTokenSigner, type UploadTokenClaims } from './upload-token';
 
 export const UPLOAD_TOKEN_SIGNER = Symbol('UPLOAD_TOKEN_SIGNER');
 
@@ -26,68 +29,59 @@ export class UploadsService {
   private readonly logger = new Logger('UploadsService');
 
   constructor(
+    private readonly access: AccessService,
     @Inject(REPOSITORY) private readonly repo: Repository,
     @Inject(INGEST_QUEUE) private readonly queue: IngestQueue,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(UPLOAD_TOKEN_SIGNER) private readonly signer: UploadTokenSigner,
   ) {}
 
-  /** Step 1: issue a signed, short-lived upload target. No DB rows are written yet. */
-  async createUpload(
-    user: AuthContext,
-    access: OrgAccess,
-    projectId: string,
-    req: CreateUploadRequest,
-  ): Promise<CreateUploadResponse> {
+  /**
+   * Step 1: reserve an upload target. The client uploads directly to Cloud
+   * Storage (resumable) at orgs/{orgId}/uploads/{uid}/{fileId}; storage.rules
+   * allow create-only there for editors of the org. No Firestore writes yet.
+   */
+  async createUpload(user: AuthContext, projectId: string, req: CreateUploadRequest): Promise<CreateUploadResponse> {
+    const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
     const kind = kindFromFilename(req.filename);
     if (!kind) throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, 'unsupported_file_type', 'unsupported file extension');
 
-    const uploadId = randomUUID();
-    const storagePath = `${access.orgId}/upload/${uploadId}`;
-    const expSec = Math.floor(Date.now() / 1000) + UPLOAD_TTL_SECONDS;
-    const signed = await this.storage.createSignedUpload(storagePath, {
-      expiresInSec: UPLOAD_TTL_SECONDS,
-      maxBytes: MAX_UPLOAD_BYTES,
-    });
+    const fileId = autoId();
+    const storagePath = storagePaths.upload(orgId, user.uid, fileId);
+    const exp = Math.floor(Date.now() / 1000) + UPLOAD_TTL_SECONDS;
     const uploadToken = this.signer.sign({
-      v: 1,
-      uid: uploadId,
-      org: access.orgId,
+      v: 2,
+      fid: fileId,
+      org: orgId,
       prj: projectId,
-      usr: user.userId,
+      usr: user.uid,
       path: storagePath,
       name: sanitizeFilename(req.filename, kind),
       kind,
       size: req.sizeBytes,
-      exp: expSec,
+      exp,
     });
     return {
-      uploadId,
-      uploadToken,
-      uploadUrl: signed.url,
-      method: signed.method,
-      headers: signed.headers,
+      fileId,
       storagePath,
+      uploadToken,
+      contentType: KIND_TO_CONTENT_TYPE[kind],
       fileKind: kind,
       maxBytes: MAX_UPLOAD_BYTES,
-      expiresAt: new Date(expSec * 1000).toISOString(),
+      expiresAt: new Date(exp * 1000).toISOString(),
     };
   }
 
   /**
-   * Step 2: verify the uploaded bytes (size, magic bytes vs. extension), hash
-   * them, dedupe by sha256 within the project, create sheet_set/sheet/sheet_version
-   * + jobs rows, and enqueue `ingest.sheet_version`.
+   * Step 2: verify the uploaded object (size, magic bytes vs. extension), hash
+   * it, dedupe by sha256 within the project, copy it to the content-addressed
+   * source path, create sheetSet/sheet/version + jobs/{jobId} + audit, publish
+   * `ingest`, and delete the upload object.
    */
-  async finalize(
-    user: AuthContext,
-    access: OrgAccess,
-    projectId: string,
-    req: FinalizeUploadRequest,
-    traceparent: string,
-  ): Promise<FinalizeUploadResponse> {
+  async finalize(user: AuthContext, projectId: string, req: FinalizeUploadRequest, traceparent: string): Promise<FinalizeUploadResponse> {
+    const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
     const claims = this.verifyToken(req.uploadToken);
-    if (claims.prj !== projectId || claims.usr !== user.userId || claims.org !== access.orgId) {
+    if (claims.prj !== projectId || claims.usr !== user.uid || claims.org !== orgId) {
       throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', 'upload token does not match this project');
     }
 
@@ -108,7 +102,7 @@ export class UploadsService {
     const detected = detectFileKind(inspected.head);
     if (!detected || detected !== claims.kind) {
       await this.discard(claims.path);
-      this.logger.warn({ orgId: access.orgId, projectId, declared: claims.kind, detected }, 'magic-bytes rejection');
+      this.logger.warn({ orgId, projectId, declared: claims.kind, detected }, 'magic-bytes rejection');
       throw new ApiException(
         HttpStatus.UNSUPPORTED_MEDIA_TYPE,
         'unsupported_file_type',
@@ -116,88 +110,62 @@ export class UploadsService {
       );
     }
 
-    const name = req.name ? sanitizeFilename(req.name, detected) : claims.name;
     const sha256 = inspected.sha256;
-
-    const outcome = await this.repo.run(user, async (tx) => {
-      await tx.lockProjectFile(projectId, sha256);
-      const existing = await tx.findSheetSetBySha(projectId, sha256);
-      if (existing) {
-        let jobId = await tx.findJobId(existing.sheetVersion.id, JOB_TYPES.ingestSheetVersion);
-        if (!jobId) {
-          jobId = await tx.createJob({
-            orgId: access.orgId,
-            projectId,
-            sheetVersionId: existing.sheetVersion.id,
-            type: JOB_TYPES.ingestSheetVersion,
-            inputHash: sha256,
-          });
-        }
-        return { ...existing, jobId, deduplicated: true };
-      }
-      const created: SheetSetWithVersion = await tx.createSheetSetWithVersion({
-        orgId: access.orgId,
-        projectId,
-        name,
-        storagePath: claims.path,
-        sha256,
-        fileKind: detected,
+    const existing = await this.repo.findSheetSetBySha(orgId, projectId, sha256);
+    const sourcePath = existing?.sheetSet.storagePath ?? storagePaths.source(orgId, projectId, sha256, detected);
+    if (!existing) {
+      await this.storage.copy(claims.path, sourcePath, {
+        contentType: KIND_TO_CONTENT_TYPE[detected],
+        metadata: { sha256, uploadedBy: user.uid, fileId: claims.fid },
       });
-      const jobId = await tx.createJob({
-        orgId: access.orgId,
-        projectId,
-        sheetVersionId: created.sheetVersion.id,
-        type: JOB_TYPES.ingestSheetVersion,
-        inputHash: sha256,
-      });
-      await tx.writeAudit({
-        orgId: access.orgId,
-        entity: 'sheet_sets',
-        entityId: created.sheetSet.id,
-        action: 'upload',
-        after: { project_id: projectId, file_kind: detected, sha256, size_bytes: inspected.size },
-      });
-      return { ...created, jobId, deduplicated: false };
-    });
-
-    if (outcome.deduplicated && outcome.sheetVersion.storagePath !== claims.path) {
-      await this.discard(claims.path); // identical bytes already stored
     }
 
-    // Enqueue after commit. A version left in `uploaded` (enqueue failed earlier)
-    // is re-enqueued on retry; the job id makes this idempotent.
-    let sheetVersion = outcome.sheetVersion;
+    const { bundle, deduplicated } = existing
+      ? { bundle: existing, deduplicated: true }
+      : await this.repo.createSheetSetBundle(orgId, projectId, {
+          name: req.name ? sanitizeFilename(req.name, detected) : claims.name,
+          sha256,
+          fileKind: detected,
+          storagePath: sourcePath,
+          uploadedBy: user.uid,
+          sizeBytes: inspected.size,
+          jobType: JOB_TYPES.ingestSheetVersion,
+        });
+
+    // Publish after the docs exist. A version left `uploaded` (publish failed
+    // earlier) is re-published on retry with the same jobId (idempotency key).
+    let sheetVersion = bundle.sheetVersion;
     if (sheetVersion.status === 'uploaded') {
       try {
-        await this.queue.enqueueIngest(
-          {
-            schemaVersion: 1,
-            sheetVersionId: sheetVersion.id,
-            orgId: access.orgId,
-            projectId,
-            storagePath: sheetVersion.storagePath,
-            sha256: sheetVersion.sourceSha256,
-            fileKind: outcome.sheetSet.fileKind,
-            traceparent,
-          },
-          { jobId: outcome.jobId },
-        );
+        await this.queue.publish({
+          schemaVersion: 2,
+          type: JOB_TYPES.ingestSheetVersion,
+          jobId: bundle.jobId,
+          orgId,
+          projectId,
+          sheetSetId: bundle.sheetSet.id,
+          sheetId: bundle.sheet.id,
+          versionId: sheetVersion.id,
+          storagePath: bundle.sheetSet.storagePath,
+          sha256: bundle.sheetSet.sha256,
+          fileKind: bundle.sheetSet.fileKind,
+          traceparent,
+        });
       } catch (err) {
-        this.logger.error({ err: (err as Error).message, sheetVersionId: sheetVersion.id }, 'enqueue failed');
+        // Keep the upload object so the client can simply retry finalize.
+        this.logger.error({ err: (err as Error).message, versionId: sheetVersion.id }, 'publish failed');
         throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, 'service_unavailable', 'could not schedule processing; retry');
       }
-      await this.repo.run(user, (tx) => tx.setSheetVersionStatus(sheetVersion.id, 'queued'));
+      await this.repo.setVersionStatus(orgId, projectId, bundle.sheet.id, sheetVersion.id, 'queued');
       sheetVersion = { ...sheetVersion, status: 'queued' };
     }
 
-    this.logger.log(
-      { orgId: access.orgId, projectId, sheetVersionId: sheetVersion.id, fileKind: detected, deduplicated: outcome.deduplicated },
-      'upload finalized',
-    );
-    return { sheetSet: outcome.sheetSet, sheetVersion, deduplicated: outcome.deduplicated, jobId: outcome.jobId };
+    await this.discard(claims.path);
+    this.logger.log({ orgId, projectId, versionId: sheetVersion.id, fileKind: detected, deduplicated }, 'upload finalized');
+    return { sheetSet: bundle.sheetSet, sheet: bundle.sheet, sheetVersion, deduplicated, jobId: bundle.jobId };
   }
 
-  private verifyToken(token: string) {
+  private verifyToken(token: string): UploadTokenClaims {
     try {
       return this.signer.verify(token);
     } catch (err) {
@@ -210,7 +178,7 @@ export class UploadsService {
 
   private async discard(path: string): Promise<void> {
     await this.storage.remove(path).catch((err: unknown) => {
-      this.logger.warn({ err: (err as Error).message }, 'failed to remove rejected object');
+      this.logger.warn({ err: (err as Error).message }, 'failed to remove upload object');
     });
   }
 }

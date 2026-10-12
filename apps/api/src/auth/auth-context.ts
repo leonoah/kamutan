@@ -1,14 +1,15 @@
-import type { AccessTokenClaims, Role } from '@kamutan/contracts';
+import type { IdTokenClaims, Role } from '@kamutan/contracts';
 
 /** Authenticated principal attached to the request by AuthGuard. */
 export interface AuthContext {
-  userId: string;
-  aal: 'aal1' | 'aal2' | null;
-  /** Verified claims; forwarded to Postgres as `request.jwt.claims` for RLS. */
-  claims: AccessTokenClaims;
+  uid: string;
+  email?: string;
+  /** ID token issued after a second-factor sign-in (firebase.sign_in_second_factor). */
+  mfa: boolean;
+  claims: IdTokenClaims;
 }
 
-/** Org access resolved by RolesGuard for the current route. */
+/** Org access resolved by AccessService for the current request. */
 export interface OrgAccess {
   orgId: string;
   role: Role;

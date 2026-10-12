@@ -1,19 +1,24 @@
 import { type INestApplication, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import type { NestExpressApplication } from '@nestjs/platform-express';
+import { ExpressAdapter, type NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
+import type { Express } from 'express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import type { AppConfig } from './config/config';
 
-/** Applies HTTP hardening shared by main.ts and e2e tests. */
+/** All routes live under /api/v1/... (Hosting rewrite `/api/**` → function `api`). */
+export const GLOBAL_PREFIX = 'api';
+
+/** Applies HTTP hardening shared by main.ts, function.ts and e2e tests. */
 export function configureApp(app: NestExpressApplication, cfg: AppConfig): void {
   app.disable('x-powered-by');
-  app.set('trust proxy', 1); // behind Railway's proxy; needed for per-IP throttling
+  app.set('trust proxy', true); // behind Google Front End / Hosting; needed for per-IP throttling
+  // In Cloud Functions the body is already parsed by the functions framework (body-parser skips it then).
   app.useBodyParser('json', { limit: '256kb' });
   const common = {
-    crossOriginResourcePolicy: { policy: 'same-site' as const },
+    crossOriginResourcePolicy: { policy: 'same-origin' as const },
     referrerPolicy: { policy: 'no-referrer' as const },
     hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
   };
@@ -36,24 +41,24 @@ export function configureApp(app: NestExpressApplication, cfg: AppConfig): void 
     },
   });
   app.use((req: { path?: string }, res: unknown, next: () => void) =>
-    (req.path?.startsWith('/docs') ? docsHelmet : apiHelmet)(req as never, res as never, next),
+    (req.path?.startsWith(`/${GLOBAL_PREFIX}/docs`) ? docsHelmet : apiHelmet)(req as never, res as never, next),
   );
   app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
     res.setHeader('Cache-Control', 'no-store');
     next();
   });
-  app.enableCors({
-    origin: (origin, cb) => {
-      // Non-browser clients send no Origin. Browsers must match the allowlist exactly (SEC-41).
-      if (!origin) return cb(null, true);
-      cb(null, cfg.CORS_ORIGINS.includes(origin));
-    },
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['authorization', 'content-type', 'x-request-id', 'traceparent', 'x-upsert'],
-    exposedHeaders: ['x-request-id', 'retry-after'],
-    credentials: false,
-    maxAge: 600,
-  });
+  // Same-origin by default (ADR 0008). CORS only when origins are explicitly allow-listed (e.g. local Vite).
+  if (cfg.CORS_ORIGINS.length > 0) {
+    app.enableCors({
+      origin: (origin, cb) => cb(null, !origin || cfg.CORS_ORIGINS.includes(origin)),
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['authorization', 'content-type', 'x-request-id', 'traceparent'],
+      exposedHeaders: ['x-request-id', 'retry-after'],
+      credentials: false,
+      maxAge: 600,
+    });
+  }
+  app.setGlobalPrefix(GLOBAL_PREFIX);
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.enableShutdownHooks();
 }
@@ -61,22 +66,23 @@ export function configureApp(app: NestExpressApplication, cfg: AppConfig): void 
 export function buildOpenApi(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
     .setTitle('Kamutan API')
-    .setDescription('Core API (Sprint 0: auth, orgs, projects, uploads). Contracts: @kamutan/contracts (Zod).')
-    .setVersion('0.1.0')
-    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
+    .setDescription('Core API (Sprint 0: auth, orgs, projects, uploads). Firebase ID tokens. Contracts: @kamutan/contracts (Zod).')
+    .setVersion('0.2.0')
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'Firebase ID token' })
     .build();
   return SwaggerModule.createDocument(app, config);
 }
 
-export async function createApp(cfg: AppConfig): Promise<NestExpressApplication> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(cfg), {
-    bufferLogs: true,
-    bodyParser: false,
-  });
+/** Creates the Nest app; pass an Express instance to mount it (Cloud Functions). */
+export async function createApp(cfg: AppConfig, server?: Express): Promise<NestExpressApplication> {
+  const opts = { bufferLogs: true, bodyParser: false } as const;
+  const app = server
+    ? await NestFactory.create<NestExpressApplication>(AppModule.forRoot(cfg), new ExpressAdapter(server), opts)
+    : await NestFactory.create<NestExpressApplication>(AppModule.forRoot(cfg), opts);
   app.useLogger(app.get(Logger));
   configureApp(app, cfg);
   if (cfg.SWAGGER_ENABLED && cfg.NODE_ENV !== 'production') {
-    SwaggerModule.setup('docs', app, buildOpenApi(app), { jsonDocumentUrl: 'docs/openapi.json' });
+    SwaggerModule.setup(`${GLOBAL_PREFIX}/docs`, app, buildOpenApi(app), { jsonDocumentUrl: `${GLOBAL_PREFIX}/docs/openapi.json` });
   }
   return app;
 }

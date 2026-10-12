@@ -1,7 +1,6 @@
 /**
- * Writes the OpenAPI document to apps/api/openapi.json without connecting to
- * Postgres/Redis (memory drivers, dummy secrets). Run after `pnpm build`:
- *   node dist/scripts/export-openapi.js [outFile]
+ * Writes the OpenAPI document without touching Google APIs (memory drivers).
+ * Run after build: node dist/scripts/export-openapi.js [outFile]
  */
 import 'reflect-metadata';
 import { writeFileSync } from 'node:fs';
@@ -14,10 +13,7 @@ async function main(): Promise<void> {
     NODE_ENV: 'development',
     DATA_DRIVER: 'memory',
     QUEUE_DRIVER: 'memory',
-    STORAGE_DRIVER: 'supabase',
-    SUPABASE_URL: 'https://example.supabase.co',
-    SUPABASE_SERVICE_ROLE_KEY: 'unused',
-    SUPABASE_JWT_SECRET: 'x'.repeat(32),
+    STORAGE_DRIVER: 'memory',
     UPLOAD_TOKEN_SECRET: 'x'.repeat(32),
     LOG_LEVEL: 'silent',
     SWAGGER_ENABLED: 'false',

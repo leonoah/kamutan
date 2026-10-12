@@ -6,32 +6,19 @@
       "properties": {
         "id": {
           "type": "string",
-          "format": "uuid"
-        },
-        "orgId": {
-          "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "sheetId": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "versionNo": {
           "type": "integer",
           "exclusiveMinimum": 0
-        },
-        "sourceSha256": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "storagePath": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1024
-        },
-        "pageIndex": {
-          "type": "integer",
-          "minimum": 0
         },
         "status": {
           "type": "string",
@@ -43,75 +30,67 @@
             "failed"
           ]
         },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
         "widthMm": {
-          "anyOf": [
-            {
-              "type": "number",
-              "exclusiveMinimum": 0
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "number",
+          "exclusiveMinimum": 0
         },
         "heightMm": {
-          "anyOf": [
-            {
-              "type": "number",
-              "exclusiveMinimum": 0
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "number",
+          "exclusiveMinimum": 0
         },
-        "scale": {
-          "anyOf": [
-            {
-              "type": "number",
-              "exclusiveMinimum": 0
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "isRaster": {
-          "type": "boolean"
-        },
-        "pipelineState": {
+        "artifacts": {
           "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "properties": {
-              "status": {
-                "type": "string",
-                "enum": [
-                  "pending",
-                  "queued",
-                  "running",
-                  "done",
-                  "failed",
-                  "skipped"
-                ]
-              },
-              "stageVersion": {
-                "type": "string"
-              },
-              "updatedAt": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "error": {
-                "type": "string",
-                "maxLength": 2000
-              }
+          "properties": {
+            "primitives": {
+              "type": "string"
             },
-            "required": [
-              "status"
-            ],
-            "additionalProperties": false
-          }
+            "tiles": {
+              "type": "string"
+            },
+            "detections": {
+              "type": "string"
+            },
+            "rooms": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "detections": {
+              "type": "integer"
+            },
+            "green": {
+              "type": "integer"
+            },
+            "yellow": {
+              "type": "integer"
+            },
+            "red": {
+              "type": "integer"
+            },
+            "rooms": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "detections",
+            "green",
+            "yellow",
+            "red",
+            "rooms"
+          ],
+          "additionalProperties": false
         },
         "createdAt": {
           "type": "string",
@@ -120,18 +99,12 @@
       },
       "required": [
         "id",
-        "orgId",
         "sheetId",
         "versionNo",
-        "sourceSha256",
-        "storagePath",
-        "pageIndex",
         "status",
-        "widthMm",
-        "heightMm",
-        "scale",
-        "isRaster",
-        "pipelineState",
+        "sha256",
+        "pageIndex",
+        "artifacts",
         "createdAt"
       ],
       "additionalProperties": false

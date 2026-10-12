@@ -10,15 +10,8 @@
           "maxLength": 200
         },
         "address": {
-          "anyOf": [
-            {
-              "type": "string",
-              "maxLength": 500
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "string",
+          "maxLength": 500
         },
         "status": {
           "type": "string",
