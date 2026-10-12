@@ -15,8 +15,9 @@ gating metrics.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 from .data import Feature, Project, class_domain, load_classes, unit_kind
 from .matching import MatchParams, match
@@ -47,6 +48,7 @@ class EvalConfig:
 
 
 # ----------------------------------------------------------------------------- helpers
+
 
 def prf(tp: int, fp: int, fn: int) -> dict[str, Any]:
     p = tp / (tp + fp) if tp + fp else None
@@ -113,6 +115,7 @@ def eligible_truth_line(line: dict[str, Any], cfg: EvalConfig) -> bool:
 
 # ----------------------------------------------------------------------------- core
 
+
 @dataclass
 class ItemRecord:
     project_id: str
@@ -158,8 +161,11 @@ def _excluded_gt_ids(truth: Project, disputed: set[str]) -> set[str]:
 
 
 def _evaluate_project(truth: Project, pred: Project, cfg: EvalConfig, acc: _Acc, classes: dict) -> None:
-    pid = (truth.boq or {}).get("project_id") or next(
-        (s.meta.get("project_id") for s in truth.sheets.values()), str(truth.root))
+    pid: str = str(
+        (truth.boq or {}).get("project_id")
+        or next((s.meta.get("project_id") for s in truth.sheets.values() if s.meta.get("project_id")), None)
+        or truth.root
+    )
     disputed = truth.open_dispute_codes() if cfg.exclude_disputed else set()
     acc.excluded["disputed_codes"][pid] = sorted(disputed)
     excl_gt = _excluded_gt_ids(truth, disputed)
@@ -225,11 +231,23 @@ def _evaluate_project(truth: Project, pred: Project, cfg: EvalConfig, acc: _Acc,
                             reasons.append("quantity")
                     if g.cls == "room" and g.geom_type == "Polygon" and p.geom_type == "Polygon":
                         acc.room_ious.append(polygon_iou(g, p))
-            acc.items.append(ItemRecord(
-                project_id=pid, sheet_id=sid, pred_id=p.id, cls=p.cls,
-                domain=p.get("domain") or class_domain(p.cls, classes), correct=not reasons, reasons=reasons,
-                confidence=p.get("confidence"), level=p.get("level"), input_type=input_type,
-                scale_conflict=scale_conflict, kind=p.kind, room_correct=room_ok))
+            acc.items.append(
+                ItemRecord(
+                    project_id=pid,
+                    sheet_id=sid,
+                    pred_id=p.id,
+                    cls=p.cls,
+                    domain=p.get("domain") or class_domain(p.cls, classes),
+                    correct=not reasons,
+                    reasons=reasons,
+                    confidence=p.get("confidence"),
+                    level=p.get("level"),
+                    input_type=input_type,
+                    scale_conflict=scale_conflict,
+                    kind=p.kind,
+                    room_correct=room_ok,
+                )
+            )
         for i in mi.unmatched_gt:
             acc.fn_items.append((pid, sid, gts[i].id))
 
@@ -269,11 +287,19 @@ def _evaluate_project(truth: Project, pred: Project, cfg: EvalConfig, acc: _Acc,
         qh = float(pl["quantity"]) if pl is not None else None
         kind = unit_kind(ln.get("unit", ""))
         ae = abs((qh or 0.0) - q)
-        res: dict[str, Any] = {"project_id": pid, "code": code, "unit": ln.get("unit"), "kind": kind,
-                               "quantity": q, "predicted": qh, "proposed": pl is not None, "ae": ae}
+        res: dict[str, Any] = {
+            "project_id": pid,
+            "code": code,
+            "unit": ln.get("unit"),
+            "kind": kind,
+            "quantity": q,
+            "predicted": qh,
+            "proposed": pl is not None,
+            "ae": ae,
+        }
         if kind == "count" or kind == "other":
             res["pe"] = ae / max(q, 1.0)
-            res["correct"] = pl is not None and abs(qh - q) < EPS
+            res["correct"] = qh is not None and abs(qh - q) < EPS
         elif kind in ("area", "length"):
             pe = ae / q if q > 0 else (0.0 if ae < EPS else float("inf"))
             res["pe"] = pe
@@ -281,20 +307,27 @@ def _evaluate_project(truth: Project, pred: Project, cfg: EvalConfig, acc: _Acc,
             res["correct"] = pl is not None and pe <= res["tolerance_pe"] + EPS
         else:  # lump sum: correct if proposed with the GT quantity (normally 1.0)
             res["pe"] = ae / max(q, 1.0)
-            res["correct"] = pl is not None and abs(qh - q) < EPS
+            res["correct"] = qh is not None and abs(qh - q) < EPS
         acc.line_results.append(res)
     for code, pl in pred_lines.items():
         if code not in truth_codes and code not in disputed:
             acc.extra_lines.append({"project_id": pid, "code": code, "quantity": pl.get("quantity")})
-    acc.dataset.append({"project_id": pid, "n_sheets": len(sheet_ids), "n_gt_items": n_gt_items,
-                        "gt_version": (truth.boq or {}).get("gt_version")})
+    acc.dataset.append(
+        {
+            "project_id": pid,
+            "n_sheets": len(sheet_ids),
+            "n_gt_items": n_gt_items,
+            "gt_version": (truth.boq or {}).get("gt_version"),
+        }
+    )
 
 
 def polygon_iou(a: Feature, b: Feature) -> float:
     from shapely.geometry import Polygon
 
     pa, pb = Polygon(a.coords[0], a.coords[1:]), Polygon(b.coords[0], b.coords[1:])
-    if not pa.is_valid or not pb.is_valid:
+    # Shapely `is_valid` is a property, not a method (semgrep false positive).
+    if not pa.is_valid or not pb.is_valid:  # nosemgrep
         pa, pb = pa.buffer(0), pb.buffer(0)
     union = pa.union(pb).area
     return float(pa.intersection(pb).area / union) if union > 0 else 0.0
@@ -302,9 +335,10 @@ def polygon_iou(a: Feature, b: Feature) -> float:
 
 # ----------------------------------------------------------------------------- aggregation
 
+
 def _detection_summary(acc: _Acc, cfg: EvalConfig, classes: dict) -> dict[str, Any]:
     per_class = {c: prf(v["tp"], v["fp"], v["fn"]) for c, v in sorted(acc.class_counts.items())}
-    tot = Counter()
+    tot: Counter[str] = Counter()
     by_domain: dict[str, Counter] = defaultdict(Counter)
     for c, v in acc.class_counts.items():
         tot.update(v)
@@ -343,8 +377,12 @@ def _boq_summary(acc: _Acc) -> dict[str, Any]:
             "median_pe": percentile([r["pe"] for r in qty_lines], 50),
             "n_within_tolerance": sum(1 for r in qty_lines if r["correct"]),
         },
-        "exact_match": {"rate": n_ok / len(lines) if lines else None, "n_correct": n_ok, "n_lines": len(lines),
-                        "n_not_proposed": sum(1 for r in lines if not r["proposed"])},
+        "exact_match": {
+            "rate": n_ok / len(lines) if lines else None,
+            "n_correct": n_ok,
+            "n_lines": len(lines),
+            "n_not_proposed": sum(1 for r in lines if not r["proposed"]),
+        },
         "extra_lines": acc.extra_lines,
         "lines": lines,
     }
@@ -360,25 +398,38 @@ def _items_summary(acc: _Acc) -> dict[str, Any]:
     return {
         "rate": n_ok / denom if denom else None,
         "wilson_lb95": wilson_lower(n_ok, denom) if denom else None,
-        "n_correct": n_ok, "n_predicted": n_pred, "n_fn": n_fn, "denominator": denom,
+        "n_correct": n_ok,
+        "n_predicted": n_pred,
+        "n_fn": n_fn,
+        "denominator": denom,
         "error_reasons": dict(sorted(reasons.items())),
         "room_accuracy_measured_not_gated": (sum(room) / len(room)) if room else None,
-        "room_iou": {"n": len(acc.room_ious), "mean": (sum(acc.room_ious) / len(acc.room_ious)) if acc.room_ious else None,
-                     "frac_ge_0_95": (sum(1 for v in acc.room_ious if v >= 0.95) / len(acc.room_ious)) if acc.room_ious else None},
+        "room_iou": {
+            "n": len(acc.room_ious),
+            "mean": (sum(acc.room_ious) / len(acc.room_ious)) if acc.room_ious else None,
+            "frac_ge_0_95": (sum(1 for v in acc.room_ious if v >= 0.95) / len(acc.room_ious)) if acc.room_ious else None,
+        },
     }
+
+
+def _conf(it: ItemRecord) -> float:
+    """Confidence of an item already filtered to ``confidence is not None``."""
+    if it.confidence is None:
+        raise ValueError(f"item {it.pred_id} has no confidence")
+    return it.confidence
 
 
 def _calibration_summary(acc: _Acc, cfg: EvalConfig, classes: dict) -> dict[str, Any]:
     scored = [it for it in acc.items if it.confidence is not None]
-    rel = reliability([it.confidence for it in scored], [it.correct for it in scored], cfg.n_bins)
+    rel = reliability([_conf(it) for it in scored], [it.correct for it in scored], cfg.n_bins)
     per_level = {}
     for lvl in ("green", "yellow", "red"):
         sub = [it for it in scored if it.level == lvl]
-        per_level[lvl] = reliability([it.confidence for it in sub], [it.correct for it in sub], cfg.n_bins)
+        per_level[lvl] = reliability([_conf(it) for it in sub], [it.correct for it in sub], cfg.n_bins)
     per_domain = {}
     for dom in sorted({it.domain for it in scored}):
         sub = [it for it in scored if it.domain == dom]
-        per_domain[dom] = reliability([it.confidence for it in sub], [it.correct for it in sub], cfg.n_bins)
+        per_domain[dom] = reliability([_conf(it) for it in sub], [it.correct for it in sub], cfg.n_bins)
 
     greens = [it for it in acc.items if it.level == "green"]
     k = sum(1 for it in greens if it.correct)
@@ -390,17 +441,23 @@ def _calibration_summary(acc: _Acc, cfg: EvalConfig, classes: dict) -> dict[str,
         sub = [it for it in greens if it.domain == dom]
         kd = sum(1 for it in sub if it.correct)
         lbd = wilson_lower(kd, len(sub))
-        green_by_domain[dom] = {"n": len(sub), "correct": kd, "p": kd / len(sub), "wilson_lb95": lbd,
-                                "checked": len(sub) >= cfg.domain_green_min_n,
-                                "pass": (lbd is not None and lbd >= cfg.domain_green_lb) if len(sub) >= cfg.domain_green_min_n else None}
+        green_by_domain[dom] = {
+            "n": len(sub),
+            "correct": kd,
+            "p": kd / len(sub),
+            "wilson_lb95": lbd,
+            "checked": len(sub) >= cfg.domain_green_min_n,
+            "pass": (lbd is not None and lbd >= cfg.domain_green_lb) if len(sub) >= cfg.domain_green_min_n else None,
+        }
 
     # class green eligibility (conservative calibration, stages A/B): green allowed only for
     # classes with >= class_green_min_items predicted items and precision == 1.0
     per_class_items: dict[str, list[ItemRecord]] = defaultdict(list)
     for it in acc.items:
         per_class_items[it.cls].append(it)
-    eligible = sorted(c for c, its in per_class_items.items()
-                      if len(its) >= cfg.class_green_min_items and all(i.correct for i in its))
+    eligible = sorted(
+        c for c, its in per_class_items.items() if len(its) >= cfg.class_green_min_items and all(i.correct for i in its)
+    )
     ineligible_green = sorted({it.cls for it in greens if it.cls not in eligible})
 
     violations = []
@@ -414,12 +471,17 @@ def _calibration_summary(acc: _Acc, cfg: EvalConfig, classes: dict) -> dict[str,
     return {
         "n_scored": len(scored),
         "reliability": rel,
-        "ece": rel["ece"], "mce": rel["mce"], "brier": rel["brier"],
+        "ece": rel["ece"],
+        "mce": rel["mce"],
+        "brier": rel["brier"],
         "per_level": per_level,
         "per_domain": per_domain,
         "green": {
-            "n": n, "correct": k, "p_green": (k / n) if n else None,
-            "wilson_lb95": lb, "wilson_ub95": wilson_upper(k, n) if n else None,
+            "n": n,
+            "correct": k,
+            "p_green": (k / n) if n else None,
+            "wilson_lb95": lb,
+            "wilson_ub95": wilson_upper(k, n) if n else None,
             "target": cfg.green_target,
             "min_n_at_zero_errors": n_req0,
             "sufficient_sample": sample_ok,
@@ -441,12 +503,13 @@ def _burden_summary(acc: _Acc) -> dict[str, Any]:
     scored = [it for it in acc.items if it.confidence is not None]
     return {
         "burden": len(yr) / n if n else None,
-        "n_items": n, "n_yellow": sum(1 for it in leveled if it.level == "yellow"),
+        "n_items": n,
+        "n_yellow": sum(1 for it in leveled if it.level == "yellow"),
         "n_red": sum(1 for it in leveled if it.level == "red"),
         "n_green": sum(1 for it in leveled if it.level == "green"),
         "yield_of_review": len(errors_in_yr) / len(errors) if errors else None,
         "n_errors": len(errors),
-        "risk_auc": auc([1.0 - it.confidence for it in scored], [not it.correct for it in scored]),
+        "risk_auc": auc([1.0 - _conf(it) for it in scored], [not it.correct for it in scored]),
     }
 
 

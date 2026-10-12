@@ -28,7 +28,27 @@ build-backend = "uv_build"
 dev = [
     "hypothesis>=6.169.0",
     "pytest>=9.1.1",
+    "scipy-stubs>=1.18.1.1",
+    "types-jsonschema>=4.26.0.20261006",
+    "types-shapely>=2.1.0.20260728",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py313"
+
+[tool.ruff.lint.flake8-bugbear]
+# Frozen dataclass: safe to use as a default argument.
+extend-immutable-calls = ["kbench.matching.MatchParams"]
+
+[tool.mypy]
+python_version = "3.13"
+
+[[tool.mypy.overrides]]
+# No type information published for these (no py.typed, no maintained stubs package);
+# scipy, jsonschema and shapely are covered by stub packages in the dev group.
+module = ["pypdfium2", "pypdfium2.*", "xlrd", "xlrd.*"]
+ignore_missing_imports = true

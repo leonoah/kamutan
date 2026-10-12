@@ -48,24 +48,32 @@ def cmd_eval(a: argparse.Namespace) -> int:
         print("error: --truth and --pred must be given the same number of times", file=sys.stderr)
         return 2
     cfg = EvalConfig(
-        match=MatchParams(iou_threshold=a.iou, center_tol_mm=a.center_tol_mm, small_symbol_mm=a.small_symbol_mm,
-                          mode=a.match_mode),
+        match=MatchParams(
+            iou_threshold=a.iou, center_tol_mm=a.center_tol_mm, small_symbol_mm=a.small_symbol_mm, mode=a.match_mode
+        ),
         exclude_disputed=not a.keep_disputed,
         include_draft_lines=a.include_draft,
     )
     pairs = [(load_project(t), load_project(p)) for t, p in zip(a.truth, a.pred)]
     m = evaluate(pairs, cfg)
     gtv = {p[0].boq.get("gt_version") for p in pairs if p[0].boq}
-    m = {"kbench_version": __version__, "gt_version": a.gt_version or (gtv.pop() if len(gtv) == 1 else None),
-         "model_version": a.model_version, "code_sha": a.code_sha,
-         "run": {"failures": [], "timing": {}}, **m}
+    m = {
+        "kbench_version": __version__,
+        "gt_version": a.gt_version or (gtv.pop() if len(gtv) == 1 else None),
+        "model_version": a.model_version,
+        "code_sha": a.code_sha,
+        "run": {"failures": [], "timing": {}},
+        **m,
+    }
     _write_json(a.out, m)
     if a.report:
         Path(a.report).write_text(render_markdown(m), encoding="utf-8")
     mi = m["detection"]["micro"]
     ic = m["items_correct"]
-    print(f"micro-F1={mi['f1']} items_correct={ic['rate']} line_EM={m['boq']['exact_match']['rate']} "
-          f"ECE={m['calibration']['ece']} P_green={m['calibration']['green']['p_green']}")
+    print(
+        f"micro-F1={mi['f1']} items_correct={ic['rate']} line_EM={m['boq']['exact_match']['rate']} "
+        f"ECE={m['calibration']['ece']} P_green={m['calibration']['green']['p_green']}"
+    )
     return 1 if m["ceiling_violations"] else 0
 
 
@@ -89,8 +97,7 @@ def cmd_parse_boq_xls(a: argparse.Namespace) -> int:
 
     boq = parse_boq_xls(a.xls, a.project)
     boq["change_orders"] = parse_change_orders(a.xls)
-    boq["auxiliary"] = {"autocad_block_counts": parse_block_counts(a.xls),
-                        "plumbing_matrix": parse_plumbing_matrix(a.xls)}
+    boq["auxiliary"] = {"autocad_block_counts": parse_block_counts(a.xls), "plumbing_matrix": parse_plumbing_matrix(a.xls)}
     _write_json(a.out, boq)
     flagged = [ln for ln in boq["lines"] if ln["flags"]]
     print(f"{len(boq['lines'])} lines, {len(flagged)} flagged, {len(boq['change_orders'])} change orders -> {a.out}")

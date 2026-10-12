@@ -10,8 +10,9 @@ maximises the number of matches first and the summed quality second.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -48,8 +49,7 @@ def center_distance(a: Feature, b: Feature) -> float:
 def pair_quality(gt: Feature, pred: Feature, params: MatchParams) -> float | None:
     """Quality in (0, 1] if the pair is a valid match, else None."""
     use_center = params.mode == "center" or (
-        params.mode == "auto"
-        and (gt.geom_type == "Point" or pred.geom_type == "Point" or gt.size_mm < params.small_symbol_mm)
+        params.mode == "auto" and (gt.geom_type == "Point" or pred.geom_type == "Point" or gt.size_mm < params.small_symbol_mm)
     )
     if params.mode == "iou" and (gt.geom_type == "Point" or pred.geom_type == "Point"):
         use_center = True  # IoU undefined for points

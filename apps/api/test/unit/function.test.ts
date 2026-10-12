@@ -20,7 +20,7 @@ describe('Cloud Functions entry (src/function.ts)', () => {
     const { api } = await import('../../src/function');
     server = express();
     server.use(express.json()); // the Functions framework pre-parses JSON bodies
-    server.all('*', (req, res) => api(req as never, res as never));
+    server.all('/{*splat}', (req, res) => api(req as never, res as never));
   });
 
   it('serves /api/v1/health and boots Nest once (cached)', async () => {

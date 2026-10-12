@@ -6,10 +6,10 @@ from __future__ import annotations
 import copy
 
 import pytest
+from conftest import make_box
 
 from kbench.data import Project, Sheet, load_project
 from kbench.metrics import EvalConfig, evaluate
-from conftest import make_box
 
 
 @pytest.fixture

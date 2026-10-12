@@ -111,9 +111,15 @@ def parse_boq_xls(path: str | Path, project_id: str, sheet_name: str = "כמוי
             chapters.append(cur)
             continue
         if code_cell.ctype == xlrd.XL_CELL_NUMBER and cur is not None:
-            cur["rows"].append({"row": r, "raw": code_cell.value, "desc": desc,
-                                "unit": str(sh.cell_value(r, c_unit)).strip(),
-                                "qty": sh.cell_value(r, c_qty)})
+            cur["rows"].append(
+                {
+                    "row": r,
+                    "raw": code_cell.value,
+                    "desc": desc,
+                    "unit": str(sh.cell_value(r, c_unit)).strip(),
+                    "qty": sh.cell_value(r, c_qty),
+                }
+            )
         elif cur is not None and desc and not desc.startswith('סה"כ') and desc not in ("הערות:", "הערות"):
             cur["notes"].append(desc.replace("\xa0", " "))
 
@@ -178,16 +184,22 @@ def parse_change_orders(path: str | Path, sheet_name: str = "שינויים") ->
         if cell.ctype != xlrd.XL_CELL_NUMBER:
             continue
         major, minor, _ = _split_float_code(cell.value)
-        bd = {fl: float(sh.cell_value(r, hdr[h])) for h, fl in floors.items()
-              if h in hdr and sh.cell_value(r, hdr[h]) != ""}
-        out.append({
-            "code": f"{major}.{minor:02d}", "raw_code": cell.value,
-            "description": str(sh.cell_value(r, 1)).strip(), "unit": str(sh.cell_value(r, 2)).strip(),
-            "quantity": float(sh.cell_value(r, hdr['כמות סה"כ']) or 0.0), "breakdown": bd,
-            "gt_status": "draft", "source": "boq_original", "source_row": r,
-            "flags": ["change_order", "code_namespace_unverified"],
-            "date": str(sh.cell_value(r, hdr["תאריך"])) if "תאריך" in hdr else None,
-        })
+        bd = {fl: float(sh.cell_value(r, hdr[h])) for h, fl in floors.items() if h in hdr and sh.cell_value(r, hdr[h]) != ""}
+        out.append(
+            {
+                "code": f"{major}.{minor:02d}",
+                "raw_code": cell.value,
+                "description": str(sh.cell_value(r, 1)).strip(),
+                "unit": str(sh.cell_value(r, 2)).strip(),
+                "quantity": float(sh.cell_value(r, hdr['כמות סה"כ']) or 0.0),
+                "breakdown": bd,
+                "gt_status": "draft",
+                "source": "boq_original",
+                "source_row": r,
+                "flags": ["change_order", "code_namespace_unverified"],
+                "date": str(sh.cell_value(r, hdr["תאריך"])) if "תאריך" in hdr else None,
+            }
+        )
     return out
 
 

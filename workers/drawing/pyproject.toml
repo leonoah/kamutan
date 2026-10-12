@@ -31,6 +31,7 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
     "reportlab>=5.0.1",
+    "scipy-stubs>=1.18.1.1",
 ]
 
 [tool.ruff]
@@ -42,3 +43,11 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+
+[[tool.mypy.overrides]]
+# pypdfium2 ships no type information (no py.typed / stubs); scipy is covered by scipy-stubs.
+module = ["pypdfium2", "pypdfium2.*"]
+ignore_missing_imports = true

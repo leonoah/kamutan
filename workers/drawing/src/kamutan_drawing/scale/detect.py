@@ -95,7 +95,7 @@ def detect_scale(declared: int | None, spans, vs: VectorSheet) -> ScaleResult:
                 votes[c] = votes.get(c, 0) + 1
         if votes:
             ranked = sorted(votes.values(), reverse=True)
-            best = max(votes, key=votes.get)
+            best = max(votes, key=lambda k: votes[k])
             # clear plurality: stray numbers (heights "H=240", item tags) also sit near lines
             if ranked[0] >= 3 and (len(ranked) == 1 or ranked[0] >= 2 * ranked[1]):
                 est = best

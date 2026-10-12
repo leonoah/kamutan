@@ -53,7 +53,8 @@ SHEET_NAMES = {
 
 if __name__ == "__main__":
     lines = S.load_lines()
-    gd = pickle.load(open(S.OUT / "gd.pkl", "rb"))
+    # spike-local cache written by this script, never untrusted input
+    gd = pickle.load(open(S.OUT / "gd.pkl", "rb"))  # nosemgrep
     gd.assign(lines)
     stats = json.loads((S.OUT / "extract_stats.json").read_text())
     items, missing = [], []

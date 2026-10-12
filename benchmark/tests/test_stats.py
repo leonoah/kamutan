@@ -76,8 +76,7 @@ def test_ece_perfectly_calibrated_is_zero():
 
 
 @settings(max_examples=200, deadline=None)
-@given(st.lists(st.tuples(st.floats(0, 1, allow_nan=False), st.booleans()), min_size=1, max_size=200),
-       st.integers(1, 20))
+@given(st.lists(st.tuples(st.floats(0, 1, allow_nan=False), st.booleans()), min_size=1, max_size=200), st.integers(1, 20))
 def test_reliability_invariants(data, n_bins):
     s = [d[0] for d in data]
     c = [d[1] for d in data]

@@ -64,9 +64,10 @@ describe("Upload dropzone (resumable → finalize → live processing)", () => {
     expect(screen.getByRole("button", { name: "נסו שוב" })).toBeInTheDocument();
 
     // The other file is unaffected and completes.
-    await waitFor(() => expect(row("other.png")).toHaveAttribute("data-status", "done"), { timeout: 3000 });
+    await waitFor(() => expect(row("other.png")).toHaveAttribute("data-status", "done"), { timeout: 10_000 });
     expect(row("big.pdf")).toHaveAttribute("data-status", "canceled");
-  });
+    // Real-time upload ticks: generous budget so a loaded CI runner (turbo runs suites in parallel) doesn't flake.
+  }, 20_000);
 
   it("rejects unsupported, oversize and mismatched files with Hebrew errors (no API calls)", async () => {
     const { backend } = await openProject();

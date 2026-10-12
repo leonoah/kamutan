@@ -114,13 +114,14 @@ class GlyphDictionary:
         for li, ln in enumerate(lines):
             for gi, g in enumerate(ln.glyphs):
                 by_key[g.key].append((li, gi))
-                if len(feats[g.key]) < 20:
+                if g.feat is not None and len(feats[g.key]) < 20:
                     feats[g.key].append(g.feat)
         keys = list(by_key)
         F = np.array([np.mean(feats[k], axis=0) for k in keys])
         zero = np.linalg.norm(F, axis=1) < 1e-9
         F[zero] = 1.0  # glyph entirely outside the feature window: uniform vector
         F /= np.linalg.norm(F, axis=1, keepdims=True)
+        lab: np.ndarray
         if len(keys) > 1 and merge_dist > 0:
             Z = linkage(F, method="complete", metric="cosine")
             lab = fcluster(Z, t=merge_dist, criterion="distance") - 1
@@ -128,8 +129,8 @@ class GlyphDictionary:
             lab = np.arange(len(keys))
         clusters: dict[int, Cluster] = {}
         k2c: dict[str, int] = {}
-        for k, c in zip(keys, lab):
-            c = int(c)
+        labels: list[int] = [int(v) for v in lab.tolist()]
+        for k, c in zip(keys, labels, strict=True):
             cl = clusters.setdefault(c, Cluster(id=c, keys=set(), feat=np.zeros_like(F[0])))
             cl.keys.add(k)
             cl.count += len(by_key[k])
@@ -350,8 +351,9 @@ class GlyphDictionary:
                     and all(latin(labs[i]) or (alts[i] and latin(alts[i])) for i in word)
                 ):
                     for i in word:
-                        if not latin(labs[i]):
-                            labs[i] = alts[i]
+                        alt = alts[i]
+                        if not latin(labs[i]) and alt:
+                            labs[i] = alt
                 start = k
         for _ in range(3):
             for k, a in enumerate(alts):
@@ -405,6 +407,8 @@ def contact_sheet(gd: GlyphDictionary, lines: list[TextLine], cols: int = 20, ce
     rows = (len(cl) + cols - 1) // cols
     sheet = Image.new("L", (cols * cell, rows * cell), 255)
     for k, c in enumerate(cl):
+        if c.example is None:
+            continue
         li, gi = c.example
         ln = lines[li]
         im = render_glyph(ln.glyphs[gi], ln.height, ln.baseline, px_per_h=cell * 0.45)
@@ -484,7 +488,7 @@ def text_spans(lines: list[TextLine], gd: GlyphDictionary, max_gap_h: float = 1.
             spans.append(
                 TextSpan(
                     sheet=sheet,
-                    bbox=tuple(float(v) for v in comb.bbox),
+                    bbox=(float(comb.bbox[0]), float(comb.bbox[1]), float(comb.bbox[2]), float(comb.bbox[3])),
                     text=text,
                     conf=float(min(confs)) if confs else 0.0,
                     height=float(comb.height),

@@ -13,7 +13,10 @@ const fa = vi.hoisted(() => ({
 
 vi.mock("firebase/auth", () => ({
   ...fa,
-  GoogleAuthProvider: vi.fn().mockImplementation(() => ({ providerId: "google.com", setCustomParameters: fa.setCustomParameters })),
+  // Vitest 4: an implementation called with `new` must be a function/class, not an arrow.
+  GoogleAuthProvider: vi.fn().mockImplementation(function () {
+    return { providerId: "google.com", setCustomParameters: fa.setCustomParameters };
+  }),
 }));
 
 import { AuthError, EMAIL_FOR_SIGN_IN_KEY, createFirebaseAuth, mapFirebaseAuthError } from "./authService";

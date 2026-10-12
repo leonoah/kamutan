@@ -29,7 +29,8 @@ CODE_MAP = {"architecture_master": "master"}
 
 def main() -> None:
     lines = S.load_lines()
-    gd = pickle.load(open(S.OUT / "gd.pkl", "rb"))
+    # spike-local cache written by this script, never untrusted input
+    gd = pickle.load(open(S.OUT / "gd.pkl", "rb"))  # nosemgrep
     gd.assign(lines)
     manifest = {}
     if MANIFEST.exists():

@@ -1,7 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { Providers, makeQueryClient } from "@/App";
-import { routerFuture, routes } from "@/routes/router";
+import { routes } from "@/routes/router";
 import { createMockBackend, type MockOptions } from "@/api/mock";
 import { createMockAuth, setAuthService, type AuthService } from "@/features/auth/authService";
 import { useAuthStore } from "@/stores/authStore";
@@ -24,13 +24,13 @@ export async function renderApp(path: string, opts: RenderAppOptions = {}) {
   useToastStore.setState({ items: [] });
 
   const backend = createMockBackend({ latencyMs: 0, uploadTickMs: 5, jobTickMs: 5, ...opts });
-  const router = createMemoryRouter(routes, { initialEntries: [path], future: routerFuture });
+  const router = createMemoryRouter(routes, { initialEntries: [path] });
   let utils!: ReturnType<typeof render>;
   // Flush AuthProvider's async session hydration inside act().
   await act(async () => {
     utils = render(
       <Providers backend={backend} queryClient={makeQueryClient()}>
-        <RouterProvider router={router} future={{ v7_startTransition: true }} />
+        <RouterProvider router={router} />
       </Providers>,
     );
   });

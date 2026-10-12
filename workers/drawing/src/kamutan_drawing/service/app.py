@@ -37,11 +37,12 @@ log = logging.getLogger(__name__)
 def create_app(storage: BlobStorage, store: StatusStore, *, ocr: bool = True) -> FastAPI:
     app = FastAPI(title="kamutan-drawing-worker", docs_url=None, redoc_url=None)
 
-    @app.get("/healthz")
+    # Inner functions are registered as routes by their decorators (semgrep false positive).
+    @app.get("/healthz")  # nosemgrep
     def healthz() -> dict:
         return {"ok": True}
 
-    @app.post("/pubsub/ingest")
+    @app.post("/pubsub/ingest")  # nosemgrep
     async def pubsub_ingest(request: Request) -> Response:
         try:
             env = await request.json()

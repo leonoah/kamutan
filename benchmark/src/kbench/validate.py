@@ -58,12 +58,18 @@ def validate_project(root: str | Path) -> tuple[list[str], list[str]]:
                 if feature_ids and e not in feature_ids:
                     errors.append(f"{name}: line {code} evidence {e} not found in sheets")
             # gt-lint: confirmed count lines must be fully evidenced
-            if ln.get("gt_status") == "confirmed" and unit_kind(ln.get("unit", "")) == "count" and not ln.get("derivation"):
-                if len(ev) != ln.get("quantity"):
-                    errors.append(f"{name}: confirmed line {code} quantity {ln.get('quantity')} != {len(ev)} evidence ids")
+            if (
+                ln.get("gt_status") == "confirmed"
+                and unit_kind(ln.get("unit", "")) == "count"
+                and not ln.get("derivation")
+                and len(ev) != ln.get("quantity")
+            ):
+                errors.append(f"{name}: confirmed line {code} quantity {ln.get('quantity')} != {len(ev)} evidence ids")
             if ln.get("flags"):
                 warnings.append(f"{name}: line {code} flags {ln['flags']}")
     p = root / "disputes.json"
     if p.exists():
-        errors += [f"disputes.json: {e}" for e in schema_errors(json.loads(p.read_text(encoding='utf-8')), "disputes.schema.json")]
+        errors += [
+            f"disputes.json: {e}" for e in schema_errors(json.loads(p.read_text(encoding="utf-8")), "disputes.schema.json")
+        ]
     return errors, warnings

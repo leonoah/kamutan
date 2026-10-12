@@ -16,8 +16,12 @@ def _metrics(**over):
         "items_correct": {"rate": 0.95},
         "calibration": {"ece": 0.02, "green": {"p_green": 0.985}},
         "review_burden": {"burden": 0.30},
-        "boq": {"lines": [{"project_id": "noah", "code": "4.10", "correct": True},
-                          {"project_id": "noah", "code": "4.01", "correct": False}]},
+        "boq": {
+            "lines": [
+                {"project_id": "noah", "code": "4.10", "correct": True},
+                {"project_id": "noah", "code": "4.01", "correct": False},
+            ]
+        },
         "run": {"failures": [], "timing": {"p95_sheet_seconds": 10.0}},
         "ceiling_violations": [],
     }
@@ -45,7 +49,7 @@ def test_identical_passes():
 
 @pytest.mark.parametrize("cur,expected", [(0.966, 0), (0.9649, 1)])
 def test_micro_f1_threshold(cur, expected):
-    code, checks = compare(_metrics(detection__micro__f1=cur), _metrics(), TH)
+    code, _checks = compare(_metrics(detection__micro__f1=cur), _metrics(), TH)
     assert code == expected
 
 
@@ -104,8 +108,7 @@ def test_timing_failures_ceiling_and_version():
 def test_cli_exit_codes(tmp_path, fixture_dirs):
     t, p = fixture_dirs
     out = tmp_path / "m.json"
-    assert cli_main(["eval", "--truth", str(t), "--pred", str(p), "--out", str(out),
-                     "--report", str(tmp_path / "r.md")]) == 0
+    assert cli_main(["eval", "--truth", str(t), "--pred", str(p), "--out", str(out), "--report", str(tmp_path / "r.md")]) == 0
     m = json.loads(out.read_text(encoding="utf-8"))
     assert (tmp_path / "r.md").read_text(encoding="utf-8").startswith("# kbench report")
     base = tmp_path / "base.json"

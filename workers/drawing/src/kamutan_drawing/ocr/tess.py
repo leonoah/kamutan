@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,7 +31,9 @@ def run_tesseract(img: Image.Image, lang: str = "heb", psm: int = 7, extra: list
         p = Path(d) / "in.png"
         img.save(p)
         cmd = [TESSERACT, str(p), "stdout", "-l", lang, "--psm", str(psm), *(extra or [])]
-        r = subprocess.run(cmd, capture_output=True, text=True, check=False, env={**os.environ, "OMP_THREAD_LIMIT": "1"})
+        # argv list (no shell); executable is the fixed TESSERACT path, args are our temp file + ints/enums.
+        env = {**os.environ, "OMP_THREAD_LIMIT": "1"}
+        r = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)  # nosemgrep
         return r.stdout
 
 
@@ -64,7 +67,7 @@ def render_line(
     mirror: bool = False,
     glyph_ids: list[int] | None = None,
     supersample: int = 4,
-) -> tuple[Image.Image, callable]:
+) -> tuple[Image.Image, Callable[[float], float]]:
     """Render the line's glyph strokes alone (no drawing clutter), text horizontal.
 
     Returns image and a function mapping line-frame x (mm) -> pixel x.
@@ -90,7 +93,7 @@ def render_line(
                 cx, cy = (px - x0) * s, (py - y0) * s
                 dr.ellipse([cx - r, cy - r, cx + r, cy + r], fill=0)
     if ss > 1:
-        img = img.resize((max(1, img.size[0] // ss), max(1, img.size[1] // ss)), Image.LANCZOS)
+        img = img.resize((max(1, img.size[0] // ss), max(1, img.size[1] // ss)), Image.Resampling.LANCZOS)
         s = s / ss
     if mirror:
         img = ImageOps.mirror(img)

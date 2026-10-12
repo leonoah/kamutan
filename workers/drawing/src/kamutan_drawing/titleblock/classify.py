@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ..ingest.pdf_vector import VectorSheet
 from ..ocr.textutil import levenshtein, normalize
+
+if TYPE_CHECKING:
+    from ..ocr.dictionary import TextSpan
 
 LABELS: dict[str, list[str]] = {
     "project": ["שם הפרויקט"],
@@ -119,7 +123,7 @@ def _cell_for(label_bbox, v, h, page_h: float):
 
 def read_title_block(spans, vs: VectorSheet, min_ratio: float = 0.66) -> TitleBlock:
     spans = [s for s in spans if s.rotation == 0]
-    hits: dict[str, tuple[float, object]] = {}
+    hits: dict[str, tuple[float, TextSpan]] = {}
     for s in spans:
         txt = _clean(s.text)
         if not txt or len(txt) > 20:

@@ -1,17 +1,21 @@
-# Kamutan deploy — STUB (Sprint 0).
+# Kamutan deploy — STUB (Sprint 0). Platform: Firebase + Cloud Run (ADR-0008).
 #
-# Flow (04_architecture "CI/CD"):
-#   CI green on main (workflow_run) -> staging   [environment: staging,    manual approval]
-#   tag v*        -> staging -> production    [environment: production, manual approval]
-#   manual run    -> chosen environment
+# Flow (04_architecture "CI/CD", as amended by ADR-0008):
+#   CI green on main (workflow_run) -> staging     [environment: staging,    manual approval]
+#   tag v*                          -> staging -> production [environment: production, manual approval]
+#   manual run                      -> chosen environment
+#
+# What gets deployed:
+#   - `firebase deploy --only firestore:rules,firestore:indexes,storage,functions:api,hosting`
+#   - `gcloud run deploy kamutan-worker` (image infra/docker/worker-drawing.Dockerfile, by digest)
 #
 # Rules (SEC-48, SEC-49, SEC-53):
-# - No secrets inline. All secrets live in GitHub *Environment* secrets (staging / production),
-#   which are only released after a required reviewer (human owner) approves the job.
-# - Production migrations run only from this workflow, never from a developer/agent machine.
-# - Prefer OIDC over long-lived keys wherever the target supports it (id-token: write is granted
-#   only to deploy jobs).
-# - TODO(sprint-1): pin all actions to full commit SHAs.
+# - No secrets inline and no service-account key files. Auth to Google Cloud uses Workload Identity
+#   Federation (OIDC, `id-token: write` only on deploy jobs) configured through *Environment*
+#   variables GCP_WORKLOAD_IDENTITY_PROVIDER + GCP_DEPLOY_SERVICE_ACCOUNT, which are only released
+#   after a required reviewer (human owner) approves the job.
+# - Every step that needs cloud access skips with a notice while that configuration is absent.
+# - Actions are pinned to full commit SHAs (tag in a trailing comment).
 
 name: Deploy
 
@@ -40,12 +44,11 @@ concurrency:
 
 jobs:
   build-images:
-    name: Build + push images (GHCR)
+    name: Build + push worker image (Artifact Registry)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
     # workflow_run fires for every CI completion on main; only deploy green, push-triggered runs.
     if: >-
       github.event_name != 'workflow_run' ||
@@ -54,7 +57,10 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       sha: ${{ steps.meta.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      # Safe: workflow_run is restricted above to *push* events on main that passed CI, so
+      # head_sha is a commit already on main (never untrusted fork code). No secrets in this job.
+      # nosemgrep
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -65,11 +71,13 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "tag=sha-${SHA::12}" >> "$GITHUB_OUTPUT"
       - name: Build and push (placeholder)
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
-          echo "TODO(sprint-1): docker/login-action (GITHUB_TOKEN) + docker/build-push-action for"
-          echo "  ghcr.io/leonoah/kamutan-api:${{ steps.meta.outputs.tag }}            (infra/docker/api.Dockerfile)"
-          echo "  ghcr.io/leonoah/kamutan-worker-drawing:${{ steps.meta.outputs.tag }} (infra/docker/worker-drawing.Dockerfile)"
-          echo "  + SBOM (syft, SEC-46) + Trivy gate (SEC-45); deploy by digest, never :latest."
+          echo "TODO(sprint-1): google-github-actions/auth (WIF) + docker/build-push-action for"
+          echo "  europe-west1-docker.pkg.dev/kamutan-fba67/kamutan/worker-drawing:${TAG}"
+          echo "  (infra/docker/worker-drawing.Dockerfile) + SBOM (syft, SEC-46) + Trivy gate (SEC-45);"
+          echo "  deploy by digest, never :latest."
 
   staging:
     name: Deploy → staging
@@ -85,29 +93,25 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ needs.build-images.outputs.sha }}
-      - name: Supabase migrations (staging)
+      - name: Firebase deploy (staging)
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          DEPLOY_SA: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
         run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
-            echo "::notice::Supabase staging not configured yet — skipping migrations."; exit 0; fi
-          echo "TODO(sprint-1): npx supabase@<pinned> link --project-ref \"$SUPABASE_PROJECT_REF\" && npx supabase db push"
-      - name: Railway deploy (staging)
+          if [ -z "$WIF_PROVIDER" ] || [ -z "$DEPLOY_SA" ]; then
+            echo "::notice::GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_DEPLOY_SERVICE_ACCOUNT not configured for 'staging' — skipping."; exit 0; fi
+          echo "TODO(sprint-1): WIF auth, then npx firebase-tools@<pinned> deploy --project <staging> --non-interactive"
+      - name: Cloud Run worker (staging)
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          TAG: ${{ needs.build-images.outputs.tag }}
         run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then echo "::notice::RAILWAY_TOKEN not set — skipping."; exit 0; fi
-          echo "TODO(sprint-1): railway up / redeploy api, worker-drawing-heavy, worker-drawing-light, export-worker"
-          echo "  with image ghcr.io/leonoah/kamutan-*:${{ needs.build-images.outputs.tag }}"
-      - name: Vercel (apps/web) — staging
-        run: |
-          echo "Vercel deploys apps/web via its Git integration (preview per PR, staging alias on main)."
+          if [ -z "$WIF_PROVIDER" ]; then echo "::notice::GCP not configured for 'staging' — skipping."; exit 0; fi
+          echo "TODO(sprint-1): gcloud run deploy kamutan-worker --region europe-west1 --no-allow-unauthenticated --image <digest of ${TAG}>"
 
   production:
     name: Deploy → production
@@ -125,28 +129,28 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Guard — production deploys only from a tag on main
+      - name: Guard — production deploys only from a tag or main
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$GIT_REF" != "refs/heads/main" ]; then
             echo "::error::Manual production deploys must run from main."; exit 1; fi
-      - name: Supabase migrations (production)
+      - name: Firebase deploy (production)
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          DEPLOY_SA: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
         run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
-            echo "::notice::Supabase production not configured yet — skipping migrations."; exit 0; fi
-          echo "TODO(sprint-5): supabase db push against production (after backup snapshot)."
-      - name: Railway promote (production)
+          if [ -z "$WIF_PROVIDER" ] || [ -z "$DEPLOY_SA" ]; then
+            echo "::notice::GCP not configured for 'production' — skipping."; exit 0; fi
+          echo "TODO(sprint-5): Firestore export (backup) first, then firebase deploy --project kamutan-fba67."
+      - name: Cloud Run worker (production)
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          TAG: ${{ needs.build-images.outputs.tag }}
         run: |
-          if [ -z "$RAILWAY_TOKEN" ]; then echo "::notice::RAILWAY_TOKEN not set — skipping."; exit 0; fi
-          echo "TODO(sprint-5): promote image digest ${{ needs.build-images.outputs.tag }} to the production environment"
-      - name: Vercel (apps/web) — production
-        run: |
-          echo "TODO(sprint-5): promote the staging Vercel deployment to production (vercel promote)."
+          if [ -z "$WIF_PROVIDER" ]; then echo "::notice::GCP not configured for 'production' — skipping."; exit 0; fi
+          echo "TODO(sprint-5): promote image digest ${TAG} to kamutan-worker (production)."

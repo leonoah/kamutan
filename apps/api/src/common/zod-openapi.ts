@@ -1,9 +1,11 @@
 import { applyDecorators } from '@nestjs/common';
-import { ApiBody, ApiQuery, ApiResponse } from '@nestjs/swagger';
-import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
+import { ApiBody, ApiQuery, ApiResponse, type ApiResponseSchemaHost } from '@nestjs/swagger';
 import { ApiErrorSchema } from '@kamutan/contracts';
 import { ZodObject, type ZodTypeAny } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+
+// @nestjs/swagger >= 11 no longer allows deep imports (package `exports`); derive the public type.
+type SchemaObject = ApiResponseSchemaHost['schema'];
 
 // Loosely typed alias: zodToJsonSchema's generics trigger TS2589 / very slow checks.
 const zodToJson = zodToJsonSchema as unknown as (schema: unknown, opts: unknown) => Record<string, unknown>;

@@ -29,7 +29,7 @@ export function App() {
   const [router] = useState(createRouter);
   return (
     <Providers backend={backend} queryClient={qc}>
-      <RouterProvider router={router} future={{ v7_startTransition: true }} />
+      <RouterProvider router={router} />
     </Providers>
   );
 }

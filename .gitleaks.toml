@@ -29,7 +29,32 @@ keywords = ["postgres://", "postgresql://"]
     '''://[^:]+:(CHANGE_ME|changeme|password|<[^>]+>|\$\{?[A-Z_]+\}?)@''',
   ]
 
-[allowlist]
+# Narrow, rule-targeted allowlists (gitleaks >= 8.25 `[[allowlists]]` with targetRules + AND).
+# Each one must name the rule, the exact path and the exact shape of the value it tolerates.
+
+[[allowlists]]
+# Firebase *web* API key (ADR-0008). It identifies the Firebase project to browsers and ships in
+# every client bundle by design; it grants no access by itself — access is enforced by Firebase
+# Auth + Firestore/Storage Security Rules, and the key is API-restricted in Google Cloud console.
+# Only this one variable in this one committed file is tolerated; any other GCP key still fails.
+description = "Public Firebase web API key in apps/web/.env.firebase"
+targetRules = ["gcp-api-key", "generic-api-key"]
+condition = "AND"
+paths = ['''^apps/web/\.env\.firebase$''']
+regexTarget = "line"
+regexes = ['''(^|\n)VITE_FIREBASE_API_KEY=AIza[\w-]{35}(\r?\n|$)''']
+
+[[allowlists]]
+# Deterministic, obviously-fake HMAC secrets used only by unit tests (e.g. commit 46ae3fe,
+# apps/api/test/support/helpers.ts: `test-jwt-secret-...`). Real secrets never start with `test-`.
+description = "Fake secrets in test support fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)test/support/[^/]+\.ts$''']
+regexTarget = "secret"
+regexes = ['''^test-[a-z0-9-]+$''']
+
+[[allowlists]]
 description = "Global allowlist: example env files and lockfiles only"
 paths = [
   '''(^|/)\.env\.example$''',
