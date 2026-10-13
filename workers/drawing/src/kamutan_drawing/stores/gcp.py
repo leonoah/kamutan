@@ -29,9 +29,9 @@ def _is_precondition_failed(e: Exception) -> bool:
 class GcsBlobStore:
     def __init__(self, bucket: Any = None, *, bucket_name: str | None = None) -> None:
         if bucket is None:  # pragma: no cover - needs google-cloud-storage + ADC
-            from google.cloud import storage  # type: ignore[attr-defined, unused-ignore]
+            import google.cloud.storage as gcs  # untyped package: see [tool.mypy] overrides
 
-            bucket = storage.Client().bucket(bucket_name or os.environ.get("KAMUTAN_BUCKET", DEFAULT_BUCKET))
+            bucket = gcs.Client().bucket(bucket_name or os.environ.get("KAMUTAN_BUCKET", DEFAULT_BUCKET))
         self._bucket = bucket
 
     def read(self, path: str) -> bytes:

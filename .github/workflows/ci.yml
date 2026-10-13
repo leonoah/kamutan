@@ -143,7 +143,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-heb tesseract-ocr-eng
           tesseract --list-langs
       - name: Install (uv sync --locked)
-        run: uv sync --locked --all-groups
+        # --all-extras: same dependency set as the runtime image (infra/docker/worker-drawing.Dockerfile),
+        # so mypy/pytest check against the real google-cloud clients instead of missing imports.
+        run: uv sync --locked --all-groups --all-extras
       - name: Ruff (lint)
         run: uvx ruff@${{ env.RUFF_VERSION }} check .
       - name: Ruff (format check)
@@ -237,6 +239,16 @@ jobs:
           npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION}" emulators:exec \
             --only firestore,storage --project demo-kamutan --config firebase/firebase.rules-test.json \
             'test -n "$FIRESTORE_EMULATOR_HOST" && test -n "$FIREBASE_STORAGE_EMULATOR_HOST" && pnpm --filter @kamutan/firebase-tests exec vitest run --reporter=default --reporter=json --outputFile="$RUNNER_TEMP/rules-tests.json"'
+      - name: Failed rules tests as annotations
+        if: failure()
+        run: |
+          r="$RUNNER_TEMP/rules-tests.json"
+          [ -s "$r" ] || { echo "::error::no vitest JSON report (suite crashed before reporting)"; exit 0; }
+          jq -r '.testResults[] | (.name | sub(".*/kamutan/"; "")) as $f
+            | (if (.status == "failed" and ((.assertionResults | map(select(.status == "failed")) | length) == 0))
+               then "::error file=\($f)::suite failed: \((.message // "") | gsub("\n"; " ") | .[0:600])" else empty end),
+              (.assertionResults[] | select(.status == "failed")
+               | "::error file=\($f),line=\(.location.line // 1)::\(.fullName): \((.failureMessages // []) | join(" ") | gsub("\n"; " ") | .[0:600])")' "$r" | head -40
       - name: Rules suites actually ran (no skipped emulator tests)
         run: |
           set -euo pipefail

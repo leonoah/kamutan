@@ -58,6 +58,12 @@ testpaths = ["tests"]
 python_version = "3.12"
 
 [[tool.mypy.overrides]]
+# google-cloud-storage ships no py.typed marker (firestore / api_core / auth are typed and checked;
+# CI installs --all-extras so they are type-checked against the real packages).
+module = ["google.cloud.storage", "google.cloud.storage.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # msgpack ships no py.typed marker
 module = ["msgpack", "msgpack.*"]
 ignore_missing_imports = true
