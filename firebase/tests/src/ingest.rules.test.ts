@@ -61,7 +61,7 @@ function versionDoc(f: OrgFx) {
       text: `${prefix}/text.json.gz`,
       thumbnail: `${prefix}/thumbnail.webp`,
     },
-    regions: [{ id: 'r1', floor: '1', polygonMm: [[0, 0], [420, 0], [420, 297], [0, 297]], scaleDenominator: 50 }],
+    regions: [{ id: 'r1', floor: '1', polygonMm: [{ x: 0, y: 0 }, { x: 420, y: 0 }, { x: 420, y: 297 }, { x: 0, y: 297 }], scaleDenominator: 50 }],
     stats: { paths: 1200, segments: 5400, textLines: 80, glyphs: 900 },
     workerVersion: '0.1.0',
     updatedAt: ts(),

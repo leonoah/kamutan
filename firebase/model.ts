@@ -205,7 +205,8 @@ export interface SheetVersion {
     detections?: string;
     rooms?: string;
   };
-  regions?: Array<{ id: string; floor: string; polygonMm: Array<[number, number]>; scaleDenominator: number }>;
+  // Points are {x, y} objects (packages/contracts PointMmSchema): Firestore rejects nested arrays.
+  regions?: Array<{ id: string; floor: string; polygonMm: Array<{ x: number; y: number }>; scaleDenominator: number }>;
   stats?: { paths?: number; segments?: number; textLines?: number; glyphs?: number; [k: string]: number | undefined };
   workerVersion?: string;
   updatedAt?: FsTimestamp;
