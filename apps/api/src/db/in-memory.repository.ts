@@ -2,19 +2,24 @@ import { randomBytes } from 'node:crypto';
 import {
   DEFAULT_ORG_SETTINGS,
   fsPaths,
+  sheetIdFor,
+  storagePaths,
+  type Job,
   type Member,
   type Org,
+  type ProcessingError,
   type Project,
+  type Region,
   type Role,
   type Sheet,
   type SheetSet,
+  type SheetSetStatus,
+  type SheetSummary,
   type SheetVersion,
-  type SheetVersionStatus,
 } from '@kamutan/contracts';
 import { auditHash } from './audit-chain';
-import type { AuditInput, NewSheetSet, Repository, SheetSetBundle } from './repository';
-
-type Doc = Record<string, unknown>;
+import { toJob, toMember, toOrg, toProject, toSheet, toSheetSet, toVersion, versionSummary, type Doc } from './mappers';
+import { RepoConflictError, type AuditInput, type ConfirmInput, type NewSheetSet, type ReprocessResult, type Repository } from './repository';
 
 /** Firestore-like 20-char auto id. */
 export function autoId(): string {
@@ -23,7 +28,6 @@ export function autoId(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join('');
 }
 
-const iso = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d));
 
 /**
  * In-process repository with the exact ADR 0008 document paths, for tests and
@@ -175,35 +179,19 @@ export class InMemoryRepository implements Repository {
   }
 
   // --- sheet sets -------------------------------------------------------------
-  async findSheetSetBySha(orgId: string, projectId: string, sha256: string): Promise<SheetSetBundle | null> {
-    return this.bundleFor(orgId, projectId, sha256);
+  async getSheetSet(orgId: string, projectId: string, sheetSetId: string): Promise<SheetSet | null> {
+    const d = this.docs.get(fsPaths.sheetSet(orgId, projectId, sheetSetId));
+    return d ? toSheetSet(orgId, projectId, sheetSetId, d) : null;
   }
 
-  private bundleFor(orgId: string, projectId: string, setId: string): SheetSetBundle | null {
-    const set = this.docs.get(fsPaths.sheetSet(orgId, projectId, setId));
-    if (!set) return null;
-    const sheetHit = this.children(`orgs/${orgId}/projects/${projectId}/sheets`).find(([, d]) => d.sheetSetId === setId);
-    if (!sheetHit) return null;
-    const sheetId = sheetHit[0].split('/').at(-1) as string;
-    const versionId = sheetHit[1].currentVersionId as string;
-    const version = this.docs.get(fsPaths.version(orgId, projectId, sheetId, versionId));
-    if (!version) return null;
-    return {
-      sheetSet: toSheetSet(orgId, projectId, setId, set),
-      sheet: toSheet(sheetId, sheetHit[1]),
-      sheetVersion: toVersion(sheetId, versionId, version),
-      jobId: set.ingestJobId as string,
-    };
-  }
-
-  createSheetSetBundle(orgId: string, projectId: string, input: NewSheetSet) {
+  createSheetSetIngest(orgId: string, projectId: string, input: NewSheetSet) {
     return this.tx(() => {
-      const existing = this.bundleFor(orgId, projectId, input.sha256);
-      if (existing) return { bundle: existing, deduplicated: true };
+      const setPath = fsPaths.sheetSet(orgId, projectId, input.sha256);
+      const existing = this.docs.get(setPath);
+      if (existing) return { sheetSet: toSheetSet(orgId, projectId, input.sha256, existing), deduplicated: true };
       if (!this.docs.has(fsPaths.project(orgId, projectId))) throw new Error('project does not exist');
       const now = this.now();
       const setId = input.sha256;
-      const sheetId = autoId();
       const versionId = autoId();
       const jobId = autoId();
       const set: Doc = {
@@ -213,57 +201,257 @@ export class InMemoryRepository implements Repository {
         status: 'uploaded',
         name: input.name,
         uploadedBy: input.uploadedBy,
+        uploadFileId: input.uploadFileId,
         sizeBytes: input.sizeBytes,
         ingestJobId: jobId,
+        versionId,
+        pageCount: null,
         createdAt: now,
       };
-      const sheet: Doc = {
-        logicalKey: `upload:${setId.slice(0, 12)}`,
-        discipline: [],
-        floorRegions: [],
-        scale: null,
-        currentVersionId: versionId,
-        sheetSetId: setId,
-      };
-      const version: Doc = { versionNo: 1, status: 'uploaded', sha256: input.sha256, pageIndex: 0, artifacts: {}, createdAt: now };
-      this.docs.set(fsPaths.sheetSet(orgId, projectId, setId), set);
-      this.docs.set(fsPaths.sheet(orgId, projectId, sheetId), sheet);
-      this.docs.set(fsPaths.version(orgId, projectId, sheetId, versionId), version);
+      this.docs.set(setPath, set);
       this.docs.set(fsPaths.job(jobId), {
         orgId,
         projectId,
-        versionId,
-        sheetId,
         sheetSetId: setId,
+        sheetId: null,
+        versionId,
         type: input.jobType,
         status: 'queued',
-        progress: 0,
+        progress: { stage: 'ingest', pct: 0 },
+        attempts: 0,
+        error: null,
+        createdBy: input.uploadedBy,
         createdAt: now,
+        updatedAt: now,
       });
       this.appendAuditSync(orgId, {
         actorId: input.uploadedBy,
         entity: 'sheetSets',
         entityId: setId,
         action: 'upload',
-        after: { projectId, fileKind: input.fileKind, sha256: input.sha256, sizeBytes: input.sizeBytes },
+        after: { projectId, fileKind: input.fileKind, sha256: input.sha256, sizeBytes: input.sizeBytes, jobId },
+      });
+      return { sheetSet: toSheetSet(orgId, projectId, setId, set), deduplicated: false };
+    });
+  }
+
+  async findSheetSetByUploadFileId(orgId: string, projectId: string, fileId: string): Promise<SheetSet | null> {
+    const hit = this.children(`orgs/${orgId}/projects/${projectId}/sheetSets`).find(([, d]) => d.uploadFileId === fileId);
+    return hit ? toSheetSet(orgId, projectId, hit[0].split('/').at(-1) as string, hit[1]) : null;
+  }
+
+  async setSheetSetStatus(orgId: string, projectId: string, sheetSetId: string, status: SheetSetStatus) {
+    const path = fsPaths.sheetSet(orgId, projectId, sheetSetId);
+    const d = this.docs.get(path);
+    if (!d) throw new Error('sheet set not found');
+    this.docs.set(path, { ...d, status });
+  }
+
+  // --- sheets & versions -------------------------------------------------------
+  async listSheets(orgId: string, projectId: string, opts: { limit: number; cursor?: string; sheetSetId?: string }) {
+    const all = this.children(fsPaths.sheets(orgId, projectId))
+      .map(([k, d]) => [k.split('/').at(-1) as string, d] as const)
+      .filter(([, d]) => !opts.sheetSetId || d.sheetSetId === opts.sheetSetId)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const start = opts.cursor ? all.filter(([id]) => id <= (opts.cursor as string)).length : 0;
+    const page = all.slice(start, start + opts.limit);
+    const items: SheetSummary[] = page.map(([id, d]) => {
+      const sheet = toSheet(id, d);
+      const vd = sheet.currentVersionId ? this.docs.get(fsPaths.version(orgId, projectId, id, sheet.currentVersionId)) : undefined;
+      return { ...sheet, currentVersion: versionSummary(vd && sheet.currentVersionId ? toVersion(id, sheet.currentVersionId, vd) : null) };
+    });
+    const more = all.length > start + opts.limit;
+    return { items, nextCursor: more && items.length ? (items.at(-1) as SheetSummary).id : null };
+  }
+
+  async getSheet(orgId: string, projectId: string, sheetId: string): Promise<Sheet | null> {
+    const d = this.docs.get(fsPaths.sheet(orgId, projectId, sheetId));
+    return d ? toSheet(sheetId, d) : null;
+  }
+
+  async getVersion(orgId: string, projectId: string, sheetId: string, versionId: string): Promise<SheetVersion | null> {
+    const d = this.docs.get(fsPaths.version(orgId, projectId, sheetId, versionId));
+    return d ? toVersion(sheetId, versionId, d) : null;
+  }
+
+  confirmSheet(orgId: string, projectId: string, sheetId: string, input: ConfirmInput, actorUid: string) {
+    return this.tx(() => {
+      const path = fsPaths.sheet(orgId, projectId, sheetId);
+      const d = this.docs.get(path);
+      if (!d) return null;
+      if ((d.currentVersionId ?? null) !== input.expectedVersionId) throw new RepoConflictError('version_changed');
+      const now = this.now();
+      if (input.regions && input.expectedVersionId) {
+        const vPath = fsPaths.version(orgId, projectId, sheetId, input.expectedVersionId);
+        const v = this.docs.get(vPath);
+        if (!v) throw new RepoConflictError('version_missing');
+        this.docs.set(vPath, { ...v, regions: input.regions, regionsUpdatedBy: actorUid, regionsUpdatedAt: now });
+      }
+      const next = {
+        ...d,
+        discipline: input.discipline,
+        floors: input.floors,
+        scaleDenominator: input.scaleDenominator,
+        confirmed: true,
+        confirmedBy: actorUid,
+        confirmedAt: now,
+        updatedAt: now,
+      };
+      this.docs.set(path, next);
+      this.appendAuditSync(orgId, {
+        actorId: actorUid,
+        entity: 'sheets',
+        entityId: sheetId,
+        action: 'confirm',
+        after: confirmAudit(projectId, input),
+      });
+      return toSheet(sheetId, next);
+    });
+  }
+
+  setRegions(orgId: string, projectId: string, sheetId: string, versionId: string, regions: Region[], actorUid: string) {
+    return this.tx(() => {
+      const sheet = this.docs.get(fsPaths.sheet(orgId, projectId, sheetId));
+      if (!sheet) return null;
+      if (sheet.currentVersionId !== versionId) throw new RepoConflictError('version_changed');
+      const vPath = fsPaths.version(orgId, projectId, sheetId, versionId);
+      const v = this.docs.get(vPath);
+      if (!v) return null;
+      const now = this.now();
+      const next = { ...v, regions, regionsUpdatedBy: actorUid, regionsUpdatedAt: now };
+      this.docs.set(vPath, next);
+      this.appendAuditSync(orgId, {
+        actorId: actorUid,
+        entity: 'sheetVersions',
+        entityId: versionId,
+        action: 'set_regions',
+        after: regionsAudit(projectId, sheetId, regions),
+      });
+      return toVersion(sheetId, versionId, next);
+    });
+  }
+
+  createReprocessVersion(orgId: string, projectId: string, sheetId: string, actorUid: string, jobType: string) {
+    return this.tx((): ReprocessResult | null => {
+      const sPath = fsPaths.sheet(orgId, projectId, sheetId);
+      const sheetDoc = this.docs.get(sPath);
+      if (!sheetDoc) return null;
+      const sheet = toSheet(sheetId, sheetDoc);
+      const setDoc = this.docs.get(fsPaths.sheetSet(orgId, projectId, sheet.sheetSetId));
+      if (!setDoc) return null;
+      const cur = sheet.currentVersionId ? this.docs.get(fsPaths.version(orgId, projectId, sheetId, sheet.currentVersionId)) : undefined;
+      const curV = cur && sheet.currentVersionId ? toVersion(sheetId, sheet.currentVersionId, cur) : null;
+      if (curV && (curV.status === 'queued' || curV.status === 'processing')) throw new RepoConflictError('in_progress');
+      const now = this.now();
+      const versionId = autoId();
+      const jobId = autoId();
+      const version: Doc = newVersionDoc(curV, jobId, now);
+      this.docs.set(fsPaths.version(orgId, projectId, sheetId, versionId), version);
+      this.docs.set(fsPaths.job(jobId), {
+        orgId,
+        projectId,
+        sheetSetId: sheet.sheetSetId,
+        sheetId,
+        versionId,
+        type: jobType,
+        status: 'queued',
+        progress: { stage: 'ingest', pct: 0 },
+        attempts: 0,
+        error: null,
+        createdBy: actorUid,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const nextSheet = { ...sheetDoc, currentVersionId: versionId, updatedAt: now };
+      this.docs.set(sPath, nextSheet);
+      this.appendAuditSync(orgId, {
+        actorId: actorUid,
+        entity: 'sheets',
+        entityId: sheetId,
+        action: 'reprocess',
+        after: { projectId, versionId, previousVersionId: sheet.currentVersionId, jobId },
       });
       return {
-        bundle: {
-          sheetSet: toSheetSet(orgId, projectId, setId, set),
-          sheet: toSheet(sheetId, sheet),
-          sheetVersion: toVersion(sheetId, versionId, version),
-          jobId,
-        },
-        deduplicated: false,
+        sheet: toSheet(sheetId, nextSheet),
+        version: toVersion(sheetId, versionId, version),
+        sheetSet: toSheetSet(orgId, projectId, sheet.sheetSetId, setDoc),
+        jobId,
       };
     });
   }
 
-  async setVersionStatus(orgId: string, projectId: string, sheetId: string, versionId: string, status: SheetVersionStatus) {
-    const path = fsPaths.version(orgId, projectId, sheetId, versionId);
-    const d = this.docs.get(path);
-    if (!d) throw new Error('version not found');
-    this.docs.set(path, { ...d, status });
+  async failJob(orgId: string, jobId: string, error: ProcessingError, version?: { projectId: string; sheetId: string; versionId: string }) {
+    const now = this.now();
+    const job = this.docs.get(fsPaths.job(jobId));
+    if (job && job.orgId === orgId) this.docs.set(fsPaths.job(jobId), { ...job, status: 'failed', error, updatedAt: now });
+    if (version) {
+      const p = fsPaths.version(orgId, version.projectId, version.sheetId, version.versionId);
+      const v = this.docs.get(p);
+      if (v) this.docs.set(p, { ...v, status: 'failed', error, updatedAt: now });
+    }
+  }
+
+  // --- jobs ---------------------------------------------------------------------
+  async getJob(jobId: string): Promise<Job | null> {
+    const d = this.docs.get(fsPaths.job(jobId));
+    return d ? toJob(jobId, d) : null;
+  }
+
+  // --- worker emulation (tests / offline dev) -------------------------------------
+  /** Writes a sheet + version doc as the worker would after splitting/processing. */
+  seedWorkerSheet(orgId: string, projectId: string, sheetSetId: string, pageIndex: number, opts: SeedSheetOpts = {}): { sheetId: string; versionId: string } {
+    const sheetId = sheetIdFor(sheetSetId, pageIndex);
+    const versionId = opts.versionId ?? autoId();
+    const now = this.now();
+    this.docs.set(fsPaths.sheet(orgId, projectId, sheetId), {
+      sheetSetId,
+      pageIndex,
+      title: opts.title ?? `Sheet ${pageIndex + 1}`,
+      discipline: opts.discipline ?? 'electrical',
+      floors: opts.floors ?? ['ground'],
+      scaleDenominator: opts.scaleDenominator ?? 50,
+      classification: {
+        discipline: opts.discipline ?? 'electrical',
+        floors: opts.floors ?? ['ground'],
+        sheetTitle: opts.title ?? `Sheet ${pageIndex + 1}`,
+        scaleText: '1:50',
+        confidence: 0.8,
+        level: 'yellow',
+        reasons: ['seeded'],
+      },
+      confirmed: false,
+      currentVersionId: versionId,
+      updatedAt: now,
+    });
+    const status = opts.status ?? 'ready';
+    this.docs.set(fsPaths.version(orgId, projectId, sheetId, versionId), {
+      versionNo: 1,
+      status,
+      progress: status === 'ready' ? { stage: 'done', pct: 100 } : { stage: 'render', pct: 40 },
+      page: { widthMm: opts.widthMm ?? 841, heightMm: opts.heightMm ?? 594, rotation: 0 },
+      artifacts:
+        status === 'ready'
+          ? {
+              tiles: {
+                prefix: storagePaths.tilesPrefix(orgId, projectId, sheetId, versionId),
+                format: 'webp',
+                tileSize: 256,
+                dpi: 300,
+                levels: opts.levels ?? 7,
+                widthPx: opts.widthPx ?? 9933,
+                heightPx: opts.heightPx ?? 7016,
+              },
+              thumbnail: storagePaths.thumbnail(orgId, projectId, sheetId, versionId),
+              primitives: storagePaths.primitives(orgId, projectId, sheetId, versionId),
+              text: storagePaths.text(orgId, projectId, sheetId, versionId),
+            }
+          : {},
+      regions: [],
+      stats: status === 'ready' ? { paths: 10, segments: 100, textLines: 5, glyphs: 50 } : null,
+      workerVersion: 'test',
+      updatedAt: now,
+    });
+    return { sheetId, versionId };
   }
 
   // --- audit --------------------------------------------------------------------
@@ -292,67 +480,55 @@ export class InMemoryRepository implements Repository {
   async ping(): Promise<void> {}
 }
 
-function toOrg(id: string, d: Doc): Org {
-  return { id, name: String(d.name), settings: d.settings as Org['settings'], createdAt: iso(d.createdAt) };
+export interface SeedSheetOpts {
+  versionId?: string;
+  status?: 'queued' | 'processing' | 'ready' | 'failed';
+  title?: string;
+  discipline?: string;
+  floors?: string[];
+  scaleDenominator?: number;
+  widthMm?: number;
+  heightMm?: number;
+  widthPx?: number;
+  heightPx?: number;
+  levels?: number;
 }
-function toMember(d: Doc): Member {
+
+export function confirmAudit(projectId: string, input: ConfirmInput): Record<string, unknown> {
   return {
-    uid: String(d.uid),
-    role: d.role as Role,
-    ...(d.email ? { email: String(d.email) } : {}),
-    ...(d.addedBy ? { addedBy: String(d.addedBy) } : {}),
-    createdAt: iso(d.createdAt),
-  };
-}
-function toProject(id: string, d: Doc): Project {
-  return {
-    id,
-    orgId: String(d.orgId),
-    name: String(d.name),
-    ...(typeof d.address === 'string' ? { address: d.address } : {}),
-    templateId: (d.templateId as string | null | undefined) ?? null,
-    floors: (d.floors as Project['floors']) ?? [],
-    status: d.status as Project['status'],
-    createdBy: String(d.createdBy),
-    createdAt: iso(d.createdAt),
-  };
-}
-function toSheetSet(orgId: string, projectId: string, id: string, d: Doc): SheetSet {
-  return {
-    id,
-    orgId,
     projectId,
-    fileKind: d.fileKind as SheetSet['fileKind'],
-    sha256: String(d.sha256),
-    storagePath: String(d.storagePath),
-    status: d.status as SheetSet['status'],
-    ...(typeof d.name === 'string' ? { name: d.name } : {}),
-    uploadedBy: String(d.uploadedBy),
-    createdAt: iso(d.createdAt),
-  };
-}
-function toSheet(id: string, d: Doc): Sheet {
-  return {
-    id,
-    logicalKey: String(d.logicalKey),
-    discipline: (d.discipline as string[]) ?? [],
-    floorRegions: (d.floorRegions as Sheet['floorRegions']) ?? [],
-    scale: (d.scale as number | null) ?? null,
-    currentVersionId: (d.currentVersionId as string | null) ?? null,
-    sheetSetId: String(d.sheetSetId),
-  };
-}
-function toVersion(sheetId: string, id: string, d: Doc): SheetVersion {
-  return {
-    id,
-    sheetId,
-    versionNo: Number(d.versionNo),
-    status: d.status as SheetVersion['status'],
-    sha256: String(d.sha256),
-    pageIndex: Number(d.pageIndex),
-    artifacts: (d.artifacts as SheetVersion['artifacts']) ?? {},
-    createdAt: iso(d.createdAt),
+    discipline: input.discipline,
+    floors: input.floors,
+    scaleDenominator: input.scaleDenominator,
+    versionId: input.expectedVersionId,
+    regionCount: input.regions ? input.regions.length : null,
   };
 }
 
-export const mappers = { toOrg, toMember, toProject, toSheetSet, toSheet, toVersion };
+export function regionsAudit(projectId: string, sheetId: string, regions: Region[]): Record<string, unknown> {
+  return {
+    projectId,
+    sheetId,
+    regions: regions.map((r) => ({ id: r.id, floor: r.floor, scaleDenominator: r.scaleDenominator, points: r.polygonMm.length })),
+  };
+}
+
+/** New queued version for a reprocess: regions (user corrections) carry over from the previous version. */
+export function newVersionDoc(prev: SheetVersion | null, jobId: string, now: unknown): Doc {
+  return {
+    versionNo: (prev?.versionNo ?? 1) + 1,
+    status: 'queued',
+    progress: { stage: 'ingest', pct: 0 },
+    error: null,
+    page: prev?.page ?? null,
+    artifacts: {},
+    regions: prev?.regions ?? [],
+    stats: null,
+    workerVersion: null,
+    jobId,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export { mappers } from './mappers';

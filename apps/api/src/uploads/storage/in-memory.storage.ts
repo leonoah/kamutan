@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { assertKnownPath, assertUploadPath, type ObjectStorage } from './object-storage';
+import { assertKnownPath, assertProjectUploadPath, assertQuarantinePath, type ObjectStorage } from './object-storage';
 
 export interface StoredObject {
   data: Buffer;
@@ -11,14 +11,14 @@ export interface StoredObject {
 export class InMemoryObjectStorage implements ObjectStorage {
   readonly objects = new Map<string, StoredObject>();
 
-  /** Test helper standing in for the client's direct (resumable) upload. */
+  /** Test helper standing in for the client's direct (resumable) upload into quarantine. */
   put(path: string, data: Buffer, contentType?: string): void {
-    assertUploadPath(path);
+    assertQuarantinePath(path);
     this.objects.set(path, { data, contentType });
   }
 
   async openRead(path: string): Promise<AsyncIterable<Uint8Array> | null> {
-    assertUploadPath(path);
+    assertQuarantinePath(path);
     const o = this.objects.get(path);
     if (!o) return null;
     // Chunked like a real stream.
@@ -27,12 +27,13 @@ export class InMemoryObjectStorage implements ObjectStorage {
     return Readable.from(chunks);
   }
 
-  async copy(src: string, dest: string, meta: { contentType: string; metadata: Record<string, string> }): Promise<void> {
-    assertUploadPath(src);
-    assertKnownPath(dest);
+  async move(src: string, dest: string, meta: { contentType: string; metadata: Record<string, string> }): Promise<void> {
+    assertQuarantinePath(src);
+    assertProjectUploadPath(dest);
     const o = this.objects.get(src);
     if (!o) throw new Error('source object missing');
     this.objects.set(dest, { data: o.data, contentType: meta.contentType, metadata: meta.metadata });
+    this.objects.delete(src);
   }
 
   async exists(path: string): Promise<boolean> {

@@ -3,7 +3,9 @@ from pathlib import Path
 
 import pytest
 
-DATA_DIR = Path(os.environ.get("KAMUTAN_DATA_DIR", "/home/claude/kamutan-data")) / "sample-noah"
+_ROOT = Path(os.environ.get("KAMUTAN_DATA_DIR", "/home/claude/kamutan-data"))
+# accept both the data root (…/kamutan-data) and the sample folder itself (…/kamutan-data/sample-noah)
+DATA_DIR = _ROOT if list(_ROOT.glob("sheet_*.pdf")) else _ROOT / "sample-noah"
 
 
 @pytest.fixture(scope="session")

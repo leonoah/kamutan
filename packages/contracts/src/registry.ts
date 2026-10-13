@@ -9,7 +9,22 @@ import { CreateProjectRequestSchema, ProjectPageSchema, ProjectSchema, UpdatePro
 import { CorrectionSchema, ReviewItemSchema } from './review.js';
 import { RoleSchema } from './roles.js';
 import { ShareLinkSchema } from './share.js';
-import { FileKindSchema, SheetSchema, SheetSetSchema, SheetVersionSchema } from './sheets.js';
+import {
+  ConfirmSheetRequestSchema,
+  FileKindSchema,
+  PutRegionsRequestSchema,
+  PutRegionsResponseSchema,
+  RegionSchema,
+  ReprocessSheetResponseSchema,
+  SheetClassificationSchema,
+  SheetPageSchema,
+  SheetSchema,
+  SheetSetSchema,
+  SheetSummarySchema,
+  SheetVersionSchema,
+  TilesArtifactSchema,
+} from './sheets.js';
+import { TilesManifestSchema } from './tiles.js';
 import {
   CreateUploadRequestSchema,
   CreateUploadResponseSchema,
@@ -36,6 +51,16 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   SheetSet: SheetSetSchema,
   Sheet: SheetSchema,
   SheetVersion: SheetVersionSchema,
+  SheetClassification: SheetClassificationSchema,
+  SheetSummary: SheetSummarySchema,
+  SheetPage: SheetPageSchema,
+  Region: RegionSchema,
+  TilesArtifact: TilesArtifactSchema,
+  TilesManifest: TilesManifestSchema,
+  ConfirmSheetRequest: ConfirmSheetRequestSchema,
+  PutRegionsRequest: PutRegionsRequestSchema,
+  PutRegionsResponse: PutRegionsResponseSchema,
+  ReprocessSheetResponse: ReprocessSheetResponseSchema,
   Job: JobSchema,
   ReviewItem: ReviewItemSchema,
   Correction: CorrectionSchema,

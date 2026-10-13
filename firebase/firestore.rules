@@ -53,7 +53,9 @@ service cloud.firestore {
 
     // ------------------------------------------------------------------ jobs (top level)
     // Server/worker-written. Readable only by members of the job's org; list
-    // queries must filter by orgId (where('orgId', '==', X)).
+    // queries must filter by orgId (where('orgId', '==', X)). A job doc without a
+    // string orgId is unreadable. The worker never trusts orgId from the doc alone:
+    // it re-derives it from the Pub/Sub payload + storagePath prefix (IAM.md).
     match /jobs/{jobId} {
       allow get, list: if signedIn() && resource.data.orgId is string && isMember(resource.data.orgId);
       allow write: if false;
@@ -102,10 +104,17 @@ service cloud.firestore {
           allow write: if false;
         }
 
+        // Sprint 1 (ingest): sheet = one page of a sheetSet (sheetId = `${sheetSetId}-p${i}`).
+        // Written by the worker (classification, scale, currentVersionId) and by the API
+        // (confirm: confirmed/confirmedBy/confirmedAt, floors, discipline, scaleDenominator).
+        // No client write at all — confirm and region edits are API calls (role + audit there).
         match /sheets/{sheetId} {
           allow read: if isMember(orgId);
           allow write: if false;
 
+          // status/progress/artifacts/regions/stats — worker (and API for regions) only.
+          // Artifact paths in this doc are NOT readable through storage.rules; the client
+          // asks the API for short-lived signed URLs (tiles-manifest).
           match /versions/{versionId} {
             allow read: if isMember(orgId);
             allow write: if false;

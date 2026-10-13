@@ -32,6 +32,11 @@ export const EnvSchema = z
     THROTTLE_TTL_MS: z.coerce.number().int().positive().default(60_000),
     THROTTLE_LIMIT: z.coerce.number().int().positive().default(120),
     UPLOAD_THROTTLE_LIMIT: z.coerce.number().int().positive().default(20),
+    /** tiles-manifest calls per user per THROTTLE_TTL_MS (each call signs up to 256 URLs). */
+    TILES_THROTTLE_LIMIT: z.coerce.number().int().positive().default(60),
+
+    /** Lifetime of signed artifact read URLs (tiles, thumbnail). 15 minutes per the Sprint 1 brief. */
+    SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
   })
   .superRefine((env, ctx) => {
     const req = (cond: boolean, path: string, message: string) => {

@@ -1,23 +1,23 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { DocIdSchema, FileKindSchema, UidSchema, UPLOAD_PATH_RE } from '@kamutan/contracts';
+import { DocIdSchema, FileKindSchema, QUARANTINE_PATH_RE, UidSchema } from '@kamutan/contracts';
 import { z } from 'zod';
 
 /** Claims carried by the opaque upload token (stateless pending upload). */
 export const UploadTokenClaimsSchema = z
   .object({
-    v: z.literal(2),
-    fid: DocIdSchema, // file id
+    v: z.literal(3),
+    fid: z.string().uuid(), // pending upload id (quarantine object name)
     org: DocIdSchema,
     prj: DocIdSchema,
     usr: UidSchema,
-    path: z.string().regex(UPLOAD_PATH_RE),
+    path: z.string().regex(QUARANTINE_PATH_RE),
     name: z.string().min(1).max(255),
     kind: FileKindSchema,
     size: z.number().int().positive(),
     exp: z.number().int(), // unix seconds
   })
   .strict()
-  .refine((c) => c.path === `orgs/${c.org}/uploads/${c.usr}/${c.fid}`, { message: 'path does not match claims' });
+  .refine((c) => c.path === `orgs/${c.org}/quarantine/${c.fid}`, { message: 'path does not match claims' });
 export type UploadTokenClaims = z.infer<typeof UploadTokenClaimsSchema>;
 
 export class UploadTokenError extends Error {
@@ -34,7 +34,7 @@ export class UploadTokenSigner {
 
   constructor(
     secret: string,
-    private readonly domain = 'kamutan.upload.v2',
+    private readonly domain = 'kamutan.upload.v3',
   ) {
     if (secret.length < 32) throw new Error('upload token secret must be >= 32 chars');
     this.key = Buffer.from(secret, 'utf8');

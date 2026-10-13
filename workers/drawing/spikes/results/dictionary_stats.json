@@ -5,53 +5,53 @@
  "n_unique_shapes": 1710,
  "n_unique_seen_ge2": 792,
  "n_singletons": 918,
- "n_labelled_clusters": 1648,
- "n_distinct_labels": 105,
- "instances_covered_by_labelled": 0.989,
+ "n_labelled_clusters": 1637,
+ "n_distinct_labels": 98,
+ "instances_covered_by_labelled": 0.9875,
  "shapes_per_label_top": [
   [
-   "א",
-   105
+   "0",
+   108
   ],
   [
-   "0",
-   85
+   "א",
+   106
   ],
   [
    "2",
-   64
+   84
   ],
   [
    "-",
-   46
+   71
+  ],
+  [
+   "6",
+   59
+  ],
+  [
+   "7",
+   48
+  ],
+  [
+   "/",
+   47
   ],
   [
    "ל",
    45
   ],
   [
-   "6",
-   45
-  ],
-  [
-   "ו",
+   "4",
    43
   ],
   [
-   "7",
-   43
+   "8",
+   41
   ],
   [
-   "כ",
-   38
-  ],
-  [
-   "a",
-   38
-  ],
-  [
-   "/",
-   38
+   "5",
+   40
   ],
   [
    "ה",
@@ -62,17 +62,17 @@
    34
   ],
   [
-   "N",
-   32
+   ".",
+   33
   ],
   [
-   "ר",
-   30
+   "9",
+   33
   ]
  ],
  "timing": {
-  "ocr_heb_s": 42.4,
-  "ocr_eng_s": 46.1,
-  "propagated": 96
+  "ocr_heb_s": 29.3,
+  "ocr_eng_s": 37.5,
+  "propagated": 104
  }
 }

@@ -7,6 +7,7 @@ import type { AppConfig } from '../../src/config/config';
 import { InMemoryRepository } from '../../src/db/in-memory.repository';
 import { REPOSITORY } from '../../src/db/repository';
 import { INGEST_QUEUE, InMemoryIngestQueue } from '../../src/queue/ingest-queue';
+import { FakeUrlSigner, URL_SIGNER } from '../../src/sheets/url-signer';
 import { InMemoryObjectStorage } from '../../src/uploads/storage/in-memory.storage';
 import { OBJECT_STORAGE } from '../../src/uploads/storage/object-storage';
 import { FakeIdTokenVerifier } from './fake-verifier';
@@ -16,6 +17,7 @@ export interface TestApp {
   repo: InMemoryRepository;
   queue: InMemoryIngestQueue;
   storage: InMemoryObjectStorage;
+  signer: FakeUrlSigner;
   auth: FakeIdTokenVerifier;
   cfg: AppConfig;
 }
@@ -26,6 +28,7 @@ export async function createTestApp(cfg: AppConfig): Promise<TestApp> {
   const queue = new InMemoryIngestQueue();
   const storage = new InMemoryObjectStorage();
   const auth = new FakeIdTokenVerifier();
+  const signer = new FakeUrlSigner('test-bucket', cfg.SIGNED_URL_TTL_SECONDS);
   const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
     .overrideProvider(REPOSITORY)
     .useValue(repo)
@@ -33,11 +36,13 @@ export async function createTestApp(cfg: AppConfig): Promise<TestApp> {
     .useValue(queue)
     .overrideProvider(OBJECT_STORAGE)
     .useValue(storage)
+    .overrideProvider(URL_SIGNER)
+    .useValue(signer)
     .overrideProvider(ID_TOKEN_VERIFIER)
     .useValue(auth)
     .compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false, logger: false });
   configureApp(app, cfg);
   await app.init();
-  return { app, repo, queue, storage, auth, cfg };
+  return { app, repo, queue, storage, signer, auth, cfg };
 }

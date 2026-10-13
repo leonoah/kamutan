@@ -22,6 +22,25 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9_-]+$"
         },
+        "sheetSetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sheetId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "versionId": {
           "type": "string",
           "minLength": 1,
@@ -44,13 +63,28 @@
           ]
         },
         "progress": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 100
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "stage",
+            "pct"
+          ],
+          "additionalProperties": false
         },
-        "stage": {
-          "type": "string",
-          "maxLength": 64
+        "attempts": {
+          "type": "integer",
+          "minimum": 0
         },
         "error": {
           "anyOf": [
@@ -58,10 +92,13 @@
               "type": "object",
               "properties": {
                 "code": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
                 },
                 "message": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 2000
                 }
               },
               "required": [
@@ -75,22 +112,43 @@
             }
           ]
         },
-        "createdAt": {
+        "createdBy": {
           "type": "string",
-          "format": "date-time"
+          "maxLength": 128
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "updatedAt": {
-          "type": "string",
-          "format": "date-time"
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "id",
         "orgId",
+        "projectId",
+        "sheetSetId",
         "type",
         "status",
         "progress",
-        "createdAt"
+        "attempts",
+        "updatedAt"
       ],
       "additionalProperties": false
     }

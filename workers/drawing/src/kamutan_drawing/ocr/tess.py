@@ -116,3 +116,34 @@ def render_glyph(glyph, H: float, baseline: float, px_per_h: float = 48.0, strok
     for a, b, c, d in glyph.segs:
         dr.line([((a - x0) * s, (b - y0) * s), ((c - x0) * s, (d - y0) * s)], fill=0, width=stroke)
     return img
+
+
+@dataclass
+class Word:
+    text: str
+    x0: int
+    y0: int
+    x1: int
+    y1: int
+    conf: float  # 0..100
+    line: tuple[int, int, int]  # (block, paragraph, line)
+
+
+def ocr_words(img: Image.Image, lang: str = "heb+eng", psm: int = 11) -> list[Word]:
+    """Word boxes via Tesseract's TSV output (raster uploads only)."""
+    out = run_tesseract(img, lang, psm, ["tsv"])
+    words = []
+    for row in out.splitlines()[1:]:
+        p = row.split("\t")
+        if len(p) < 12 or p[0] != "5":
+            continue
+        txt = p[11].strip()
+        try:
+            conf = float(p[10])
+            x, y, w, h = (int(v) for v in p[6:10])
+            key = (int(p[2]), int(p[3]), int(p[4]))
+        except ValueError:
+            continue
+        if txt and conf >= 0:
+            words.append(Word(txt, x, y, x + w, y + h, conf, key))
+    return words

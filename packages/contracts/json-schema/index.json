@@ -2,6 +2,7 @@
   "schemas": [
     "ApiError.json",
     "BoqLine.json",
+    "ConfirmSheetRequest.json",
     "Correction.json",
     "CreateOrgRequest.json",
     "CreateProjectRequest.json",
@@ -20,12 +21,21 @@
     "Org.json",
     "Project.json",
     "ProjectPage.json",
+    "PutRegionsRequest.json",
+    "PutRegionsResponse.json",
+    "Region.json",
+    "ReprocessSheetResponse.json",
     "ReviewItem.json",
     "Role.json",
     "ShareLink.json",
     "Sheet.json",
+    "SheetClassification.json",
+    "SheetPage.json",
     "SheetSet.json",
+    "SheetSummary.json",
     "SheetVersion.json",
+    "TilesArtifact.json",
+    "TilesManifest.json",
     "UpdateProjectRequest.json"
   ]
 }

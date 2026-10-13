@@ -11,7 +11,8 @@
  *    which carries `orgId` as a field.
  *  - Item codes are TEXT ("4.10" !== "4.1").
  *  - Geometry is NOT stored in Firestore: it lives in Storage artifacts
- *    (`orgs/{orgId}/derived/...`), paper millimetres, y down.
+ *    (`orgs/{orgId}/projects/{p}/sheets/{s}/versions/{v}/...`), paper millimetres, y down,
+ *    served to browsers only through short-lived signed URLs.
  *  - Timestamps are Firestore `Timestamp`s; typed here as `FsTimestamp` to stay SDK-agnostic.
  */
 
@@ -60,6 +61,7 @@ export const SHEET_VERSION_STATUSES = ['uploaded', 'queued', 'processing', 'read
 export type SheetVersionStatus = (typeof SHEET_VERSION_STATUSES)[number];
 
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const;
+export const JOB_TYPES = ['ingest.sheet_version'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export const LIFECYCLES = ['existing', 'new', 'demolish'] as const;
@@ -137,30 +139,82 @@ export interface FloorRegion {
   source: 'auto' | 'manual';
 }
 
-/** orgs/{orgId}/projects/{projectId}/sheets/{sheetId} — server/worker-written. */
-export interface Sheet {
-  logicalKey: string;
-  discipline: string[];
-  floorRegions: FloorRegion[];
-  scale: number | null;
-  /** Title block WITHOUT PII (no client name / address). */
-  titleBlock?: { sheetTitle?: string; sheetNumber?: string; discipline?: string; scaleText?: string };
-  currentVersionId: string | null;
-  sheetSetId: string;
+export const INGEST_STAGES = ['ingest', 'render', 'ocr', 'classify', 'scale', 'done'] as const;
+export type IngestStage = (typeof INGEST_STAGES)[number];
+
+/** Sheet classification produced by the worker (Sprint 1 brief). */
+export interface SheetClassification {
+  discipline: string | null;
+  floors: string[];
+  sheetTitle: string | null;
+  scaleText: string | null;
+  confidence: number; // 0..1
+  level: ConfidenceLevel;
+  reasons: string[];
 }
 
-/** .../sheets/{sheetId}/versions/{versionId} — worker-written. */
+/**
+ * orgs/{orgId}/projects/{projectId}/sheets/{sheetId} — worker-written; confirm/regions via the API.
+ * Sprint 1: one sheet per page of a sheetSet, sheetId = `${sheetSetId}-p${pageIndex}`.
+ * NO client write (firestore.rules) — confirming a sheet is `POST .../sheets/:sid/confirm`.
+ */
+export interface Sheet {
+  sheetSetId: string;
+  pageIndex?: number;
+  title?: string | null;
+  discipline: string | string[] | null; // Sprint 0 stored string[]; Sprint 1 a single discipline
+  floors?: string[];
+  scaleDenominator?: number | null;
+  classification?: SheetClassification;
+  confirmed?: boolean;
+  confirmedBy?: string | null;
+  confirmedAt?: FsTimestamp | null;
+  currentVersionId: string | null;
+  updatedAt?: FsTimestamp;
+  /** Sprint 0 placeholder fields. */
+  logicalKey?: string;
+  floorRegions?: FloorRegion[];
+  scale?: number | null;
+  /** Title block WITHOUT PII (no client name / address). */
+  titleBlock?: { sheetTitle?: string; sheetNumber?: string; discipline?: string; scaleText?: string };
+}
+
+/** Tiles pyramid of a sheet version (z = 0 fits one 256 px tile). */
+export interface TilesArtifact {
+  prefix: string; // orgs/{o}/projects/{p}/sheets/{s}/versions/{v}/tiles
+  format: 'webp';
+  tileSize: 256;
+  dpi: number;
+  levels: number;
+  widthPx: number;
+  heightPx: number;
+}
+
+/** .../sheets/{sheetId}/versions/{versionId} — worker-written (regions also by the API). */
 export interface SheetVersion {
-  versionNo: number;
   status: SheetVersionStatus;
-  sha256: string;
-  pageIndex: number;
-  widthMm?: number;
-  heightMm?: number;
-  /** Storage paths under orgs/{orgId}/derived/... (gzip JSON / tiles manifest). */
-  artifacts: { primitives?: string; tiles?: string; detections?: string; rooms?: string };
-  stats?: { detections: number; green: number; yellow: number; red: number; rooms: number };
-  createdAt: FsTimestamp;
+  progress?: { stage: IngestStage; pct: number };
+  error?: { code: string; message: string } | null;
+  page?: { widthMm: number; heightMm: number; rotation: number };
+  /** Storage object paths. NOT client-readable via storage.rules — use the API's signed URLs. */
+  artifacts: {
+    tiles?: TilesArtifact | string;
+    primitives?: string;
+    text?: string;
+    thumbnail?: string;
+    detections?: string;
+    rooms?: string;
+  };
+  // Points are {x, y} objects (packages/contracts PointMmSchema): Firestore rejects nested arrays.
+  regions?: Array<{ id: string; floor: string; polygonMm: Array<{ x: number; y: number }>; scaleDenominator: number }>;
+  stats?: { paths?: number; segments?: number; textLines?: number; glyphs?: number; [k: string]: number | undefined };
+  workerVersion?: string;
+  updatedAt?: FsTimestamp;
+  /** Sprint 0 fields. */
+  versionNo?: number;
+  sha256?: string;
+  pageIndex?: number;
+  createdAt?: FsTimestamp;
 }
 
 /** orgs/{orgId}/projects/{projectId}/legendEntries/{entryId} — worker/server-written. */
@@ -294,8 +348,10 @@ export interface AuditEvent {
 export interface Job {
   orgId: string;
   projectId?: string;
+  sheetSetId?: string;
   versionId?: string;
-  type: string;
+  type: (typeof JOB_TYPES)[number] | string;
+  attempts?: number;
   status: JobStatus;
   progress: number; // 0..100
   stage?: string;
@@ -324,10 +380,24 @@ export const paths = {
   symbolMapping: (o: string, id: string) => `orgs/${o}/symbolMappings/${id}`,
   auditEvent: (o: string, id: string) => `orgs/${o}/auditLog/${id}`,
   job: (id: string) => `jobs/${id}`,
-  /** Storage */
+  /** Storage — client quarantine slot (SEC-13; mirrors packages/contracts storagePaths.quarantine). */
+  quarantine: (o: string, uuid: string) => `orgs/${o}/quarantine/${uuid}`,
+  /** Verified upload of a sheet set, moved here by the API (admin SDK only). */
+  projectUpload: (o: string, p: string, sheetSetId: string, ext: string) => `orgs/${o}/projects/${p}/uploads/${sheetSetId}/source.${ext}`,
+  /** @deprecated Sprint-0 client upload slot — closed by storage.rules in Sprint 1. */
   upload: (o: string, uid: string, fileId: string) => `orgs/${o}/uploads/${uid}/${fileId}`,
+  /** Sprint-0 artifact prefix (worker only; no client read). */
   derived: (o: string, rest: string) => `orgs/${o}/derived/${rest}`,
+  /** @deprecated Sprint-0 verified originals written by the API (no client access). */
+  source: (o: string, p: string, sha256: string, ext: string) => `orgs/${o}/projects/${p}/sources/${sha256}.${ext}`,
+  /** Sprint-1 artifact prefix of a sheet version (worker writes; clients via signed URLs only). */
+  artifacts: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}`,
+  tile: (o: string, p: string, s: string, v: string, z: number, x: number, y: number) =>
+    `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/tiles/${z}/${x}_${y}.webp`,
 } as const;
+
+/** Storage prefixes a client may READ directly. Empty by design: every read is a signed URL (SEC-20). */
+export const CLIENT_READABLE_STORAGE_PREFIXES: readonly string[] = [];
 
 /** Every collection id used in the model (checked against firestore.rules by the lint test). */
 export const COLLECTIONS = [

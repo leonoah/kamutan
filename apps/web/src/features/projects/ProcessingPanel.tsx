@@ -1,6 +1,8 @@
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-import type { Job, SheetSet } from "@/api/types";
+import { AlertCircle, CheckCircle2, ClipboardCheck, Loader2 } from "lucide-react";
+import type { Job, SheetRow, SheetSet } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Ltr } from "@/components/Ltr";
@@ -8,7 +10,20 @@ import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isActiveJob, useLiveJobs, useLiveSheetSets, useLiveSheets } from "@/features/realtime/hooks";
 
-const KNOWN_STAGES = new Set(["split", "titleblock", "legend", "rooms", "links", "quantities"]);
+const KNOWN_STAGES = new Set([
+  "ingest",
+  "render",
+  "ocr",
+  "classify",
+  "scale",
+  "done",
+  "split",
+  "titleblock",
+  "legend",
+  "rooms",
+  "links",
+  "quantities",
+]);
 
 /**
  * Live processing view (S09-lite): Firestore listeners on jobs (orgId == X, projectId == Y),
@@ -25,10 +40,14 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
   const failedJobs = (jobs.data ?? []).filter((j) => j.status === "failed");
   // job.versionId → sheet → sheetSet name, so each progress row says which file it is.
   const nameOf = (j: Job) => {
-    const row = sheets.data?.find((r) => r.sheet.currentVersionId === j.versionId);
-    const set = row && sets.data?.find((s) => s.id === row.sheet.sheetSetId);
-    return set?.name ?? null;
+    // Sprint 1 jobs carry sheetSetId; version ids are only unique per sheet, so that lookup is a fallback.
+    const setId = j.sheetSetId ?? sheets.data?.find((r) => r.sheet.currentVersionId === j.versionId)?.sheet.sheetSetId;
+    return sets.data?.find((s) => s.id === setId)?.name ?? null;
   };
+  // Per-sheet (per-version) stages: everything not yet ready, plus failures with a Hebrew reason.
+  const sheetRows = (sheets.data ?? []).filter((r) => r.version && r.version.status !== "ready");
+  const setOf = (r: SheetRow) => sets.data?.find((s) => s.id === r.sheet.sheetSetId);
+  const toConfirm = (sheets.data ?? []).filter((r) => r.version?.status === "ready" && !r.sheet.confirmed).length;
 
   return (
     <Card className="mt-8">
@@ -54,6 +73,29 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
               <JobRow key={j.id} job={j} name={nameOf(j)} />
             ))}
           </section>
+        ) : null}
+
+        {sheetRows.length > 0 ? (
+          <section aria-label={t("project.sheetsProgress")} className="flex flex-col gap-2">
+            <h3 className="text-dense font-medium text-muted-foreground">{t("project.sheetsProgress")}</h3>
+            <ul className="flex flex-col gap-2">
+              {sheetRows.map((r) => (
+                <SheetProgressRow key={r.sheet.id} row={r} setName={setOf(r)?.name ?? null} />
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {toConfirm > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-primary/30 bg-primary/[0.04] px-3 py-2.5">
+            <span className="text-dense text-foreground">{t("project.confirmSheetsCta", { count: toConfirm })}</span>
+            <Button size="sm" asChild>
+              <Link to={`/projects/${projectId}/sheets`}>
+                <ClipboardCheck aria-hidden />
+                {t("project.confirmSheets")}
+              </Link>
+            </Button>
+          </div>
         ) : null}
 
         {sets.data && sets.data.length > 0 ? (
@@ -94,6 +136,10 @@ function JobRow({ job, name }: { job: Job; name: string | null }) {
       </div>
       {!failed ? (
         <Progress value={job.progress} aria-label={`${t("project.processing")}: ${stage}`} />
+      ) : job.error ? (
+        <p role="alert" className="ps-6 text-meta text-destructive">
+          {t(`project.errors.${job.error.code}`, { defaultValue: t("project.errors.internal") })}
+        </p>
       ) : null}
     </div>
   );
@@ -119,6 +165,41 @@ function SetRow({ set }: { set: SheetSet }) {
       <span className="shrink-0 text-muted-foreground">
         {t(`project.setStatus.${set.status}`)} · <Ltr>{formatDate(set.createdAt)}</Ltr>
       </span>
+    </li>
+  );
+}
+
+function SheetProgressRow({ row, setName }: { row: SheetRow; setName: string | null }) {
+  const { t } = useTranslation();
+  const v = row.version!;
+  const failed = v.status === "failed";
+  const stage = v.progress?.stage;
+  const pct = v.progress?.pct ?? 0;
+  const page = t("project.pageN", { n: (row.sheet.pageIndex ?? 0) + 1 });
+  const name = row.sheet.title ?? (setName ? `${setName} · ${page}` : page);
+  const stageText = stage && KNOWN_STAGES.has(stage) ? t(`project.stage.${stage}`) : t(`project.versionStatus.${v.status}`);
+  const errCode = v.error?.code ?? "internal";
+  return (
+    <li className="flex flex-col gap-1.5" data-sheet-progress={row.sheet.id} data-status={v.status} data-stage={stage}>
+      <div className="flex items-center justify-between gap-3 text-dense">
+        <span className={cn("inline-flex min-w-0 items-center gap-2", failed ? "text-destructive" : "text-foreground")}>
+          {failed ? (
+            <AlertCircle className="size-4 shrink-0" aria-hidden />
+          ) : (
+            <Loader2 className="size-4 shrink-0 animate-spin text-primary motion-reduce:animate-none" aria-hidden />
+          )}
+          <bdi className="truncate font-medium">{name}</bdi>
+          {!failed ? <span className="text-muted-foreground">{stageText}</span> : null}
+        </span>
+        {!failed ? <Ltr className="text-meta text-muted-foreground">{`${Math.round(pct)}%`}</Ltr> : null}
+      </div>
+      {failed ? (
+        <p role="alert" className="ps-6 text-meta text-destructive">
+          {t(`project.errors.${errCode}`, { defaultValue: t("project.errors.internal") })}
+        </p>
+      ) : (
+        <Progress value={pct} aria-label={t("project.sheetProgressLabel", { name, stage: stageText })} />
+      )}
     </li>
   );
 }

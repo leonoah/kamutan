@@ -15,6 +15,7 @@
   "dependencies": {
     "@fontsource/heebo": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@kamutan/viewer": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-dropdown-menu": "^2.1.2",
     "@radix-ui/react-label": "^2.1.0",

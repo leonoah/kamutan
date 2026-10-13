@@ -51,6 +51,7 @@ FLOORS: dict[str, tuple[str, list[str]]] = {
     "ground": ("קרקע", ["קרקע"]),
     "first": ("א'", ["א'", "א"]),
     "second": ("ב'", ["ב'", "ב"]),
+    "third": ("ג'", ["ג'", "ג"]),
     "roof": ("גג", ["גג"]),
 }
 
@@ -209,8 +210,8 @@ def classify_sheet(tb: TitleBlock) -> SheetClass:
     keep = [d for d in disc if d[1] >= 0.9] or disc[:1]
     floors = _best_keyword(name, FLOORS, 0.75)
     # "א" alone is ambiguous; only accept the first-floor token after "קומה"
-    if any(c == "first" for c, _ in floors) and "קומה" not in normalize(name) and "קומת" not in normalize(name):
-        floors = [f for f in floors if f[0] != "first"]
+    if "קומה" not in normalize(name) and "קומת" not in normalize(name):
+        floors = [f for f in floors if f[0] not in ("first", "second", "third")]
     scale = parse_scale(tb.fields.get("scale", ""))
     if scale is None:
         notes.append("scale not parsed from title block")

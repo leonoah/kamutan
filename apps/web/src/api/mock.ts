@@ -1,4 +1,5 @@
 import {
+  INGEST_STAGES,
   ApiError,
   UploadCanceledError,
   type Backend,
@@ -7,8 +8,11 @@ import {
   type Project,
   type Sheet,
   type SheetSet,
+  type SheetRow,
   type SheetVersion,
+  type IngestStage,
 } from "./types";
+import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, sampleTiles, seedNoah } from "./mockSheets";
 
 export interface MockOptions {
   /** Seed projects. Defaults to two demo projects. Pass [] to see the empty state. */
@@ -21,10 +25,30 @@ export interface MockOptions {
   uploadTickMs?: number;
   /** Ingest job progress tick (ms). */
   jobTickMs?: number;
+  /** Seed the demo project (p-noah) with classified sample sheets. Default true. */
+  seedSheets?: boolean;
 }
 
 export const DEMO_ORG_ID = "org-demo";
-export const MOCK_STAGES = ["split", "titleblock", "legend", "rooms", "links", "quantities"] as const;
+/** Worker stages in order (brief: progress.stage). */
+export const MOCK_STAGES = INGEST_STAGES.filter((st) => st !== "done") as Exclude<IngestStage, "done">[];
+/** Upper bound (pct) of each stage, for the simulated worker. */
+const STAGE_END: Record<Exclude<IngestStage, "done">, number> = { ingest: 10, render: 40, ocr: 65, classify: 85, scale: 99 };
+const MAX_TILE_BATCH = 256;
+
+/** Same structural checks as contracts RegionListSchema (+ ≥ 3 points). */
+function validateRegions(regions: { id: string; polygonMm: { x: number; y: number }[] }[]) {
+  const ids = new Set<string>();
+  if (regions.length > 8) throw new ApiError(400, "validation_failed", "too many regions");
+  for (const r of regions) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(r.id) || ids.has(r.id)) throw new ApiError(400, "validation_failed", "bad region id");
+    if (r.polygonMm.length < 3 || r.polygonMm.length > 256) throw new ApiError(400, "validation_failed", "bad polygon");
+    ids.add(r.id);
+  }
+}
+
+const stageAt = (pct: number): IngestStage =>
+  pct >= 100 ? "done" : (MOCK_STAGES.find((st) => pct < STAGE_END[st]) ?? "scale");
 
 export const demoProjects = (): Project[] => [
   {
@@ -70,7 +94,12 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
 
   const projects = new Map((opts.projects ?? demoProjects()).map((p) => [p.id, structuredClone(p)]));
   const sheetSets = new Map<string, SheetSet[]>(); // projectId → sets
-  const sheets = new Map<string, { sheet: Sheet; version: SheetVersion | null }[]>();
+  const sheets = new Map<string, SheetRow[]>();
+  if ((opts.seedSheets ?? true) && projects.has("p-noah")) {
+    const seed = seedNoah("2026-10-11T11:40:00.000Z");
+    sheetSets.set("p-noah", seed.sets);
+    sheets.set("p-noah", seed.rows);
+  }
   const jobs: Job[] = [];
   const tokens = new Map<string, { projectId: string; filename: string; kind: SheetSet["fileKind"]; uploaded: boolean }>();
   const uploadedPaths = new Set<string>();
@@ -90,31 +119,92 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     return p;
   };
 
-  function runJob(job: Job, set: SheetSet, row: { sheet: Sheet; version: SheetVersion | null }) {
+  /**
+   * Simulated drawing worker (brief: one file = one sheetSet; page i → sheet `${setId}-p${i}` with a
+   * version whose status/progress.stage/pct is pushed live like Firestore would).
+   * Demo affordances: a filename containing "encrypted" fails the whole set at ingest; "broken" fails page 2.
+   */
+  function runJob(job: Job, set: SheetSet, rows: SheetRow[], filename: string) {
     let step = 0;
-    const total = MOCK_STAGES.length * 3;
+    const total = 18;
+    const lag = 2; // pages start staggered, like a worker processing them in order
+    const failSet = /encrypted/i.test(filename);
+    const failPage = /broken/i.test(filename) ? 1 : -1;
     const timer = setInterval(() => {
       step += 1;
       const now = new Date().toISOString();
-      Object.assign(job, {
-        status: "running",
-        progress: Math.min(100, Math.round((step / total) * 100)),
-        stage: MOCK_STAGES[Math.min(MOCK_STAGES.length - 1, Math.floor((step - 1) / 3))],
-        updatedAt: now,
-      });
       set.status = "splitting";
-      if (row.version) row.version.status = "processing";
-      if (step >= total) {
+      if (failSet && step >= 2) {
         clearInterval(timer);
-        Object.assign(job, { status: "succeeded", progress: 100 });
-        set.status = "ready";
-        if (row.version) row.version.status = "ready";
+        const error = { code: "pdf_encrypted", message: "PDF is encrypted" };
+        Object.assign(job, { status: "failed", stage: "ingest", error, updatedAt: now });
+        set.status = "failed";
+        for (const r of rows) if (r.version) Object.assign(r.version, { status: "failed", error, progress: { stage: "ingest", pct: 5 }, updatedAt: now });
+        emit();
+        return;
+      }
+      let sum = 0;
+      let allDone = true;
+      rows.forEach((r, i) => {
+        const v = r.version;
+        if (!v || v.status === "ready" || v.status === "failed") {
+          sum += 100;
+          return;
+        }
+        const pct = Math.max(0, Math.min(100, Math.round(((step - i * lag) / total) * 100)));
+        if (pct === 0) {
+          allDone = false;
+          return;
+        }
+        const stage = stageAt(pct);
+        if (i === failPage && stage === "ocr") {
+          Object.assign(v, { status: "failed", progress: { stage, pct }, error: { code: "render_failed", message: "render failed" }, updatedAt: now });
+          sum += 100;
+          return;
+        }
+        Object.assign(v, { status: pct >= 100 ? "ready" : "processing", progress: { stage, pct }, updatedAt: now });
+        if (pct >= 100) {
+          const c = guessClassification(`${filename} ${rows.length > 1 ? `p${i + 1}` : ""}`);
+          const tiles = sampleTiles(SAMPLE_FOR_UPLOAD, false);
+          Object.assign(r.sheet, {
+            title: c.sheetTitle,
+            discipline: c.discipline,
+            floors: c.floors,
+            scaleDenominator: 50,
+            classification: c,
+            confirmed: false,
+            updatedAt: now,
+          });
+          Object.assign(v, {
+            page: pageOf(tiles),
+            artifacts: { tiles, thumbnail: tiles.prefix.replace(/\/tiles$/, "/thumbnail.webp") },
+            regions: [],
+            stats: { paths: 40000, segments: 170000, textLines: 0, glyphs: 2100 },
+            workerVersion: "mock",
+          });
+        } else allDone = false;
+        sum += pct;
+      });
+      const pct = Math.round(sum / Math.max(1, rows.length));
+      const slowest = rows.map((r) => r.version?.progress?.stage).find((st) => st && st !== "done") ?? "done";
+      Object.assign(job, { status: "running", progress: Math.min(99, pct), stage: slowest === "done" ? "scale" : slowest, updatedAt: now });
+      if (allDone) {
+        clearInterval(timer);
+        const ok = rows.some((r) => r.version?.status === "ready");
+        Object.assign(job, { status: ok ? "succeeded" : "failed", progress: 100 });
+        set.status = ok ? "ready" : "failed";
         const p = projects.get(set.projectId);
-        if (p?.stats) p.stats.sheets += 1;
+        if (p?.stats) p.stats.sheets += rows.filter((r) => r.version?.status === "ready").length;
       }
       emit();
     }, jobTick);
   }
+
+  const findRow = (projectId: string, sheetId: string) => {
+    const row = (sheets.get(projectId) ?? []).find((r) => r.sheet.id === sheetId);
+    if (!row) throw new ApiError(404, "not_found", "Sheet not found");
+    return row;
+  };
 
   return {
     emit,
@@ -187,26 +277,104 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
           uploadedBy: "mock-user",
           createdAt: now,
         };
-        const sheet: Sheet = { id: nextId("sh"), logicalKey: t.filename, sheetSetId: set.id, currentVersionId: null };
-        const version: SheetVersion = { id: nextId("v"), sheetId: sheet.id, versionNo: 1, status: "queued", createdAt: now };
-        sheet.currentVersionId = version.id;
-        const row = { sheet, version };
+        // Mock "split": a PDF becomes 2 sheets (pages), other kinds 1.
+        const pages = t.kind === "pdf" ? 2 : 1;
+        const rows: SheetRow[] = Array.from({ length: pages }, (_, i) => {
+          const sheet: Sheet = { id: `${set.id}-p${i}`, sheetSetId: set.id, pageIndex: i, currentVersionId: "v1", confirmed: false };
+          const version: SheetVersion = {
+            id: "v1",
+            sheetId: sheet.id,
+            versionNo: 1,
+            status: "queued",
+            createdAt: now,
+            progress: { stage: "ingest", pct: 0 },
+          };
+          return { sheet, version };
+        });
+        const { sheet, version } = rows[0]!;
         const job: Job = {
           id: nextId("j"),
           orgId: p.orgId,
           projectId,
-          versionId: version.id,
+          sheetSetId: set.id,
+          versionId: version!.id,
           type: "ingest.sheet_version",
           status: "queued",
           progress: 0,
           createdAt: now,
         };
         sheetSets.set(projectId, [set, ...(sheetSets.get(projectId) ?? [])]);
-        sheets.set(projectId, [...(sheets.get(projectId) ?? []), row]);
+        sheets.set(projectId, [...(sheets.get(projectId) ?? []), ...rows]);
         jobs.unshift(job);
         emit();
-        runJob(job, set, row);
-        return delay({ sheetSet: { ...set }, sheet: { ...sheet }, sheetVersion: { ...version }, deduplicated: false, jobId: job.id });
+        runJob(job, set, rows, t.filename);
+        return delay({ sheetSet: { ...set }, sheet: { ...sheet }, sheetVersion: { ...version! }, deduplicated: false, jobId: job.id });
+      },
+      confirmSheet: async (projectId, sheetId, req) => {
+        mustGet(projectId);
+        const { sheet, version } = findRow(projectId, sheetId);
+        const sd = req.scaleDenominator;
+        if (!req.discipline || (sd !== null && !(Number.isInteger(sd) && sd >= 1 && sd <= 10_000))) {
+          throw new ApiError(400, "validation_failed", "invalid confirm body");
+        }
+        if (req.regions) {
+          validateRegions(req.regions);
+          if (version) version.regions = structuredClone(req.regions);
+        }
+        Object.assign(sheet, {
+          discipline: req.discipline,
+          floors: [...req.floors],
+          scaleDenominator: sd,
+          confirmed: true,
+          confirmedBy: "mock-user",
+          confirmedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        emit();
+        return delay(structuredClone(sheet));
+      },
+      saveSheetRegions: async (projectId, sheetId, regions) => {
+        mustGet(projectId);
+        const { version } = findRow(projectId, sheetId);
+        if (!version) throw new ApiError(409, "version_not_ready", "No current version");
+        validateRegions(regions);
+        version.regions = structuredClone(regions);
+        emit();
+        return delay({ sheetId, versionId: version.id, regions: structuredClone(regions) });
+      },
+      getTilesManifest: async (projectId, sheetId, versionId, q) => {
+        mustGet(projectId);
+        const { version } = findRow(projectId, sheetId);
+        const tiles = version?.id === versionId ? version.artifacts?.tiles : undefined;
+        if (!tiles || !version) throw new ApiError(409, "tiles_not_ready", "Tiles are not ready");
+        const { prefix, ...meta } = tiles;
+        const base = `${DEV_ARTIFACTS_BASE}/${prefix}`;
+        const levelGrid = Array.from({ length: tiles.levels }, (_, z) => {
+          const down = 2 ** (tiles.levels - 1 - z);
+          const widthPx = Math.ceil(tiles.widthPx / down);
+          const heightPx = Math.ceil(tiles.heightPx / down);
+          return { z, widthPx, heightPx, cols: Math.ceil(widthPx / tiles.tileSize), rows: Math.ceil(heightPx / tiles.tileSize), mmPerPx: (25.4 / tiles.dpi) * down };
+        });
+        const urls: Record<string, string> = {};
+        if (q) {
+          const g = levelGrid[q.z];
+          if (!g) throw new ApiError(400, "validation_failed", "z out of range");
+          const x1 = Math.min(q.x1, g.cols - 1);
+          const y1 = Math.min(q.y1, g.rows - 1);
+          if ((x1 - q.x0 + 1) * (y1 - q.y0 + 1) > MAX_TILE_BATCH) throw new ApiError(400, "too_many_tiles", "window too large");
+          for (let y = q.y0; y <= y1; y++) for (let x = q.x0; x <= x1; x++) urls[`${q.z}/${x}_${y}`] = `${base}/${q.z}/${x}_${y}.webp`;
+        }
+        return delay({
+          sheetId,
+          versionId,
+          page: version.page ?? null,
+          tiles: meta,
+          levelGrid,
+          thumbnailUrl: `${base.replace(/\/tiles$/, "")}/thumbnail.webp`,
+          urls,
+          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+          maxBatch: MAX_TILE_BATCH,
+        });
       },
     },
 

@@ -4,6 +4,7 @@
   "tasks": {
     "build": { "dependsOn": ["@kamutan/contracts#build"], "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["@kamutan/contracts#build"] },
+    "lint": { "dependsOn": ["@kamutan/contracts#build"] },
     "test": { "dependsOn": ["@kamutan/contracts#build"] }
   }
 }

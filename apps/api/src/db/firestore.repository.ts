@@ -1,23 +1,24 @@
 import {
   DEFAULT_ORG_SETTINGS,
   fsPaths,
+  type Job,
   type Member,
   type Org,
+  type ProcessingError,
   type Project,
+  type Region,
   type Role,
-  type SheetVersionStatus,
+  type Sheet,
+  type SheetSet,
+  type SheetSetStatus,
+  type SheetSummary,
+  type SheetVersion,
 } from '@kamutan/contracts';
-import {
-  FieldValue,
-  Timestamp,
-  type DocumentData,
-  type DocumentReference,
-  type Firestore,
-  type Transaction,
-} from 'firebase-admin/firestore';
+import { FieldPath, FieldValue, Timestamp, type DocumentData, type Firestore, type Query, type Transaction } from 'firebase-admin/firestore';
 import { auditHash } from './audit-chain';
-import { mappers } from './in-memory.repository';
-import type { AuditInput, NewSheetSet, Repository, SheetSetBundle } from './repository';
+import { confirmAudit, newVersionDoc, regionsAudit } from './in-memory.repository';
+import { mappers, versionSummary } from './mappers';
+import { RepoConflictError, type AuditInput, type ConfirmInput, type NewSheetSet, type ReprocessResult, type Repository } from './repository';
 
 /** Firestore Timestamp → Date (top level and one nested level), so mappers see plain values. */
 function plain(d: DocumentData | undefined): Record<string, unknown> | null {
@@ -140,44 +141,26 @@ export class FirestoreRepository implements Repository {
   }
 
   // --- sheet sets ---------------------------------------------------------------------
-  private async readBundle(orgId: string, projectId: string, setId: string, tx?: Transaction): Promise<SheetSetBundle | null> {
-    const get = (r: DocumentReference) => (tx ? tx.get(r) : r.get());
-    const setSnap = await get(this.db.doc(fsPaths.sheetSet(orgId, projectId, setId)));
-    if (!setSnap.exists) return null;
-    const sheetsQ = this.db.collection(`orgs/${orgId}/projects/${projectId}/sheets`).where('sheetSetId', '==', setId).limit(1);
-    const sheets = tx ? await tx.get(sheetsQ) : await sheetsQ.get();
-    const sheetDoc = sheets.docs[0];
-    if (!sheetDoc) return null;
-    const versionId = sheetDoc.get('currentVersionId') as string;
-    const vSnap = await get(this.db.doc(fsPaths.version(orgId, projectId, sheetDoc.id, versionId)));
-    if (!vSnap.exists) return null;
-    const set = plain(setSnap.data()) ?? {};
-    return {
-      sheetSet: mappers.toSheetSet(orgId, projectId, setId, set),
-      sheet: mappers.toSheet(sheetDoc.id, plain(sheetDoc.data()) ?? {}),
-      sheetVersion: mappers.toVersion(sheetDoc.id, versionId, plain(vSnap.data()) ?? {}),
-      jobId: String(set.ingestJobId),
-    };
+  async getSheetSet(orgId: string, projectId: string, sheetSetId: string): Promise<SheetSet | null> {
+    const d = plain((await this.db.doc(fsPaths.sheetSet(orgId, projectId, sheetSetId)).get()).data());
+    return d ? mappers.toSheetSet(orgId, projectId, sheetSetId, d) : null;
   }
 
-  findSheetSetBySha(orgId: string, projectId: string, sha256: string): Promise<SheetSetBundle | null> {
-    return this.readBundle(orgId, projectId, sha256);
-  }
-
-  async createSheetSetBundle(orgId: string, projectId: string, input: NewSheetSet) {
+  async createSheetSetIngest(orgId: string, projectId: string, input: NewSheetSet) {
     return this.db.runTransaction(async (tx) => {
       // All reads before writes (Firestore transaction rule).
-      const existing = await this.readBundle(orgId, projectId, input.sha256, tx);
-      if (existing) return { bundle: existing, deduplicated: true };
+      const setRef = this.db.doc(fsPaths.sheetSet(orgId, projectId, input.sha256)); // doc id = sha256 → atomic dedupe
+      const existing = await tx.get(setRef);
+      if (existing.exists) {
+        return { sheetSet: mappers.toSheetSet(orgId, projectId, setRef.id, plain(existing.data()) ?? {}), deduplicated: true };
+      }
       const project = await tx.get(this.db.doc(fsPaths.project(orgId, projectId)));
       if (!project.exists) throw new Error('project does not exist');
       const head = await this.auditHead(tx, orgId);
 
       const now = Timestamp.now();
-      const setId = input.sha256; // doc id = sha256 → atomic per-project dedupe
-      const sheetRef = this.db.collection(`orgs/${orgId}/projects/${projectId}/sheets`).doc();
-      const versionRef = sheetRef.collection('versions').doc();
       const jobRef = this.db.collection('jobs').doc();
+      const versionId = this.db.collection('_').doc().id; // auto id, used by every page sheet of this set
       const set = {
         fileKind: input.fileKind,
         sha256: input.sha256,
@@ -185,54 +168,213 @@ export class FirestoreRepository implements Repository {
         status: 'uploaded',
         name: input.name,
         uploadedBy: input.uploadedBy,
+        uploadFileId: input.uploadFileId,
         sizeBytes: input.sizeBytes,
         ingestJobId: jobRef.id,
+        versionId,
+        pageCount: null,
         createdAt: now,
       };
-      const sheet = {
-        logicalKey: `upload:${setId.slice(0, 12)}`,
-        discipline: [],
-        floorRegions: [],
-        scale: null,
-        currentVersionId: versionRef.id,
-        sheetSetId: setId,
-      };
-      const version = { versionNo: 1, status: 'uploaded', sha256: input.sha256, pageIndex: 0, artifacts: {}, createdAt: now };
-      tx.create(this.db.doc(fsPaths.sheetSet(orgId, projectId, setId)), set);
-      tx.create(sheetRef, sheet);
-      tx.create(versionRef, version);
+      tx.create(setRef, set);
       tx.create(jobRef, {
         orgId,
         projectId,
-        sheetSetId: setId,
-        sheetId: sheetRef.id,
-        versionId: versionRef.id,
+        sheetSetId: setRef.id,
+        sheetId: null,
+        versionId,
         type: input.jobType,
         status: 'queued',
-        progress: 0,
+        progress: { stage: 'ingest', pct: 0 },
+        attempts: 0,
+        error: null,
+        createdBy: input.uploadedBy,
         createdAt: now,
+        updatedAt: now,
       });
       this.writeAudit(tx, orgId, head, {
         actorId: input.uploadedBy,
         entity: 'sheetSets',
-        entityId: setId,
+        entityId: setRef.id,
         action: 'upload',
-        after: { projectId, fileKind: input.fileKind, sha256: input.sha256, sizeBytes: input.sizeBytes },
+        after: { projectId, fileKind: input.fileKind, sha256: input.sha256, sizeBytes: input.sizeBytes, jobId: jobRef.id },
+      });
+      return { sheetSet: mappers.toSheetSet(orgId, projectId, setRef.id, plain(set) ?? {}), deduplicated: false };
+    });
+  }
+
+  async findSheetSetByUploadFileId(orgId: string, projectId: string, fileId: string): Promise<SheetSet | null> {
+    const snap = await this.db.collection(`orgs/${orgId}/projects/${projectId}/sheetSets`).where('uploadFileId', '==', fileId).limit(1).get();
+    const d = snap.docs[0];
+    return d ? mappers.toSheetSet(orgId, projectId, d.id, plain(d.data()) ?? {}) : null;
+  }
+
+  async setSheetSetStatus(orgId: string, projectId: string, sheetSetId: string, status: SheetSetStatus) {
+    await this.db.doc(fsPaths.sheetSet(orgId, projectId, sheetSetId)).update({ status });
+  }
+
+  // --- sheets & versions --------------------------------------------------------------
+  async listSheets(orgId: string, projectId: string, opts: { limit: number; cursor?: string; sheetSetId?: string }) {
+    let q: Query = this.db.collection(fsPaths.sheets(orgId, projectId));
+    if (opts.sheetSetId) q = q.where('sheetSetId', '==', opts.sheetSetId);
+    q = q.orderBy(FieldPath.documentId());
+    if (opts.cursor) q = q.startAfter(opts.cursor);
+    const snap = await q.limit(opts.limit + 1).get();
+    const docs = snap.docs.slice(0, opts.limit);
+    const sheets = docs.map((d) => mappers.toSheet(d.id, plain(d.data()) ?? {}));
+    const refs = sheets.flatMap((sh) => (sh.currentVersionId ? [this.db.doc(fsPaths.version(orgId, projectId, sh.id, sh.currentVersionId))] : []));
+    const versions = new Map<string, SheetVersion>();
+    if (refs.length) {
+      for (const v of await this.db.getAll(...refs)) {
+        const sheetId = v.ref.parent.parent?.id as string;
+        if (v.exists) versions.set(`${sheetId}/${v.id}`, mappers.toVersion(sheetId, v.id, plain(v.data()) ?? {}));
+      }
+    }
+    const items: SheetSummary[] = sheets.map((sh) => ({
+      ...sh,
+      currentVersion: versionSummary(sh.currentVersionId ? (versions.get(`${sh.id}/${sh.currentVersionId}`) ?? null) : null),
+    }));
+    return { items, nextCursor: snap.docs.length > opts.limit && items.length ? (items.at(-1) as SheetSummary).id : null };
+  }
+
+  async getSheet(orgId: string, projectId: string, sheetId: string): Promise<Sheet | null> {
+    const d = plain((await this.db.doc(fsPaths.sheet(orgId, projectId, sheetId)).get()).data());
+    return d ? mappers.toSheet(sheetId, d) : null;
+  }
+
+  async getVersion(orgId: string, projectId: string, sheetId: string, versionId: string): Promise<SheetVersion | null> {
+    const d = plain((await this.db.doc(fsPaths.version(orgId, projectId, sheetId, versionId)).get()).data());
+    return d ? mappers.toVersion(sheetId, versionId, d) : null;
+  }
+
+  async confirmSheet(orgId: string, projectId: string, sheetId: string, input: ConfirmInput, actorUid: string): Promise<Sheet | null> {
+    const ref = this.db.doc(fsPaths.sheet(orgId, projectId, sheetId));
+    return this.db.runTransaction(async (tx) => {
+      const cur = await tx.get(ref);
+      if (!cur.exists) return null;
+      if (((cur.get('currentVersionId') as string | undefined) ?? null) !== input.expectedVersionId) {
+        throw new RepoConflictError('version_changed');
+      }
+      const vRef = input.regions && input.expectedVersionId ? this.db.doc(fsPaths.version(orgId, projectId, sheetId, input.expectedVersionId)) : null;
+      if (vRef && !(await tx.get(vRef)).exists) throw new RepoConflictError('version_missing');
+      const head = await this.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      const patch = {
+        discipline: input.discipline,
+        floors: input.floors,
+        scaleDenominator: input.scaleDenominator,
+        confirmed: true,
+        confirmedBy: actorUid,
+        confirmedAt: now,
+        updatedAt: now,
+      };
+      tx.update(ref, patch);
+      if (vRef && input.regions) tx.update(vRef, { regions: input.regions, regionsUpdatedBy: actorUid, regionsUpdatedAt: now });
+      this.writeAudit(tx, orgId, head, {
+        actorId: actorUid,
+        entity: 'sheets',
+        entityId: sheetId,
+        action: 'confirm',
+        after: confirmAudit(projectId, input),
+      });
+      return mappers.toSheet(sheetId, { ...(plain(cur.data()) ?? {}), ...plain(patch) });
+    });
+  }
+
+  async setRegions(orgId: string, projectId: string, sheetId: string, versionId: string, regions: Region[], actorUid: string) {
+    const sRef = this.db.doc(fsPaths.sheet(orgId, projectId, sheetId));
+    const vRef = this.db.doc(fsPaths.version(orgId, projectId, sheetId, versionId));
+    return this.db.runTransaction(async (tx) => {
+      const [sheet, version] = await Promise.all([tx.get(sRef), tx.get(vRef)]);
+      if (!sheet.exists || !version.exists) return null;
+      if (sheet.get('currentVersionId') !== versionId) throw new RepoConflictError('version_changed');
+      const head = await this.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      tx.update(vRef, { regions, regionsUpdatedBy: actorUid, regionsUpdatedAt: now });
+      this.writeAudit(tx, orgId, head, {
+        actorId: actorUid,
+        entity: 'sheetVersions',
+        entityId: versionId,
+        action: 'set_regions',
+        after: regionsAudit(projectId, sheetId, regions),
+      });
+      return mappers.toVersion(sheetId, versionId, { ...(plain(version.data()) ?? {}), regions });
+    });
+  }
+
+  async createReprocessVersion(orgId: string, projectId: string, sheetId: string, actorUid: string, jobType: string) {
+    const sRef = this.db.doc(fsPaths.sheet(orgId, projectId, sheetId));
+    return this.db.runTransaction(async (tx): Promise<ReprocessResult | null> => {
+      const sheetSnap = await tx.get(sRef);
+      if (!sheetSnap.exists) return null;
+      const sheet = mappers.toSheet(sheetId, plain(sheetSnap.data()) ?? {});
+      const setSnap = await tx.get(this.db.doc(fsPaths.sheetSet(orgId, projectId, sheet.sheetSetId)));
+      if (!setSnap.exists) return null;
+      let curV: SheetVersion | null = null;
+      if (sheet.currentVersionId) {
+        const v = await tx.get(this.db.doc(fsPaths.version(orgId, projectId, sheetId, sheet.currentVersionId)));
+        if (v.exists) curV = mappers.toVersion(sheetId, v.id, plain(v.data()) ?? {});
+      }
+      if (curV && (curV.status === 'queued' || curV.status === 'processing')) throw new RepoConflictError('in_progress');
+      const head = await this.auditHead(tx, orgId);
+
+      const now = Timestamp.now();
+      const vRef = sRef.collection('versions').doc();
+      const jobRef = this.db.collection('jobs').doc();
+      const version = newVersionDoc(curV, jobRef.id, now);
+      tx.create(vRef, version);
+      tx.create(jobRef, {
+        orgId,
+        projectId,
+        sheetSetId: sheet.sheetSetId,
+        sheetId,
+        versionId: vRef.id,
+        type: jobType,
+        status: 'queued',
+        progress: { stage: 'ingest', pct: 0 },
+        attempts: 0,
+        error: null,
+        createdBy: actorUid,
+        createdAt: now,
+        updatedAt: now,
+      });
+      tx.update(sRef, { currentVersionId: vRef.id, updatedAt: now });
+      this.writeAudit(tx, orgId, head, {
+        actorId: actorUid,
+        entity: 'sheets',
+        entityId: sheetId,
+        action: 'reprocess',
+        after: { projectId, versionId: vRef.id, previousVersionId: sheet.currentVersionId, jobId: jobRef.id },
       });
       return {
-        bundle: {
-          sheetSet: mappers.toSheetSet(orgId, projectId, setId, plain(set) ?? {}),
-          sheet: mappers.toSheet(sheetRef.id, sheet),
-          sheetVersion: mappers.toVersion(sheetRef.id, versionRef.id, plain(version) ?? {}),
-          jobId: jobRef.id,
-        },
-        deduplicated: false,
+        sheet: { ...sheet, currentVersionId: vRef.id, updatedAt: now.toDate().toISOString() },
+        version: mappers.toVersion(sheetId, vRef.id, plain(version) ?? {}),
+        sheetSet: mappers.toSheetSet(orgId, projectId, sheet.sheetSetId, plain(setSnap.data()) ?? {}),
+        jobId: jobRef.id,
       };
     });
   }
 
-  async setVersionStatus(orgId: string, projectId: string, sheetId: string, versionId: string, status: SheetVersionStatus) {
-    await this.db.doc(fsPaths.version(orgId, projectId, sheetId, versionId)).update({ status });
+  async failJob(orgId: string, jobId: string, error: ProcessingError, version?: { projectId: string; sheetId: string; versionId: string }) {
+    const batch = this.db.batch();
+    const jobRef = this.db.doc(fsPaths.job(jobId));
+    const job = await jobRef.get();
+    if (job.exists && job.get('orgId') === orgId) {
+      batch.update(jobRef, { status: 'failed', error, updatedAt: FieldValue.serverTimestamp() });
+    }
+    if (version) {
+      batch.update(this.db.doc(fsPaths.version(orgId, version.projectId, version.sheetId, version.versionId)), {
+        status: 'failed',
+        error,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
+  // --- jobs -----------------------------------------------------------------------------
+  async getJob(jobId: string): Promise<Job | null> {
+    const d = plain((await this.db.doc(fsPaths.job(jobId)).get()).data());
+    return d ? mappers.toJob(jobId, d) : null;
   }
 
   // --- audit -------------------------------------------------------------------------

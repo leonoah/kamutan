@@ -1,14 +1,37 @@
 rules_version = '2';
 
-// Kamutan — Cloud Storage for Firebase rules (ADR 0008).
+// Kamutan — Cloud Storage for Firebase rules (ADR 0008, Sprint 1).
 // Bucket: kamutan-fba67.firebasestorage.app
 //
-//   orgs/{orgId}/uploads/{uid}/{fileId}   client upload: editor/admin of org, own uid folder only,
-//                                         create-only (no overwrite / delete), ≤ 100 MB, drawing types.
-//                                         Readable by org members.
-//   orgs/{orgId}/derived/**               tiles / artifacts written by the worker (admin SDK);
-//                                         readable by org members, never client-writable.
-//   everything else                       denied.
+// The client has exactly ONE capability here: create an object in a quarantine slot.
+// Nothing in this bucket is readable by a client. Every read (tiles, thumbnails, primitives,
+// OCR text, original download) goes through a short-lived V4 signed URL issued by the API after
+// an authorization check (SEC-20; `GET /v1/projects/:pid/sheets/:sid/versions/:vid/tiles-manifest`).
+// Why deny + signed URLs instead of "members may read":
+//   * the API is the single place that checks org + project + version and can audit (SEC-20),
+//     and share-link viewers (no Firebase Auth, ADR 0005) use the very same mechanism;
+//   * a rules-based read costs one cross-service Firestore get per object — a viewport of an
+//     A0 sheet is hundreds of tiles, i.e. hundreds of billed reads and extra latency per pan;
+//   * watermarking / title-block masking for external viewers (SEC-28) needs a server hop anyway;
+//   * a leaked Firebase ID token cannot be used to bulk-download an org's drawings.
+//
+//   orgs/{orgId}/quarantine/{uuid}                 QUARANTINE (SEC-13, Sprint 1; packages/contracts
+//                                                  storagePaths.quarantine). Client create-only: editor/admin
+//                                                  of the org, lowercase UUID object name (no user filename),
+//                                                  0 < size <= 100 MB, drawing content types. Never readable,
+//                                                  never overwritten or deleted by a client. The API verifies
+//                                                  size + magic bytes + sha256 (SEC-14), moves the object to
+//                                                  projects/{p}/uploads/{sheetSetId}/source.{ext}, deletes it.
+//   orgs/{orgId}/uploads/**                        Sprint-0 client upload slot — CLOSED in Sprint 1 (the API issues
+//                                                  quarantine/ paths only); explicit deny so it cannot be re-opened silently.
+//   orgs/{orgId}/projects/{projectId}/sources/**   verified originals — API (admin SDK) only.
+//   orgs/{orgId}/projects/{projectId}/uploads/**   API-produced per-sheetSet originals (Sprint 1 brief) — admin SDK only.
+//   orgs/{orgId}/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/**
+//                                                  ARTIFACTS (tiles/, thumbnail.webp, primitives.msgpack.gz,
+//                                                  text.json.gz) — worker only; clients via signed URLs.
+//   orgs/{orgId}/projects/{projectId}/derived/**,
+//   orgs/{orgId}/derived/**                        Sprint-0 artifact layout — worker only; clients via signed URLs.
+//   everything else                                denied (default deny).
 //
 // Membership is checked cross-service against Firestore orgs/{orgId}/members/{uid}.
 
@@ -27,9 +50,23 @@ service firebase.storage {
     function canUpload(orgId) {
       return isMember(orgId) && firestore.get(memberPath(orgId)).data.role in ['admin', 'editor'];
     }
+    function isUuid(id) {
+      // Same as packages/contracts QUARANTINE_PATH_RE (lowercase canonical UUID).
+      return id.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+    }
+    function opaqueId(id) {
+      // Same alphabet as packages/contracts UPLOAD_PATH_RE: no dots, slashes or user filenames.
+      return id.matches('^[A-Za-z0-9_-]{1,128}$');
+    }
     function allowedType() {
       return request.resource.contentType.matches(
         '^(application/pdf|image/png|application/dxf|image/vnd\\.dxf|image/x-dxf|application/acad|image/vnd\\.dwg|image/x-dwg|application/octet-stream)$');
+    }
+    function validUpload() {
+      return resource == null
+        && request.resource.size > 0
+        && request.resource.size <= 100 * 1024 * 1024
+        && allowedType();
     }
 
     // default deny
@@ -37,21 +74,42 @@ service firebase.storage {
       allow read, write: if false;
     }
 
-    match /orgs/{orgId}/uploads/{uid}/{fileId} {
-      allow read: if isMember(orgId);
+    // ---------------------------------------------------------------- quarantine (client upload slot)
+    match /orgs/{orgId}/quarantine/{fileId} {
+      allow read: if false;                        // quarantine is never client-readable (SEC-13/19)
       allow create: if signedIn()
-                    && request.auth.uid == uid
+                    && opaqueId(orgId)
+                    && isUuid(fileId)
                     && canUpload(orgId)
-                    && resource == null
-                    && request.resource.size > 0
-                    && request.resource.size <= 100 * 1024 * 1024
-                    && allowedType();
+                    && validUpload();
       allow update, delete: if false;
     }
 
+    // Sprint-0 client upload slot — closed (no client read or write).
+    match /orgs/{orgId}/uploads/{rest=**} {
+      allow read, write: if false;
+    }
+
+    match /orgs/{orgId}/projects/{projectId} {
+      // ------------------------------------------------------------ verified originals (API only)
+      match /sources/{rest=**} {
+        allow read, write: if false;
+      }
+      match /uploads/{rest=**} {
+        allow read, write: if false;
+      }
+      // ------------------------------------------------------------ sheet-version artifacts (worker only)
+      match /sheets/{sheetId}/versions/{versionId}/{rest=**} {
+        allow read, write: if false;               // signed URLs from the API only
+      }
+      match /derived/{rest=**} {
+        allow read, write: if false;
+      }
+    }
+
+    // Sprint-0 artifact prefix — kept explicit so nobody re-opens it by accident.
     match /orgs/{orgId}/derived/{rest=**} {
-      allow read: if isMember(orgId);
-      allow write: if false;
+      allow read, write: if false;
     }
   }
 }

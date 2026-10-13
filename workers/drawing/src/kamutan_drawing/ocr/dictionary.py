@@ -89,6 +89,38 @@ SMALL_MARKS = set(".,:;'\"`\u2018\u2019\u05f3\u05f4-_~\u00bb\u00ab")
 SYMBOLS_OK = set("=+-/.:,()%'\"")
 
 
+CASE_BY_HEIGHT = set("cosvwxzCOSVWXZ")  # Latin letters whose upper/lower case differ only in height
+
+
+def is_diameter_sign(polys, x0: float, baseline: float, h: float) -> bool:
+    """SHX ``Ø``: a closed curved loop crossed by one long diagonal straight stroke."""
+    loop = None
+    bars = []
+    for curve, v in polys:
+        if len(v) < 2:
+            continue
+        a = (v - [x0, baseline]) / h
+        if curve and len(a) >= 4 and np.abs(a[0] - a[-1]).max() < 0.05:
+            loop = a
+        elif not curve and len(a) == 2:
+            bars.append(a)
+    if loop is None or len(bars) != 1 or len(polys) != 2:
+        return False
+    b = bars[0]
+    lw = loop[:, 0].max() - loop[:, 0].min()
+    lh = loop[:, 1].max() - loop[:, 1].min()
+    dx, dy = abs(b[1, 0] - b[0, 0]), abs(b[1, 1] - b[0, 1])
+    cx, cy = loop[:, 0].mean(), loop[:, 1].mean()
+    mid = b.mean(axis=0)
+    return bool(
+        0.6 < lw / max(lh, 1e-6) < 1.6
+        and dx >= 0.8 * lw
+        and dy >= 0.8 * lh
+        and abs(mid[0] - cx) < 0.25 * lw
+        and abs(mid[1] - cy) < 0.25 * lh
+    )
+
+
 def _numeric(c: str) -> bool:
     return c.isdigit() or c in ".:/,"
 
@@ -236,14 +268,25 @@ class GlyphDictionary:
                 if cl is not None:
                     getattr(cl, target)[boxes[bi].ch] += 1
 
-    def finalize_labels(self, min_votes: int = 1) -> None:
+    def finalize_labels(self, min_votes: int = 1, lines: list[TextLine] | None = None) -> None:
         """One label per cluster from Hebrew (``votes``) and English (``votes_eng``) OCR.
 
         * Hebrew letter winners stay Hebrew unless English is near-unanimous on a
           Latin letter; the English reading is kept as ``alt`` (used in Latin context).
         * Digits/symbols: the more consistent of the two readings wins.
+        * Geometry that OCR cannot know (with ``lines``, to look at an example glyph):
+          SHX ``Ø`` (loop + diagonal bar, never produced by Tesseract) and the case of
+          Latin letters whose upper/lower forms differ only in height (``X``/``x``).
         """
         for cl in self.clusters:
+            if lines is not None and cl.example is not None:
+                li, gi = cl.example
+                if li < len(lines) and gi < len(lines[li].glyphs):
+                    ln = lines[li]
+                    g = ln.glyphs[gi]
+                    if g.polys and is_diameter_sign(g.polys, float(g.bbox[0]), ln.baseline, ln.height):
+                        cl.label, cl.conf, cl.alt = "Ø", 0.9, None
+                        continue
             rel_h, n_comps = cl.geometry()
             hv, ev = Counter(cl.votes), Counter(cl.votes_eng)
             if rel_h >= 0.6 and n_comps == 1:
@@ -287,6 +330,8 @@ class GlyphDictionary:
                     label = FROM_FINAL.get(label, label)
             if label in QUOTES:  # one tick stroke = geresh, two = gershayim
                 label = '"' if n_comps >= 2 else "'"
+            if label is not None and label in CASE_BY_HEIGHT:
+                label = label.upper() if rel_h >= 0.85 else (label.lower() if rel_h <= 0.75 else label)
             tot = sum(cl.votes.values()) + sum(cl.votes_eng.values())
             if label is None or tot < min_votes:
                 cl.label, cl.conf, cl.alt = None, 0.0, None
