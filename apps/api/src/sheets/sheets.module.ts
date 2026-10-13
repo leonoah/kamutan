@@ -17,5 +17,7 @@ export function createUrlSigner(cfg: AppConfig): UrlSigner {
 @Module({
   controllers: [SheetsController],
   providers: [SheetsService, { provide: URL_SIGNER, inject: [APP_CONFIG], useFactory: createUrlSigner }],
+  // UnderstandingModule reuses the reprocess path and the (cached) signer.
+  exports: [SheetsService, URL_SIGNER],
 })
 export class SheetsModule {}

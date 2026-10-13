@@ -1,5 +1,10 @@
 import {
+  DetectionClassSchema,
+  DetectionStatsSchema,
+  ItemCodeSchema,
   JOB_STATUSES,
+  LEGEND_ENTRY_STATUSES,
+  SymbolClassSchema,
   PageGeometrySchema,
   ProcessingErrorSchema,
   RegionSchema,
@@ -11,6 +16,8 @@ import {
   VersionStatsSchema,
   type Job,
   type JobProgress,
+  type LegendEntry,
+  type SymbolMapping,
   type Member,
   type Org,
   type ProcessingError,
@@ -154,13 +161,34 @@ function toArtifacts(v: unknown): VersionArtifacts {
     ...(typeof o.primitives === 'string' ? { primitives: o.primitives } : {}),
     ...(typeof o.text === 'string' ? { text: o.text } : {}),
     ...(typeof o.thumbnail === 'string' ? { thumbnail: o.thumbnail } : {}),
+    ...(typeof o.legend === 'string' ? { legend: o.legend } : {}),
+    ...(typeof o.detections === 'string' ? { detections: o.detections } : {}),
+    ...(typeof o.rooms === 'string' ? { rooms: o.rooms } : {}),
+  };
+}
+
+const nonNegInt = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined);
+
+/** Sprint-1 counters are required; Sprint-2 additions are kept only when well-formed (worker-written). */
+function toStats(v: unknown): SheetVersion['stats'] {
+  const base = VersionStatsSchema.pick({ paths: true, segments: true, textLines: true, glyphs: true }).safeParse(v);
+  if (!base.success) return null;
+  const o = v as Record<string, unknown>;
+  const det = DetectionStatsSchema.safeParse(o.detections);
+  const rooms = nonNegInt(o.rooms);
+  const legendEntries = nonNegInt(o.legendEntries);
+  return {
+    ...base.data,
+    ...(det.success ? { detections: det.data } : {}),
+    ...(rooms !== undefined ? { rooms } : {}),
+    ...(legendEntries !== undefined ? { legendEntries } : {}),
   };
 }
 
 export function toVersion(sheetId: string, id: string, d: Doc): SheetVersion {
   const status = oneOf(d.status, SHEET_VERSION_STATUSES, 'queued');
   const page = PageGeometrySchema.safeParse(d.page);
-  const stats = VersionStatsSchema.safeParse(d.stats);
+
   return {
     id,
     sheetId,
@@ -171,7 +199,7 @@ export function toVersion(sheetId: string, id: string, d: Doc): SheetVersion {
     page: page.success ? page.data : null,
     artifacts: toArtifacts(d.artifacts),
     regions: toRegions(d.regions),
-    stats: stats.success ? stats.data : null,
+    stats: toStats(d.stats),
     workerVersion: str(d.workerVersion),
     ...(typeof d.jobId === 'string' ? { jobId: d.jobId } : {}),
     ...(d.createdAt !== undefined ? { createdAt: isoOrNull(d.createdAt) } : {}),
@@ -218,4 +246,44 @@ export function versionSummary(v: SheetVersion | null): Pick<SheetVersion, 'id' 
   return { id: v.id, status: v.status, progress: v.progress, ...(v.error !== undefined ? { error: v.error } : {}) };
 }
 
-export const mappers = { toOrg, toMember, toProject, toSheetSet, toSheet, toVersion, toJob };
+const conf = (v: unknown): number => (typeof v === 'number' && v >= 0 && v <= 1 ? v : 0);
+
+/** orgs/{o}/projects/{p}/legendEntries/{id} — worker-written; tolerant like the other worker docs. */
+export function toLegendEntry(id: string, d: Doc): LegendEntry {
+  const suggested = DetectionClassSchema.safeParse(d.suggestedClass);
+  const cls = SymbolClassSchema.safeParse(d.class);
+  const code = ItemCodeSchema.safeParse(d.itemCode);
+  return {
+    id,
+    sheetId: String(d.sheetId),
+    versionId: String(d.versionId),
+    label: typeof d.label === 'string' ? d.label.slice(0, 300) : '',
+    labelConfidence: conf(d.labelConfidence),
+    suggestedClass: suggested.success ? suggested.data : null,
+    class: cls.success ? cls.data : null,
+    itemCode: code.success ? code.data : null,
+    signature: String(d.signature),
+    thumbPath: str(d.thumbPath),
+    status: oneOf(d.status, LEGEND_ENTRY_STATUSES, 'suggested'),
+    ...(d.confirmedBy !== undefined ? { confirmedBy: str(d.confirmedBy) } : {}),
+    ...(d.confirmedAt !== undefined ? { confirmedAt: isoOrNull(d.confirmedAt) } : {}),
+    updatedAt: isoOrNull(d.updatedAt),
+  };
+}
+
+/** orgs/{o}/symbolMappings/{signature} — API-written. */
+export function toSymbolMapping(signature: string, d: Doc): SymbolMapping {
+  const cls = SymbolClassSchema.safeParse(d.class);
+  return {
+    signature,
+    class: cls.success ? cls.data : null,
+    ignored: d.ignored === true,
+    itemCode: typeof d.itemCode === 'string' ? d.itemCode : null,
+    label: typeof d.label === 'string' ? d.label : '',
+    confirmedBy: String(d.confirmedBy),
+    confirmedAt: iso(d.confirmedAt),
+    uses: int(d.uses, 1),
+  };
+}
+
+export const mappers = { toOrg, toMember, toProject, toSheetSet, toSheet, toVersion, toJob, toLegendEntry, toSymbolMapping };

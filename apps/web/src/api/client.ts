@@ -11,7 +11,11 @@ export * from "./types";
 
 /** Mock backend when VITE_USE_MOCKS=true; otherwise REST API + Firebase Storage + Firestore listeners. */
 export function createBackend(): Backend {
-  if (env.useMocks) return createMockBackend();
+  if (env.useMocks) {
+    // Dev/demo: ?mockDetections=2000 on the first page load sizes the synthetic overlay (performance checks).
+    const n = typeof location !== "undefined" ? Number(new URLSearchParams(location.search).get("mockDetections")) : 0;
+    return createMockBackend(n > 0 ? { fixtureDetections: Math.min(n, 20_000), devIndex: false } : {});
+  }
   const fb = getFirebase();
   return {
     api: createHttpClient(getIdToken),

@@ -9,6 +9,7 @@ import { bboxContains, bboxOf, centroid, pointInPolygon } from "./geometry";
 export function anchorOf(f: OverlayFeature): Mutable2 {
   switch (f.kind) {
     case "point":
+    case "marker":
       return [f.position[0], f.position[1]];
     case "polygon":
       return centroid(f.polygon);

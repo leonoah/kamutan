@@ -13,7 +13,8 @@ import {
 } from "react";
 import DeckGL from "@deck.gl/react";
 import { OrthographicView, type Layer, type PickingInfo } from "@deck.gl/core";
-import { BitmapLayer, PathLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { BitmapLayer, IconLayer, PathLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { PathStyleExtension } from "@deck.gl/extensions";
 import { TileLayer } from "@deck.gl/geo-layers";
 import {
   DEFAULT_DPI,
@@ -29,14 +30,16 @@ import {
   type Vec2,
 } from "./math/coords";
 import { calibrate, formatScale, realLengthMm, scaleDenominatorFrom, suggestStandardScale, type CalibrationResult } from "./math/calibration";
-import { centroid, distance, simplifyByDistance } from "./math/geometry";
+import { bboxOf, centroid, distance, pointInPolygon, simplifyByDistance } from "./math/geometry";
 import { lassoPick } from "./math/lasso";
 import { tileWorldBounds, type TilePyramid } from "./math/tiles";
 import { clampZoom, fitBBox, panBy, visibleWorldRect, zoomAround, zoomLimits } from "./math/view";
 import { Minimap } from "./Minimap";
+import { markerAtlas, markerIconKey, markerIconMapping } from "./markers";
 import { defaultLabels } from "./labels";
 import type {
   LassoResult,
+  MarkerFeature,
   MeasureResult,
   OverlayFeature,
   PathFeature,
@@ -60,6 +63,15 @@ export interface DrawingViewerProps {
   selectedIds?: readonly string[];
   /** External "preview highlight" (e.g. hovering a BOQ row). */
   highlightedIds?: readonly string[];
+  /**
+   * Focus set (e.g. a selected class / BOQ row): when non-empty, every other marker is dimmed to 30% and the
+   * focused ones get a blue halo (spec §הדגשה דו-כיוונית).
+   */
+  focusIds?: readonly string[];
+  /** Floating RTL card anchored to a paper-mm point (e.g. the details popover of a clicked marker). */
+  popover?: { anchorMm: Vec2; content: ReactNode; label: string } | null;
+  /** Hover card for a pickable feature id (return null for none). Rendered RTL near the pointer. */
+  renderTooltip?: (id: string) => ReactNode;
   tool?: ViewerTool;
   onToolChange?: (tool: ViewerTool) => void;
   onSelect?: (ids: string[], opts: { additive: boolean }) => void;
@@ -119,6 +131,9 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     overlays = EMPTY,
     selectedIds = EMPTY_IDS,
     highlightedIds = EMPTY_IDS,
+    focusIds = EMPTY_IDS,
+    popover = null,
+    renderTooltip,
     tool = "select",
     onToolChange,
     onSelect,
@@ -151,6 +166,10 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
   const [cursorMm, setCursorMm] = useState<Mutable2 | null>(null);
   const [lastMeasure, setLastMeasure] = useState<MeasureResult | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [hoverAt, setHoverAt] = useState<{ x: number; y: number } | null>(null);
+  // While panning/zooming, hover picking is pointless and its synchronous GPU readback (readPixels) is the main
+  // per-frame cost with thousands of markers → pickable layers are switched off during the interaction.
+  const [interacting, setInteracting] = useState(false);
   const down = useRef<{ x: number; y: number; moved: boolean; id: number } | null>(null);
   const fittedFor = useRef<string | null>(null);
   const [minimapUrl, setMinimapUrl] = useState<string | null>(null);
@@ -420,10 +439,12 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     : null;
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
   const highlighted = useMemo(() => new Set(highlightedIds), [highlightedIds]);
+  const focused = useMemo(() => new Set(focusIds), [focusIds]);
 
   const split = useMemo(() => {
     const out = {
       points: [] as PointFeature[],
+      markers: [] as MarkerFeature[],
       polys: [] as PolygonFeature[],
       paths: [] as PathFeature[],
       passivePolys: [] as PolygonFeature[],
@@ -432,6 +453,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     };
     for (const f of overlays) {
       if (f.kind === "point") (f.passive ? out.passivePoints : out.points).push(f);
+      else if (f.kind === "marker") out.markers.push(f);
       else if (f.kind === "polygon") (f.passive ? out.passivePolys : out.polys).push(f);
       else (f.passive ? out.passivePaths : out.paths).push(f);
     }
@@ -511,6 +533,13 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     }
 
     const color = (f: OverlayFeature, fallbackColor: Rgba) => f.color ?? fallbackColor;
+    // Dashed outlines (legend boxes, demolished rooms): PathStyleExtension, dash in screen px.
+    const dashProps = {
+      getDashArray: (f: PolygonFeature) => (f.dashed ? [6, 4] : [0, 0]),
+      dashJustified: true,
+      dashGapPickable: false,
+      extensions: [DASH_EXT],
+    };
 
     // Passive geometry (floor regions, evidence) — under the pickable layers, never picked.
     if (split.passivePolys.length)
@@ -519,13 +548,14 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           id: "passive-polygons",
           data: split.passivePolys,
           getPolygon: (f) => f.polygon.map(mm),
-          getFillColor: (f) => (f.fillColor ? [...f.fillColor] as [number, number, number, number] : withAlpha(color(f, DEFAULT_POLY), 28)),
-          getLineColor: (f) => withAlpha(color(f, DEFAULT_POLY), 230),
+          getFillColor: (f) => dimFill(f.fillColor ? ([...f.fillColor] as [number, number, number, number]) : withAlpha(color(f, DEFAULT_POLY), 28), f.dimmed),
+          getLineColor: (f) => withAlpha(color(f, DEFAULT_POLY), f.dimmed ? 90 : 230),
           lineWidthUnits: "pixels",
           getLineWidth: (f) => f.lineWidthPx ?? 2,
           stroked: true,
           filled: true,
           pickable: false,
+          ...dashProps,
         }),
       );
     if (split.passivePaths.length)
@@ -542,7 +572,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
       );
 
     const common = {
-      pickable: true,
+      pickable: !interacting,
       autoHighlight: true,
       highlightColor: withAlpha(BLUE, 110),
     } as const;
@@ -555,12 +585,15 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           ...common,
           getPolygon: (f) => f.polygon.map(mm),
           getFillColor: (f) =>
-            isSel(f.id) ? withAlpha(BLUE, 50) : f.fillColor ? ([...f.fillColor] as [number, number, number, number]) : withAlpha(color(f, DEFAULT_POLY), 24),
-          getLineColor: (f) => (isSel(f.id) ? BLUE : color(f, DEFAULT_POLY)) as [number, number, number, number],
+            isSel(f.id)
+              ? withAlpha(BLUE, 50)
+              : dimFill(f.fillColor ? ([...f.fillColor] as [number, number, number, number]) : withAlpha(color(f, DEFAULT_POLY), 24), f.dimmed),
+          getLineColor: (f) => (isSel(f.id) ? BLUE : withAlpha(color(f, DEFAULT_POLY), f.dimmed ? 90 : (color(f, DEFAULT_POLY)[3] ?? 255))),
           lineWidthUnits: "pixels",
           getLineWidth: (f) => (isSel(f.id) ? 3 : (f.lineWidthPx ?? 1.5)),
           stroked: true,
           filled: true,
+          ...dashProps,
           updateTriggers: { getFillColor: trig, getLineColor: trig, getLineWidth: trig },
         }),
       );
@@ -597,6 +630,56 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           updateTriggers: { getRadius: trig, getLineWidth: trig, getFillColor: trig, getLineColor: trig },
         }),
       );
+
+    // Detected symbols: GPU icon markers sized in paper mm (scale with zoom), min 8 px so far views keep a dot.
+    // Geometry (positions/icons/sizes) only depends on `split.markers`; selection/focus only re-run the colour
+    // and halo accessors (updateTriggers) — no re-tessellation, so 2,000+ markers stay at 60 fps.
+    if (split.markers.length) {
+      const anyFocus = focused.size > 0;
+      const markerAlpha = (f: MarkerFeature) => {
+        const base = f.color?.[3] ?? 255;
+        if (anyFocus && !focused.has(f.id) && !isSel(f.id)) return Math.round(base * 0.3);
+        if (f.dimmed && !isSel(f.id)) return Math.round(base * 0.35);
+        return base;
+      };
+      const halo = split.markers.filter((f) => isSel(f.id) || focused.has(f.id));
+      if (halo.length)
+        L.push(
+          new ScatterplotLayer<MarkerFeature>({
+            id: "marker-halo",
+            data: halo,
+            getPosition: (f) => mm(f.position),
+            radiusUnits: "common",
+            getRadius: (f) => ((f.sizeMm ?? 6) * k) * 0.78,
+            radiusMinPixels: 8,
+            stroked: true,
+            filled: true,
+            lineWidthUnits: "pixels",
+            getLineWidth: (f) => (isSel(f.id) ? 3 : 2),
+            getFillColor: withAlpha(BLUE, 40),
+            getLineColor: (f) => withAlpha(BLUE, isSel(f.id) ? 255 : 200),
+            pickable: false,
+            updateTriggers: { getLineWidth: trig, getLineColor: trig },
+          }),
+        );
+      L.push(
+        new IconLayer<MarkerFeature>({
+          id: "markers",
+          data: split.markers,
+          ...common,
+          iconAtlas: markerAtlas() as never,
+          iconMapping: MARKER_MAPPING,
+          getIcon: (f) => markerIconKey(f),
+          getPosition: (f) => mm(f.position),
+          sizeUnits: "common",
+          getSize: (f) => (f.sizeMm ?? 6) * k * 1.25,
+          sizeMinPixels: 13,
+          getColor: (f) => withAlpha(color(f, DEFAULT_POINT), markerAlpha(f)),
+          alphaCutoff: 0.02,
+          updateTriggers: { getColor: [...trig, focusIds] },
+        }),
+      );
+    }
 
     // Tool drafts (rubber band follows the cursor).
     const toolPts: Mutable2[] = [];
@@ -666,7 +749,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
       );
     return L;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tiles, sheetKey, worldW, worldH, dpi, split, selected, highlighted, draft, cursorMm, lastMeasure]);
+  }, [tiles, sheetKey, worldW, worldH, dpi, split, selected, highlighted, focused, draft, cursorMm, lastMeasure, interacting]);
 
   /* ---------- deck callbacks ---------- */
   const handleClick = useCallback(
@@ -683,6 +766,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
       const f = info.object as OverlayFeature | undefined;
       const id = f && !f.passive ? f.id : null;
       setHoverId(id);
+      setHoverAt(id ? { x: info.x, y: info.y } : null);
       onHover?.(id ? { id, x: info.x, y: info.y } : null);
     },
     [onHover],
@@ -702,11 +786,25 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
   );
 
   /* ---------- floating HTML (RTL) ---------- */
+  const labelPolys = useMemo(() => overlays.filter((f): f is PolygonFeature => f.kind === "polygon" && Boolean(f.label)), [overlays]);
   const polygonLabels = view
-    ? overlays
-        .filter((f): f is PolygonFeature => f.kind === "polygon" && Boolean(f.label))
-        .map((f) => ({ id: f.id, label: f.label!, at: toScreen(centroid(f.polygon)) }))
+    ? labelPolys
+        .filter((f) => {
+          if (!f.labelMinPx) return true;
+          const b = bboxOf(f.polygon);
+          return (b.maxX - b.minX) * k * 2 ** view.zoom >= f.labelMinPx;
+        })
+        .map((f) => ({ id: f.id, label: f.label!, ltr: f.labelLtr, suffix: f.labelSuffix, dimmed: f.dimmed, at: toScreen(labelPoint(f.polygon)) }))
     : [];
+  const tooltip = renderTooltip && hoverId && hoverAt && !draft ? renderTooltip(hoverId) : null;
+
+  const minimapMarkers = useMemo<PointFeature[]>(
+    () => [
+      ...split.points,
+      ...split.markers.map((m) => ({ id: m.id, kind: "point" as const, position: m.position, ...(m.color ? { color: m.color } : {}) })),
+    ],
+    [split],
+  );
 
   const calib = draft?.tool === "calibrate" && draft.pts.length === 2 ? draft : null;
   const calibPaperMm = calib ? distance(calib.pts[0]!, calib.pts[1]!) : 0;
@@ -768,6 +866,10 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
             setView({ target: [v.target[0], v.target[1], 0], zoom: clampZoom(v.zoom as number, limits), ...limits });
           }}
           controller={controller}
+          onInteractionStateChange={(s: { isDragging?: boolean; isPanning?: boolean; isZooming?: boolean }) => {
+            const busy = Boolean(s.isDragging || s.isPanning || s.isZooming);
+            setInteracting((cur) => (cur === busy ? cur : busy));
+          }}
           layers={layers}
           onClick={handleClick as never}
           onHover={handleHover}
@@ -783,11 +885,57 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
         <span
           key={l.id}
           dir="rtl"
-          style={{ ...chip, position: "absolute", left: l.at[0], top: l.at[1], transform: "translate(-50%, -50%)", pointerEvents: "none" }}
+          data-room-label
+          style={{
+            ...chip,
+            position: "absolute",
+            left: l.at[0],
+            top: l.at[1],
+            transform: "translate(-50%, -50%)",
+            pointerEvents: "none",
+            opacity: l.dimmed ? 0.55 : 1,
+            textAlign: "center",
+            lineHeight: 1.25,
+          }}
         >
           {l.label}
+          {l.ltr ? (
+            <>
+              <br />
+              <bdi dir="ltr" style={{ fontVariantNumeric: "tabular-nums", color: "rgb(var(--muted-foreground, 87 83 78))" }}>
+                {l.ltr}
+              </bdi>
+              {l.suffix ? ` ${l.suffix}` : null}
+            </>
+          ) : null}
         </span>
       ))}
+
+      {tooltip && hoverAt ? (
+        <div
+          dir="rtl"
+          role="tooltip"
+          data-viewer-ui
+          style={{
+            ...panel,
+            position: "absolute",
+            left: Math.min(hoverAt.x + 14, Math.max(8, box.width - 280)),
+            top: Math.min(hoverAt.y + 14, Math.max(8, box.height - 140)),
+            maxWidth: 270,
+            background: "rgb(var(--surface, 255 255 255))",
+            pointerEvents: "none",
+            zIndex: 3,
+          }}
+        >
+          {tooltip}
+        </div>
+      ) : null}
+
+      {popover && view ? (
+        <PopoverAt at={toScreen(popover.anchorMm)} box={box} label={popover.label}>
+          {popover.content}
+        </PopoverAt>
+      ) : null}
 
       {lastMeasure && view ? (
         <MeasureChip
@@ -866,7 +1014,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           view={view}
           box={box}
           imageUrl={minimapUrl}
-          markers={split.points}
+          markers={minimapMarkers}
           dpi={dpi}
           label={labels.minimap}
           toggleLabel={labels.minimapToggle}
@@ -878,6 +1026,48 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
 });
 
 const EMPTY: readonly OverlayFeature[] = [];
+const MARKER_MAPPING = markerIconMapping();
+const DASH_EXT = new PathStyleExtension({ dash: true });
+const dimFill = (c: [number, number, number, number], dimmed?: boolean): [number, number, number, number] =>
+  dimmed ? [c[0], c[1], c[2], Math.round(c[3] * 0.35)] : c;
+
+/** Label anchor: the area centroid, or the bbox centre when the centroid falls outside (L-shaped rooms). */
+function labelPoint(poly: readonly Vec2[]): Vec2 {
+  const c = centroid(poly);
+  if (pointInPolygon(c, poly)) return c;
+  const b = bboxOf(poly);
+  return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+}
+
+/** Floating card anchored to a screen point, flipped/clamped to stay inside the viewer box. */
+function PopoverAt({ at, box, label, children }: { at: Mutable2; box: Size; label: string; children: ReactNode }) {
+  const W = 300;
+  const left = at[0] + 16 + W > box.width ? Math.max(8, at[0] - 16 - W) : at[0] + 16;
+  const top = Math.min(Math.max(8, at[1] - 40), Math.max(8, box.height - 320));
+  return (
+    <div
+      dir="rtl"
+      role="dialog"
+      aria-label={label}
+      data-viewer-ui="form"
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        ...panel,
+        background: "rgb(var(--surface, 255 255 255))",
+        boxShadow: "0 8px 28px rgb(0 0 0 / 0.18)",
+        position: "absolute",
+        left,
+        top,
+        width: W,
+        maxHeight: Math.max(160, box.height - 16),
+        overflow: "auto",
+        zIndex: 4,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 const EMPTY_IDS: readonly string[] = [];
 
 const chip: CSSProperties = {

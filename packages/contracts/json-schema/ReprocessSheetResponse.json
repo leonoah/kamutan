@@ -259,6 +259,9 @@
                     "ocr",
                     "classify",
                     "scale",
+                    "legend",
+                    "detect",
+                    "rooms",
                     "done"
                   ]
                 },
@@ -397,6 +400,18 @@
                 "thumbnail": {
                   "type": "string",
                   "maxLength": 1024
+                },
+                "legend": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "detections": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "rooms": {
+                  "type": "string",
+                  "maxLength": 1024
                 }
               },
               "additionalProperties": false
@@ -473,6 +488,58 @@
                       "minimum": 0
                     },
                     "glyphs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "detections": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "green": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "yellow": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "red": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unknown": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "byClass": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "propertyNames": {
+                            "maxLength": 64
+                          }
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "green",
+                        "yellow",
+                        "red",
+                        "unknown",
+                        "byClass"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "rooms": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "legendEntries": {
                       "type": "integer",
                       "minimum": 0
                     }

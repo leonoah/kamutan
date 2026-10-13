@@ -59,5 +59,17 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
       const qs = q ? `?z=${q.z}&x0=${q.x0}&x1=${q.x1}&y0=${q.y0}&y1=${q.y1}` : "";
       return request(`/projects/${enc(projectId)}/sheets/${enc(sheetId)}/versions/${enc(versionId)}/tiles-manifest${qs}`);
     },
+    getOverlay: (projectId, sheetId, versionId) =>
+      request(`/projects/${enc(projectId)}/sheets/${enc(sheetId)}/versions/${enc(versionId)}/overlay`),
+    listLegendEntries: (projectId, q = {}) => {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== null) qs.set(k, String(v));
+      const s = qs.toString();
+      return request(`/projects/${enc(projectId)}/legend-entries${s ? `?${s}` : ""}`);
+    },
+    patchLegendEntry: (projectId, entryId, req) =>
+      request(`/projects/${enc(projectId)}/legend-entries/${enc(entryId)}`, { method: "PATCH", body: JSON.stringify(req) }),
+    resolveUnknownCluster: (projectId, clusterId, req) =>
+      post(`/projects/${enc(projectId)}/unknown-clusters/${enc(clusterId)}/resolve`, req),
   };
 }

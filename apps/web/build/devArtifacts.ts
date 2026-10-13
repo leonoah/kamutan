@@ -12,7 +12,7 @@ const TYPES: Record<string, string> = {
  * DEV ONLY: serves locally rendered sheet artifacts (tiles, thumbnails) at `/dev-artifacts/` so the
  * mock backend can show real drawings. `apply: "serve"` → never part of `vite build`; the directory is
  * outside the repo (default /home/claude/kamutan-data/artifacts, override with KAMUTAN_DEV_ARTIFACTS),
- * so nothing is bundled or committed. Only image/json files under the root are served (no traversal).
+ * so nothing is bundled or committed. Only image/json (and gzip-JSON) files under the root are served (no traversal).
  */
 export function devArtifacts(root = process.env.KAMUTAN_DEV_ARTIFACTS ?? "/home/claude/kamutan-data/artifacts"): Plugin {
   const base = resolve(root);
@@ -24,7 +24,10 @@ export function devArtifacts(root = process.env.KAMUTAN_DEV_ARTIFACTS ?? "/home/
         try {
           const url = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
           const file = resolve(base, `.${url}`);
-          const ext = file.slice(file.lastIndexOf("."));
+          // Sprint 2 artifacts are gzip JSON (legend/detections/rooms.json.gz): served as JSON with
+          // Content-Encoding: gzip so the browser inflates them (like GCS objects with contentEncoding metadata).
+          const gz = file.endsWith(".json.gz");
+          const ext = gz ? ".json" : file.slice(file.lastIndexOf("."));
           if (!file.startsWith(base + sep) || !TYPES[ext]) {
             res.statusCode = 404;
             return res.end();
@@ -35,6 +38,7 @@ export function devArtifacts(root = process.env.KAMUTAN_DEV_ARTIFACTS ?? "/home/
             return res.end();
           }
           res.setHeader("Content-Type", TYPES[ext]!);
+          if (gz) res.setHeader("Content-Encoding", "gzip");
           res.setHeader("Content-Length", String(st.size));
           res.setHeader("Cache-Control", "private, max-age=600");
           createReadStream(file).pipe(res);

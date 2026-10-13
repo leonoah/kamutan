@@ -2,6 +2,8 @@ import {
   DEFAULT_ORG_SETTINGS,
   fsPaths,
   type Job,
+  type LegendEntry,
+  type LegendEntryStatus,
   type Member,
   type Org,
   type ProcessingError,
@@ -13,12 +15,23 @@ import {
   type SheetSetStatus,
   type SheetSummary,
   type SheetVersion,
+  type SymbolMapping,
 } from '@kamutan/contracts';
 import { FieldPath, FieldValue, Timestamp, type DocumentData, type Firestore, type Query, type Transaction } from 'firebase-admin/firestore';
 import { auditHash } from './audit-chain';
 import { confirmAudit, newVersionDoc, regionsAudit } from './in-memory.repository';
+import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
 import { mappers, versionSummary } from './mappers';
-import { RepoConflictError, type AuditInput, type ConfirmInput, type NewSheetSet, type ReprocessResult, type Repository } from './repository';
+import {
+  RepoConflictError,
+  type AuditInput,
+  type ConfirmInput,
+  type LegendDecision,
+  type NewSheetSet,
+  type ReprocessResult,
+  type Repository,
+  type ResolveClusterInput,
+} from './repository';
 
 /** Firestore Timestamp → Date (top level and one nested level), so mappers see plain values. */
 function plain(d: DocumentData | undefined): Record<string, unknown> | null {
@@ -369,6 +382,73 @@ export class FirestoreRepository implements Repository {
       });
     }
     await batch.commit();
+  }
+
+  // --- legend entries & symbol mappings ------------------------------------------------
+  async listLegendEntries(orgId: string, projectId: string, opts: { limit: number; cursor?: string; status?: LegendEntryStatus; sheetId?: string }) {
+    // Equality filters + document-id order are served by the automatic single-field indexes.
+    let q: Query = this.db.collection(fsPaths.legendEntries(orgId, projectId));
+    if (opts.status) q = q.where('status', '==', opts.status);
+    if (opts.sheetId) q = q.where('sheetId', '==', opts.sheetId);
+    q = q.orderBy(FieldPath.documentId());
+    if (opts.cursor) q = q.startAfter(opts.cursor);
+    const snap = await q.limit(opts.limit + 1).get();
+    const items = snap.docs.slice(0, opts.limit).map((d) => mappers.toLegendEntry(d.id, plain(d.data()) ?? {}));
+    return { items, nextCursor: snap.docs.length > opts.limit && items.length ? (items.at(-1) as LegendEntry).id : null };
+  }
+
+  async getLegendEntry(orgId: string, projectId: string, entryId: string): Promise<LegendEntry | null> {
+    const d = plain((await this.db.doc(fsPaths.legendEntry(orgId, projectId, entryId)).get()).data());
+    return d ? mappers.toLegendEntry(entryId, d) : null;
+  }
+
+  async decideLegendEntry(orgId: string, projectId: string, entryId: string, decision: LegendDecision, actorUid: string) {
+    const ref = this.db.doc(fsPaths.legendEntry(orgId, projectId, entryId));
+    return this.db.runTransaction(async (tx) => {
+      // All reads before writes.
+      const snap = await tx.get(ref);
+      if (!snap.exists) return null;
+      const cur = mappers.toLegendEntry(entryId, plain(snap.data()) ?? {});
+      const mRef = decision.action === 'ignore' ? null : this.db.doc(fsPaths.symbolMapping(orgId, cur.signature));
+      const prevMapping = mRef ? plain((await tx.get(mRef)).data()) : null;
+      const head = await this.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      const patch = legendDecisionPatch(cur, decision, actorUid, now);
+      let mapping: SymbolMapping | null = null;
+      if (mRef && decision.action !== 'ignore') {
+        const m = mappingDoc(prevMapping ?? undefined, { class: decision.class, itemCode: patch.itemCode as string | null, label: decisionLabel(cur, decision) }, actorUid, now);
+        tx.set(mRef, m);
+        mapping = mappers.toSymbolMapping(cur.signature, plain(m) ?? {});
+      }
+      tx.update(ref, patch);
+      this.writeAudit(tx, orgId, head, legendDecisionAudit(projectId, cur, decision, patch, mapping?.uses ?? null, actorUid));
+      return { entry: mappers.toLegendEntry(entryId, { ...(plain(snap.data()) ?? {}), ...plain(patch) }), mapping };
+    });
+  }
+
+  async resolveUnknownCluster(orgId: string, projectId: string, input: ResolveClusterInput, actorUid: string) {
+    const mRef = this.db.doc(fsPaths.symbolMapping(orgId, input.signature));
+    return this.db.runTransaction(async (tx) => {
+      const prev = plain((await tx.get(mRef)).data());
+      const head = await this.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      const m = mappingDoc(prev ?? undefined, input, actorUid, now);
+      tx.set(mRef, m);
+      let legendEntry: LegendEntry | null = null;
+      if (input.legendEntry) {
+        const doc = clusterLegendEntryDoc(input, input.legendEntry.thumbPath, actorUid, now);
+        tx.set(this.db.doc(fsPaths.legendEntry(orgId, projectId, input.legendEntry.id)), doc);
+        legendEntry = mappers.toLegendEntry(input.legendEntry.id, plain(doc) ?? {});
+      }
+      const mapping = mappers.toSymbolMapping(input.signature, plain(m) ?? {});
+      this.writeAudit(tx, orgId, head, resolveClusterAudit(projectId, input, mapping.uses, actorUid));
+      return { mapping, legendEntry };
+    });
+  }
+
+  async getSymbolMapping(orgId: string, signature: string): Promise<SymbolMapping | null> {
+    const d = plain((await this.db.doc(fsPaths.symbolMapping(orgId, signature)).get()).data());
+    return d ? mappers.toSymbolMapping(signature, d) : null;
   }
 
   // --- jobs -----------------------------------------------------------------------------

@@ -232,6 +232,9 @@
                         "ocr",
                         "classify",
                         "scale",
+                        "legend",
+                        "detect",
+                        "rooms",
                         "done"
                       ]
                     },

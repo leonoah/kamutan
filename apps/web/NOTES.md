@@ -134,3 +134,74 @@ The upload store is global (Zustand), so uploads keep going if you navigate away
 - **Not yet:** org creation/onboarding UI, resuming an upload across a page reload (the SDK's resumable session lives in memory), a full S09 processing screen, and auto-advance to S07.
 - **Not runnable here:** emulator-based end-to-end tests (Auth/Firestore/Storage emulators) and Playwright, because the sandbox blocks the downloads. They belong in GitHub Actions.
 - **Review workspace:** still static (no deck.gl, no keyboard shortcuts). Its tool labels and the decorative login sample are not in i18n yet.
+
+---
+
+# Sprint 2 — Understanding (web + viewer)
+
+Shapes: `docs/agents/SPRINT2_BRIEF.md` + `packages/contracts/src/understanding.ts`, mirrored by hand in `src/api/types.ts`
+(`LegendArtifact`, `DetectionsArtifact`, `RoomsArtifact`, `OverlayManifest`, `LegendEntry(+thumbUrl)`,
+`PatchLegendEntryRequest`, `ResolveUnknownClusterRequest/Response`). Endpoints in `src/api/http.ts`:
+`GET /projects/:p/sheets/:s/versions/:v/overlay`, `GET|PATCH /projects/:p/legend-entries[/:id]`,
+`POST /projects/:p/unknown-clusters/:id/resolve`.
+
+## Viewer (`packages/viewer`)
+- New feature kind `marker` (`MarkerFeature`): GPU `IconLayer` with a canvas-drawn MASK atlas (`src/markers.ts`, 16 icons:
+  ● circle / ▲ triangle / ◆ diamond / ◇ hollow diamond × dashed × strike). Tinted by the level colour, sized in paper mm
+  (`sizeUnits: "common"`, scales with zoom) with a 13 px minimum. Frame + faint tint (symbol stays readable) + solid corner badge.
+- `focusIds` dims every other marker to 30% and draws a blue halo (ScatterplotLayer) — row → drawing highlight.
+  `dimmed` (lifecycle layer off) → 35%. Selection/focus only re-run `getColor` via `updateTriggers`; geometry never rebuilds.
+- Polygons: `dashed` via `@deck.gl/extensions` PathStyleExtension (added dep, 9.3.11), `dimmed`, label = RTL chip with
+  `labelLtr` in `<bdi dir="ltr">` + `labelSuffix` ("26.0" + " מ״ר"), `labelMinPx` hides labels of tiny rooms.
+- `popover` (RTL card anchored to a paper-mm point, follows pan/zoom) and `renderTooltip(id)` (hover card).
+- Picking is switched off while panning/zooming (`onInteractionStateChange`) — avoids a synchronous GPU readback per frame.
+- Minimap dots memoised (no per-frame re-diff); lasso picks markers.
+
+## Mock mode with real data
+- `build/devArtifacts.ts` serves `*.json.gz` as `application/json` + `Content-Encoding: gzip` (browser inflates). The
+  client (`features/understanding/artifacts.ts`) also gunzips raw bodies (magic `1f 8b`, `DecompressionStream`), so signed
+  GCS URLs work with or without contentEncoding metadata.
+- `src/api/mockUnderstanding.ts`: in `vite dev` the mock reads `/dev-artifacts/dev-index.json`; entries with
+  `legend|detections|rooms` (top-level or under `artifacts`) switch the mock to the worker's REAL artifacts (and add missing
+  sheets). Otherwise (and always in tests) a deterministic synthetic fixture (`src/test/fixtures/understanding.ts`) is attached
+  to `noah-eb8be8a3-p0` (electrical, 150 detections, 2 unknown clusters, 9 rooms, legend 8 rows) and `noah-b2046277-p0`.
+  The mock keeps the user's answers (legend class, "מה זה?") and serves the patched docs as `data:` URLs.
+- `?mockDetections=2000` on the first page load: fixture with N detections (performance demo; ignores real artifacts).
+
+## Screens
+- **Legend confirmation** `/projects/:projectId/legend` (`features/legend/LegendPage.tsx`): a section per sheet; rows = crop,
+  editable OCR label (dashed border when OCR < 0.85), Hebrew class `<select>` grouped by domain (`ClassSelect`), confidence badge
+  (thresholds 0.85 / 0.5; no suggestion → ◆), אשר / התעלם; decided rows show status + ערוך. "אשר את כל הירוקים", progress
+  "X מתוך Y אושרו". Optimistic PATCH with rollback + toast. Linked from the sheets page, the processing panel (CTA when a
+  version has a legend) and the review header.
+- **Review workspace** (`features/review/*`): overlay of the selected sheet (ready sheets with detections first).
+  - Right: "ספירה לפי סוג" (`CountsPanel`) — class (Hebrew) + legend label/crop, counts ● ▲ ◆ ◇, total; a row toggles focus
+    (zoom to the class bounds, others dimmed); clicking a marker selects its row (bidirectional) and opens the details popover.
+  - Filters (`FilterBar`): תחום / קומה / חדר / ביטחון chips with counts, state in the URL (`dom`, `floor`, `room`, `lvl`);
+    applied to counts, overlay and queue. Room filter dims the other rooms.
+  - Center: layer toggles (סמלים / חדרים / מקרא), קיים / חדש / להריסה wired (off = dimmed 35%; existing = dashed grey,
+    demolish = dashed red + strike). Popover: class, legend row + crop, ●▲◆ + word + "ביטחון 0.83", reason chips, room,
+    floor, lifecycle, annotations (`<bdi>`). `[` / `]` step through the selected class, Esc closes.
+  - Left: "מה זה?" cluster cards (crop, count, locations → jump + select), class picker or "לא רלוונטי", "זכור לפרויקטים
+    הבאים", "החל על N מופעים" → optimistic overlay update (`applyClusterResolution`), toast, rollback on error. Then the
+    non-green items, lowest score first.
+  - Header: real "% מאומת" + "N לבדיקה" (click → filters red/unknown).
+
+## Tests (Sprint 2 additions)
+`features/understanding/model.test.ts` (markers, lifecycle styles, rooms/legend features, filters + URL, counts, cluster
+resolution, taxonomy, gzip artifact loading), `features/legend/legend.test.tsx` (rows, confirm, reassign + label, ignore,
+confirm greens, rollback, links, empty state, axe), `features/review/review.test.tsx` (overlay shapes/colours, lifecycle
+toggles, counts ↔ drawing, popover, filters + URL, room filter, "מה זה?" resolve + ignore + rollback, queue, axe),
+`api/http.test.ts` (new endpoints), viewer `DrawingViewer.test.tsx` (marker layer, 2,000 markers geometry reuse, focus/dim,
+room labels + bdi, dashed, tooltip/popover, lasso on markers, picking off during interaction).
+
+## Known gaps
+- API contract asks (sent to the orchestrator): `ignore: true` on unknown-cluster resolve ("לא רלוונטי") and `label` on
+  PATCH confirm/reassign. Web already sends both; the current strict schemas would 400 them.
+- `LegendEntry.classConfidence` is not in the Firestore DTO; the UI falls back to `labelConfidence`.
+- No un-confirm action in the API: "ערוך" on a decided row re-opens it locally and re-sends confirm/reassign.
+- Keyboard navigation between markers inside the canvas (spec a11y #3) is not done; the counts table + queue are the
+  accessible alternative. Marker clustering at < 25% zoom is not done (markers keep a 13 px minimum instead).
+- Performance: measured only on SwiftShader (software GL, 2 shared cores): 2,000 markers 10–20 fps vs 30 fps without
+  markers; the profile is dominated by `readPixels` (hover picking), JS per frame is negligible. Needs a real-GPU check.
+- The A/R/E bar and the BOQ table are still placeholders (Sprint 3).

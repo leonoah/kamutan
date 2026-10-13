@@ -70,7 +70,8 @@ def load_output(d: Path) -> dict[str, dict[str, Any]]:
             return {"sheet": obj.get("sheet") or {}, "version": obj["version"]}
     if (d / "version.json").is_file():
         v = _read(d / "version.json")
-        return {"sheet": v.get("sheet") if isinstance(v.get("sheet"), dict) else v, "version": v}
+        sheet = v.get("sheet")
+        return {"sheet": sheet if isinstance(sheet, dict) else v, "version": v}
     raise OutputError(f"{d}: no sheet.json+version.json, result.json, ingest.json or version.json")
 
 

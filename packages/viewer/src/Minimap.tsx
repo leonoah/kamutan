@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { Mutable2, OrthoViewState, Size } from "./math/coords";
 import { pointMmToPx } from "./math/coords";
 import { minimapTransform, visibleWorldRect } from "./math/view";
@@ -33,6 +33,18 @@ export function Minimap({ worldW, worldH, view, box, imageUrl, markers, dpi, lab
   const [x0, y0] = t.toMini([Math.max(0, r.minX), Math.max(0, r.minY)]);
   const [x1, y1] = t.toMini([Math.min(worldW, r.maxX), Math.min(worldH, r.maxY)]);
 
+  // Dots depend on the markers only — not re-diffed on every pan/zoom frame (2,000+ markers).
+  const dots = useMemo(
+    () =>
+      markers.slice(0, 600).map((m) => {
+        const [mx, my] = t.toMini(pointMmToPx(m.position, dpi));
+        const c = m.color ?? [194, 65, 12, 255];
+        return <circle key={m.id} cx={mx} cy={my} r={2.2} fill={`rgb(${c[0]} ${c[1]} ${c[2]})`} />;
+      }),
+    // t depends only on worldW/worldH
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [markers, dpi, worldW, worldH],
+  );
   const center = (e: ReactPointerEvent<HTMLDivElement>) => {
     const b = e.currentTarget.getBoundingClientRect();
     onCenter(t.toWorld([e.clientX - b.left, e.clientY - b.top]));
@@ -112,11 +124,7 @@ export function Minimap({ worldW, worldH, view, box, imageUrl, markers, dpi, lab
             />
           )}
           <svg width={W} height={H} style={{ position: "absolute", inset: 0 }} aria-hidden>
-            {markers.slice(0, 600).map((m) => {
-              const [mx, my] = t.toMini(pointMmToPx(m.position, dpi));
-              const c = m.color ?? [194, 65, 12, 255];
-              return <circle key={m.id} cx={mx} cy={my} r={2.2} fill={`rgb(${c[0]} ${c[1]} ${c[2]})`} />;
-            })}
+            {dots}
             <rect
               data-testid="viewer-minimap-viewport"
               x={x0}

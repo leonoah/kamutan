@@ -19,23 +19,23 @@ vi.mock("@kamutan/viewer", async (importOriginal) => {
 });
 
 describe("Review workspace: real viewer in the drawing pane", { timeout: 20_000 }, () => {
-  it("shows the first electrical sheet in the viewer with its tiles and paper size", async () => {
+  it("opens the first sheet with detections (electrical ground) in the viewer with its tiles and paper size", async () => {
     await renderApp("/projects/p-noah/review", { signedIn: true });
     const drawing = await screen.findByRole("region", { name: "שרטוט" });
-    const app = await within(drawing).findByRole("application", { name: /^שרטוט ת\. חשמל/ }, LAZY);
+    const app = await within(drawing).findByRole("application", { name: /^שרטוט ת\. חשמל \/ קומת קרקע/ }, LAZY);
     expect(app).toHaveAttribute("dir", "ltr");
-    expect(within(drawing).getByRole("button", { name: "בחירת גיליון" })).toHaveTextContent("ת. חשמל / קומת מרתף+ / קומת קרקע");
+    expect(within(drawing).getByRole("button", { name: "בחירת גיליון" })).toHaveTextContent("ת. חשמל / קומת קרקע");
     await waitFor(() => expect(seen.props?.tiles).toBeTruthy());
     const tiles = seen.props!.tiles!;
     expect(tiles.levels).toBe(6);
-    expect(seen.props!.sheet.widthMm).toBeCloseTo(297.09, 1);
+    expect(seen.props!.sheet.widthMm).toBeCloseTo(420.2, 1);
     // signed URLs are fetched per block from the tiles-manifest endpoint
     await expect(Promise.resolve(tiles.tileUrl(5, 2, 3))).resolves.toBe(
-      "/dev-artifacts/orgs/org-demo/projects/p-noah/sheets/noah-c054fd3a-p0/versions/v1/tiles/5/2_3.webp",
+      "/dev-artifacts/orgs/org-demo/projects/p-noah/sheets/noah-eb8be8a3-p0/versions/v1/tiles/5/2_3.webp",
     );
     expect(within(drawing).getByTestId("viewer-scale")).toHaveTextContent("1:50");
-    // the 3-pane layout and sample BOQ/queue data are still there
-    expect(screen.getByRole("region", { name: "כתב כמויות" })).toBeInTheDocument();
+    // the 3-pane layout is still there
+    expect(screen.getByRole("region", { name: "ספירה לפי סוג" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "תור בדיקה" })).toBeInTheDocument();
   });
 

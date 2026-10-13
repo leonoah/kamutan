@@ -3,6 +3,8 @@ export * from './roles.js';
 export * from './org.js';
 export * from './project.js';
 export * from './sheets.js';
+export * from './taxonomy.js';
+export * from './understanding.js';
 export * from './geometry.js';
 export * from './tiles.js';
 export * from './review.js';

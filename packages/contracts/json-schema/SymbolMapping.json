@@ -1,0 +1,117 @@
+{
+  "$ref": "#/definitions/SymbolMapping",
+  "definitions": {
+    "SymbolMapping": {
+      "type": "object",
+      "properties": {
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{8,128}$"
+        },
+        "class": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "socket_single",
+                "socket_double",
+                "socket_triple",
+                "socket_power",
+                "socket_power_double",
+                "socket_3phase",
+                "socket_box_6",
+                "socket_prep",
+                "data_point",
+                "tv_point",
+                "phone_point",
+                "speaker",
+                "intercom",
+                "doorbell",
+                "heater_feed",
+                "panel",
+                "breaker",
+                "switch_single",
+                "switch_2way",
+                "switch_fan",
+                "luminaire_ceiling",
+                "luminaire_wall",
+                "luminaire_pendant",
+                "luminaire_strip",
+                "luminaire_outdoor",
+                "ceiling_fan",
+                "fixture_wc_concealed",
+                "fixture_wc_monoblock",
+                "fixture_basin",
+                "faucet_basin",
+                "faucet_wall",
+                "room",
+                "floor_tiling",
+                "wall_cladding",
+                "region",
+                "note_point",
+                "bezek_point",
+                "waterproof_marker",
+                "switch_cross",
+                "switch_shutter",
+                "conduit_cobra",
+                "water_heater_feed",
+                "legend_entry",
+                "legend_box"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ignored": {
+          "type": "boolean"
+        },
+        "itemCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[0-9A-Za-z.\\-/]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "confirmedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "uses": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "signature",
+        "class",
+        "ignored",
+        "itemCode",
+        "label",
+        "confirmedBy",
+        "confirmedAt",
+        "uses"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/SymbolMapping.json"
+}

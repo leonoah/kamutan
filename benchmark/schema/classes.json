@@ -36,6 +36,16 @@
     "room": {"domain": "tiling", "core": false, "he": "חדר"},
     "floor_tiling": {"domain": "tiling", "core": false, "he": "ריצוף"},
     "wall_cladding": {"domain": "tiling", "core": false, "he": "חיפוי"},
-    "region": {"domain": "other", "core": false, "he": "אזור סימון (context)"}
+    "region": {"domain": "other", "core": false, "he": "אזור סימון (context)"},
+    "note_point": {"domain": "other", "core": false, "he": "ראה הערה (סימון +)"},
+    "bezek_point": {"domain": "electrical", "core": false, "he": "נק' קצה לבזק"},
+    "waterproof_marker": {"domain": "electrical", "core": false, "he": "אביזר מוגן מים"},
+    "switch_cross": {"domain": "lighting", "core": false, "he": "מצלב"},
+    "switch_shutter": {"domain": "lighting", "core": false, "he": "מתג לתריס"},
+    "conduit_cobra": {"domain": "electrical", "core": false, "he": "צינור קוברה 50 מ\"מ"},
+    "water_heater_feed": {"domain": "electrical", "core": false, "he": "הזנה לדוד חשמל"},
+    "legend_entry": {"domain": "other", "core": false, "he": "שורת מקרא"},
+    "legend_box": {"domain": "other", "core": false, "he": "מסגרת מקרא"},
+    "unknown": {"domain": "other", "core": false, "he": "לא מזוהה"}
   }
 }

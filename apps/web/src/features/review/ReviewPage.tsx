@@ -1,41 +1,263 @@
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronLeft, Download, Search, Share2, X } from "lucide-react";
+import { BookOpenCheck, ChevronLeft, ChevronRight, Download, Search, Share2 } from "lucide-react";
+import type { LassoResult } from "@kamutan/viewer";
+import type { Detection, SheetRow, UnknownCluster } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/components/ui/toast";
 import { Logo } from "@/components/Logo";
 import { UserMenu } from "@/components/AppShell";
-import { ConfidenceBadge, ConfidenceShape, type ConfidenceLevel } from "@/components/ConfidenceBadge";
-import { SectionProgress } from "@/components/SectionProgress";
-import { ReasonChip } from "@/components/ReasonChip";
+import { ConfidenceShape } from "@/components/ConfidenceBadge";
 import { Kbd } from "@/components/Kbd";
 import { Ltr } from "@/components/Ltr";
-import { formatQuantity } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { useProject } from "@/features/projects/queries";
-import { ReviewDrawing } from "./ReviewDrawing";
-import { sampleChapter, sampleQueue, sampleRows, type SampleQueueItem } from "./sampleData";
+import { useLiveSheets } from "@/features/realtime/hooks";
+import { sheetName } from "@/features/sheets/model";
+import {
+  DEFAULT_LIFECYCLES,
+  EMPTY_FILTERS,
+  LEVEL_KEYS,
+  applyFilters,
+  boundsOf,
+  countsByClass,
+  detectionMarkers,
+  filtersFromParams,
+  filtersToParams,
+  isFiltered,
+  legendBoxes,
+  levelKeyOf,
+  overlayFeatures,
+  reviewQueue,
+  roomPolygons,
+  roomsById,
+  verifiedPct,
+  type LevelKey,
+  type LifecycleVisibility,
+  type OverlayFilters,
+} from "@/features/understanding/model";
+import { useOverlay, useResolveCluster } from "@/features/understanding/queries";
+import { className, domainOf } from "@/features/understanding/taxonomy";
+import { CountsPanel } from "./CountsPanel";
+import { DetectionDetails, type DetectionContext } from "./DetectionDetails";
+import { FilterBar, type FilterOption } from "./FilterBar";
+import { QueuePanel } from "./QueuePanel";
+import { ReviewDrawing, parseBBox, type LayerVisibility } from "./ReviewDrawing";
 
-const stripe: Record<ConfidenceLevel, string> = {
-  high: "bg-transparent",
-  mid: "bg-conf-mid",
-  low: "bg-conf-low",
-  unknown: "bg-conf-unknown",
-  manual: "bg-manual",
-};
+/** Picker order: sheets with detections first, then electrical, lighting, the rest (by name). */
+const rank = (r: SheetRow) =>
+  (r.version?.artifacts?.detections ? 0 : 10) + (r.sheet.discipline === "electrical" ? 0 : r.sheet.discipline === "lighting" ? 1 : 2);
 
 /**
- * S10 "סביבת הבדיקה". Sprint 1: the center pane is the real tiled viewer (lazy-loaded Deck.gl);
- * BOQ and queue are still the static sample data.
- * Panel order in RTL reading order: BOQ (right, ~38%) · drawing (center, ~47%, LTR) · review queue (left, ~15%).
+ * S10 "סביבת הבדיקה" — Sprint 2: the drawing shows the worker's understanding of the current sheet
+ * (detections ●▲◆◇, rooms, legend), the right pane counts by class (the BOQ table lands in Sprint 3) and the
+ * left pane asks "מה זה?" once per unknown cluster, then lists the items to review.
+ * Panel order in RTL reading order: counts (right) · drawing (center, LTR) · queue (left).
  */
 export function ReviewPage() {
   const { projectId = "" } = useParams();
   const { t } = useTranslation();
+  const [params, setParams] = useSearchParams();
   const project = useProject(projectId);
   const name = project.data?.name ?? "…";
   const notYet = () => toast({ title: t("review.placeholderNote") });
+
+  /* ---------- sheet ---------- */
+  const sheets = useLiveSheets(project.data?.orgId ?? null, projectId);
+  const ready = useMemo(
+    () =>
+      (sheets.data ?? [])
+        .filter((r) => r.version?.status === "ready")
+        .sort((a, b) => rank(a) - rank(b) || sheetName(a).localeCompare(sheetName(b), "he")),
+    [sheets.data],
+  );
+  const wanted = params.get("sheet");
+  const row = ready.find((r) => r.sheet.id === wanted) ?? ready[0] ?? null;
+  const bbox = row && row.sheet.id === wanted ? parseBBox(params.get("bbox")) : null;
+
+  /* ---------- overlay + view state ---------- */
+  const overlay = useOverlay(projectId, row);
+  const resolve = useResolveCluster(projectId);
+  const filters = useMemo(() => filtersFromParams(params), [params]);
+  const setFilters = (f: OverlayFilters) => setParams(filtersToParams(f, params), { replace: true });
+  const [lifecycles, setLifecycles] = useState<LifecycleVisibility>(DEFAULT_LIFECYCLES);
+  const [layers, setLayers] = useState<LayerVisibility>({ symbols: true, rooms: true, legend: true });
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [lassoIds, setLassoIds] = useState<string[]>([]);
+  const [zoomRequest, setZoomRequest] = useState<{ bboxMm: [number, number, number, number]; seq: number } | null>(null);
+  const zoomTo = useCallback((b: [number, number, number, number] | null) => b && setZoomRequest((z) => ({ bboxMm: b, seq: (z?.seq ?? 0) + 1 })), []);
+
+  // New sheet → clear the selection.
+  const sheetKey = row ? `${row.sheet.id}/${row.version?.id}` : "";
+  useEffect(() => {
+    setSelectedClass(null);
+    setSelectedId(null);
+    setLassoIds([]);
+    setZoomRequest(null);
+  }, [sheetKey]);
+
+  const data = overlay.data;
+  const dets = useMemo(() => data?.detections?.detections ?? [], [data]);
+  const rooms = useMemo(() => roomsById(data?.rooms ?? null), [data]);
+  const legendEntries = useMemo(() => new Map((data?.legend?.entries ?? []).map((e) => [e.id, e])), [data]);
+  const thumbs = data?.manifest.thumbs ?? {};
+  const filtered = useMemo(() => applyFilters(dets, filters), [dets, filters]);
+  const counts = useMemo(() => countsByClass(filtered), [filtered]);
+  const byId = useMemo(() => new Map(dets.map((d) => [d.id, d])), [dets]);
+  const levelCounts = useMemo(() => {
+    const base = applyFilters(dets, { ...filters, levels: [...LEVEL_KEYS] });
+    const c: Record<LevelKey, number> = { green: 0, yellow: 0, red: 0, unknown: 0 };
+    for (const d of base) c[levelKeyOf(d)]++;
+    return c;
+  }, [dets, filters]);
+  const classItems = useMemo(() => (selectedClass ? filtered.filter((d) => d.class === selectedClass) : []), [filtered, selectedClass]);
+  const focusIds = useMemo(() => classItems.map((d) => d.id), [classItems]);
+  const clusters = useMemo(() => data?.detections?.unknownClusters ?? [], [data]);
+  const clusterMembers = useMemo(() => {
+    const m = new Map<string, Detection[]>();
+    for (const d of dets) if (d.clusterId) m.set(d.clusterId, [...(m.get(d.clusterId) ?? []), d]);
+    return m;
+  }, [dets]);
+  const queue = useMemo(() => reviewQueue(filtered), [filtered]);
+
+  /* ---------- filter options ---------- */
+  const domainOptions: FilterOption[] = useMemo(
+    () =>
+      [...new Set(dets.map((d) => domainOf(d.class)))].map((d) => ({
+        value: d,
+        label: d === "unknown" ? t("confidence.unknown") : t(`disciplines.${d}`, { defaultValue: d }),
+      })),
+    [dets, t],
+  );
+  const floorOptions: FilterOption[] = useMemo(
+    () =>
+      [...new Set([...dets.map((d) => d.floor), ...(row?.sheet.floors ?? [])].filter((f): f is string => Boolean(f)))].map((f) => ({
+        value: f,
+        label: t(`floors.${f}`, { defaultValue: f }),
+      })),
+    [dets, row, t],
+  );
+  const roomOptions: FilterOption[] = useMemo(
+    () => [
+      ...[...rooms.values()]
+        .filter((r) => !filters.floor || r.floor === filters.floor)
+        .map((r) => ({ value: r.id, label: r.name ?? `${t("understanding.unnamedRoom")} (${r.id})` })),
+      ...(dets.some((d) => d.roomId === null) ? [{ value: "none", label: t("understanding.noRoom") }] : []),
+    ],
+    [rooms, dets, filters.floor, t],
+  );
+
+  /* ---------- overlay features ---------- */
+  const markers = useMemo(() => (layers.symbols ? detectionMarkers(filtered, lifecycles) : []), [filtered, lifecycles, layers.symbols]);
+  const roomFeatures = useMemo(() => {
+    if (!layers.rooms || !data?.rooms) return [];
+    const dim = filters.room ? new Set([...rooms.keys()].filter((id) => id !== filters.room)) : null;
+    return roomPolygons(data.rooms.rooms, { unnamed: t("understanding.unnamedRoom"), areaUnit: t("understanding.area"), dimIds: dim });
+  }, [layers.rooms, data, filters.room, rooms, t]);
+  const legendFeatures = useMemo(() => (layers.legend ? legendBoxes(data?.legend ?? null) : []), [layers.legend, data]);
+  const features = useMemo(() => overlayFeatures({ rooms: roomFeatures, legend: legendFeatures, markers }), [roomFeatures, legendFeatures, markers]);
+
+  /* ---------- selection ---------- */
+  const ctxOf = useCallback(
+    (d: Detection): DetectionContext => ({
+      room: d.roomId ? (rooms.get(d.roomId) ?? null) : null,
+      legendEntry: d.legendEntryId ? (legendEntries.get(d.legendEntryId) ?? null) : null,
+      legendThumb: d.legendEntryId ? (thumbs[d.legendEntryId] ?? null) : null,
+    }),
+    [rooms, legendEntries, thumbs],
+  );
+  const selected = selectedId ? (byId.get(selectedId) ?? null) : null;
+
+  const selectDetection = (d: Detection | null, jump = false) => {
+    setSelectedId(d?.id ?? null);
+    setLassoIds([]);
+    if (d) {
+      setSelectedClass(d.class); // drawing → row
+      if (jump) zoomTo([d.bboxMm.x - 25, d.bboxMm.y - 18, d.bboxMm.x + d.bboxMm.w + 25, d.bboxMm.y + d.bboxMm.h + 18]);
+    }
+  };
+  const onSelect = (ids: string[]) => {
+    const d = ids[0] ? byId.get(ids[0]) : undefined;
+    selectDetection(d ?? null);
+  };
+  const onSelectClass = (cls: string | null) => {
+    setSelectedClass(cls);
+    setSelectedId(null);
+    if (cls) zoomTo(boundsOf(filtered.filter((d) => d.class === cls), 10));
+  };
+  const onLasso = (r: LassoResult) => {
+    const picked = r.ids.map((id) => byId.get(id)).filter((d): d is Detection => Boolean(d));
+    setLassoIds(picked.map((d) => d.id));
+    setSelectedId(null);
+    const by = countsByClass(picked)
+      .map((c) => `${c.total} ${className(c.cls, t("understanding.unknownClass"))}`)
+      .join(", ");
+    toast({ title: t("viewer.lassoResult", { count: picked.length }), ...(by ? { description: by } : {}) });
+  };
+
+  // `[` / `]` step through the selected class's items; Esc closes the popover.
+  const step = useCallback(
+    (dir: 1 | -1) => {
+      if (classItems.length === 0) return;
+      const i = classItems.findIndex((d) => d.id === selectedId);
+      const next = classItems[(i + dir + classItems.length) % classItems.length]!;
+      setSelectedId(next.id);
+      zoomTo([next.bboxMm.x - 25, next.bboxMm.y - 18, next.bboxMm.x + next.bboxMm.w + 25, next.bboxMm.y + next.bboxMm.h + 18]);
+    },
+    [classItems, selectedId, zoomTo],
+  );
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [role='menu']")) return;
+      if (e.code === "BracketRight") step(1);
+      else if (e.code === "BracketLeft") step(-1);
+      else if (e.code === "Escape" && selectedId) setSelectedId(null);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [step, selectedId]);
+
+  const onResolve = async (c: UnknownCluster, cls: string | null, remember: boolean) => {
+    if (!row?.version) return;
+    const n = clusterMembers.get(c.id)?.length ?? c.count;
+    await resolve.mutateAsync({ clusterId: c.id, sheetId: row.sheet.id, versionId: row.version.id, cls, remember });
+    toast({
+      title: cls ? t("unknown.resolved", { count: n, name: className(cls) }) : t("unknown.ignored", { count: n }),
+      tone: "success",
+    });
+    if (cls) setSelectedClass(cls);
+  };
+
+  const renderTooltip = useCallback(
+    (id: string) => {
+      const d = byId.get(id);
+      return d && id !== selectedId ? <DetectionDetails d={d} ctx={ctxOf(d)} compact /> : null;
+    },
+    [byId, ctxOf, selectedId],
+  );
+  const popover = selected
+    ? {
+        anchorMm: [selected.centerMm.x, selected.centerMm.y] as const,
+        label: t("understanding.details"),
+        content: <DetectionDetails d={selected} ctx={ctxOf(selected)} onClose={() => setSelectedId(null)} />,
+      }
+    : null;
+
+  const pct = verifiedPct(dets);
+  const toReview = dets.filter((d) => levelKeyOf(d) === "red" || levelKeyOf(d) === "unknown").length;
+  const pick = (id: string) => {
+    const next = new URLSearchParams(params);
+    next.set("sheet", id);
+    next.delete("bbox");
+    for (const k of ["dom", "floor", "room"]) next.delete(k);
+    setParams(next, { replace: true });
+  };
+  const selIndex = selectedId ? classItems.findIndex((d) => d.id === selectedId) : -1;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
@@ -67,22 +289,34 @@ export function ReviewPage() {
           <button
             type="button"
             onClick={notYet}
-            className="hidden h-8 w-56 items-center gap-2 rounded border border-input bg-surface-sunken px-2.5 text-dense text-muted-foreground hover:border-foreground/30 md:inline-flex"
+            className="hidden h-8 w-48 items-center gap-2 rounded border border-input bg-surface-sunken px-2.5 text-dense text-muted-foreground hover:border-foreground/30 xl:inline-flex"
           >
             <Search className="size-3.5" aria-hidden />
             <span className="flex-1 text-start">{t("review.search")}</span>
             <Kbd>⌘K</Kbd>
           </button>
-          <div className="hidden w-48 flex-col gap-1 lg:flex">
-            <div className="flex items-center justify-between text-meta">
-              <span className="font-medium text-foreground">{t("review.verifiedTotal", { pct: 87 })}</span>
-              <span className="inline-flex items-center gap-1 text-muted-foreground">
-                <ConfidenceShape level="low" className="size-2.5" />
-                {t("review.toReview", { count: 23 })}
-              </span>
+          {dets.length ? (
+            <div className="hidden w-48 flex-col gap-1 lg:flex">
+              <div className="flex items-center justify-between text-meta">
+                <span className="font-medium text-foreground">{t("review.verifiedTotal", { pct })}</span>
+                <button
+                  type="button"
+                  onClick={() => setFilters({ ...EMPTY_FILTERS, levels: ["red", "unknown"] })}
+                  className="inline-flex items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground"
+                >
+                  <ConfidenceShape level="low" className="size-2.5" />
+                  {t("review.toReview", { count: toReview })}
+                </button>
+              </div>
+              <Progress value={pct} aria-label={t("review.verifiedTotal", { pct })} indicatorClassName="bg-conf-high" />
             </div>
-            <Progress value={87} aria-label={t("review.verifiedTotal", { pct: 87 })} indicatorClassName="bg-conf-high" />
-          </div>
+          ) : null}
+          <Button size="sm" variant="secondary" asChild>
+            <Link to={`/projects/${projectId}/legend`}>
+              <BookOpenCheck aria-hidden />
+              {t("legend.title")}
+            </Link>
+          </Button>
           <Button size="sm" variant="secondary" onClick={notYet}>
             <Share2 aria-hidden />
             {t("review.share")}
@@ -95,125 +329,106 @@ export function ReviewPage() {
         </div>
       </header>
 
-      {/* Filters */}
-      <div role="toolbar" aria-label={t("review.filters")} className="flex h-11 shrink-0 items-center gap-2 overflow-x-auto border-b border-border bg-surface px-4 text-dense">
-        <span className="text-muted-foreground">{t("review.filters")}:</span>
-        {[t("review.filterDomain"), t("review.filterFloor"), t("review.filterRoom")].map((f) => (
-          <button key={f} type="button" onClick={notYet} className="inline-flex h-7 items-center gap-1 rounded-sm border border-input bg-surface px-2 text-foreground hover:bg-muted">
-            {f}
-            <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
-          </button>
-        ))}
-        <div role="group" aria-label={t("review.filterConfidence")} className="flex items-center gap-1 rounded-sm border border-input p-0.5">
-          {(["high", "mid", "low"] as const).map((l) => (
-            <button key={l} type="button" aria-pressed="true" onClick={notYet} className="inline-flex h-6 items-center gap-1 rounded-sm bg-muted px-1.5 text-foreground">
-              <ConfidenceShape level={l} className="size-2.5" />
-              {t(`confidence.${l}`)}
-            </button>
-          ))}
-        </div>
-        <button type="button" onClick={notYet} className="inline-flex h-7 items-center gap-1 rounded-sm border border-input bg-surface px-2 text-foreground hover:bg-muted">
-          {t("review.filterStatus")}
-          <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
-        </button>
-        <button type="button" onClick={notYet} className="ms-auto inline-flex h-7 items-center gap-1 rounded-sm px-2 text-muted-foreground hover:text-foreground">
-          <X className="size-3.5" aria-hidden />
-          {t("review.clear")}
-        </button>
-      </div>
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        domains={domainOptions}
+        floors={floorOptions}
+        rooms={roomOptions}
+        levelCounts={levelCounts}
+      />
 
       {/* Three panes: grid columns follow inline direction → first column is on the right in RTL */}
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(340px,38fr)_minmax(0,47fr)_minmax(240px,15fr)]">
-        <BoqPanel />
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,30fr)_minmax(0,52fr)_minmax(260px,18fr)]">
+        <CountsPanel
+          counts={counts}
+          selectedClass={selectedClass}
+          onSelectClass={onSelectClass}
+          legendLabel={(id) => (id ? (legendEntries.get(id)?.label ?? null) : null)}
+          legendThumb={(id) => (id ? (thumbs[id] ?? null) : null)}
+          loading={overlay.isLoading && Boolean(row)}
+          error={overlay.isError}
+          filtered={isFiltered(filters)}
+          onClearFilters={() => setFilters(EMPTY_FILTERS)}
+        />
         <section id="drawing-panel" tabIndex={-1} aria-label={t("review.drawingPanel")} className="flex min-h-0 flex-col border-x border-border">
-          <ReviewDrawing orgId={project.data?.orgId ?? null} projectId={projectId} />
+          <ReviewDrawing
+            projectId={projectId}
+            rows={ready}
+            row={row}
+            loading={sheets.isLoading}
+            onPick={pick}
+            overlays={features}
+            selectedIds={selectedId ? [selectedId] : lassoIds}
+            focusIds={focusIds}
+            onSelect={onSelect}
+            onLasso={onLasso}
+            popover={popover}
+            renderTooltip={renderTooltip}
+            zoomRequest={zoomRequest}
+            initialViewMm={bbox}
+            lifecycles={lifecycles}
+            onLifecycles={setLifecycles}
+            layers={layers}
+            onLayers={setLayers}
+            openCount={(r) => {
+              const s = r.version?.stats?.detections;
+              return s ? s.red + s.unknown : null;
+            }}
+          />
         </section>
-        <QueuePanel />
+        <QueuePanel
+          clusters={clusters}
+          clusterMembers={clusterMembers}
+          thumbs={thumbs}
+          queue={queue}
+          rooms={rooms}
+          activeId={selectedId}
+          onJump={(d) => selectDetection(d, true)}
+          onResolve={onResolve}
+          loading={overlay.isLoading && Boolean(row)}
+        />
       </div>
 
-      {/* Selection / action bar */}
+      {/* Selection bar */}
       <footer className="flex h-12 shrink-0 items-center gap-3 border-t border-border bg-surface px-4 text-dense">
         <span className="text-muted-foreground">{t("review.selected")}:</span>
-        <span className="font-medium text-foreground">
-          <Ltr>4.10</Ltr> · {t("review.selectionSummary", { groups: 2, items: 4 })}
+        <span className="min-w-0 truncate font-medium text-foreground" aria-live="polite">
+          {selectedClass
+            ? t("understanding.selectedClass", { name: className(selectedClass, t("understanding.unknownClass")), count: classItems.length })
+            : lassoIds.length
+              ? t("viewer.lassoResult", { count: lassoIds.length })
+              : <span className="font-normal text-muted-foreground">{t("understanding.nothingSelected")}</span>}
         </span>
+        {classItems.length > 0 ? (
+          <div className="flex items-center gap-1">
+            <Button size="icon-sm" variant="ghost" onClick={() => step(-1)} aria-label={t("understanding.prevItem")} aria-keyshortcuts="BracketLeft">
+              <ChevronRight className="ltr:rotate-180" aria-hidden />
+            </Button>
+            <span className="text-meta text-muted-foreground">
+              {t("understanding.itemOf", { i: selIndex >= 0 ? selIndex + 1 : "–", n: classItems.length })}
+            </span>
+            <Button size="icon-sm" variant="ghost" onClick={() => step(1)} aria-label={t("understanding.nextItem")} aria-keyshortcuts="BracketRight">
+              <ChevronLeft className="ltr:rotate-180" aria-hidden />
+            </Button>
+            <Kbd>[</Kbd>
+            <Kbd>]</Kbd>
+          </div>
+        ) : null}
         <div className="ms-auto flex items-center gap-1.5">
           {[
             { k: "A", label: t("review.approve"), primary: true },
             { k: "R", label: t("review.reject") },
             { k: "E", label: t("review.edit") },
-            { k: "N", label: t("review.next") },
-            { k: "?", label: t("review.shortcuts") },
           ].map((a) => (
-            <Button key={a.k} size="sm" variant={a.primary ? "primary" : "secondary"} onClick={notYet} aria-keyshortcuts={a.k === "?" ? "Shift+Slash" : a.k}>
-              <Kbd className={cn(a.primary && "border-primary-foreground/40 bg-transparent text-primary-foreground")}>{a.k}</Kbd>
+            <Button key={a.k} size="sm" variant={a.primary ? "primary" : "secondary"} onClick={notYet} aria-keyshortcuts={a.k}>
+              <Kbd className={a.primary ? "border-primary-foreground/40 bg-transparent text-primary-foreground" : undefined}>{a.k}</Kbd>
               {a.label}
             </Button>
           ))}
         </div>
       </footer>
     </div>
-  );
-}
-
-function BoqPanel() {
-  const { t } = useTranslation();
-  return (
-    <section id="boq-panel" tabIndex={-1} aria-label={t("review.boqPanel")} className="flex min-h-0 flex-col bg-surface">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-4">
-        <h2 className="text-panel text-foreground">{t("review.boqPanel")}</h2>
-        <Button size="sm" variant="ghost" className="text-primary">{t("review.addManual")}</Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <div className="sticky top-0 z-10 border-b border-border bg-surface-sunken px-4 py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-dense font-bold text-foreground">{sampleChapter.title}</h3>
-            <span className="text-meta font-medium text-foreground">
-              <Ltr>{`${sampleChapter.verifiedPct}%`}</Ltr> {t("confidence.high")}
-            </span>
-          </div>
-          <SectionProgress {...sampleChapter.split} className="mt-2" />
-        </div>
-        <table className="w-full table-fixed border-collapse text-dense">
-          <caption className="sr-only">{sampleChapter.title}</caption>
-          <thead>
-            <tr className="h-8 border-b border-border text-meta text-muted-foreground">
-              <th scope="col" className="w-10 ps-3 text-start font-medium"><span className="sr-only">{t("review.columns.conf")}</span></th>
-              <th scope="col" className="w-14 text-start font-medium">{t("review.columns.code")}</th>
-              <th scope="col" className="text-start font-medium">{t("review.columns.desc")}</th>
-              <th scope="col" className="w-14 text-start font-medium">{t("review.columns.unit")}</th>
-              <th scope="col" className="w-20 pe-4 text-end font-medium">{t("review.columns.qty")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sampleRows.map((r, i) => (
-              <tr
-                key={r.code}
-                data-selected={i === 3 || undefined}
-                className={cn("h-11 border-b border-border hover:bg-surface-sunken/70", i === 3 && "bg-highlight")}
-              >
-                {/* 3px level stripe at the row's inline-start (right in RTL). Lives inside the cell:
-                    a ::before on <tr> would become an anonymous table cell and shift the columns. */}
-                <td className="relative ps-3">
-                  <span aria-hidden className={cn("absolute inset-y-0 start-0 w-[3px]", stripe[r.level])} />
-                  <ConfidenceBadge level={r.level} variant="indicator" />
-                </td>
-                <td className="text-muted-foreground"><Ltr>{r.code}</Ltr></td>
-                <td className="py-1.5 pe-2">
-                  <span className="text-foreground">
-                    {r.expandable ? <span aria-hidden className="me-1 text-muted-foreground">▸</span> : null}
-                    <MixedText text={r.desc} />
-                  </span>
-                  {r.meta ? <span className="block text-meta text-muted-foreground"><MixedText text={r.meta} /></span> : null}
-                </td>
-                <td className="text-muted-foreground">{r.unit}</td>
-                <td className="pe-4 text-end font-medium text-foreground"><Ltr>{formatQuantity(r.qty, r.unit === "יח'" ? "יח'" : "מ\"א")}</Ltr></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }
 
@@ -224,75 +439,5 @@ export function MixedText({ text }: { text: string }) {
     <>
       {parts.map((p, i) => (i % 2 === 1 ? <Ltr key={i}>{p}</Ltr> : p))}
     </>
-  );
-}
-
-function QueuePanel() {
-  const { t } = useTranslation();
-  return (
-    <section id="queue-panel" tabIndex={-1} aria-label={t("review.queuePanel")} className="flex min-h-0 flex-col bg-surface">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
-        <h2 className="text-panel text-foreground">{t("review.queuePanel")}</h2>
-        <span className="text-meta text-muted-foreground">{t("review.queueCount", { count: 23 })}</span>
-      </div>
-      <ol className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2">
-        {sampleQueue.map((q, i) => (
-          <li key={i}>
-            <QueueCard item={q} active={i === 0} />
-          </li>
-        ))}
-      </ol>
-      <p className="shrink-0 border-t border-border px-3 py-2 text-meta text-muted-foreground">
-        {t("review.remaining", { count: 23, min: 2 })}
-      </p>
-    </section>
-  );
-}
-
-function QueueCard({ item, active }: { item: SampleQueueItem; active: boolean }) {
-  const { t } = useTranslation();
-  return (
-    <article
-      className={cn(
-        "flex flex-col gap-2 rounded border bg-surface p-2.5",
-        active ? "border-primary ring-1 ring-primary" : "border-border",
-        item.kind === "cluster" && "border-conf-unknown/40",
-      )}
-    >
-      <div className="flex items-center gap-1.5">
-        <ConfidenceBadge level={item.level} size="sm" />
-        {item.code ? <Ltr className="text-dense font-medium text-foreground">{item.code}</Ltr> : null}
-        {item.count ? (
-          <span className="ms-auto text-meta text-muted-foreground">{t("review.occurrences", { count: item.count })}</span>
-        ) : null}
-      </div>
-      <p className="text-dense text-foreground">
-        <MixedText text={item.title} />
-      </p>
-      {item.kind === "cluster" ? (
-        <div aria-hidden className="grid grid-cols-4 gap-1">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <span key={i} className="paper-grid flex aspect-square items-center justify-center rounded-sm border border-border">
-              <svg viewBox="0 0 20 20" className="size-4 text-foreground"><path d="M4 14h12M10 4v10M6 8h8" stroke="currentColor" fill="none" strokeWidth="1.2" /></svg>
-            </span>
-          ))}
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <ReasonChip code={item.reasonCode} />
-        {item.impact ? (
-          <span className="text-meta text-muted-foreground">
-            {t("review.impact")}: {item.impact === "high" ? t("review.impactHigh") : t("review.impactMid")}
-          </span>
-        ) : null}
-      </div>
-      {active ? (
-        <div className="flex items-center gap-1 text-meta text-muted-foreground">
-          <Kbd>A</Kbd> {t("review.approve")}
-          <Kbd className="ms-2">R</Kbd> {t("review.reject")}
-          <ChevronLeft className="ms-auto size-3.5 ltr:rotate-180" aria-hidden />
-        </div>
-      ) : null}
-    </article>
   );
 }

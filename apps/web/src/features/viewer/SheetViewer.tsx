@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Lasso, Maximize, Minus, MousePointer2, Plus, Ruler, Scaling } from "lucide-react";
 import {
@@ -28,6 +28,13 @@ export interface SheetViewerProps {
   tools?: ViewerTool[];
   overlays?: readonly OverlayFeature[];
   selectedIds?: readonly string[];
+  /** Focused ids (e.g. a selected class): everything else is dimmed to 30%. */
+  focusIds?: readonly string[];
+  /** Details popover anchored to a paper-mm point. */
+  popover?: { anchorMm: readonly [number, number]; content: ReactNode; label: string } | null;
+  renderTooltip?: (id: string) => ReactNode;
+  /** Zoom to a paper-mm box whenever `seq` changes (jump to a marker / a class / a cluster). */
+  zoomRequest?: { bboxMm: readonly [number, number, number, number]; seq: number } | null;
   onSelect?: (ids: string[], opts: { additive: boolean }) => void;
   onLasso?: (r: LassoResult) => void;
   onMeasure?: (r: MeasureResult) => void;
@@ -61,6 +68,10 @@ export default function SheetViewer({
   tools = ["select", "lasso", "measure", "calibrate"],
   overlays,
   selectedIds,
+  focusIds,
+  popover,
+  renderTooltip,
+  zoomRequest,
   onSelect,
   onLasso,
   onMeasure,
@@ -87,6 +98,11 @@ export default function SheetViewer({
     [hasMeta, api, projectId, sheetId, versionId],
   );
   const paper = paperSize(row);
+  useEffect(() => {
+    if (zoomRequest) ref.current?.zoomToMm(zoomRequest.bboxMm, 48);
+    // only when a new request is issued
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomRequest?.seq]);
   const name = row.sheet.title ?? row.sheet.classification?.sheetTitle ?? row.sheet.id;
   const scale = row.sheet.scaleDenominator ?? null;
 
@@ -129,6 +145,9 @@ export default function SheetViewer({
             sheetKey={`${row.sheet.id}/${row.version?.id}`}
             overlays={overlays}
             selectedIds={selectedIds}
+            focusIds={focusIds}
+            popover={popover}
+            renderTooltip={renderTooltip}
             tool={tool}
             onToolChange={onToolChange}
             onSelect={onSelect}

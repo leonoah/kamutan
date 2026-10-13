@@ -139,7 +139,8 @@ export interface FloorRegion {
   source: 'auto' | 'manual';
 }
 
-export const INGEST_STAGES = ['ingest', 'render', 'ocr', 'classify', 'scale', 'done'] as const;
+/** Version processing stages in order (Sprint 2 added legend, detect, rooms). Mirrors contracts VERSION_STAGES. */
+export const INGEST_STAGES = ['ingest', 'render', 'ocr', 'classify', 'scale', 'legend', 'detect', 'rooms', 'done'] as const;
 export type IngestStage = (typeof INGEST_STAGES)[number];
 
 /** Sheet classification produced by the worker (Sprint 1 brief). */
@@ -202,12 +203,23 @@ export interface SheetVersion {
     primitives?: string;
     text?: string;
     thumbnail?: string;
+    /** Sprint 2 — full object paths: legend.json.gz / detections.json.gz / rooms.json.gz */
+    legend?: string;
     detections?: string;
     rooms?: string;
   };
   // Points are {x, y} objects (packages/contracts PointMmSchema): Firestore rejects nested arrays.
   regions?: Array<{ id: string; floor: string; polygonMm: Array<{ x: number; y: number }>; scaleDenominator: number }>;
-  stats?: { paths?: number; segments?: number; textLines?: number; glyphs?: number; [k: string]: number | undefined };
+  stats?: {
+    paths?: number;
+    segments?: number;
+    textLines?: number;
+    glyphs?: number;
+    /** Sprint 2 */
+    detections?: { total: number; green: number; yellow: number; red: number; unknown: number; byClass: Record<string, number> };
+    rooms?: number;
+    legendEntries?: number;
+  };
   workerVersion?: string;
   updatedAt?: FsTimestamp;
   /** Sprint 0 fields. */
@@ -217,14 +229,28 @@ export interface SheetVersion {
   createdAt?: FsTimestamp;
 }
 
-/** orgs/{orgId}/projects/{projectId}/legendEntries/{entryId} — worker/server-written. */
+export const LEGEND_ENTRY_STATUSES = ['suggested', 'confirmed', 'ignored'] as const;
+export type LegendEntryStatus = (typeof LEGEND_ENTRY_STATUSES)[number];
+
+/**
+ * orgs/{orgId}/projects/{projectId}/legendEntries/{entryId} — Sprint 2 brief. Worker writes `suggested`
+ * (never overwrites a confirmed/ignored entry with the same signature); the API confirms / ignores / reassigns.
+ * NO client write (firestore.rules).
+ */
 export interface LegendEntry {
   sheetId: string;
+  versionId: string;
   label: string;
-  templateRef: string | null;
+  labelConfidence: number;
+  suggestedClass: string | null; // benchmark/schema/classes.json id or 'unknown'
+  class: string | null; // null until confirmed
   itemCode: string | null; // TEXT
-  rowIndex?: number;
-  conf?: number;
+  signature: string; // stable hash of the normalised symbol strokes
+  thumbPath: string | null; // Storage object, NOT client-readable
+  status: LegendEntryStatus;
+  confirmedBy?: string | null;
+  confirmedAt?: FsTimestamp | null;
+  updatedAt: FsTimestamp;
 }
 
 /** orgs/{orgId}/projects/{projectId}/reviewItems/{itemId} — yellow/red items and clusters. */
@@ -320,14 +346,19 @@ export interface BoqTemplate {
   xlsxTemplatePath?: string;
 }
 
-/** orgs/{orgId}/symbolMappings/{id} — server-written. */
+/**
+ * orgs/{orgId}/symbolMappings/{signature} — Sprint 2 brief. API-written on confirm / reassign / unknown-cluster
+ * resolve (upsert, uses++); the worker reads it to pre-fill suggestedClass ("learn once, reuse"). NO client write.
+ */
 export interface SymbolMapping {
-  keyType: 'template_hash' | 'block_name' | 'pattern';
-  key: string;
-  itemId: string;
-  acceptCount: number;
-  rejectCount: number;
-  lastUsedAt?: FsTimestamp;
+  class: string | null; // null iff ignored
+  /** true = resolved as "לא רלוונטי": the worker skips this signature. Missing on older docs = false. */
+  ignored: boolean;
+  itemCode: string | null; // TEXT
+  label: string;
+  confirmedBy: string;
+  confirmedAt: FsTimestamp;
+  uses: number;
 }
 
 /** orgs/{orgId}/auditLog/{eventId} — server-only, append-only, per-org hash chain. */
@@ -394,6 +425,14 @@ export const paths = {
   artifacts: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}`,
   tile: (o: string, p: string, s: string, v: string, z: number, x: number, y: number) =>
     `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/tiles/${z}/${x}_${y}.webp`,
+  /** Sprint 2 artifacts + UI crops (worker only; clients via the API's signed URLs). */
+  legendArtifact: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/legend.json.gz`,
+  detectionsArtifact: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/detections.json.gz`,
+  roomsArtifact: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/rooms.json.gz`,
+  legendThumb: (o: string, p: string, s: string, v: string, entryId: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/legend/${entryId}.webp`,
+  unknownThumb: (o: string, p: string, s: string, v: string, clusterId: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/unknown/${clusterId}.webp`,
+  /** Sprint 2 per-org LLM gateway cache (SEC-23) — worker only, never client-readable. */
+  llmCache: (o: string, key: string) => `orgs/${o}/llm-cache/${key}`,
 } as const;
 
 /** Storage prefixes a client may READ directly. Empty by design: every read is a signed URL (SEC-20). */

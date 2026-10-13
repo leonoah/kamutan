@@ -1,4 +1,4 @@
-import type { SheetClassification, SheetRow, SheetSet, TilesMeta } from "./types";
+import type { SheetClassification, SheetRegion, SheetRow, SheetSet, TilesMeta } from "./types";
 
 /**
  * Demo sheets of the sample project (sample-noah), as classified by the Sprint 0 spike
@@ -229,4 +229,76 @@ export function guessClassification(filename: string): SheetClassification {
     level,
     reasons,
   };
+}
+
+/** One entry of /dev-artifacts/dev-index.json (written by workers/drawing/scripts/ingest_local.py). */
+export interface DevIndexEntry {
+  sheetId: string;
+  versionId: string;
+  fileId: string;
+  sheetSetId: string;
+  page?: { widthMm: number; heightMm: number; rotation: number };
+  tiles?: TilesMeta;
+  thumbnail?: string;
+  primitives?: string;
+  text?: string;
+  status?: string;
+  title?: string;
+  discipline?: string | null;
+  floors?: string[];
+  scaleDenominator?: number | null;
+  classification?: SheetClassification;
+  regions?: SheetRegion[];
+  stats?: Record<string, unknown>;
+  /** Sprint 2 (top-level like primitives/text, or under artifacts). */
+  legend?: string;
+  detections?: string;
+  rooms?: string;
+  artifacts?: { legend?: string; detections?: string; rooms?: string };
+}
+
+/** A ready sheet row (+ its set) built from a dev-index entry (dev mock only). */
+export function rowFromDevIndex(e: DevIndexEntry, createdAt: string): { row: SheetRow; set: SheetSet } | null {
+  if (!e.tiles) return null;
+  const set: SheetSet = {
+    id: e.sheetSetId,
+    orgId: ORG,
+    projectId: PROJECT,
+    fileKind: "pdf",
+    sha256: e.fileId.padEnd(64, "0"),
+    storagePath: `orgs/${ORG}/projects/${PROJECT}/uploads/${e.sheetSetId}/source.pdf`,
+    status: "ready",
+    name: `${e.title ?? e.fileId}.pdf`,
+    uploadedBy: "mock-user",
+    createdAt,
+  };
+  const row: SheetRow = {
+    sheet: {
+      id: e.sheetId,
+      sheetSetId: e.sheetSetId,
+      pageIndex: 0,
+      title: e.title ?? null,
+      discipline: e.discipline ?? null,
+      floors: e.floors ?? [],
+      scaleDenominator: e.scaleDenominator ?? null,
+      ...(e.classification ? { classification: e.classification } : {}),
+      confirmed: false,
+      currentVersionId: e.versionId,
+      updatedAt: createdAt,
+    },
+    version: {
+      id: e.versionId,
+      sheetId: e.sheetId,
+      versionNo: 1,
+      status: "ready",
+      createdAt,
+      progress: { stage: "done", pct: 100 },
+      ...(e.page ? { page: e.page } : {}),
+      artifacts: { tiles: e.tiles, ...(e.thumbnail ? { thumbnail: e.thumbnail } : {}) },
+      regions: e.regions ?? [],
+      workerVersion: "dev-index",
+      updatedAt: createdAt,
+    },
+  };
+  return { row, set };
 }

@@ -24,6 +24,8 @@ import { FirebaseObjectStorage } from '../../src/uploads/storage/firebase.storag
 import type { ObjectStorage } from '../../src/uploads/storage/object-storage';
 import { UploadTokenSigner } from '../../src/uploads/upload-token';
 import { UploadsService } from '../../src/uploads/uploads.service';
+import { InMemoryArtifactReader } from '../../src/understanding/artifact-reader';
+import { UnderstandingService } from '../../src/understanding/understanding.service';
 import { user } from '../support/fake-verifier';
 import { SAMPLE, UPLOAD_SECRET } from '../support/helpers';
 
@@ -204,6 +206,51 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
       await expect(sheets().reprocess(user(uid('aEditor')), pid, sid, TRACE)).rejects.toMatchObject({ status: 409 });
       await expect(jobs().get(user(uid('aViewer')), r.jobId)).resolves.toMatchObject({ orgId: orgA, sheetId: sid, status: 'queued' });
       await expect(jobs().get(user(uid('bAdmin')), r.jobId)).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe('Sprint 2: legend entries + symbol mappings (transactions)', () => {
+    const SIG = 'e5'.repeat(20);
+    let pid: string;
+    const sid = 'set2-p0';
+    const vid = 'v1';
+    const eid = `le_${sid}_0`;
+    const svc = () => {
+      const signer = new FakeUrlSigner();
+      return new UnderstandingService(access, repo, signer, new InMemoryArtifactReader(), new SheetsService(access, repo, new InMemoryIngestQueue(), signer));
+    };
+
+    beforeAll(async () => {
+      pid = (await repo.createProject(orgA, { name: 'legend' }, uid('aEditor'))).id;
+      const now = Timestamp.now();
+      for (const n of [0, 1]) {
+        await db.doc(fsPaths.legendEntry(orgA, pid, `le_${sid}_${n}`)).set({
+          sheetId: sid, versionId: vid, label: 'שקע כפול', labelConfidence: 0.9, suggestedClass: 'socket_double', class: null,
+          itemCode: null, signature: SIG, thumbPath: storagePaths.legendThumb(orgA, pid, sid, vid, `le_${sid}_${n}`), status: 'suggested', updatedAt: now,
+        });
+      }
+    });
+
+    it('lists with status filter (equality + document-id order) and signs crops', async () => {
+      const page = await svc().listLegendEntries(user(uid('aViewer')), pid, { limit: 1, status: 'suggested' });
+      expect(page.items.map((e) => e.id)).toEqual([eid]);
+      expect(page.nextCursor).toBe(eid);
+      expect(page.items[0]?.thumbUrl).toContain(`/orgs/${orgA}/`);
+      await expect(svc().listLegendEntries(user(uid('bAdmin')), pid, { limit: 1 })).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('confirm twice on one signature upserts the org mapping with uses++ and audits each decision', async () => {
+      await svc().patchLegendEntry(user(uid('aEditor')), pid, eid, { action: 'confirm', itemCode: '08.010' });
+      const r = await svc().patchLegendEntry(user(uid('aEditor')), pid, `le_${sid}_1`, { action: 'reassign', class: 'socket_power' });
+      expect(r.mapping).toMatchObject({ signature: SIG, class: 'socket_power', uses: 2 });
+      const m = await db.doc(fsPaths.symbolMapping(orgA, SIG)).get();
+      expect(m.get('confirmedAt')).toBeInstanceOf(Timestamp);
+      expect(Object.keys(m.data() ?? {}).sort()).toEqual(['class', 'confirmedAt', 'confirmedBy', 'ignored', 'itemCode', 'label', 'uses']);
+      const e = await db.doc(fsPaths.legendEntry(orgA, pid, eid)).get();
+      expect(e.data()).toMatchObject({ status: 'confirmed', class: 'socket_double', itemCode: '08.010', confirmedBy: uid('aEditor') });
+      const actions = (await db.collection(`orgs/${orgA}/auditLog`).where('entity', '==', 'legendEntries').get()).docs.map((d) => d.get('action'));
+      expect(actions.sort()).toEqual(['confirm', 'reassign']);
+      await expect(svc().patchLegendEntry(user(uid('bAdmin')), pid, eid, { action: 'ignore' })).rejects.toMatchObject({ status: 404 });
     });
   });
 

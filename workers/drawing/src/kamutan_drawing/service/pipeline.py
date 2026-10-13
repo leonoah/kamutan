@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import re
 import shutil
 import tempfile
 import time
@@ -54,7 +56,7 @@ WORKER_VERSION = f"kamutan-drawing/{__version__}"
 MAX_SOURCE_BYTES = 100 * 1024 * 1024  # SEC-14
 MAX_ATTEMPTS = 5  # = Pub/Sub --max-delivery-attempts (infra/IAM.md §2)
 IMMUTABLE = "private, max-age=31536000, immutable"  # artifacts of a version never change
-STAGES = ("ingest", "render", "ocr", "classify", "scale", "done")
+STAGES = ("ingest", "render", "ocr", "classify", "scale", "legend", "detect", "rooms", "done")
 SHEET_FIELDS_CONFIRMED = ("discipline", "floors", "scaleDenominator")
 
 
@@ -67,6 +69,12 @@ class Options:
     workdir_root: str | None = None
     max_attempts: int = MAX_ATTEMPTS
     glyph_store: bool = True
+    # Sprint 2 understanding stage (legend → detect → rooms); KAMUTAN_UNDERSTAND=0 turns it off
+    understand: bool = field(default_factory=lambda: os.environ.get("KAMUTAN_UNDERSTAND", "1") != "0")
+    understand_rooms: bool = True
+    # LLM gateway for low-confidence legend labels; None = built from the environment (disabled by default)
+    llm: Any = None
+    llm_max_labels: int = 12
 
 
 @dataclass
@@ -482,13 +490,20 @@ def _process_page(
     if opts.glyph_store:
         _merge_glyph_delta(blobs, job.orgId, res.get("glyphDelta"))
 
+    understanding: dict[str, Any] | None = None
+    if opts.understand:
+        regions_for = (
+            list(vdoc.get("regions") or []) if (job.is_reprocess and vdoc.get("regions")) else list(res.get("regions") or [])
+        )
+        understanding = _understand(job, blobs, docs, opts, paths, workdir, kind, src, index, sid, prog, n_done, res, regions_for)
+
     tiles_meta = dict(res["tiles"])
     tiles = {
         "prefix": pre + "tiles/",
         **{k: tiles_meta[k] for k in ("format", "tileSize", "dpi", "levels", "widthPx", "heightPx")},
     }
     page = res["page"]
-    stats = {k: int(res["stats"].get(k, 0)) for k in ("paths", "segments", "textLines", "glyphs")}
+    stats: dict[str, Any] = {k: int(res["stats"].get(k, 0)) for k in ("paths", "segments", "textLines", "glyphs")}
     vfields: dict[str, Any] = {
         "status": "ready",
         "progress": {"stage": "done", "pct": 100},
@@ -506,6 +521,9 @@ def _process_page(
         "jobId": job.jobId,
         "updatedAt": SERVER_TIMESTAMP,
     }
+    if understanding is not None:
+        vfields["artifacts"].update(understanding["artifacts"])
+        stats.update(understanding["stats"])
     # reprocess: the API copied the user's regions from the previous version — keep them
     if not (job.is_reprocess and vdoc.get("regions")):
         vfields["regions"] = list(res.get("regions") or [])[:8]
@@ -537,7 +555,265 @@ def _process_page(
         len(res.get("tileFiles") or []),
         res.get("timings"),
     )
+    if understanding is not None:
+        res["understanding"] = understanding["summary"]
     return PageOutcome(index, sid, "ready", tiles=len(res.get("tileFiles") or []), result=res)
+
+
+# ----------------------------------------------------------------------------- Sprint 2
+_UNDERSTAND_FILE = re.compile(
+    r"^(legend\.json\.gz|detections\.json\.gz|rooms\.json\.gz|legend/le_[A-Za-z0-9_-]{1,120}\.webp|unknown/u_[A-Za-z0-9_-]{1,120}\.webp)$"
+)
+_SIG = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+
+
+def _list_docs(docs: DocStore, collection: str) -> list[tuple[str, dict[str, Any]]]:
+    lister = getattr(docs, "list_docs", None)
+    if lister is None:
+        return []
+    try:
+        out: list[tuple[str, dict[str, Any]]] = lister(collection)
+        return out
+    except Exception:  # memory: never fail a page for the "learn once" lookup
+        log.warning("listing %s failed", collection, exc_info=True)
+        return []
+
+
+def load_mappings(docs: DocStore, org_id: str, project_id: str) -> dict[str, dict[str, Any]]:
+    """signature → remembered decision: the org's ``symbolMappings`` ("learn once, reuse"), overridden
+    by this project's confirmed / ignored legend entries (which the worker links to)."""
+    out: dict[str, dict[str, Any]] = {}
+    for sig, m in _list_docs(docs, f"orgs/{org_id}/symbolMappings"):
+        if _SIG.match(sig) and isinstance(m, dict) and m.get("class"):
+            out[sig] = {
+                "class": str(m["class"]),
+                "itemCode": m.get("itemCode"),
+                "label": str(m.get("label") or "")[:300],
+                "status": "mapping",
+            }
+    for eid, e in _list_docs(docs, f"orgs/{org_id}/projects/{project_id}/legendEntries"):
+        st = e.get("status") if isinstance(e, dict) else None
+        esig = e.get("signature") if isinstance(e, dict) else None
+        if st in ("confirmed", "ignored") and isinstance(esig, str) and _SIG.match(esig):
+            out[esig] = {
+                "class": e.get("class") if st == "confirmed" else None,
+                "itemCode": e.get("itemCode"),
+                "label": str(e.get("label") or "")[:300],
+                "status": st,
+                "entryId": eid,
+            }
+    return out
+
+
+def _understand(
+    job: IngestSheetVersionJob,
+    blobs: BlobStore,
+    docs: DocStore,
+    opts: Options,
+    paths: _Paths,
+    workdir: str,
+    kind: str,
+    src: str,
+    index: int,
+    sid: str,
+    prog: _Progress,
+    n_done: int,
+    page_res: dict[str, Any],
+    regions: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """legend → detect → rooms in the sandbox; upload the artifacts; write ``legendEntries``.
+
+    Best effort: a failure of this stage leaves the page ``ready`` without understanding artifacts
+    (logged); only storage errors are retried."""
+    prog.page(n_done, sid, "legend", 88)
+    sheet = docs.get(paths.sheet(sid)) or {}
+    cls = _clean_classification(page_res.get("classification") or {})
+    discipline = sheet.get("discipline") if sheet.get("confirmed") else cls.get("discipline")
+    scale = _scale(sheet.get("scaleDenominator")) if sheet.get("confirmed") else _scale(page_res.get("scaleDenominator"))
+    out_rel = f"out/u{index}"
+    args: dict[str, Any] = {
+        "kind": kind,
+        "path": src,
+        "index": index,
+        "pageDir": str(page_res["outDir"]),
+        "outDir": out_rel,
+        "sheet": sid,
+        "discipline": discipline,
+        "scaleDenominator": scale,
+        "regions": regions,
+        "mappings": load_mappings(docs, job.orgId, job.projectId),
+        "detect": True,
+        "rooms": opts.understand_rooms,
+    }
+    try:
+        res = run_task(
+            "understand", args, workdir=workdir, limits=opts.limits, on_progress=lambda st, pct: prog.page(n_done, sid, st, pct)
+        )
+    except IngestError as e:
+        if e.retryable:
+            raise
+        log.warning("job %s page %d: understanding failed (%s); page kept without it", job.jobId, index, e.code)
+        return None
+    pre = paths.artifacts(sid)
+    out_dir = str(res["outDir"])
+    for f in res.get("files") or []:
+        rel = str(f.get("path", ""))
+        if not _UNDERSTAND_FILE.match(rel):
+            raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid artifact name")
+        ctype = "image/webp" if rel.endswith(".webp") else "application/gzip"
+        blobs.write(pre + rel, Path(safe_output_path(workdir, f"{out_dir}/{rel}")).read_bytes(), ctype, cache_control=IMMUTABLE)
+    legend = res.get("legend") or {}
+    if _refine_labels(job, blobs, docs, opts, pre, legend):
+        blobs.write(pre + "legend.json.gz", _gz_json(legend), "application/gzip", cache_control=IMMUTABLE)
+    links: dict[str, str] = {str(k): str(v) for k, v in (res.get("legendLinks") or {}).items()}
+    _write_legend_entries(job, docs, sid, pre, legend.get("entries") or [], links, args["mappings"])
+    stats = {
+        "detections": _clean_det_stats(res.get("detectionStats") or {}),
+        "rooms": max(0, int(res.get("rooms") or 0)),
+        "legendEntries": max(0, int(res.get("legendEntries") or 0)),
+    }
+    return {
+        "artifacts": {"legend": pre + "legend.json.gz", "detections": pre + "detections.json.gz", "rooms": pre + "rooms.json.gz"},
+        "stats": stats,
+        "summary": {
+            "legendEntries": stats["legendEntries"],
+            "labels": [str(e.get("label", ""))[:80] for e in (legend.get("entries") or [])][:200],
+            "detections": stats["detections"],
+            "rooms": stats["rooms"],
+            "timings": res.get("timings"),
+            "detected": bool(res.get("detected")),
+        },
+    }
+
+
+LLM_LABEL_BELOW = 0.6
+LLM_LABEL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"label": {"type": "string", "minLength": 1, "maxLength": 200}},
+    "required": ["label"],
+    "additionalProperties": False,
+}
+
+
+def _gz_json(obj: Any) -> bytes:
+    import gzip
+    import json
+
+    return gzip.compress(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode(), mtime=0)
+
+
+def _gateway(opts: Options, blobs: BlobStore, docs: DocStore) -> Any:
+    if opts.llm is not None:
+        return opts.llm
+    try:
+        from ..llm_gateway import docstore_settings_reader, from_env
+    except ImportError:  # pragma: no cover
+        return None
+    return from_env(docstore_settings_reader(docs), blobs=blobs)
+
+
+def _refine_labels(
+    job: IngestSheetVersionJob, blobs: BlobStore, docs: DocStore, opts: Options, pre: str, legend: dict[str, Any]
+) -> bool:
+    """Low-confidence legend labels → the LLM gateway (purpose ``legend_label``, region ``legend_row``,
+    the entry's crop only — never the title block). Works (no-op) when the gateway is disabled.
+    LLM-derived labels are capped below green confidence (SEC-33). Returns True when a label changed."""
+    from ..legend.classes import suggest_class
+
+    low = [e for e in legend.get("entries") or [] if float(e.get("labelConfidence") or 0) < LLM_LABEL_BELOW and e.get("thumb")]
+    if not low:
+        return False
+    gw = _gateway(opts, blobs, docs)
+    if gw is None or not getattr(gw, "globally_enabled", False):
+        return False
+    changed = False
+    for e in low[: opts.llm_max_labels]:
+        try:
+            img = blobs.read(pre + str(e["thumb"]))
+        except BlobNotFound:
+            continue
+        r = gw.call(
+            job.orgId,
+            "legend_label",
+            [img],
+            {"currentReading": str(e.get("label", ""))[:200]},
+            LLM_LABEL_SCHEMA,
+            region_kind="legend_row",
+        )
+        if r.status != "ok" or not isinstance(r.data, dict):
+            if r.status in ("disabled", "budget_exceeded"):
+                break
+            continue
+        label = str(r.data.get("label", "")).strip()[:300]
+        if not label or label == e.get("label"):
+            continue
+        cls, conf = suggest_class(label, 0.8)
+        e["label"] = label
+        e["labelConfidence"] = 0.8
+        if cls and (e.get("classConfidence") or 0) < 0.95:
+            e["suggestedClass"], e["classConfidence"] = cls, min(conf, 0.8)
+        changed = True
+    return changed
+
+
+def _clean_det_stats(d: dict[str, Any]) -> dict[str, Any]:
+    def n(v: Any) -> int:
+        return max(0, int(v)) if isinstance(v, int | float) else 0
+
+    raw = d.get("byClass")
+    by: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    return {
+        "total": n(d.get("total")),
+        "green": n(d.get("green")),
+        "yellow": n(d.get("yellow")),
+        "red": n(d.get("red")),
+        "unknown": n(d.get("unknown")),
+        "byClass": {str(k)[:64]: n(v) for k, v in list(by.items())[:64]},
+    }
+
+
+def _write_legend_entries(
+    job: IngestSheetVersionJob,
+    docs: DocStore,
+    sid: str,
+    pre: str,
+    entries: list[dict[str, Any]],
+    links: dict[str, str],
+    mappings: dict[str, dict[str, Any]],
+) -> None:
+    """``legendEntries/{entryId}`` as ``suggested``. Never overwrites a confirmed / ignored entry, and
+    does not create a new one when a confirmed / ignored entry with the same signature exists (the
+    detections link to that entry instead)."""
+    base = f"{job.project_path}/legendEntries"
+    for e in entries:
+        eid = str(e.get("id", ""))
+        if not re.match(r"^le_[A-Za-z0-9_-]{1,125}$", eid) or eid in links:
+            continue
+        sig = str(e.get("signature", ""))
+        if not _SIG.match(sig):
+            continue
+        cur = docs.get(f"{base}/{eid}")
+        if cur is not None and cur.get("status") in ("confirmed", "ignored"):
+            continue
+        m = mappings.get(sig)
+        thumb = e.get("thumb")
+        docs.set(
+            f"{base}/{eid}",
+            {
+                "sheetId": sid,
+                "versionId": job.versionId,
+                "label": str(e.get("label", ""))[:300],
+                "labelConfidence": max(0.0, min(1.0, float(e.get("labelConfidence") or 0.0))),
+                "suggestedClass": e.get("suggestedClass"),
+                "class": None,
+                "itemCode": (m or {}).get("itemCode") if (m or {}).get("status") == "mapping" else None,
+                "signature": sig,
+                "thumbPath": (pre + thumb) if isinstance(thumb, str) and _UNDERSTAND_FILE.match(thumb) else None,
+                "status": "suggested",
+                "updatedAt": SERVER_TIMESTAMP,
+            },
+            merge=False,
+        )
 
 
 __all__ = ["CONTENT_TYPES", "WORKER_VERSION", "JobOutcome", "Options", "PageOutcome", "process_sheet_version"]

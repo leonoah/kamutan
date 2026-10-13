@@ -126,3 +126,16 @@ class LocalDocStore:
             new = resolve_sentinels(data, old)
             doc = deep_merge(old, new) if (merge and old is not None) else new
             _atomic_write(p, json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=True).encode())
+
+    def list_docs(self, collection: str, limit: int = 2000) -> list[tuple[str, dict[str, Any]]]:
+        """(doc id, doc) of the direct children of ``collection``."""
+        d = self.root / DOCS_DIR / check_path(collection)
+        if not d.is_dir():
+            return []
+        out = []
+        for f in sorted(d.glob("*.json"))[:limit]:
+            try:
+                out.append((f.stem, json.loads(f.read_text())))
+            except (OSError, ValueError):
+                continue
+        return out

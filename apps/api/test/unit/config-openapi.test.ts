@@ -44,7 +44,7 @@ describe('config', () => {
 });
 
 describe('OpenAPI', () => {
-  it('documents the Sprint 0 + 1 endpoints under /api/v1', async () => {
+  it('documents the Sprint 0 + 1 + 2 endpoints under /api/v1', async () => {
     const t = await createTestApp(testConfig());
     try {
       const doc = buildOpenApi(t.app);
@@ -66,11 +66,18 @@ describe('OpenAPI', () => {
           '/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}',
           '/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/tiles-manifest',
           '/api/v1/projects/{projectId}/uploads',
+          '/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/overlay',
+          '/api/v1/projects/{projectId}/legend-entries',
+          '/api/v1/projects/{projectId}/legend-entries/{entryId}',
+          '/api/v1/projects/{projectId}/unknown-clusters/{clusterId}/resolve',
         ].sort(),
       );
       const tiles = doc.paths['/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/tiles-manifest']?.get;
       const names = (tiles?.parameters ?? []).map((p) => ('name' in p ? p.name : ''));
       expect(names).toEqual(expect.arrayContaining(['z', 'x0', 'x1', 'y0', 'y1']));
+      const legend = doc.paths['/api/v1/projects/{projectId}/legend-entries']?.get;
+      expect((legend?.parameters ?? []).map((p) => ('name' in p ? p.name : ''))).toEqual(expect.arrayContaining(['status', 'sheetId', 'cursor', 'limit']));
+      expect(doc.paths['/api/v1/projects/{projectId}/legend-entries/{entryId}']?.patch).toBeDefined();
     } finally {
       await t.app.close();
     }

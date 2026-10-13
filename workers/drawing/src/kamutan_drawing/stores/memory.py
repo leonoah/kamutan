@@ -78,3 +78,12 @@ class InMemoryDocStore:
             new = resolve_sentinels(data, old)
             self.docs[path] = deep_merge(old, new) if (merge and old is not None) else new
             self.history.append((path, copy.deepcopy(new)))
+
+    def list_docs(self, collection: str, limit: int = 2000) -> list[tuple[str, dict[str, Any]]]:
+        """(doc id, doc) of the direct children of ``collection`` (Sprint 2: legend entries, symbol mappings)."""
+        pre = check_path(collection) + "/"
+        with self._lock:
+            out = [
+                (k[len(pre) :], copy.deepcopy(v)) for k, v in self.docs.items() if k.startswith(pre) and "/" not in k[len(pre) :]
+            ]
+        return sorted(out)[:limit]

@@ -245,9 +245,65 @@ describe('firestore.rules (static) — Sprint 1 ingest collections', () => {
     }
   });
 
-  it('model has the Sprint 1 ingest stages and job type', () => {
-    expect(INGEST_STAGES).toEqual(['ingest', 'render', 'ocr', 'classify', 'scale', 'done']);
+  it('model has the Sprint 1 + 2 ingest stages and job type', () => {
+    expect(INGEST_STAGES).toEqual(['ingest', 'render', 'ocr', 'classify', 'scale', 'legend', 'detect', 'rooms', 'done']);
     expect(JOB_TYPES).toContain('ingest.sheet_version');
+  });
+});
+
+describe('Sprint 2 — legend entries, symbol mappings, understanding artifacts, llm-cache (static)', () => {
+  const LEGEND = `${DOCS}/orgs/{orgId}/projects/{projectId}/legendEntries/{entryId}`;
+  const MAPPINGS = `${DOCS}/orgs/{orgId}/symbolMappings/{mappingId}`;
+  const LLM_CACHE = '/b/{bucket}/o/orgs/{orgId}/llm-cache/{rest=**}';
+  const VERSION_ARTIFACTS = `${PROJ}/sheets/{sheetId}/versions/{versionId}/{rest=**}`;
+
+  it.each([LEGEND, MAPPINGS])('%s: members read, every client write denied', (p) => {
+    const allows = fs.allows.filter((a) => a.path === p);
+    const read = allows.find((a) => a.methods.includes('read'));
+    expect(read?.condition).toBe('isMember(orgId)');
+    const writes = allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)));
+    expect(writes.length).toBeGreaterThan(0);
+    for (const w of writes) expect(isDenyAll(w.condition), `${p} line ${w.line}`).toBe(true);
+  });
+
+  it('no collection-group match exposes legendEntries or symbolMappings', () => {
+    for (const p of fs.matchPaths.filter((m) => m.includes('{path=**}'))) expect(p).not.toMatch(/legendEntries|symbolMappings/);
+  });
+
+  it('llm-cache has an explicit read+write deny in storage.rules', () => {
+    expect(st.matchPaths).toContain(LLM_CACHE);
+    const allows = st.allows.filter((a) => a.path === LLM_CACHE);
+    expect(allows.map((a) => [a.methods.sort().join(','), a.condition])).toEqual([['read,write', 'false']]);
+  });
+
+  it('every Sprint-2 model object path lands in a deny-all storage match (never the quarantine slot)', () => {
+    const objects = [
+      paths.legendArtifact('o', 'p', 's', 'v'),
+      paths.detectionsArtifact('o', 'p', 's', 'v'),
+      paths.roomsArtifact('o', 'p', 's', 'v'),
+      paths.legendThumb('o', 'p', 's', 'v', 'le_s_0'),
+      paths.unknownThumb('o', 'p', 's', 'v', 'u_0'),
+      paths.llmCache('o', 'legend_label/abc.json'),
+    ];
+    for (const obj of objects) {
+      const target = `/b/{bucket}/o/${obj}`;
+      const hits = st.matchPaths.filter((m) => m !== '/b/{bucket}/o/{allPaths=**}' && matchPathToRegExp(m).test(target));
+      expect(hits, obj).toHaveLength(1);
+      expect([VERSION_ARTIFACTS, LLM_CACHE]).toContain(hits[0]);
+      for (const a of st.allows.filter((x) => x.path === hits[0])) expect(isDenyAll(a.condition), obj).toBe(true);
+    }
+  });
+
+  it('model doc shapes follow the brief (no Sprint-0 symbolMapping keys)', () => {
+    const model = readFileSync(join(FIREBASE_DIR, 'model.ts'), 'utf8');
+    const iface = (name: string) => model.slice(model.indexOf(`export interface ${name} {`), model.indexOf('}', model.indexOf(`export interface ${name} {`)));
+    for (const f of ['class', 'ignored', 'itemCode', 'label', 'confirmedBy', 'confirmedAt', 'uses']) expect(iface('SymbolMapping')).toContain(`${f}:`);
+    expect(iface('SymbolMapping')).not.toContain('keyType');
+    for (const f of ['sheetId', 'versionId', 'label', 'labelConfidence', 'suggestedClass', 'class', 'itemCode', 'signature', 'thumbPath', 'status', 'updatedAt']) {
+      expect(iface('LegendEntry'), f).toContain(`${f}:`);
+    }
+    expect(paths.symbolMapping('o', 'sig')).toBe('orgs/o/symbolMappings/sig');
+    expect(paths.legendEntry('o', 'p', 'le_1')).toBe('orgs/o/projects/p/legendEntries/le_1');
   });
 });
 

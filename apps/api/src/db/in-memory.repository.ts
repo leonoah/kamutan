@@ -5,6 +5,8 @@ import {
   sheetIdFor,
   storagePaths,
   type Job,
+  type LegendEntry,
+  type LegendEntryStatus,
   type Member,
   type Org,
   type ProcessingError,
@@ -16,10 +18,21 @@ import {
   type SheetSetStatus,
   type SheetSummary,
   type SheetVersion,
+  type SymbolMapping,
 } from '@kamutan/contracts';
 import { auditHash } from './audit-chain';
-import { toJob, toMember, toOrg, toProject, toSheet, toSheetSet, toVersion, versionSummary, type Doc } from './mappers';
-import { RepoConflictError, type AuditInput, type ConfirmInput, type NewSheetSet, type ReprocessResult, type Repository } from './repository';
+import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
+import { toJob, toLegendEntry, toMember, toOrg, toProject, toSheet, toSheetSet, toSymbolMapping, toVersion, versionSummary, type Doc } from './mappers';
+import {
+  RepoConflictError,
+  type AuditInput,
+  type ConfirmInput,
+  type LegendDecision,
+  type NewSheetSet,
+  type ReprocessResult,
+  type Repository,
+  type ResolveClusterInput,
+} from './repository';
 
 /** Firestore-like 20-char auto id. */
 export function autoId(): string {
@@ -391,6 +404,85 @@ export class InMemoryRepository implements Repository {
     }
   }
 
+  // --- legend entries & symbol mappings ---------------------------------------------
+  async listLegendEntries(orgId: string, projectId: string, opts: { limit: number; cursor?: string; status?: LegendEntryStatus; sheetId?: string }) {
+    const all = this.children(fsPaths.legendEntries(orgId, projectId))
+      .map(([k, d]) => [k.split('/').at(-1) as string, d] as const)
+      .filter(([, d]) => (!opts.status || d.status === opts.status) && (!opts.sheetId || d.sheetId === opts.sheetId))
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const start = opts.cursor ? all.filter(([id]) => id <= (opts.cursor as string)).length : 0;
+    const items = all.slice(start, start + opts.limit).map(([id, d]) => toLegendEntry(id, d));
+    const more = all.length > start + opts.limit;
+    return { items, nextCursor: more && items.length ? (items.at(-1) as LegendEntry).id : null };
+  }
+
+  async getLegendEntry(orgId: string, projectId: string, entryId: string): Promise<LegendEntry | null> {
+    const d = this.docs.get(fsPaths.legendEntry(orgId, projectId, entryId));
+    return d ? toLegendEntry(entryId, d) : null;
+  }
+
+  decideLegendEntry(orgId: string, projectId: string, entryId: string, decision: LegendDecision, actorUid: string) {
+    return this.tx(() => {
+      const path = fsPaths.legendEntry(orgId, projectId, entryId);
+      const d = this.docs.get(path);
+      if (!d) return null;
+      const cur = toLegendEntry(entryId, d);
+      const now = this.now();
+      const patch = legendDecisionPatch(cur, decision, actorUid, now);
+      let mapping: SymbolMapping | null = null;
+      if (decision.action !== 'ignore') {
+        const mPath = fsPaths.symbolMapping(orgId, cur.signature);
+        const m = mappingDoc(this.docs.get(mPath), { class: decision.class, itemCode: patch.itemCode as string | null, label: decisionLabel(cur, decision) }, actorUid, now);
+        this.docs.set(mPath, m);
+        mapping = toSymbolMapping(cur.signature, m);
+      }
+      const next = { ...d, ...patch };
+      this.docs.set(path, next);
+      this.appendAuditSync(orgId, legendDecisionAudit(projectId, cur, decision, patch, mapping?.uses ?? null, actorUid));
+      return { entry: toLegendEntry(entryId, next), mapping };
+    });
+  }
+
+  resolveUnknownCluster(orgId: string, projectId: string, input: ResolveClusterInput, actorUid: string) {
+    return this.tx(() => {
+      const now = this.now();
+      const mPath = fsPaths.symbolMapping(orgId, input.signature);
+      const m = mappingDoc(this.docs.get(mPath), input, actorUid, now);
+      this.docs.set(mPath, m);
+      let legendEntry: LegendEntry | null = null;
+      if (input.legendEntry) {
+        const doc = clusterLegendEntryDoc(input, input.legendEntry.thumbPath, actorUid, now);
+        this.docs.set(fsPaths.legendEntry(orgId, projectId, input.legendEntry.id), doc);
+        legendEntry = toLegendEntry(input.legendEntry.id, doc);
+      }
+      const mapping = toSymbolMapping(input.signature, m);
+      this.appendAuditSync(orgId, resolveClusterAudit(projectId, input, mapping.uses, actorUid));
+      return { mapping, legendEntry };
+    });
+  }
+
+  async getSymbolMapping(orgId: string, signature: string): Promise<SymbolMapping | null> {
+    const d = this.docs.get(fsPaths.symbolMapping(orgId, signature));
+    return d ? toSymbolMapping(signature, d) : null;
+  }
+
+  /** Test helper: a `suggested` legend entry as the worker writes it. */
+  seedLegendEntry(orgId: string, projectId: string, id: string, fields: Partial<Doc> & { sheetId: string; versionId: string; signature: string }): LegendEntry {
+    const doc: Doc = {
+      label: 'שקע כפול',
+      labelConfidence: 0.9,
+      suggestedClass: 'socket_double',
+      class: null,
+      itemCode: null,
+      thumbPath: null,
+      status: 'suggested',
+      updatedAt: this.now(),
+      ...fields,
+    };
+    this.docs.set(fsPaths.legendEntry(orgId, projectId, id), doc);
+    return toLegendEntry(id, doc);
+  }
+
   // --- jobs ---------------------------------------------------------------------
   async getJob(jobId: string): Promise<Job | null> {
     const d = this.docs.get(fsPaths.job(jobId));
@@ -444,10 +536,28 @@ export class InMemoryRepository implements Repository {
               thumbnail: storagePaths.thumbnail(orgId, projectId, sheetId, versionId),
               primitives: storagePaths.primitives(orgId, projectId, sheetId, versionId),
               text: storagePaths.text(orgId, projectId, sheetId, versionId),
+              ...(opts.understanding
+                ? {
+                    legend: storagePaths.legend(orgId, projectId, sheetId, versionId),
+                    detections: storagePaths.detections(orgId, projectId, sheetId, versionId),
+                    rooms: storagePaths.rooms(orgId, projectId, sheetId, versionId),
+                  }
+                : {}),
             }
           : {},
       regions: [],
-      stats: status === 'ready' ? { paths: 10, segments: 100, textLines: 5, glyphs: 50 } : null,
+      stats:
+        status === 'ready'
+          ? {
+              paths: 10,
+              segments: 100,
+              textLines: 5,
+              glyphs: 50,
+              ...(opts.understanding
+                ? { detections: { total: 2, green: 1, yellow: 0, red: 1, unknown: 1, byClass: { socket_double: 1, unknown: 1 } }, rooms: 1, legendEntries: 1 }
+                : {}),
+            }
+          : null,
       workerVersion: 'test',
       updatedAt: now,
     });
@@ -492,6 +602,8 @@ export interface SeedSheetOpts {
   widthPx?: number;
   heightPx?: number;
   levels?: number;
+  /** Sprint 2: also reference legend/detections/rooms artifacts + stats. */
+  understanding?: boolean;
 }
 
 export function confirmAudit(projectId: string, input: ConfirmInput): Record<string, unknown> {

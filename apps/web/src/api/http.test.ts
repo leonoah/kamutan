@@ -38,4 +38,20 @@ describe("REST client", () => {
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
+
+  it("Sprint 2: overlay, legend entries (list/patch) and unknown-cluster resolve hit the contract endpoints", async () => {
+    const fetchImpl = vi.fn(async () => json({ items: [], nextCursor: null, expiresAt: null }));
+    const api = createHttpClient(async () => "t", "/api/v1", fetchImpl as unknown as typeof fetch);
+    await api.getOverlay("p1", "s 1", "v1");
+    await api.listLegendEntries("p1", { sheetId: "s1", limit: 200 });
+    await api.patchLegendEntry("p1", "le_s1_1", { action: "reassign", class: "socket_power" });
+    await api.resolveUnknownCluster("p1", "u_1", { sheetId: "s1", versionId: "v1", class: "data_point", createLegendEntry: true });
+    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([u, i]) => [u, i.method ?? "GET", i.body ? JSON.parse(i.body as string) : null])).toEqual([
+      ["/api/v1/projects/p1/sheets/s%201/versions/v1/overlay", "GET", null],
+      ["/api/v1/projects/p1/legend-entries?sheetId=s1&limit=200", "GET", null],
+      ["/api/v1/projects/p1/legend-entries/le_s1_1", "PATCH", { action: "reassign", class: "socket_power" }],
+      ["/api/v1/projects/p1/unknown-clusters/u_1/resolve", "POST", { sheetId: "s1", versionId: "v1", class: "data_point", createLegendEntry: true }],
+    ]);
+  });
 });

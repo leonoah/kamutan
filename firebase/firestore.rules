@@ -89,6 +89,8 @@ service cloud.firestore {
         allow read: if isMember(orgId);
         allow write: if false;
       }
+      // Sprint 2: org memory "symbol signature -> class/itemCode" (doc id = signature). Written ONLY by the
+      // API on legend confirm/reassign and unknown-cluster resolve (role check + audit); the worker reads it.
       match /symbolMappings/{mappingId} {
         allow read: if isMember(orgId);
         allow write: if false;
@@ -121,6 +123,10 @@ service cloud.firestore {
           }
         }
 
+        // Sprint 2: legend rows of the project. The worker writes `suggested` entries; confirm / ignore /
+        // reassign are API calls (PATCH /v1/projects/:pid/legend-entries/:id, editor+, audited). A client can
+        // never mark an entry confirmed or forge an org mapping. thumbPath points at a Storage object that is
+        // NOT client-readable (signed URL from the API only).
         match /legendEntries/{entryId} {
           allow read: if isMember(orgId);
           allow write: if false;

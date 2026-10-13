@@ -11,6 +11,7 @@ import { RoleSchema } from './roles.js';
 import { ShareLinkSchema } from './share.js';
 import {
   ConfirmSheetRequestSchema,
+  DetectionStatsSchema,
   FileKindSchema,
   PutRegionsRequestSchema,
   PutRegionsResponseSchema,
@@ -23,8 +24,27 @@ import {
   SheetSummarySchema,
   SheetVersionSchema,
   TilesArtifactSchema,
+  VersionStageSchema,
 } from './sheets.js';
+import { DetectionClassSchema, SymbolClassSchema } from './taxonomy.js';
 import { TilesManifestSchema } from './tiles.js';
+import {
+  BBoxMmSchema,
+  DetectionSchema,
+  DetectionsArtifactSchema,
+  LegendArtifactSchema,
+  LegendEntryPageSchema,
+  LegendEntrySchema,
+  OverlayManifestSchema,
+  PatchLegendEntryRequestSchema,
+  PatchLegendEntryResponseSchema,
+  ResolveUnknownClusterRequestSchema,
+  ResolveUnknownClusterResponseSchema,
+  RoomSchema,
+  RoomsArtifactSchema,
+  SymbolMappingSchema,
+  UnknownClusterSchema,
+} from './understanding.js';
 import {
   CreateUploadRequestSchema,
   CreateUploadResponseSchema,
@@ -74,4 +94,24 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   ApiError: ApiErrorSchema,
   IdTokenClaims: IdTokenClaimsSchema,
   HealthResponse: HealthResponseSchema,
+  // Sprint 2 — understanding (worker artifacts, Firestore docs, API DTOs)
+  VersionStage: VersionStageSchema,
+  DetectionStats: DetectionStatsSchema,
+  SymbolClass: SymbolClassSchema,
+  DetectionClass: DetectionClassSchema,
+  BBoxMm: BBoxMmSchema,
+  LegendArtifact: LegendArtifactSchema,
+  DetectionsArtifact: DetectionsArtifactSchema,
+  Detection: DetectionSchema,
+  UnknownCluster: UnknownClusterSchema,
+  RoomsArtifact: RoomsArtifactSchema,
+  Room: RoomSchema,
+  LegendEntry: LegendEntrySchema,
+  SymbolMapping: SymbolMappingSchema,
+  OverlayManifest: OverlayManifestSchema,
+  LegendEntryPage: LegendEntryPageSchema,
+  PatchLegendEntryRequest: PatchLegendEntryRequestSchema,
+  PatchLegendEntryResponse: PatchLegendEntryResponseSchema,
+  ResolveUnknownClusterRequest: ResolveUnknownClusterRequestSchema,
+  ResolveUnknownClusterResponse: ResolveUnknownClusterResponseSchema,
 });

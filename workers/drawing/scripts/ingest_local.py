@@ -10,7 +10,11 @@
   ``_firestore/`` (stores.local), a ``version.json`` per version dir and ``dev-index.json`` at the
   root — the ids/paths the web mock mode uses (apps/web/src/api/mockSheets.ts, served by
   apps/web/build/devArtifacts.ts at /dev-artifacts/). Both directories are outside the repo.
-* prints a per-sheet table and compares the classification with spikes/SHEET_CLASSIFICATION.md.
+* prints a per-sheet table and compares the classification with spikes/SHEET_CLASSIFICATION.md;
+* Sprint 2: the understanding stage (legend → detect → rooms) writes ``legend.json.gz``,
+  ``detections.json.gz``, ``rooms.json.gz`` + crops per version; their paths are in the index entry
+  (top level and under ``artifacts``) and per-sheet legend / detection / room counts are printed and
+  saved in ``understanding-report.json``. ``--no-understand`` skips the stage.
 
 Already processed sheets (same sha256 + version) are skipped by the pipeline's idempotency;
 ``--force`` re-runs them.
@@ -19,6 +23,7 @@ Already processed sheets (same sha256 + version) are skipped by the pipeline's i
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import re
@@ -93,6 +98,10 @@ def index_entry(file_id: str, res: IngestResult, page: PageOutcome | None) -> di
         "thumbnail": v["artifacts"]["thumbnail"],
         "primitives": v["artifacts"].get("primitives"),
         "text": v["artifacts"].get("text"),
+        "legend": v["artifacts"].get("legend"),
+        "detections": v["artifacts"].get("detections"),
+        "rooms": v["artifacts"].get("rooms"),
+        "artifacts": {k: v["artifacts"][k] for k in ("legend", "detections", "rooms") if v["artifacts"].get(k)},
         "tileCount": tile_count,
         "status": v.get("status"),
         "title": sheet.get("title"),
@@ -109,12 +118,37 @@ def index_entry(file_id: str, res: IngestResult, page: PageOutcome | None) -> di
     return entry
 
 
+def understanding_row(file_id: str, entry: dict[str, Any] | None, page: PageOutcome | None) -> dict[str, Any] | None:
+    """Per-sheet legend / detection / room summary from the version stats and the legend artifact."""
+    if not entry or not entry.get("legend"):
+        return None
+    stats = entry.get("stats") or {}
+    labels: list[str] = []
+    try:
+        leg = json.loads(gzip.decompress((OUT / entry["legend"]).read_bytes()))
+        labels = [f"{e['label']} → {e['suggestedClass']}" for e in leg.get("entries", [])]
+    except (OSError, ValueError, KeyError):
+        pass
+    und = ((page.result or {}).get("understanding") if page else None) or {}
+    return {
+        "fileId": file_id,
+        "discipline": entry.get("discipline"),
+        "legendEntries": stats.get("legendEntries", 0),
+        "labels": labels,
+        "detections": stats.get("detections") or {"total": 0, "green": 0, "yellow": 0, "red": 0, "unknown": 0, "byClass": {}},
+        "rooms": stats.get("rooms", 0),
+        "timings": und.get("timings"),
+        "seconds": page.seconds if page else None,
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="", help="comma separated file ids (default: all sheet_*.pdf)")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dpi", type=int, default=300)
     ap.add_argument("--no-ocr", action="store_true")
+    ap.add_argument("--no-understand", action="store_true", help="skip legend / detect / rooms")
     a = ap.parse_args()
     files = sorted(SAMPLES.glob("sheet_*.pdf"))
     if a.only:
@@ -124,7 +158,7 @@ def main() -> int:
         print(f"no sample PDFs in {SAMPLES}", file=sys.stderr)
         return 2
     OUT.mkdir(parents=True, exist_ok=True)
-    opts = Options(ocr=not a.no_ocr, dpi=a.dpi)
+    opts = Options(ocr=not a.no_ocr, dpi=a.dpi, understand=not a.no_understand)
     expected = expected_from_spike()
     index_path = OUT / "dev-index.json"
     try:
@@ -132,6 +166,7 @@ def main() -> int:
     except (OSError, ValueError, KeyError, TypeError):
         index = {}
     rows = []
+    und_rows: list[dict[str, Any]] = []
     t_all = time.monotonic()
     for f in files:
         fid = f.stem.removeprefix("sheet_")
@@ -167,6 +202,15 @@ def main() -> int:
             and exp.get("scale") == (entry or {}).get("scaleDenominator"),
         }
         rows.append(row)
+        und = understanding_row(fid, entry, pages[0] if pages else None)
+        if und:
+            und_rows.append(und)
+            print(
+                f"   legend={und['legendEntries']} rooms={und['rooms']} detections={und['detections']['total']} "
+                f"(g{und['detections']['green']}/y{und['detections']['yellow']}/r{und['detections']['red']}) "
+                f"byClass={und['detections']['byClass']} stage={und['timings']}",
+                flush=True,
+            )
         print(
             f"{fid}: {row['status']:9} {row['discipline']!s:20} {row['floors']!s:24} 1:{row['scale']} {row['level']!s:6} "
             f"conf={row['confidence']} regions={row['regions']} tiles={row['tiles']} {row['seconds']}s "
@@ -175,6 +219,8 @@ def main() -> int:
         )
     index_path.write_text(json.dumps(sorted(index.values(), key=lambda e: e["fileId"]), ensure_ascii=False, indent=2))
     (OUT / "ingest-report.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2))
+    if und_rows:
+        (OUT / "understanding-report.json").write_text(json.dumps(und_rows, ensure_ascii=False, indent=2))
     n_ok = sum(1 for r in rows if r["agrees"])
     print(f"\n{len(rows)} sheets in {time.monotonic() - t_all:.0f}s; classification agrees with the spike on {n_ok}/{len(rows)}")
     print(f"dev index: {index_path}")

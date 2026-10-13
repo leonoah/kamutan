@@ -1,7 +1,8 @@
-# @kamutan/api — notes (Sprint 0 + Sprint 1, Firebase, ADR 0008)
+# @kamutan/api — notes (Sprint 0 + 1 + 2, Firebase, ADR 0008)
 
 NestJS 11 (TypeScript strict) Core API. Sprint 0: **login → create project → upload & store a file**. Sprint 1:
 **quarantine upload → ingest via Pub/Sub → sheets list / confirm / regions / tiles (signed URLs) / reprocess / job status**.
+Sprint 2: **overlay artifacts (legend/detections/rooms + crops, signed) / legend confirmation / unknown-symbol resolution**.
 Runs as Cloud Functions 2nd gen `api` (europe-west1) behind the Firebase Hosting rewrite `/api/**`
 (same origin → no CORS needed), and locally via `src/main.ts`. Contracts (Zod, source of truth for DTOs,
 Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
@@ -28,6 +29,10 @@ Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/c
 | POST | `/projects/:projectId/sheets/:sheetId/confirm` | editor | `{discipline, floors[], scaleDenominator\|null, regions?}` → `confirmed=true, confirmedBy, confirmedAt` (+ regions on the current version); transaction + audit `sheets/confirm`. 409 if the current version changed meanwhile. |
 | PUT | `/projects/:projectId/sheets/:sheetId/regions` | editor | `{regions[≤8]}` replaces the current version's regions: every vertex inside the page (±0.5 mm), simple polygon (no self-intersection / duplicate vertex / fold-back), area ≥ 1 mm², unique ids. 409 `not_ready` while the page geometry is unknown. Audit `sheetVersions/set_regions`. |
 | POST | `/projects/:projectId/sheets/:sheetId/reprocess` | editor | 202 → new `versions/{v}` (status `queued`, versionNo+1, **regions carried over**), `jobs/{j}`, `currentVersionId` switched, audit `sheets/reprocess`, publish (`sheetId`+`pageIndex` set). 409 while current version is queued/processing. Publish failure → version + job `failed` (`publish_failed`) and 503. Stricter rate limit. |
+| GET | `/projects/:projectId/sheets/:sheetId/versions/:versionId/overlay` | viewer | Sprint 2. `{sheetId, versionId, legend:{url}\|null, detections:{url}\|null, rooms:{url}\|null, thumbs:{le_…\|u_…: url}, stats, expiresAt}` (`OverlayManifest`). Signed like tiles (same signer, cache, TTL); paths derived from ids, never from worker strings. Crop ids come from the legend artifact (`entries[].thumb != null`) and detections artifact (`unknownClusters[].thumb != null`), read server-side (gzip JSON, lenient view, cached per version, ≤ 256 crops, legend rows first). `null` when the version has no such artifact (Sprint-1 versions). 409 `not_ready` unless status `ready`. Tier `TILES_THROTTLE_LIMIT`. |
+| GET | `/projects/:projectId/legend-entries?status=&sheetId=&limit=&cursor=` | viewer | Sprint 2. `LegendEntryPage {items: LegendEntry+thumbUrl, nextCursor, expiresAt}`; doc-id order, limit ≤ 200 (100). `thumbUrl` only when the doc's `thumbPath` equals the path derived from org/project/sheet/version/id (legend crop, or the cluster crop of an API-created entry); anything else → null. |
+| PATCH | `/projects/:projectId/legend-entries/:entryId` | editor | Sprint 2. `{action:'confirm', class?, itemCode?, label?}` (class defaults to a taxonomy `suggestedClass`, else 400) \| `{action:'reassign', class, itemCode?, label?}` \| `{action:'ignore'}` (strict). `label` (≤ 300, user-edited OCR text) is stored on the entry and used as the mapping label; the audit records only `labelChanged`. Class must be a `benchmark/schema/classes.json` id (`SymbolClassSchema`; "unknown" rejected). Transaction: entry (`status`, `class`, `itemCode`, `confirmedBy/At`, `updatedAt`) + upsert `orgs/{o}/symbolMappings/{signature}` `{class, itemCode, label, confirmedBy, confirmedAt, uses+1}` (not on ignore) + audit `legendEntries/{confirm\|reassign\|ignore}` (ids/classes only, no OCR text). → `{entry, mapping\|null}`. |
+| POST | `/projects/:projectId/unknown-clusters/:clusterId/resolve` | editor | Sprint 2. `{sheetId, versionId, class? \| ignore: true (exactly one), itemCode?, createLegendEntry}`. **ignore ("לא רלוונטי")**: mapping `{class: null, itemCode: null, ignored: true, label: "לא רלוונטי"}`, optional entry with status `ignored`, audit `unknownClusters/ignore`, same reprocess (worker skips ignored signatures); response `mapping` nullable in the contract. → reads the cluster (signature, thumb) from the version's `detections.json.gz`; transaction: upsert mapping (label = taxonomy Hebrew name) + optional confirmed entry `le_<sheetId>_<clusterId>` (thumbPath = `unknown/<clusterId>.webp`) + audit `unknownClusters/resolve`; then **reprocess of that sheet through the Sprint-1 path** (`SheetsService.reprocess`: new version + job + audit + publish). `reprocess[]` outcome: `queued` (versionId, jobId) or `skipped` with `not_current` (resolved on an old version) / `in_progress` / `publish_failed` — the mapping is saved either way. 404 unknown cluster/sheet/version, 409 `not_ready` without detections, 409 `conflict` for an invalid signature. Strict rate limit. |
 | GET | `/jobs/:jobId` | viewer of `job.orgId` | Top-level job doc; membership checked in the service against the doc's `orgId` (non-members → 404). Tolerates worker docs with numeric `progress` + `stage`. |
 
 OpenAPI: `/api/docs` (UI) and `/api/docs/openapi.json` when `SWAGGER_ENABLED=true` and not production; static copy
@@ -60,7 +65,10 @@ insufficient role → **403**, MFA-gated → `403 mfa_required`.
 | Sheet | `.../projects/{pid}/sheets/{sheetSetId}-p{i}` `{sheetSetId, pageIndex, title, discipline, floors[], scaleDenominator, classification{discipline, floors, sheetTitle, scaleText, confidence, level, reasons}, confirmed, confirmedBy?, confirmedAt?, currentVersionId, updatedAt}` | **worker** creates (split); API: confirm fields, `currentVersionId` on reprocess |
 | SheetVersion | `.../sheets/{sid}/versions/{vid}` `{versionNo, status queued\|processing\|ready\|failed, progress{stage,pct}, error?, page{widthMm,heightMm,rotation}, artifacts{tiles{prefix,format,tileSize,dpi,levels,widthPx,heightPx}, primitives, text, thumbnail}, regions[{id, floor, polygonMm[{x,y}], scaleDenominator}], regionsUpdatedBy?, regionsUpdatedAt?, stats{paths,segments,textLines,glyphs}, workerVersion, jobId?, createdAt?, updatedAt}` | **worker** (initial: all pages share the set's `versionId`); API: `regions*` and the queued doc on reprocess |
 | Job | `jobs/{jobId}` `{orgId, projectId, sheetSetId, sheetId (null = initial), versionId, type:"ingest.sheet_version", status queued\|running\|succeeded\|failed, progress{stage,pct}, attempts, error, createdBy, createdAt, updatedAt}` | API creates; worker updates |
-| Audit | `orgs/{orgId}/auditLog/{eventId}` `{actorId, actorKind, entity, entityId, action, after, at, prevHash, hash}` | API: org/project create+update, upload, confirm, set_regions, reprocess (per-org SHA-256 chain in the same transaction) |
+| Audit | `orgs/{orgId}/auditLog/{eventId}` `{actorId, actorKind, entity, entityId, action, after, at, prevHash, hash}` | API: org/project create+update, upload, confirm, set_regions, reprocess, Sprint 2: `legendEntries/{confirm,reassign,ignore}`, `unknownClusters/resolve` (per-org SHA-256 chain in the same transaction) |
+| LegendEntry (Sprint 2) | `.../projects/{pid}/legendEntries/{entryId}` `{sheetId, versionId, label, labelConfidence, suggestedClass, class, itemCode, signature, thumbPath, status suggested\|confirmed\|ignored, confirmedBy?, confirmedAt?, updatedAt}` | **worker** writes `suggested`; API: decisions + entries created from resolved clusters (`le_<sheetId>_<clusterId>`) |
+| SymbolMapping (Sprint 2) | `orgs/{orgId}/symbolMappings/{signature}` `{class\|null, ignored, itemCode, label, confirmedBy, confirmedAt, uses}` | API only (confirm / reassign / resolve, upsert + uses++); worker reads |
+| Understanding artifacts (Sprint 2) | Storage `.../versions/{vid}/legend.json.gz`, `detections.json.gz`, `rooms.json.gz`, `legend/{entryId}.webp`, `unknown/{clusterId}.webp` | worker; API signs (overlay, legend list) and reads the two JSON artifacts server-side (`ArtifactReader`: only these three names, ≤ 16 MB gz / 96 MB JSON) |
 | Quarantine object | Storage `orgs/{orgId}/quarantine/{uuid}` | client (resumable upload, create-only); read + deleted/moved by API |
 | Upload (source) | Storage `orgs/{orgId}/projects/{pid}/uploads/{sheetSetId}/source.{ext}` | API move after checks (`Content-Disposition: attachment`, metadata sha256/uploadedBy/fileId/originalName) |
 | Artifacts | Storage `orgs/{orgId}/projects/{pid}/sheets/{sid}/versions/{vid}/` `tiles/{z}/{x}_{y}.webp`, `thumbnail.webp`, `primitives.msgpack.gz`, `text.json.gz` | worker; API only signs read URLs (paths derived from ids, never from the worker-written `prefix`) |
@@ -142,18 +150,49 @@ cd apps/api && DATA_DRIVER=memory STORAGE_DRIVER=memory QUEUE_DRIVER=memory \
   directly (no guards), incl. outsider → 404.
 - `unit/magic-bytes.test.ts`, `unit/filename-token.test.ts` — validators, sanitizer, upload token v3, streaming inspect.
 - `unit/function.test.ts`, `unit/config-openapi.test.ts` — Cloud Function handler; config; OpenAPI paths (+ tiles query params).
+- `unit/understanding.service.test.ts` (Sprint 2) — services without guards: org B admin → 404 on overlay / list /
+  patch / resolve (also with its own project id), viewer read-only, reprocess race → `in_progress`, publish failure →
+  `publish_failed` with mapping kept, crop cap (256, legend first), malformed artifact → no crops, artifact reader path
+  guard + gzip-bomb cap, signer refuses `llm-cache/` and foreign crop names, tolerant version mapper.
+- `e2e/understanding.e2e.test.ts` (Sprint 2) — supertest: overlay (URLs scoped to the org, crop ids, cache, Sprint-1
+  version → nulls, 404/409/401, cross-org 404), legend list (status filter, paging, sheet filter, foreign thumbPath never
+  signed, other org never listed), PATCH (viewer/reviewer 403, outsider/cross-org 404, taxonomy + strict-body 400,
+  confirm → mapping uses 1 + exact brief fields + chained audit without OCR text, reassign → uses 2, ignore → no mapping,
+  org memory per org), resolve (role/org/taxonomy/404/409, mapping + confirmed entry + audit + reprocess published,
+  listed with cluster crop, not_current).
 - `e2e/app.e2e.test.ts`, `e2e/sheets.e2e.test.ts` — supertest on the real AppModule with fake auth, in-memory
   Firestore/Storage/PubSub and `FakeUrlSigner`; contract-shape parsing of every response; tiles per-user 429.
 - `integration/firestore.emulator.test.ts` — FirestoreRepository + services on the emulator: org/member/audit,
   collection-group lookups, cross-org rejection, pagination, concurrent ingest dedupe, sheets list via `getAll`,
   regions stored as maps, confirm/regions/reprocess transactions + audit, jobs; Storage-emulator quarantine move;
-  Pub/Sub-emulator v3 publish. **Skipped locally** (needs `FIRESTORE_EMULATOR_HOST`, CI only).
+  Pub/Sub-emulator v3 publish; Sprint 2: legend list (equality filter + doc-id order), confirm/reassign transactions
+  with mapping upsert (uses 2, Timestamp, exact fields) + audit. **Skipped locally** (needs `FIRESTORE_EMULATOR_HOST`, CI only).
 
-Commands (all green, 12.10.2026): `pnpm --filter @kamutan/contracts build test`,
+Commands (all green, 13.10.2026, Sprint 2): `pnpm turbo run lint typecheck test build --filter=@kamutan/api
+--filter=@kamutan/contracts` (api 124 passed, 12 emulator-skipped; contracts 48 passed), `pnpm --filter @kamutan/api openapi`.
+
+Sprint 1 commands (12.10.2026): `pnpm --filter @kamutan/contracts build test`,
 `pnpm --filter @kamutan/api lint typecheck test build` (100 passed, 10 emulator-skipped), `pnpm --filter @kamutan/api openapi`.
 `lint` = `tsc --noEmit --noUnusedLocals --noUnusedParameters` (no ESLint in the repo, same convention as web/viewer).
 
 ## Known gaps / follow-ups
+
+Sprint 2:
+- Resolve reprocesses **only the sheet the cluster was resolved on** (and only if that version is still current).
+  Other sheets whose clusters share the signature get the mapping on their next processing run; a project-wide
+  "reprocess affected sheets" would need a signature index (e.g. the worker writing `unknownSignatures[]` on the version
+  doc) instead of reading every detections artifact in the request.
+- PATCH confirm does not trigger processing (UX "אשר מקרא ← העיבוד מתחיל"); the web calls `POST .../reprocess` per sheet,
+  or we add a batch confirm endpoint later. No batch PATCH yet (one request per row).
+- PATCH `ignore` on a legend entry is not remembered org-wide (no mapping written; only cluster resolve with `ignore` writes an ignored mapping) and never removes an existing mapping; un-learning a wrong
+  mapping needs an admin endpoint (`DELETE /orgs/:o/symbol-mappings/:sig`, audited).
+- Overlay reads are not audited (same as tiles-manifest); the mutations are.
+- `itemCode` is not checked against the org item library (none in the API yet) — only `ItemCodeSchema` (TEXT).
+- Crop-id cache is per instance and keyed by version; artifacts are immutable per version, so no invalidation needed.
+- Legend list orders by doc id; with `status` + `sheetId` both set Firestore may ask for a composite index
+  (`legendEntries (status, sheetId, __name__)`) — added to `firebase/firestore.indexes.json`.
+
+Sprint 1:
 
 - Emulator suite has not run yet (blocked here) — first CI run is its real check.
 - Needs a **collection-group field override on `projects.projectId`** (DB agent owns `firestore.indexes.json`;

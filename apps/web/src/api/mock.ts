@@ -12,7 +12,8 @@ import {
   type SheetVersion,
   type IngestStage,
 } from "./types";
-import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, sampleTiles, seedNoah } from "./mockSheets";
+import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, rowFromDevIndex, sampleTiles, seedNoah, type DevIndexEntry } from "./mockSheets";
+import { createUnderstandingMock } from "./mockUnderstanding";
 
 export interface MockOptions {
   /** Seed projects. Defaults to two demo projects. Pass [] to see the empty state. */
@@ -27,13 +28,22 @@ export interface MockOptions {
   jobTickMs?: number;
   /** Seed the demo project (p-noah) with classified sample sheets. Default true. */
   seedSheets?: boolean;
+  /** Sprint 2: attach the synthetic legend/detections/rooms fixture to two sample sheets. Default true. */
+  understandingFixture?: boolean;
+  /** Override the number of detections on the electrical fixture sheet (performance demos, e.g. 2000). */
+  fixtureDetections?: number;
+  /**
+   * Read /dev-artifacts/dev-index.json (vite dev server) and use the worker's REAL understanding artifacts when
+   * present (they replace the fixture). Default: on in the browser outside tests.
+   */
+  devIndex?: boolean;
 }
 
 export const DEMO_ORG_ID = "org-demo";
 /** Worker stages in order (brief: progress.stage). */
 export const MOCK_STAGES = INGEST_STAGES.filter((st) => st !== "done") as Exclude<IngestStage, "done">[];
 /** Upper bound (pct) of each stage, for the simulated worker. */
-const STAGE_END: Record<Exclude<IngestStage, "done">, number> = { ingest: 10, render: 40, ocr: 65, classify: 85, scale: 99 };
+const STAGE_END: Record<Exclude<IngestStage, "done">, number> = { ingest: 8, render: 30, ocr: 48, classify: 60, scale: 68, legend: 78, detect: 92, rooms: 99 };
 const MAX_TILE_BATCH = 256;
 
 /** Same structural checks as contracts RegionListSchema (+ ≥ 3 points). */
@@ -48,7 +58,7 @@ function validateRegions(regions: { id: string; polygonMm: { x: number; y: numbe
 }
 
 const stageAt = (pct: number): IngestStage =>
-  pct >= 100 ? "done" : (MOCK_STAGES.find((st) => pct < STAGE_END[st]) ?? "scale");
+  pct >= 100 ? "done" : (MOCK_STAGES.find((st) => pct < STAGE_END[st]) ?? "rooms");
 
 export const demoProjects = (): Project[] => [
   {
@@ -99,6 +109,47 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     const seed = seedNoah("2026-10-11T11:40:00.000Z");
     sheetSets.set("p-noah", seed.sets);
     sheets.set("p-noah", seed.rows);
+  }
+  const understanding = createUnderstandingMock();
+  if ((opts.understandingFixture ?? true) && sheets.has("p-noah")) {
+    understanding.seedFixture(sheets.get("p-noah")!, opts.fixtureDetections ? { electricalDetections: opts.fixtureDetections } : {});
+  }
+  const useDevIndex = opts.devIndex ?? (typeof window !== "undefined" && import.meta.env.MODE !== "test");
+  if (useDevIndex && sheets.has("p-noah")) {
+    // Real worker artifacts (dev only): merge understanding paths (+ sheets missing from the seeds) and re-emit.
+    void fetch(`${DEV_ARTIFACTS_BASE}/dev-index.json`, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<DevIndexEntry[]>) : []))
+      .then((index) => {
+        const rows = sheets.get("p-noah")!;
+        const paths = (e: DevIndexEntry) => ({
+          legend: e.legend ?? e.artifacts?.legend,
+          detections: e.detections ?? e.artifacts?.detections,
+          rooms: e.rooms ?? e.artifacts?.rooms,
+        });
+        const real = index.filter((e) => paths(e).detections || paths(e).legend);
+        if (real.length === 0) return;
+        understanding.dropFixtures(rows);
+        for (const e of real) {
+          let row = rows.find((r) => r.sheet.id === e.sheetId);
+          if (!row) {
+            const made = rowFromDevIndex(e, "2026-10-11T11:40:00.000Z");
+            if (!made) continue;
+            rows.push(made.row);
+            sheetSets.get("p-noah")?.push(made.set);
+            row = made.row;
+          }
+          const p = paths(e);
+          if (row.version) {
+            row.version.artifacts = { ...row.version.artifacts, ...p };
+            if (e.stats) row.version.stats = { ...row.version.stats, ...e.stats };
+          }
+          understanding.useReal(row, p);
+        }
+        emit();
+      })
+      .catch(() => {
+        /* no dev server / no index → keep the fixture */
+      });
   }
   const jobs: Job[] = [];
   const tokens = new Map<string, { projectId: string; filename: string; kind: SheetSet["fileKind"]; uploaded: boolean }>();
@@ -187,7 +238,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       });
       const pct = Math.round(sum / Math.max(1, rows.length));
       const slowest = rows.map((r) => r.version?.progress?.stage).find((st) => st && st !== "done") ?? "done";
-      Object.assign(job, { status: "running", progress: Math.min(99, pct), stage: slowest === "done" ? "scale" : slowest, updatedAt: now });
+      Object.assign(job, { status: "running", progress: Math.min(99, pct), stage: slowest === "done" ? "rooms" : slowest, updatedAt: now });
       if (allDone) {
         clearInterval(timer);
         const ok = rows.some((r) => r.version?.status === "ready");
@@ -375,6 +426,27 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
           expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
           maxBatch: MAX_TILE_BATCH,
         });
+      },
+      getOverlay: async (projectId, sheetId, versionId) => {
+        mustGet(projectId);
+        const row = findRow(projectId, sheetId);
+        if (row.version?.id !== versionId || row.version.status !== "ready") throw new ApiError(409, "version_not_ready", "Version is not ready");
+        return delay(await understanding.getOverlay(row));
+      },
+      listLegendEntries: async (projectId, q = {}) => {
+        mustGet(projectId);
+        const items = await understanding.listLegendEntries(sheets.get(projectId) ?? [], q);
+        return delay({ items, nextCursor: null, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() });
+      },
+      patchLegendEntry: async (projectId, entryId, req) => {
+        mustGet(projectId);
+        const res = await understanding.patchLegendEntry(entryId, req);
+        const { thumbUrl: _t, ...entry } = res.entry;
+        return delay({ entry, mapping: res.mapping });
+      },
+      resolveUnknownCluster: async (projectId, clusterId, req) => {
+        mustGet(projectId);
+        return delay(await understanding.resolveUnknownCluster(sheets.get(projectId) ?? [], clusterId, req));
       },
     },
 

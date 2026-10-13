@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CheckCheck, ChevronRight, PanelsTopLeft } from "lucide-react";
+import { BookOpenCheck, CheckCheck, ChevronRight, PanelsTopLeft } from "lucide-react";
 import type { SheetRow } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -69,6 +69,12 @@ export function SheetsPage() {
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
+            <Button variant="secondary" asChild>
+              <Link to={`/projects/${projectId}/legend`}>
+                <BookOpenCheck aria-hidden />
+                {t("legend.title")}
+              </Link>
+            </Button>
             <Button variant="secondary" asChild>
               <Link to={`/projects/${projectId}/review`}>
                 <PanelsTopLeft aria-hidden />

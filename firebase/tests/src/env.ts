@@ -101,7 +101,10 @@ export async function seed(env: RulesTestEnvironment): Promise<void> {
       await db.doc(d.sheetSet).set({ fileKind: 'pdf', sha256: 'a'.repeat(64), storagePath: `orgs/${f.org}/uploads/x/y`, status: 'ready', uploadedBy: f.users.editor, createdAt: ts() });
       await db.doc(d.sheet).set({ logicalKey: 'E-01', discipline: ['electrical'], floorRegions: [], scale: 50, currentVersionId: 'v1', sheetSetId: 'set1' });
       await db.doc(d.version).set({ versionNo: 1, status: 'ready', sha256: 'a'.repeat(64), pageIndex: 0, artifacts: {}, createdAt: ts() });
-      await db.doc(d.legendEntry).set({ sheetId: 'sheet1', label: 'שקע כוח', templateRef: null, itemCode: '4.10' });
+      await db.doc(d.legendEntry).set({
+        sheetId: 'sheet1', versionId: 'v1', label: 'שקע כוח', labelConfidence: 0.9, suggestedClass: 'socket_power', class: null,
+        itemCode: null, signature: 'f'.repeat(40), thumbPath: `${d.project}/sheets/sheet1/versions/v1/legend/le1.webp`, status: 'suggested', updatedAt: ts(),
+      });
       await db.doc(d.reviewItem).set({ level: 'yellow', reasons: ['LOW_OCR'], clusterId: null, status: 'open', riskScore: 0.6, resolution: null, resolvedBy: null, resolvedAt: null });
       await db.doc(d.correction).set({ authorId: f.users.editor, createdAt: ts(), targetType: 'detection', targetId: 'det-1', action: 'reject' });
       await db.doc(d.boqDraft).set({ ...boqBase, status: 'draft' });
@@ -110,7 +113,7 @@ export async function seed(env: RulesTestEnvironment): Promise<void> {
       await db.doc(d.shareLink).set({ tokenHash: 'c'.repeat(64), versionLock: ['v1'], expiresAt: ts(), revokedAt: null, allowPdfDownload: false, createdBy: f.users.editor, createdAt: ts() });
       await db.doc(d.itemLibrary).set({ code: '4.10', chapter: '4', description: 'נקודת שקע', unit: "יח'" });
       await db.doc(d.boqTemplate).set({ name: 'תבנית', chapters: [], columns: [] });
-      await db.doc(d.symbolMapping).set({ keyType: 'template_hash', key: 'h1', itemId: 'item1', acceptCount: 0, rejectCount: 0 });
+      await db.doc(d.symbolMapping).set({ class: 'socket_power', ignored: false, itemCode: '4.10', label: 'שקע כוח', confirmedBy: f.users.editor, confirmedAt: ts(), uses: 1 });
       await db.doc(d.auditEvent).set({ actorId: null, actorKind: 'system', entity: 'org', entityId: f.org, action: 'create', at: ts(), prevHash: null, hash: 'd'.repeat(64) });
       await db.doc(d.job).set({ orgId: f.org, projectId: f.project, type: 'ingest.sheet_version', status: 'running', progress: 10, createdAt: ts() });
     }

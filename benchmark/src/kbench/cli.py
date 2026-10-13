@@ -2,6 +2,7 @@
 
     kbench validate DIR
     kbench eval --truth DIR --pred DIR [--truth DIR --pred DIR ...] --out metrics.json [--report report.md]
+    kbench eval --truth DIR --pred-detections ARTIFACTS_DIR --out m.json [--report r.md] [--center-tol-mm 3]
     kbench compare --current metrics.json --baseline baseline.json [--thresholds t.json] [--out gate.json] [--report gate.md]
     kbench parse-boq-xls XLS --project ID --out boq_truth.json
     kbench manifest DATA_DIR --project ID --out manifest.json
@@ -43,7 +44,49 @@ def cmd_validate(a: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
+def cmd_eval_worker(a: argparse.Namespace) -> int:
+    from .worker import WorkerEvalConfig, evaluate_worker, load_truth_legends, load_worker_predictions, render_worker_markdown
+
+    if len(a.truth) != 1:
+        print("error: --pred-detections takes exactly one --truth", file=sys.stderr)
+        return 2
+    truth = load_project(a.truth[0])
+    sheet_map = json.loads(Path(a.sheet_map).read_text(encoding="utf-8")) if a.sheet_map else None
+    preds = load_worker_predictions(a.pred_detections, set(truth.sheets), sheet_map, rooms_root=a.pred_rooms)
+    cfg = WorkerEvalConfig(
+        base=EvalConfig(
+            match=MatchParams(
+                iou_threshold=a.iou, center_tol_mm=a.center_tol_mm, small_symbol_mm=a.small_symbol_mm, mode=a.match_mode
+            ),
+            exclude_disputed=False,
+        ),
+        room_iou=a.room_iou,
+        legend_tol_mm=a.legend_tol_mm,
+        include_missing_sheets=a.include_missing_sheets,
+    )
+    legends = load_truth_legends(a.truth_legends or Path(a.truth[0]) / "legends")
+    m = {"kbench_version": __version__, "gt_version": a.gt_version, "model_version": a.model_version, "code_sha": a.code_sha}
+    m |= evaluate_worker(truth, preds, cfg, legends)
+    _write_json(a.out, m)
+    if a.report:
+        Path(a.report).write_text(render_worker_markdown(m), encoding="utf-8")
+    s, g, r = m["symbols"]["detection"]["micro"], m["symbols_glyph_level"]["detection"]["micro"], m["rooms"]
+    print(
+        f"sheets={len(m['sheets']['symbols'])} micro-F1={s['f1']} glyph-F1={g['f1']} "
+        f"green-P={m['symbols']['green']['detection_correct']['p']} burden={m['symbols']['review_burden']['burden']} "
+        f"rooms matched={r['n_matched']}/{r['n_truth']} meanIoU={r['mean_iou']}"
+    )
+    return 0
+
+
 def cmd_eval(a: argparse.Namespace) -> int:
+    if a.pred_detections:
+        return cmd_eval_worker(a)
+    if not a.pred:
+        print(
+            "error: give --pred DIR (annotation-schema predictions) or --pred-detections DIR (worker artifacts)", file=sys.stderr
+        )
+        return 2
     if len(a.truth) != len(a.pred):
         print("error: --truth and --pred must be given the same number of times", file=sys.stderr)
         return 2
@@ -125,7 +168,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("eval", help="score predictions against truth")
     s.add_argument("--truth", action="append", required=True)
-    s.add_argument("--pred", action="append", required=True)
+    s.add_argument("--pred", action="append", default=[])
+    s.add_argument(
+        "--pred-detections", help="worker artifacts: DIR/<sheet>/detections.json.gz or the storage layout (kamutan.detections/1)"
+    )
+    s.add_argument("--pred-rooms", help="worker rooms.json.gz root if different from --pred-detections (kamutan.rooms/1)")
+    s.add_argument("--truth-legends", help="legend_<sheet>.geojson directory (default TRUTH/legends)")
+    s.add_argument("--sheet-map", help="JSON {worker sheet id: truth sheet id}; default: truth id contained in worker id")
+    s.add_argument("--room-iou", type=float, default=0.5)
+    s.add_argument("--legend-tol-mm", type=float, default=4.0)
+    s.add_argument("--include-missing-sheets", action="store_true", help="score truth sheets that have no predictions (all FN)")
     s.add_argument("--out", required=True)
     s.add_argument("--report")
     s.add_argument("--iou", type=float, default=0.5)

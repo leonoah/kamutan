@@ -28,6 +28,7 @@ Modules in `src/kbench/`:
 - `validate.py`: schema checks + gt-lint.
 - `report.py`: Markdown report.
 - `cli.py`: command line.
+- `worker.py`: Sprint-2 adapter for the worker's own artifacts (`kamutan.detections/1`, `kamutan.rooms/1`, `kamutan.legend/1`) and the evaluation built on it (see below).
 
 **Ground truth outside git: `/home/claude/kamutan-data/gt/noah/`**
 
@@ -43,11 +44,14 @@ Modules in `src/kbench/`:
 ```bash
 cd benchmark
 flock /tmp/kamutan-uv.lock uv sync
-uv run pytest -q                                   # 45 tests
+uv run pytest -q                                   # 95 tests (15 golden tests skip without worker output)
 uv run kbench validate $KAMUTAN_DATA_DIR/gt/noah   # schema + gt-lint
 uv run kbench eval --truth T --pred P --out results/m.json --report results/m.md \
     [--iou 0.5 --center-tol-mm 3 --small-symbol-mm 8 --match-mode auto|iou|center] \
     [--include-draft] [--keep-disputed] [--gt-version ..] [--model-version ..] [--code-sha ..]
+uv run kbench eval --truth $KAMUTAN_DATA_DIR/gt/noah --pred-detections $KAMUTAN_DATA_DIR/artifacts \
+    --out results/w.json --report results/w.md [--center-tol-mm 3 --room-iou 0.5 --legend-tol-mm 4] \
+    [--pred-rooms DIR] [--truth-legends DIR] [--sheet-map map.json] [--include-missing-sheets]
 uv run kbench compare --current results/m.json --baseline baseline.json [--thresholds t.json] \
     --out gate.json --report gate.md               # exit 0 pass / 1 regression / 2 not comparable
 uv run kbench parse-boq-xls boq.xls --project noah --out boq_truth.json
@@ -127,6 +131,49 @@ pair.
   - any run failure;
   - any ceiling violation.
 - A different `gt_version` means the runs are not comparable: exit 2.
+
+## Worker artifacts (Sprint 2): `kbench eval --pred-detections`
+
+- **Input.** `DIR/<sheet>/detections.json.gz` or the worker storage layout
+  `DIR/**/sheets/<sheetId>/versions/<v>/detections.json.gz` (newest file wins). `rooms.json.gz` and `legend.json.gz`
+  are read from the same folder (or `--pred-rooms`). Worker ids like `noah-eb8be8a3-p0` map to the truth id that
+  they contain (`--sheet-map` overrides).
+- **Mapping.** Each detection becomes a Point at `centerMm` (bbox centre if missing): `class`, `score` → confidence,
+  `level`, `floor`, `lifecycle`, `roomId`, `annotations`. Each room becomes a Polygon (`polygonMm`) with `name`,
+  `areaM2`, `floor`, `level`.
+- **Symbols.** Centre-distance matching, default **3 mm paper** (`--center-tol-mm`), per class. Reported twice:
+  - *semantic*: truth `class` (e.g. `socket_3phase`);
+  - *glyph level*: truth `symbol_class`, the legend row the drawn glyph belongs to. Predicted classes are mapped to
+    glyphs where the truth uses exactly one glyph for that class. Text-only truth items (no glyph) are excluded.
+  Also reported: count error per sheet, floor and class; green-bucket precision with the Wilson LB95, under two
+  definitions (detection-correct = matched with the right class; items-correct = test-plan item definition);
+  precision per level; review burden; items-correct.
+- **Rooms.** Hungarian matching on polygon IoU (≥ `--room-iou`, default 0.5). Reported: IoU, area PE against the truth
+  `area_m2` (1:50), name accuracy (predicted name in the truth `names` list, normalised), unmatched rooms.
+  Matched predicted room ids are rewritten to truth ids, so each detection's `roomId` is scored ("room accuracy").
+- **Legend.** Truth rows come from `legends/legend_<sheet>.geojson` (`class=legend_entry`, symbol box geometry,
+  `legend_class`, `label`). Rows are matched by symbol-box centre distance (default 4 mm). Reported: row recall, entry
+  precision, class accuracy, exact label rate, mean character error rate.
+- Sheets with truth but no predictions are listed and excluded unless `--include-missing-sheets`.
+
+### Sprint-2 ground truth (outside git, `gt/noah`, `gt-v0.2-draft`, frozen in `GT_FREEZE.json`)
+
+- `sheets/{eb8be8a3,c054fd3a,b2046277,1bbe4113}.geojson`: a Point per symbol instance, status `draft-verified`
+  (two independent visual passes, reconciled in `reconcile_log.md`, every point rendered back onto the sheet).
+  Properties include `symbol_class`, `floor`, `room_id`, `lifecycle`, `annotations` (2X/3X/H=), and `fixture_type` for
+  luminaires. Cobra conduits are LineStrings (`kind=linear`). The room polygons on these sheets are translated from the
+  architecture sheets.
+- `sheets/{08222cb2,6fa88f92}.geojson`: room polygons with names, `area_m2` and `perimeter_m` at 1:50, and
+  `uncertainty_mm`.
+- `legends/legend_<sheet>.geojson`: 20 legend rows per sheet.
+- `tools/build_sheet_gt.py` rebuilds all of it from the annotation tables.
+
+Schema and taxonomy changes:
+- `status` gains `draft-verified`.
+- New optional `symbol_class`.
+- New classes: `note_point`, `bezek_point`, `waterproof_marker`, `switch_cross`, `switch_shutter`, `conduit_cobra`,
+  `water_heater_feed`, `legend_entry`, `legend_box`, `unknown`. These are the legend rows of the Noah electrical and
+  lighting sheets that had no class.
 
 ## Known gaps
 

@@ -259,7 +259,7 @@ jobs:
         run: |
           set -euo pipefail
           r="$RUNNER_TEMP/rules-tests.json"
-          for f in firestore.rules.test.ts storage.rules.test.ts ingest.rules.test.ts; do
+          for f in firestore.rules.test.ts storage.rules.test.ts ingest.rules.test.ts understanding.rules.test.ts; do
             n=$(jq --arg f "$f" '[.testResults[] | select(.name | endswith($f)) | .assertionResults[]] | length' "$r")
             skipped=$(jq --arg f "$f" '[.testResults[] | select(.name | endswith($f)) | .assertionResults[] | select(.status != "passed")] | length' "$r")
             echo "$f: $n tests, $skipped not passed"

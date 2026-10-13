@@ -87,7 +87,7 @@ export interface SheetSet {
  * TODO(contracts): hand-kept mirror of @kamutan/contracts (Sprint 1 shapes, still in flight on the API side).
  * Replace with `import type` from @kamutan/contracts once web depends on the built package.
  */
-export const INGEST_STAGES = ["ingest", "render", "ocr", "classify", "scale", "done"] as const;
+export const INGEST_STAGES = ["ingest", "render", "ocr", "classify", "scale", "legend", "detect", "rooms", "done"] as const;
 export type IngestStage = (typeof INGEST_STAGES)[number];
 export type ClassificationLevel = "green" | "yellow" | "red";
 
@@ -156,9 +156,18 @@ export interface SheetVersion {
   progress?: { stage: IngestStage; pct: number };
   error?: { code: string; message: string } | null;
   page?: { widthMm: number; heightMm: number; rotation: number };
-  artifacts?: { tiles?: TilesMeta; primitives?: string; text?: string; thumbnail?: string };
+  artifacts?: {
+    tiles?: TilesMeta;
+    primitives?: string;
+    text?: string;
+    thumbnail?: string;
+    /** Sprint 2: full object paths of the understanding artifacts (gzip JSON). */
+    legend?: string;
+    detections?: string;
+    rooms?: string;
+  };
   regions?: SheetRegion[];
-  stats?: { paths?: number; segments?: number; textLines?: number; glyphs?: number };
+  stats?: VersionStats;
   workerVersion?: string;
   updatedAt?: string;
 }
@@ -218,6 +227,198 @@ export interface TilesManifest {
   maxBatch: number;
 }
 
+/* ---------- Sprint 2: understanding (docs/agents/SPRINT2_BRIEF.md, contracts src/understanding.ts) ----------
+ * TODO(contracts): hand-kept mirror of @kamutan/contracts understanding.ts (field-for-field).
+ */
+export type DbLevel = "green" | "yellow" | "red";
+export type Lifecycle = "existing" | "new" | "demolish" | "unknown";
+
+export interface DetectionStats {
+  total: number;
+  green: number;
+  yellow: number;
+  red: number;
+  unknown: number;
+  byClass: Record<string, number>;
+}
+export interface VersionStats {
+  paths?: number;
+  segments?: number;
+  textLines?: number;
+  glyphs?: number;
+  detections?: DetectionStats;
+  rooms?: number;
+  legendEntries?: number;
+}
+
+/** Axis-aligned box in paper mm (x, y = top-left). */
+export interface BBoxMm {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface LegendBlock {
+  id: string;
+  bboxMm: BBoxMm;
+  title: string | null;
+  confidence: number;
+}
+export interface LegendArtifactEntry {
+  id: string;
+  legendId: string;
+  symbolBboxMm: BBoxMm;
+  labelBboxMm: BBoxMm;
+  label: string;
+  labelConfidence: number;
+  /** Taxonomy id, "unknown", or null. */
+  suggestedClass: string | null;
+  classConfidence: number;
+  signature: string;
+  /** `legend/{entryId}.webp` relative to the version prefix, or null. */
+  thumb: string | null;
+}
+export interface LegendArtifact {
+  schema: "kamutan.legend/1";
+  legends: LegendBlock[];
+  entries: LegendArtifactEntry[];
+}
+
+export interface Detection {
+  id: string;
+  /** Taxonomy id or "unknown". */
+  class: string;
+  legendEntryId: string | null;
+  centerMm: PointMm;
+  bboxMm: BBoxMm;
+  angleDeg: number;
+  score: number;
+  level: DbLevel;
+  /** Hebrew reason chips (or known reason codes). */
+  reasons: string[];
+  roomId: string | null;
+  floor: string | null;
+  lifecycle: Lifecycle;
+  supply: "contractor" | "client" | "existing" | null;
+  annotations: string[];
+  clusterId: string | null;
+}
+export interface UnknownCluster {
+  id: string;
+  signature: string;
+  count: number;
+  exemplarBboxMm: BBoxMm;
+  thumb: string | null;
+}
+export interface DetectionsArtifact {
+  schema: "kamutan.detections/1";
+  detections: Detection[];
+  unknownClusters: UnknownCluster[];
+}
+
+export interface Room {
+  id: string;
+  name: string | null;
+  nameConfidence: number;
+  floor: string | null;
+  polygonMm: PointMm[];
+  areaM2: number;
+  perimeterM: number;
+  confidence: number;
+  level: DbLevel;
+  reasons: string[];
+}
+export interface RoomsArtifact {
+  schema: "kamutan.rooms/1";
+  rooms: Room[];
+}
+
+/** GET /v1/projects/:pid/sheets/:sid/versions/:vid/overlay — signed URLs of the artifacts + crops. */
+export interface OverlayManifest {
+  sheetId: string;
+  versionId: string;
+  legend: { url: string } | null;
+  detections: { url: string } | null;
+  rooms: { url: string } | null;
+  /** Crop URLs keyed by legend entry id (`le_…`) or unknown cluster id (`u_…`). */
+  thumbs: Record<string, string>;
+  stats: VersionStats | null;
+  expiresAt: string;
+}
+
+export type LegendEntryStatus = "suggested" | "confirmed" | "ignored";
+/** orgs/{o}/projects/{p}/legendEntries/{id} + signed crop URL (LegendEntryItem). */
+export interface LegendEntry {
+  id: string;
+  sheetId: string;
+  versionId: string;
+  label: string;
+  labelConfidence: number;
+  suggestedClass: string | null;
+  class: string | null;
+  itemCode: string | null;
+  signature: string;
+  thumbPath: string | null;
+  status: LegendEntryStatus;
+  confirmedBy?: string | null;
+  confirmedAt?: string | null;
+  updatedAt: string | null;
+  thumbUrl: string | null;
+  /**
+   * Not in the Firestore doc: classConfidence of the suggestion (from legend.json). The list DTO may omit it;
+   * the UI then falls back to labelConfidence.
+   */
+  classConfidence?: number;
+}
+export interface LegendEntryPage {
+  items: LegendEntry[];
+  nextCursor: string | null;
+  expiresAt: string | null;
+}
+export interface ListLegendEntriesQuery {
+  status?: LegendEntryStatus;
+  sheetId?: string;
+  cursor?: string;
+  limit?: number;
+}
+/**
+ * PATCH /v1/projects/:pid/legend-entries/:entryId.
+ * `label` (edited OCR text) is requested from the API agent; sent only when the user changed it.
+ */
+export type PatchLegendEntryRequest =
+  | { action: "confirm"; class?: string; itemCode?: string | null; label?: string }
+  | { action: "reassign"; class: string; itemCode?: string | null; label?: string }
+  | { action: "ignore" };
+export interface PatchLegendEntryResponse {
+  entry: Omit<LegendEntry, "thumbUrl">;
+  mapping: unknown | null;
+}
+/**
+ * POST /v1/projects/:pid/unknown-clusters/:clusterId/resolve.
+ * `ignore: true` ("לא רלוונטי") is requested from the API agent; the current contract requires `class`.
+ */
+export type ResolveUnknownClusterRequest = {
+  sheetId: string;
+  versionId: string;
+  itemCode?: string | null;
+  createLegendEntry: boolean;
+} & ({ class: string; ignore?: never } | { ignore: true; class?: never });
+export interface ReprocessOutcome {
+  sheetId: string;
+  status: "queued" | "skipped";
+  reason: string | null;
+  versionId: string | null;
+  jobId: string | null;
+}
+export interface ResolveUnknownClusterResponse {
+  clusterId: string;
+  signature: string;
+  mapping: unknown | null;
+  legendEntry: Omit<LegendEntry, "thumbUrl"> | null;
+  reprocess: ReprocessOutcome[];
+}
+
 export interface FinalizeUploadResponse {
   sheetSet: SheetSet;
   sheet: Sheet;
@@ -270,6 +471,14 @@ export interface ApiClient {
   saveSheetRegions(projectId: string, sheetId: string, regions: SheetRegion[]): Promise<PutRegionsResponse>;
   /** Sprint 1: tiles meta + thumbnail (no query) or short-lived signed tile URLs for a window. */
   getTilesManifest(projectId: string, sheetId: string, versionId: string, q?: TilesManifestQuery): Promise<TilesManifest>;
+  /** Sprint 2: signed URLs of legend/detections/rooms + crops of a sheet version. */
+  getOverlay(projectId: string, sheetId: string, versionId: string): Promise<OverlayManifest>;
+  /** Sprint 2: project legend entries (one page). */
+  listLegendEntries(projectId: string, q?: ListLegendEntriesQuery): Promise<LegendEntryPage>;
+  /** Sprint 2: confirm / reassign / ignore a legend entry. */
+  patchLegendEntry(projectId: string, entryId: string, req: PatchLegendEntryRequest): Promise<PatchLegendEntryResponse>;
+  /** Sprint 2: answer "מה זה?" once for a whole unknown-symbol cluster. */
+  resolveUnknownCluster(projectId: string, clusterId: string, req: ResolveUnknownClusterRequest): Promise<ResolveUnknownClusterResponse>;
 }
 
 /* ---------- Storage (resumable uploads) ---------- */

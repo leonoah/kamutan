@@ -17,6 +17,7 @@ import { OrgsModule } from './orgs/orgs.module';
 import { ProjectsModule } from './projects/projects.module';
 import { QueueModule } from './queue/queue.module';
 import { SheetsModule } from './sheets/sheets.module';
+import { UnderstandingModule } from './understanding/understanding.module';
 import { UploadsModule } from './uploads/uploads.module';
 
 @Module({})
@@ -37,6 +38,7 @@ export class AppModule {
         ProjectsModule,
         UploadsModule,
         SheetsModule,
+        UnderstandingModule,
         JobsModule,
       ],
       providers: [

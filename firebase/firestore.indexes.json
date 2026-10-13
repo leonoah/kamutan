@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "legendEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "sheetId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "reviewItems",
       "queryScope": "COLLECTION",
       "fields": [

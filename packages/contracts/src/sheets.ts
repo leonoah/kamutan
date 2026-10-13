@@ -114,7 +114,8 @@ export const SHEET_VERSION_STATUSES = ['queued', 'processing', 'ready', 'failed'
 export const SheetVersionStatusSchema = z.enum(SHEET_VERSION_STATUSES);
 export type SheetVersionStatus = z.infer<typeof SheetVersionStatusSchema>;
 
-export const VERSION_STAGES = ['ingest', 'render', 'ocr', 'classify', 'scale', 'done'] as const;
+/** Processing stages in order (Sprint 2 added legend, detect, rooms before done). */
+export const VERSION_STAGES = ['ingest', 'render', 'ocr', 'classify', 'scale', 'legend', 'detect', 'rooms', 'done'] as const;
 export const VersionStageSchema = z.enum(VERSION_STAGES);
 export type VersionStage = z.infer<typeof VersionStageSchema>;
 
@@ -163,6 +164,12 @@ export const VersionArtifactsSchema = z.object({
   text: z.string().max(1024).optional(),
   /** thumbnail.webp (max 512px) */
   thumbnail: z.string().max(1024).optional(),
+  /** Sprint 2 — full object paths (never relative to the version prefix): legend.json.gz (kamutan.legend/1) */
+  legend: z.string().max(1024).optional(),
+  /** detections.json.gz (kamutan.detections/1) */
+  detections: z.string().max(1024).optional(),
+  /** rooms.json.gz (kamutan.rooms/1) */
+  rooms: z.string().max(1024).optional(),
 });
 export type VersionArtifacts = z.infer<typeof VersionArtifactsSchema>;
 
@@ -196,11 +203,29 @@ export const RegionListSchema = z
     });
   });
 
+const count = z.number().int().nonnegative();
+
+/** stats.detections of a version (Sprint 2): counts by confidence level, unknown symbols and class. */
+export const DetectionStatsSchema = z.object({
+  total: count,
+  green: count,
+  yellow: count,
+  red: count,
+  /** Detections with class "unknown" (they are also counted in their level). */
+  unknown: count,
+  byClass: z.record(z.string().max(64), count),
+});
+export type DetectionStats = z.infer<typeof DetectionStatsSchema>;
+
 export const VersionStatsSchema = z.object({
-  paths: z.number().int().nonnegative(),
-  segments: z.number().int().nonnegative(),
-  textLines: z.number().int().nonnegative(),
-  glyphs: z.number().int().nonnegative(),
+  paths: count,
+  segments: count,
+  textLines: count,
+  glyphs: count,
+  /** Sprint 2 (absent on Sprint-1 versions). */
+  detections: DetectionStatsSchema.optional(),
+  rooms: count.optional(),
+  legendEntries: count.optional(),
 });
 export type VersionStats = z.infer<typeof VersionStatsSchema>;
 

@@ -11,6 +11,11 @@ export const fsPaths = Object.freeze({
   sheets: (o: string, p: string) => `orgs/${o}/projects/${p}/sheets`,
   sheet: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/sheets/${id}`,
   version: (o: string, p: string, s: string, id: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${id}`,
+  /** Sprint 2: project-level legend rows (worker writes `suggested`; API confirms/ignores). */
+  legendEntries: (o: string, p: string) => `orgs/${o}/projects/${p}/legendEntries`,
+  legendEntry: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/legendEntries/${id}`,
+  /** Sprint 2: org memory of confirmed symbol → class/itemCode, doc id = symbol signature. API-written only. */
+  symbolMapping: (o: string, signature: string) => `orgs/${o}/symbolMappings/${signature}`,
   reviewItem: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/reviewItems/${id}`,
   correction: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/corrections/${id}`,
   boqLine: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqLines/${id}`,
@@ -44,6 +49,19 @@ export const storagePaths = Object.freeze({
   thumbnail: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/thumbnail.webp`,
   primitives: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/primitives.msgpack.gz`,
   text: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/text.json.gz`,
+  /** Sprint 2 understanding artifacts (gzip JSON) and UI crops (≤ 256 px webp). */
+  legend: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/legend.json.gz`,
+  detections: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/detections.json.gz`,
+  rooms: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/rooms.json.gz`,
+  legendThumb: (o: string, p: string, s: string, v: string, entryId: string) =>
+    `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/legend/${entryId}.webp`,
+  unknownThumb: (o: string, p: string, s: string, v: string, clusterId: string) =>
+    `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/unknown/${clusterId}.webp`,
+  /**
+   * Per-org LLM gateway cache (SEC-23): orgs/{orgId}/llm-cache/… — worker only. Never client-readable
+   * (storage.rules) and never signable by the API (not under a version prefix, see ARTIFACT_PATH_RE).
+   */
+  llmCachePrefix: (o: string) => `orgs/${o}/llm-cache/`,
 
   /** @deprecated Sprint 0 client upload target (orgs/{orgId}/uploads/{uid}/{fileId}); replaced by `quarantine`. */
   upload: (orgId: string, uid: string, fileId: string) => `orgs/${orgId}/uploads/${uid}/${fileId}`,
@@ -60,7 +78,12 @@ export const QUARANTINE_PATH_RE = new RegExp(`^orgs/(${ID})/quarantine/(${UUID})
 export const PROJECT_UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/uploads/(${ID})/source\\.(pdf|dwg|dxf|png)$`);
 /** Any object under a sheet version's artifact directory (what the API may sign for reading). */
 export const ARTIFACT_PATH_RE = new RegExp(
-  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(?:tiles/\\d{1,2}/\\d{1,5}_\\d{1,5}\\.webp|thumbnail\\.webp|primitives\\.msgpack\\.gz|text\\.json\\.gz)$`,
+  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(?:tiles/\\d{1,2}/\\d{1,5}_\\d{1,5}\\.webp|thumbnail\\.webp|primitives\\.msgpack\\.gz|text\\.json\\.gz` +
+    `|legend\\.json\\.gz|detections\\.json\\.gz|rooms\\.json\\.gz|legend/le_${ID}\\.webp|unknown/u_${ID}\\.webp)$`,
+);
+/** The three Sprint-2 understanding artifacts (what the API may read server-side). */
+export const UNDERSTANDING_ARTIFACT_PATH_RE = new RegExp(
+  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(legend|detections|rooms)\\.json\\.gz$`,
 );
 /** @deprecated Sprint 0 (see storagePaths.upload). */
 export const UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/uploads/(${ID})/(${ID})$`);

@@ -28,7 +28,12 @@ rules_version = '2';
 //   orgs/{orgId}/projects/{projectId}/uploads/**   API-produced per-sheetSet originals (Sprint 1 brief) — admin SDK only.
 //   orgs/{orgId}/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/**
 //                                                  ARTIFACTS (tiles/, thumbnail.webp, primitives.msgpack.gz,
-//                                                  text.json.gz) — worker only; clients via signed URLs.
+//                                                  text.json.gz; Sprint 2: legend.json.gz, detections.json.gz,
+//                                                  rooms.json.gz, legend/{entryId}.webp, unknown/{clusterId}.webp)
+//                                                  — worker only; clients via signed URLs (tiles-manifest, overlay,
+//                                                  legend-entries).
+//   orgs/{orgId}/llm-cache/**                      Sprint 2 LLM gateway cache (SEC-23, per org) — worker only, never
+//                                                  client-readable, never signed by the API.
 //   orgs/{orgId}/projects/{projectId}/derived/**,
 //   orgs/{orgId}/derived/**                        Sprint-0 artifact layout — worker only; clients via signed URLs.
 //   everything else                                denied (default deny).
@@ -109,6 +114,11 @@ service firebase.storage {
 
     // Sprint-0 artifact prefix — kept explicit so nobody re-opens it by accident.
     match /orgs/{orgId}/derived/{rest=**} {
+      allow read, write: if false;
+    }
+
+    // Sprint 2: LLM gateway cache (prompt inputs / model outputs of crops). Worker (admin SDK) only.
+    match /orgs/{orgId}/llm-cache/{rest=**} {
       allow read, write: if false;
     }
   }

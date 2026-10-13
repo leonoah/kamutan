@@ -10,6 +10,8 @@ interface FeatureBase {
   color?: Rgba;
   /** Not pickable / not lasso-selectable (e.g. floor-region outlines, evidence). */
   passive?: boolean;
+  /** Drawn at reduced opacity (e.g. a lifecycle layer that is toggled off — spec: dimmed to 35%, not hidden). */
+  dimmed?: boolean;
 }
 
 /** A point marker (symbol anchor). Paper mm, y down. */
@@ -29,6 +31,36 @@ export interface PolygonFeature extends FeatureBase {
   lineWidthPx?: number;
   /** Optional label rendered as an HTML chip at the polygon centroid (RTL-safe). */
   label?: string;
+  /** Second line: an LTR-isolated number (rendered in <bdi dir="ltr">, e.g. an area "12.4")… */
+  labelLtr?: string;
+  /** …followed by a Hebrew unit after it in reading order (e.g. "מ״ר" → "12.4 מ״ר" read right-to-left). */
+  labelSuffix?: string;
+  /** Hide the label while the polygon is narrower than this on screen (px). Default 0 (always). */
+  labelMinPx?: number;
+  /** Dashed outline (e.g. legend boxes, demolished rooms). */
+  dashed?: boolean;
+}
+
+/**
+ * Confidence marker shape (spec §מצבי ביטחון): ● high, ▲ mid, ◆ low, ◇ unknown (hollow).
+ * Shape always travels with the colour so the level never relies on colour alone (WCAG 1.4.1).
+ */
+export type MarkerShape = "circle" | "triangle" | "diamond" | "diamond-open";
+
+/**
+ * A detected symbol instance: a GPU-drawn marker sized in PAPER mm, so it scales with the drawing when
+ * zooming (with a small pixel minimum so far-out views still show a dot). Paper mm, y down.
+ */
+export interface MarkerFeature extends FeatureBase {
+  kind: "marker";
+  position: Vec2;
+  /** Marker diameter in paper mm (≈ the symbol size; default 6). */
+  sizeMm?: number;
+  shape: MarkerShape;
+  /** Dashed outline (existing / demolish lifecycle, unknown symbols). */
+  dashed?: boolean;
+  /** Diagonal strike (demolish: "✕ קו אלכסוני"). */
+  strike?: boolean;
 }
 
 /** An open polyline (switch arc, wall, measured length). Paper mm, y down. */
@@ -38,7 +70,7 @@ export interface PathFeature extends FeatureBase {
   widthPx?: number;
 }
 
-export type OverlayFeature = PointFeature | PolygonFeature | PathFeature;
+export type OverlayFeature = PointFeature | MarkerFeature | PolygonFeature | PathFeature;
 
 export type ViewerTool = "select" | "pan" | "lasso" | "measure" | "calibrate";
 

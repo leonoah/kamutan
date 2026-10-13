@@ -2,6 +2,8 @@ import type {
   Discipline,
   FileKind,
   Job,
+  LegendEntry,
+  LegendEntryStatus,
   Member,
   Org,
   ProcessingError,
@@ -14,6 +16,8 @@ import type {
   SheetSetStatus,
   SheetSummary,
   SheetVersion,
+  SymbolClass,
+  SymbolMapping,
 } from '@kamutan/contracts';
 
 export const REPOSITORY = Symbol('REPOSITORY');
@@ -98,6 +102,32 @@ export interface Repository {
   /** Marks a job (and its version, when given) failed — used when publishing fails. */
   failJob(orgId: string, jobId: string, error: ProcessingError, version?: { projectId: string; sheetId: string; versionId: string }): Promise<void>;
 
+  // --- legend entries & symbol mappings (Sprint 2) ------------------------
+  /** Ordered by document id; optional equality filters; cursor = last entry id. */
+  listLegendEntries(
+    orgId: string,
+    projectId: string,
+    opts: { limit: number; cursor?: string; status?: LegendEntryStatus; sheetId?: string },
+  ): Promise<{ items: LegendEntry[]; nextCursor: string | null }>;
+  getLegendEntry(orgId: string, projectId: string, entryId: string): Promise<LegendEntry | null>;
+  /**
+   * Transaction: re-reads the entry (null when gone), writes the decision; for confirm/reassign upserts
+   * orgs/{orgId}/symbolMappings/{entry.signature} (uses++); appends an audit event.
+   */
+  decideLegendEntry(
+    orgId: string,
+    projectId: string,
+    entryId: string,
+    decision: LegendDecision,
+    actorUid: string,
+  ): Promise<{ entry: LegendEntry; mapping: SymbolMapping | null } | null>;
+  /**
+   * Transaction: upserts symbolMappings/{signature} (uses++), optionally upserts a confirmed legend entry for the
+   * cluster, appends an audit event.
+   */
+  resolveUnknownCluster(orgId: string, projectId: string, input: ResolveClusterInput, actorUid: string): Promise<{ mapping: SymbolMapping; legendEntry: LegendEntry | null }>;
+  getSymbolMapping(orgId: string, signature: string): Promise<SymbolMapping | null>;
+
   // --- jobs ---------------------------------------------------------------
   /** jobs/{jobId} (top level). The caller must check membership of job.orgId. */
   getJob(jobId: string): Promise<Job | null>;
@@ -144,4 +174,30 @@ export interface AuditInput {
   entityId: string | null;
   action: string;
   after?: Record<string, unknown> | null;
+}
+
+export type LegendDecision =
+  | {
+      action: 'confirm' | 'reassign';
+      class: SymbolClass;
+      /** undefined = keep the entry's current itemCode */
+      itemCode?: string | null;
+      /** User-edited label; undefined = keep the entry's label. */
+      label?: string;
+    }
+  | { action: 'ignore' };
+
+export interface ResolveClusterInput {
+  clusterId: string;
+  signature: string;
+  sheetId: string;
+  versionId: string;
+  /** null iff `ignored` ("לא רלוונטי"). */
+  class: SymbolClass | null;
+  ignored: boolean;
+  itemCode: string | null;
+  /** Mapping / entry label (the taxonomy's Hebrew name of `class`, or "לא רלוונטי"). */
+  label: string;
+  /** When set, upsert this confirmed legend entry. */
+  legendEntry: { id: string; thumbPath: string | null } | null;
 }

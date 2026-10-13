@@ -1,4 +1,4 @@
-# firebase/ — Firestore & Storage security rules, indexes, model (Sprint 0 + Sprint 1, ADR 0008)
+# firebase/ — Firestore & Storage security rules, indexes, model (Sprint 0 + 1 + 2, ADR 0008)
 
 Replaces the former `supabase/` directory (Postgres + RLS; still in git history on `main`).
 
@@ -11,7 +11,7 @@ Replaces the former `supabase/` directory (Postgres + RLS; still in git history 
 | `firestore.indexes.json` | Composite indexes: reviewItems (level, status, riskScore↓) and (status, riskScore↓); boqLines (chapter, code), (status, chapter, code), (floor, chapter, code); jobs (orgId, createdAt↓), (orgId, projectId, createdAt↓); collection-group field override on `members.uid` |
 | `model.ts` | TS doc shapes for every collection (Sprint-1 `Sheet`/`SheetVersion`/`Job` per the brief), `paths` incl. `quarantine`, `projectUpload`, `artifacts`, `tile`; `CLIENT_READABLE_STORAGE_PREFIXES = []`, `INGEST_STAGES`, `JOB_TYPES`, client-writable field lists, BOQ transitions |
 | `firebase.rules-test.json` | Emulator config used ONLY by the rules tests (DevOps owns the real `firebase.json`) |
-| `tests/` | `@kamutan/firebase-tests` (vitest + `@firebase/rules-unit-testing` 6): `rules.lint.test.ts` (static, always), `firestore.rules.test.ts`, `ingest.rules.test.ts` (Sprint 1), `storage.rules.test.ts` (emulator) |
+| `tests/` | `@kamutan/firebase-tests` (vitest + `@firebase/rules-unit-testing` 6): `rules.lint.test.ts` (static, always), `firestore.rules.test.ts`, `ingest.rules.test.ts` (Sprint 1), `understanding.rules.test.ts` (Sprint 2), `storage.rules.test.ts` (emulator) |
 
 ## Authorization summary
 
@@ -37,6 +37,23 @@ Client writes (everything else is `allow write: if false` → API / worker with 
 | `jobs/{jobId}` | members of `resource.data.orgId` (string), list must filter `orgId ==` | **none** | same + `in` / unfiltered / projectId-only lists denied, job without string orgId unreadable |
 | Storage `orgs/{orgId}/quarantine/{uuid}` | **none** (not even the uploader) | create only: editor/admin, UUID name, 0 < size ≤ 100 MB, allowed content types, no overwrite/delete | `storage.rules.test.ts` quarantine block |
 | Storage `orgs/*/projects/*/sources/**`, `.../uploads/**`, `.../sheets/*/versions/*/**`, `.../derived/**`, `orgs/*/derived/**`, `orgs/*/uploads/**` | **none** | **none** | `storage.rules.test.ts` artifacts block (×4 roles, cross-org, anon) |
+
+### Sprint 2 — legend / understanding
+
+| Path | Client read | Client write | Tests |
+| --- | --- | --- | --- |
+| `orgs/*/projects/*/legendEntries/{entryId}` `{sheetId, versionId, label, labelConfidence, suggestedClass, class, itemCode, signature, thumbPath, status, confirmedBy?, confirmedAt?, updatedAt}` | every member role | **none** — confirm / ignore / reassign = `PATCH /v1/projects/:pid/legend-entries/:id` (editor+, audited); worker writes `suggested` | `understanding.rules.test.ts`: reads ×4 roles (get/list/status query), cross-org, outsider/anon, collection group denied, update/set/create-confirmed/delete ×4 roles |
+| `orgs/*/symbolMappings/{signature}` `{class\|null, ignored, itemCode, label, confirmedBy, confirmedAt, uses}` | every member role | **none** — API upsert on confirm / reassign / resolve (no forged "learned" mappings) | same |
+| Storage `.../versions/*/legend.json.gz`, `detections.json.gz`, `rooms.json.gz`, `legend/{entryId}.webp`, `unknown/{clusterId}.webp` | **none** (existing `versions/{versionId}/{rest=**}` deny) | **none** | `understanding.rules.test.ts` storage block (×4 roles, cross-org, outsider, anon: download URL, metadata, put, delete) |
+| Storage `orgs/{orgId}/llm-cache/**` (LLM gateway cache, SEC-23) | **none** — new explicit deny match | **none** (worker / admin SDK) | same + list denied |
+
+Static (`rules.lint.test.ts`, runs locally): both Firestore matches read = `isMember(orgId)` and every write `false`; no
+collection-group match exposes them; `llm-cache/{rest=**}` exists with exactly `read, write: if false`; every Sprint-2
+model object path (`paths.legendArtifact/detectionsArtifact/roomsArtifact/legendThumb/unknownThumb/llmCache`) lands in
+exactly one deny-all match (versions/** or llm-cache/**); `INGEST_STAGES` = brief order; model `SymbolMapping` /
+`LegendEntry` interfaces carry the brief fields (Sprint-0 `keyType/acceptCount` shape removed).
+Index: `legendEntries (status, sheetId)` for the API list with both filters.
+CI: `understanding.rules.test.ts` is in the "no skipped emulator tests" loop of `.github/workflows/ci.yml`.
 
 **Decision: deny + signed URLs for artifacts.** Tiles / thumbnails / primitives / OCR text are served only via
 short-lived V4 signed URLs from the API (`tiles-manifest`). Reasons: one authorization point that also serves

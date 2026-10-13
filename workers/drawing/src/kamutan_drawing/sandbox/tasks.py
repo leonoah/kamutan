@@ -54,6 +54,13 @@ def page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     return process_page(args, progress)
 
 
+def understand(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
+    """Sprint 2: legend → detect → rooms on the page artifacts written by ``page``."""
+    from ..pipeline.understand import run
+
+    return run(args, progress)
+
+
 def _parse(family: str, args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     """Magic-byte check + probe + one page (vectors, render, text layer, classify, regions).
 
@@ -204,6 +211,7 @@ def _selftest_net(args: dict[str, Any], progress: Progress) -> Any:
 TASKS: dict[str, Callable[[dict[str, Any], Progress], Any]] = {
     "probe": probe,
     "page": page,
+    "understand": understand,
     "parse_pdf": parse_pdf,
     "parse_dxf": parse_dxf,
     "parse_raster": parse_raster,
