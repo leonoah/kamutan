@@ -10,93 +10,172 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9_-]+$"
         },
-        "logicalKey": {
+        "sheetSetId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 200
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
-        "discipline": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "maxLength": 50
-          }
+        "pageIndex": {
+          "type": "integer",
+          "minimum": 0
         },
-        "floorRegions": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "floor": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 16
-              },
-              "scale": {
-                "type": "number",
-                "exclusiveMinimum": 0
-              },
-              "polygon": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "minItems": 2,
-                  "maxItems": 2,
-                  "items": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "number"
-                    }
-                  ]
-                }
-              },
-              "source": {
-                "type": "string",
-                "enum": [
-                  "auto",
-                  "manual"
-                ]
-              }
-            },
-            "required": [
-              "floor",
-              "scale",
-              "polygon",
-              "source"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "scale": {
+        "title": {
           "anyOf": [
             {
-              "type": "number",
-              "exclusiveMinimum": 0
+              "type": "string",
+              "maxLength": 300
             },
             {
               "type": "null"
             }
           ]
         },
-        "titleBlock": {
-          "type": "object",
-          "properties": {
-            "sheetTitle": {
-              "type": "string"
+        "discipline": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
             },
-            "sheetNumber": {
-              "type": "string"
-            },
-            "discipline": {
-              "type": "string"
-            },
-            "scaleText": {
-              "type": "string"
+            {
+              "type": "null"
             }
+          ]
+        },
+        "floors": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
           },
-          "additionalProperties": false
+          "maxItems": 16
+        },
+        "scaleDenominator": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "classification": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "discipline": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "floors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  },
+                  "maxItems": 16
+                },
+                "sheetTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scaleText": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "green",
+                    "yellow",
+                    "red"
+                  ]
+                },
+                "reasons": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "maxItems": 32
+                }
+              },
+              "required": [
+                "discipline",
+                "floors",
+                "sheetTitle",
+                "scaleText",
+                "confidence",
+                "level",
+                "reasons"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "confirmedBy": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confirmedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "currentVersionId": {
           "anyOf": [
@@ -111,21 +190,30 @@
             }
           ]
         },
-        "sheetSetId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[A-Za-z0-9_-]+$"
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "id",
-        "logicalKey",
+        "sheetSetId",
+        "pageIndex",
+        "title",
         "discipline",
-        "floorRegions",
-        "scale",
+        "floors",
+        "scaleDenominator",
+        "classification",
+        "confirmed",
         "currentVersionId",
-        "sheetSetId"
+        "updatedAt"
       ],
       "additionalProperties": false
     }

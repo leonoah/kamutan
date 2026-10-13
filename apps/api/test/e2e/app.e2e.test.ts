@@ -148,7 +148,7 @@ describe('Kamutan API e2e (/api/v1, fake auth + in-memory Firestore/Storage/PubS
 
     it('full flow publishes ingest; re-upload dedupes', async () => {
       const up = await reserve('חשמל - קומת קרקע.pdf', SAMPLE.pdf);
-      expect(up.storagePath).toBe(`orgs/${orgId}/uploads/editor/${up.fileId}`);
+      expect(up.storagePath).toBe(`orgs/${orgId}/quarantine/${up.fileId}`);
       const res = await http
         .post(`/api/v1/projects/${projectId}/sheet-sets`)
         .set(auth('editor'))
@@ -156,8 +156,10 @@ describe('Kamutan API e2e (/api/v1, fake auth + in-memory Firestore/Storage/PubS
         .send({ uploadToken: up.uploadToken })
         .expect(201);
       const body = FinalizeUploadResponseSchema.parse(res.body);
-      expect(body).toMatchObject({ deduplicated: false, sheetSet: { name: 'חשמל - קומת קרקע.pdf' }, sheetVersion: { status: 'queued' } });
-      expect(t.queue.messages.at(-1)?.data).toMatchObject({ jobId: body.jobId, orgId, versionId: body.sheetVersion.id });
+      expect(body).toMatchObject({ deduplicated: false, sheetSet: { name: 'חשמל - קומת קרקע.pdf', status: 'queued' } });
+      expect(t.queue.messages.at(-1)?.data).toMatchObject({ schemaVersion: 3, jobId: body.jobId, orgId, versionId: body.versionId, sheetId: null });
+      expect(t.storage.objects.has(up.storagePath)).toBe(false);
+      expect(t.storage.objects.has(body.sheetSet.storagePath)).toBe(true);
 
       const before = t.queue.messages.length;
       const again = await reserve('renamed.pdf', SAMPLE.pdf);

@@ -13,6 +13,7 @@ export const API_ERROR_CODES = [
   'upload_expired',
   'upload_missing',
   'rate_limited',
+  'not_ready',
   'internal_error',
   'service_unavailable',
 ] as const;

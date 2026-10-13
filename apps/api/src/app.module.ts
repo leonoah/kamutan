@@ -12,9 +12,11 @@ import type { AppConfig } from './config/config';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './db/database.module';
 import { HealthModule } from './health/health.module';
+import { JobsModule } from './jobs/jobs.module';
 import { OrgsModule } from './orgs/orgs.module';
 import { ProjectsModule } from './projects/projects.module';
 import { QueueModule } from './queue/queue.module';
+import { SheetsModule } from './sheets/sheets.module';
 import { UploadsModule } from './uploads/uploads.module';
 
 @Module({})
@@ -34,6 +36,8 @@ export class AppModule {
         OrgsModule,
         ProjectsModule,
         UploadsModule,
+        SheetsModule,
+        JobsModule,
       ],
       providers: [
         // Order matters: authenticate → rate-limit per user → authorize.

@@ -14,7 +14,7 @@ import { Ltr } from "@/components/Ltr";
 import { formatQuantity } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useProject } from "@/features/projects/queries";
-import { DrawingPlaceholder } from "./DrawingPlaceholder";
+import { ReviewDrawing } from "./ReviewDrawing";
 import { sampleChapter, sampleQueue, sampleRows, type SampleQueueItem } from "./sampleData";
 
 const stripe: Record<ConfidenceLevel, string> = {
@@ -26,7 +26,8 @@ const stripe: Record<ConfidenceLevel, string> = {
 };
 
 /**
- * S10 "סביבת הבדיקה" — Sprint-0 static skeleton.
+ * S10 "סביבת הבדיקה". Sprint 1: the center pane is the real tiled viewer (lazy-loaded Deck.gl);
+ * BOQ and queue are still the static sample data.
  * Panel order in RTL reading order: BOQ (right, ~38%) · drawing (center, ~47%, LTR) · review queue (left, ~15%).
  */
 export function ReviewPage() {
@@ -125,22 +126,7 @@ export function ReviewPage() {
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(340px,38fr)_minmax(0,47fr)_minmax(240px,15fr)]">
         <BoqPanel />
         <section id="drawing-panel" tabIndex={-1} aria-label={t("review.drawingPanel")} className="flex min-h-0 flex-col border-x border-border">
-          <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 text-dense">
-            <button type="button" onClick={notYet} className="inline-flex h-7 items-center gap-1 rounded-sm border border-input px-2 text-foreground hover:bg-muted">
-              {t("review.sheet")}: ת.תאורה
-              <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
-            </button>
-            <button type="button" onClick={notYet} className="inline-flex h-7 items-center gap-1 rounded-sm border border-input px-2 text-foreground hover:bg-muted">
-              {t("review.layers")}
-              <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
-            </button>
-            <span className="ms-auto text-meta text-muted-foreground">
-              {t("review.drawingPanel")} · <Ltr>LTR</Ltr>
-            </span>
-          </div>
-          <div className="min-h-0 flex-1">
-            <DrawingPlaceholder sheetName="ת.תאורה" />
-          </div>
+          <ReviewDrawing orgId={project.data?.orgId ?? null} projectId={projectId} />
         </section>
         <QueuePanel />
       </div>

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "sheet": "sheet_synth01",
+  "match": "synth01",
+  "source": { "file": "synthetic.pdf", "pageIndex": 0 },
+  "derivedFrom": ["synthetic example — no customer data"],
+  "gtStatus": "verified",
+  "notes": "Synthetic example for the golden runner. Floors use contract codes ('0') in the output and canonical names here.",
+  "expect": {
+    "status": "ready",
+    "classification": {
+      "discipline": "electrical",
+      "floors": ["ground"],
+      "minConfidence": 0.8,
+      "levels": ["green", "yellow"],
+      "sheetTitleContains": ["חשמל"]
+    },
+    "scale": { "denominator": 50, "tolerance": 0 },
+    "page": { "widthMm": 420.0, "heightMm": 297.0, "rotation": 0, "toleranceMm": 0.5 },
+    "stats": {
+      "paths": { "value": 1000, "relTol": 0.02 },
+      "segments": { "value": 4000, "relTol": 0.05 },
+      "textLines": { "value": 50, "relTol": 0.2, "advisory": true }
+    },
+    "tiles": { "format": "webp", "tileSize": 256, "dpi": 300, "minLevels": 5 }
+  }
+}

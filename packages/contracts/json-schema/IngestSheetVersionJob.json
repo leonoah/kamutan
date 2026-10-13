@@ -6,7 +6,7 @@
       "properties": {
         "schemaVersion": {
           "type": "number",
-          "const": 2
+          "const": 3
         },
         "type": {
           "type": "string",
@@ -37,10 +37,29 @@
           "pattern": "^[A-Za-z0-9_-]+$"
         },
         "sheetId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[A-Za-z0-9_-]+$"
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pageIndex": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "versionId": {
           "type": "string",
@@ -50,7 +69,7 @@
         },
         "storagePath": {
           "type": "string",
-          "pattern": "^orgs\\/([A-Za-z0-9_-]{1,128})\\/projects\\/([A-Za-z0-9_-]{1,128})\\/sources\\/([a-f0-9]{64})\\.(pdf|dwg|dxf|png)$"
+          "pattern": "^orgs\\/([A-Za-z0-9_-]{1,128})\\/projects\\/([A-Za-z0-9_-]{1,128})\\/uploads\\/([A-Za-z0-9_-]{1,128})\\/source\\.(pdf|dwg|dxf|png)$"
         },
         "sha256": {
           "type": "string",
@@ -85,6 +104,7 @@
         "projectId",
         "sheetSetId",
         "sheetId",
+        "pageIndex",
         "versionId",
         "storagePath",
         "sha256",

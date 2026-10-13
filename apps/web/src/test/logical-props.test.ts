@@ -7,7 +7,7 @@ import { join, relative, resolve } from "node:path";
  * Stand-in for the lint rule until an ESLint config lands.
  */
 const SRC = resolve(__dirname, "..");
-const ALLOWED = new Set(["features/review/DrawingPlaceholder.tsx"]);
+const ALLOWED = new Set(["features/viewer/SheetViewer.tsx"]);
 const PHYSICAL =
   /(?<![\w-])-?(ml|mr|pl|pr|left|right|rounded-l|rounded-r|border-l|border-r|text-left|text-right)-[\w[\]./]+/g;
 const PHYSICAL_BARE = /(?<![\w-])(text-left|text-right)(?![\w-])/g;

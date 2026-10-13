@@ -6,7 +6,7 @@ import { UPLOAD_SECRET } from '../support/helpers';
 
 const ORG = 'orgAAAAAAAAAAAAAAAAA';
 const UID = 'uid_1';
-const FID = 'fileBBBBBBBBBBBBBBBB';
+const FID = '0b6f3d4e-1c2a-4b5d-9e8f-0123456789ab';
 
 describe('filename', () => {
   it('maps extensions case-insensitively', () => {
@@ -33,12 +33,12 @@ describe('filename', () => {
 describe('upload token', () => {
   const signer = new UploadTokenSigner(UPLOAD_SECRET);
   const claims: UploadTokenClaims = {
-    v: 2,
+    v: 3,
     fid: FID,
     org: ORG,
     prj: 'projCCCCCCCCCCCCCCCC',
     usr: UID,
-    path: `orgs/${ORG}/uploads/${UID}/${FID}`,
+    path: `orgs/${ORG}/quarantine/${FID}`,
     name: 'a.pdf',
     kind: 'pdf',
     size: 10,
@@ -56,7 +56,9 @@ describe('upload token', () => {
     expect(() => signer.verify(`${forged}.${sig}`)).toThrow(UploadTokenError);
     expect(() => new UploadTokenSigner('another-secret-another-secret-0123456').verify(t)).toThrow(UploadTokenError);
     expect(() => signer.verify(`${body}`)).toThrow(UploadTokenError);
-    expect(() => signer.sign({ ...claims, path: `orgs/other/uploads/${UID}/${FID}` })).toThrow();
+    expect(() => signer.sign({ ...claims, path: `orgs/other/quarantine/${FID}` })).toThrow();
+    expect(() => signer.sign({ ...claims, path: `orgs/${ORG}/uploads/${UID}/${FID}` })).toThrow(); // Sprint 0 path
+    expect(() => signer.sign({ ...claims, fid: 'not-a-uuid', path: `orgs/${ORG}/quarantine/not-a-uuid` })).toThrow();
     const expired = signer.sign({ ...claims, exp: 1 });
     expect(() => signer.verify(expired)).toThrow(expect.objectContaining({ reason: 'expired' }));
   });

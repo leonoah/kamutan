@@ -44,6 +44,7 @@ jobs:
       bench: ${{ steps.filter.outputs.bench }}
       docker: ${{ steps.filter.outputs.docker }}
       python: ${{ steps.filter.outputs.python }}
+      fuzz: ${{ steps.filter.outputs.fuzz }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +63,10 @@ jobs:
             python:
               - 'workers/**'
               - 'benchmark/**'
+              - '.github/workflows/ci.yml'
+            fuzz:
+              - 'workers/drawing/**'
+              - 'infra/docker/worker-drawing*'
               - '.github/workflows/ci.yml'
 
   # ---------------------------------------------------------------------------
@@ -158,6 +163,44 @@ jobs:
           exit $rc
 
   # ---------------------------------------------------------------------------
+  # Parser fuzzing, PR budget (SEC-16/17, Sprint-1 gate "fuzzing ראשוני ל-PDF ול-DXF ב-CI").
+  # Hypothesis structure-aware fuzzers + the fixed hostile corpus against the parser sandbox
+  # (workers/drawing/tests/fuzz). ~60 s of generative time + ~45 s corpus. Long runs: nightly.yml.
+  # Hypothesis is pinned here (not a project dependency); inputs are synthetic only.
+  # ---------------------------------------------------------------------------
+  fuzz:
+    name: Fuzz (parser sandbox, PR budget)
+    needs: changes
+    if: needs.changes.outputs.fuzz == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: workers/drawing
+    env:
+      UV_LOCKED: "1"
+      HYPOTHESIS_VERSION: "6.168.5"
+      KAMUTAN_FUZZ: "1"
+      KAMUTAN_FUZZ_BUDGET_S: "60"
+      KAMUTAN_FUZZ_TARGET: sandbox
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: workers/drawing/uv.lock
+      - name: Install (uv sync --locked)
+        run: uv sync --locked --all-groups
+      - name: Fuzz (corpus + generative, ${{ env.KAMUTAN_FUZZ_BUDGET_S }} s budget)
+        # A failure prints Hypothesis' minimal recipe and an @reproduce_failure blob; add the input as a
+        # named case in tests/fuzz/test_corpus.py when fixing it.
+        run: |
+          uv run --locked --with "hypothesis==${HYPOTHESIS_VERSION}" \
+            pytest -m fuzz tests/fuzz -q -s -p no:cacheprovider --junitxml="$RUNNER_TEMP/fuzz.xml"
+
+  # ---------------------------------------------------------------------------
   # DB: Firestore/Storage security rules + API integration on the Firebase Emulator Suite
   # (ADR-0008, SEC-06, SEC-09). The emulators cannot be downloaded in the dev sandbox, so these
   # suites skip locally and are enforced here. The wrapper fails if the emulator env is missing,
@@ -187,12 +230,26 @@ jobs:
       - name: Build workspace libraries used by the suites
         run: pnpm turbo run build --filter=@kamutan/contracts
       - name: Security rules suite (Firestore + Storage emulators)
+        # Includes the Sprint-1 ingest suites (ingest.rules.test.ts: sheets/versions/jobs; storage.rules.test.ts:
+        # quarantine, sources, sheet-version artifacts). JSON report is checked below so no suite can pass by skipping.
         run: |
+          # shellcheck disable=SC2016  # single quotes on purpose: expanded inside emulators:exec
           npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION}" emulators:exec \
             --only firestore,storage --project demo-kamutan --config firebase/firebase.rules-test.json \
-            'test -n "$FIRESTORE_EMULATOR_HOST" && test -n "$FIREBASE_STORAGE_EMULATOR_HOST" && pnpm --filter @kamutan/firebase-tests test'
+            'test -n "$FIRESTORE_EMULATOR_HOST" && test -n "$FIREBASE_STORAGE_EMULATOR_HOST" && pnpm --filter @kamutan/firebase-tests exec vitest run --reporter=default --reporter=json --outputFile="$RUNNER_TEMP/rules-tests.json"'
+      - name: Rules suites actually ran (no skipped emulator tests)
+        run: |
+          set -euo pipefail
+          r="$RUNNER_TEMP/rules-tests.json"
+          for f in firestore.rules.test.ts storage.rules.test.ts ingest.rules.test.ts; do
+            n=$(jq --arg f "$f" '[.testResults[] | select(.name | endswith($f)) | .assertionResults[]] | length' "$r")
+            skipped=$(jq --arg f "$f" '[.testResults[] | select(.name | endswith($f)) | .assertionResults[] | select(.status != "passed")] | length' "$r")
+            echo "$f: $n tests, $skipped not passed"
+            if [ "$n" -eq 0 ] || [ "$skipped" -ne 0 ]; then echo "::error::$f did not fully run under the emulator"; exit 1; fi
+          done
       - name: API integration suite (Firestore + Storage + Pub/Sub emulators)
         run: |
+          # shellcheck disable=SC2016  # single quotes on purpose: expanded inside emulators:exec
           npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION}" emulators:exec \
             --only firestore,storage,pubsub --project demo-kamutan \
             'test -n "$FIRESTORE_EMULATOR_HOST" && test -n "$FIREBASE_STORAGE_EMULATOR_HOST" && test -n "$PUBSUB_EMULATOR_HOST" && pnpm --filter @kamutan/api exec vitest run test/integration'
@@ -420,7 +477,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, node, python, db, secrets-scan, semgrep, osv, docker, benchmark]
+    needs: [changes, node, python, fuzz, db, secrets-scan, semgrep, osv, docker, benchmark]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

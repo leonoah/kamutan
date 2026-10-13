@@ -68,7 +68,7 @@ export interface FinalizeUploadRequest {
   uploadToken: string;
   name?: string;
 }
-export type SheetSetStatus = "uploaded" | "splitting" | "ready" | "failed";
+export type SheetSetStatus = "uploaded" | "queued" | "splitting" | "ready" | "failed";
 export type SheetVersionStatus = "uploaded" | "queued" | "processing" | "ready" | "failed";
 
 export interface SheetSet {
@@ -83,20 +83,141 @@ export interface SheetSet {
   uploadedBy: string;
   createdAt: string;
 }
+/* ---------- Sprint 1: ingest (docs/agents/SPRINT1_BRIEF.md, packages/contracts/src/sheets.ts + tiles.ts) ----------
+ * TODO(contracts): hand-kept mirror of @kamutan/contracts (Sprint 1 shapes, still in flight on the API side).
+ * Replace with `import type` from @kamutan/contracts once web depends on the built package.
+ */
+export const INGEST_STAGES = ["ingest", "render", "ocr", "classify", "scale", "done"] as const;
+export type IngestStage = (typeof INGEST_STAGES)[number];
+export type ClassificationLevel = "green" | "yellow" | "red";
+
+export interface SheetClassification {
+  discipline: string | null;
+  floors: string[];
+  sheetTitle: string | null;
+  scaleText: string | null;
+  confidence: number; // 0..1
+  level: ClassificationLevel;
+  /** Reason codes (UI maps known codes to Hebrew; unknown codes are shown verbatim). */
+  reasons: string[];
+}
+
+/** Tiles pyramid meta stored on the version doc (z = 0 fits one 256 px tile). */
+export interface TilesMeta {
+  prefix: string;
+  format: "webp";
+  tileSize: number;
+  dpi: number;
+  levels: number;
+  widthPx: number;
+  heightPx: number;
+}
+
+/** Point in paper mm. `{x, y}` (not `[x, y]`): Firestore cannot store nested arrays (contracts PointMmSchema). */
+export interface PointMm {
+  x: number;
+  y: number;
+}
+
+/** contracts RegionSchema: id [A-Za-z0-9_-], ≤ 8 regions, 3..256 points, implicitly closed. */
+export interface SheetRegion {
+  id: string;
+  floor: string;
+  /** Paper mm, origin top-left, y down. */
+  polygonMm: PointMm[];
+  scaleDenominator: number;
+}
+
+/** orgs/{o}/projects/{p}/sheets/{sheetId}; sheetId = `${sheetSetId}-p${pageIndex}`. */
 export interface Sheet {
   id: string;
-  logicalKey: string;
   sheetSetId: string;
   currentVersionId: string | null;
+  /** Sprint 0 field; Sprint 1 docs may omit it. */
+  logicalKey?: string;
   titleBlock?: { sheetTitle?: string; sheetNumber?: string; scaleText?: string };
+  pageIndex?: number;
+  title?: string | null;
+  discipline?: string | null;
+  floors?: string[];
+  scaleDenominator?: number | null;
+  classification?: SheetClassification;
+  confirmed?: boolean;
+  confirmedBy?: string | null;
+  confirmedAt?: string | null;
+  updatedAt?: string;
 }
 export interface SheetVersion {
   id: string;
   sheetId: string;
-  versionNo: number;
+  versionNo?: number;
   status: SheetVersionStatus;
   createdAt: string;
+  progress?: { stage: IngestStage; pct: number };
+  error?: { code: string; message: string } | null;
+  page?: { widthMm: number; heightMm: number; rotation: number };
+  artifacts?: { tiles?: TilesMeta; primitives?: string; text?: string; thumbnail?: string };
+  regions?: SheetRegion[];
+  stats?: { paths?: number; segments?: number; textLines?: number; glyphs?: number };
+  workerVersion?: string;
+  updatedAt?: string;
 }
+export interface SheetRow {
+  sheet: Sheet;
+  version: SheetVersion | null;
+}
+
+/** POST /v1/projects/:pid/sheets/:sid/confirm (contracts ConfirmSheetRequestSchema, strict). */
+export interface ConfirmSheetRequest {
+  discipline: string;
+  floors: string[];
+  /** Integer 1..10000; null for sheets without a scale (legends, schedules). */
+  scaleDenominator: number | null;
+  /** Replaces the current version's regions when present. */
+  regions?: SheetRegion[];
+}
+
+/** PUT /v1/projects/:pid/sheets/:sid/regions response. */
+export interface PutRegionsResponse {
+  sheetId: string;
+  versionId: string;
+  regions: SheetRegion[];
+}
+
+/**
+ * GET /v1/projects/:pid/sheets/:sid/versions/:vid/tiles-manifest (contracts TilesManifestQuerySchema).
+ * No params → meta + thumbnail; `z` + inclusive `x0..x1, y0..y1` window → signed URLs (≤ maxBatch tiles).
+ */
+export interface TilesManifestQuery {
+  z: number;
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+export interface TileLevel {
+  z: number;
+  widthPx: number;
+  heightPx: number;
+  cols: number;
+  rows: number;
+  mmPerPx: number;
+}
+/** contracts TilesManifestSchema. Signed URLs live 15 min. */
+export interface TilesManifest {
+  sheetId: string;
+  versionId: string;
+  page: { widthMm: number; heightMm: number; rotation: number } | null;
+  tiles: Omit<TilesMeta, "prefix">;
+  levelGrid: TileLevel[];
+  thumbnailUrl: string | null;
+  /** Signed URLs keyed "{z}/{x}_{y}" for the requested window (empty without `z`). */
+  urls: Record<string, string>;
+  /** Earliest expiry among the returned URLs. */
+  expiresAt: string;
+  maxBatch: number;
+}
+
 export interface FinalizeUploadResponse {
   sheetSet: SheetSet;
   sheet: Sheet;
@@ -111,6 +232,8 @@ export interface Job {
   id: string;
   orgId: string;
   projectId?: string;
+  /** Sprint 1 brief: the ingest job is per sheetSet (one uploaded file). */
+  sheetSetId?: string;
   versionId?: string;
   type: string;
   status: JobStatus;
@@ -141,6 +264,12 @@ export interface ApiClient {
   createProject(input: CreateProjectInput): Promise<Project>;
   createUpload(projectId: string, req: CreateUploadRequest): Promise<CreateUploadResponse>;
   finalizeUpload(projectId: string, req: FinalizeUploadRequest): Promise<FinalizeUploadResponse>;
+  /** Sprint 1: confirm a sheet's classification (sets confirmed/confirmedBy/confirmedAt). */
+  confirmSheet(projectId: string, sheetId: string, req: ConfirmSheetRequest): Promise<Sheet>;
+  /** Sprint 1: replace the floor regions of the sheet's current version (multi-floor sheets). */
+  saveSheetRegions(projectId: string, sheetId: string, regions: SheetRegion[]): Promise<PutRegionsResponse>;
+  /** Sprint 1: tiles meta + thumbnail (no query) or short-lived signed tile URLs for a window. */
+  getTilesManifest(projectId: string, sheetId: string, versionId: string, q?: TilesManifestQuery): Promise<TilesManifest>;
 }
 
 /* ---------- Storage (resumable uploads) ---------- */
@@ -184,7 +313,7 @@ export interface RealtimeSource {
   sheets(
     orgId: string,
     projectId: string,
-    onData: (rows: { sheet: Sheet; version: SheetVersion | null }[]) => void,
+    onData: (rows: SheetRow[]) => void,
     onError: OnError,
   ): Unsubscribe;
 }

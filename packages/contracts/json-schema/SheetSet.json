@@ -44,6 +44,7 @@
           "type": "string",
           "enum": [
             "uploaded",
+            "queued",
             "splitting",
             "ready",
             "failed"
@@ -58,6 +59,33 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ingestJobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "versionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "pageCount": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "createdAt": {
           "type": "string",

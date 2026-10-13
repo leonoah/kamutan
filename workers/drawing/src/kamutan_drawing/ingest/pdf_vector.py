@@ -60,6 +60,9 @@ class VectorSheet:
     curves: np.ndarray  # (k,8) float32 p0,c1,c2,p3
     curve_path: np.ndarray  # (k,) int32
     stats: dict[str, Any] = field(default_factory=dict)
+    # --- optional (DXF): layer per path, index into ``layers`` (-1 = none) ---
+    path_layer: np.ndarray | None = None
+    layers: list[str] = field(default_factory=list)
 
     @property
     def n_paths(self) -> int:

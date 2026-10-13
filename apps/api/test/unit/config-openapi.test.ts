@@ -44,7 +44,7 @@ describe('config', () => {
 });
 
 describe('OpenAPI', () => {
-  it('documents the Sprint 0 endpoints under /api/v1', async () => {
+  it('documents the Sprint 0 + 1 endpoints under /api/v1', async () => {
     const t = await createTestApp(testConfig());
     try {
       const doc = buildOpenApi(t.app);
@@ -52,15 +52,25 @@ describe('OpenAPI', () => {
         [
           '/api/v1/health',
           '/api/v1/health/ready',
+          '/api/v1/jobs/{jobId}',
           '/api/v1/me',
           '/api/v1/orgs',
           '/api/v1/orgs/{orgId}',
           '/api/v1/projects',
           '/api/v1/projects/{projectId}',
           '/api/v1/projects/{projectId}/sheet-sets',
+          '/api/v1/projects/{projectId}/sheets',
+          '/api/v1/projects/{projectId}/sheets/{sheetId}/confirm',
+          '/api/v1/projects/{projectId}/sheets/{sheetId}/regions',
+          '/api/v1/projects/{projectId}/sheets/{sheetId}/reprocess',
+          '/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}',
+          '/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/tiles-manifest',
           '/api/v1/projects/{projectId}/uploads',
         ].sort(),
       );
+      const tiles = doc.paths['/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/tiles-manifest']?.get;
+      const names = (tiles?.parameters ?? []).map((p) => ('name' in p ? p.name : ''));
+      expect(names).toEqual(expect.arrayContaining(['z', 'x0', 'x1', 'y0', 'y1']));
     } finally {
       await t.app.close();
     }

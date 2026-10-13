@@ -1,7 +1,7 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiBody, ApiQuery, ApiResponse, type ApiResponseSchemaHost } from '@nestjs/swagger';
 import { ApiErrorSchema } from '@kamutan/contracts';
-import { ZodObject, type ZodTypeAny } from 'zod';
+import { ZodEffects, ZodObject, type ZodTypeAny } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
 // @nestjs/swagger >= 11 no longer allows deep imports (package `exports`); derive the public type.
@@ -22,7 +22,9 @@ export const ApiZodResponse = (status: number, schema: ZodTypeAny, description?:
   ApiResponse({ status, schema: toOpenApi(schema), description });
 
 /** Documents each key of a Zod object schema as a query parameter. */
-export function ApiZodQuery(schema: ZodTypeAny) {
+export function ApiZodQuery(input: ZodTypeAny) {
+  let schema = input;
+  while (schema instanceof ZodEffects) schema = schema.innerType() as ZodTypeAny; // .refine/.superRefine wrappers
   if (!(schema instanceof ZodObject)) return applyDecorators();
   const shape = schema.shape as Record<string, ZodTypeAny>;
   return applyDecorators(

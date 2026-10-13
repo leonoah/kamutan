@@ -52,5 +52,12 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
     createProject: (input) => post("/projects", input),
     createUpload: (projectId, req) => post(`/projects/${enc(projectId)}/uploads`, req),
     finalizeUpload: (projectId, req) => post(`/projects/${enc(projectId)}/sheet-sets`, req),
+    confirmSheet: (projectId, sheetId, req) => post(`/projects/${enc(projectId)}/sheets/${enc(sheetId)}/confirm`, req),
+    saveSheetRegions: (projectId, sheetId, regions) =>
+      request(`/projects/${enc(projectId)}/sheets/${enc(sheetId)}/regions`, { method: "PUT", body: JSON.stringify({ regions }) }),
+    getTilesManifest: (projectId, sheetId, versionId, q) => {
+      const qs = q ? `?z=${q.z}&x0=${q.x0}&x1=${q.x1}&y0=${q.y0}&y1=${q.y1}` : "";
+      return request(`/projects/${enc(projectId)}/sheets/${enc(sheetId)}/versions/${enc(versionId)}/tiles-manifest${qs}`);
+    },
   };
 }

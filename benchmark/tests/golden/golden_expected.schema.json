@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kamutan.local/schema/golden_expected.schema.json",
+  "title": "Kamutan golden expectation for one ingested sheet",
+  "description": "Expected ingest output (classification, scale, page, stats, tiles) for one sheet, with tolerances. Real expectations live outside git ($KAMUTAN_GOLDEN_DIR); see benchmark/tests/golden/golden.py.",
+  "type": "object",
+  "required": ["schemaVersion", "sheet", "expect"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "sheet": { "type": "string", "minLength": 1, "description": "Stable id of the sheet (file id), e.g. sheet_08222cb2" },
+    "match": { "type": "string", "minLength": 1, "description": "Substring that identifies this sheet's output dir under --outputs-root (default: sheet)" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "pageIndex": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "derivedFrom": { "type": "array", "items": { "type": "string" }, "description": "Provenance of each expectation (spike reports, manifest, human)" },
+    "gtStatus": { "enum": ["draft", "verified", "adjudicated"] },
+    "xfail": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Check names whose failure is tolerated (disputed / known gap); a pass is reported as XPASS"
+    },
+    "notes": { "type": "string" },
+    "expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["queued", "processing", "ready", "failed"] },
+        "classification": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "discipline": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+            "disciplineAliases": { "type": "array", "items": { "type": "string" } },
+            "floors": { "type": "array", "items": { "type": "string" } },
+            "floorsAcceptAny": { "type": "array", "items": { "type": "array", "items": { "type": "string" } }, "minItems": 1 },
+            "floorsMode": { "enum": ["exact", "subset"] },
+            "minConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+            "confidenceAdvisory": { "type": "boolean" },
+            "levels": { "type": "array", "items": { "enum": ["green", "yellow", "red"] }, "minItems": 1 },
+            "sheetTitleContains": { "type": "array", "items": { "type": "string" } },
+            "sheetTitleAdvisory": { "type": "boolean" }
+          }
+        },
+        "scale": {
+          "type": "object",
+          "required": ["denominator"],
+          "additionalProperties": false,
+          "properties": {
+            "denominator": { "type": ["integer", "null"], "minimum": 1 },
+            "tolerance": { "type": "number", "minimum": 0 }
+          }
+        },
+        "page": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "widthMm": { "type": "number", "exclusiveMinimum": 0 },
+            "heightMm": { "type": "number", "exclusiveMinimum": 0 },
+            "rotation": { "enum": [0, 90, 180, 270] },
+            "toleranceMm": { "type": "number", "minimum": 0 }
+          }
+        },
+        "stats": {
+          "type": "object",
+          "propertyNames": { "enum": ["paths", "segments", "textLines", "glyphs"] },
+          "additionalProperties": {
+            "type": "object",
+            "required": ["value"],
+            "additionalProperties": false,
+            "properties": {
+              "value": { "type": "number", "minimum": 0 },
+              "relTol": { "type": "number", "minimum": 0 },
+              "absTol": { "type": "number", "minimum": 0 },
+              "advisory": { "type": "boolean" }
+            }
+          }
+        },
+        "tiles": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": { "const": "webp" },
+            "tileSize": { "const": 256 },
+            "dpi": { "type": "integer", "minimum": 72 },
+            "minLevels": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    }
+  }
+}

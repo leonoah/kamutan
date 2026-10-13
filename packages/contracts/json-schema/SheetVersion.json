@@ -23,89 +23,312 @@
         "status": {
           "type": "string",
           "enum": [
-            "uploaded",
             "queued",
             "processing",
             "ready",
             "failed"
           ]
         },
-        "sha256": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
+        "progress": {
+          "type": "object",
+          "properties": {
+            "stage": {
+              "type": "string",
+              "enum": [
+                "ingest",
+                "render",
+                "ocr",
+                "classify",
+                "scale",
+                "done"
+              ]
+            },
+            "pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "stage",
+            "pct"
+          ],
+          "additionalProperties": false
         },
-        "pageIndex": {
-          "type": "integer",
-          "minimum": 0
+        "error": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "widthMm": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "heightMm": {
-          "type": "number",
-          "exclusiveMinimum": 0
+        "page": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "widthMm": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 10000
+                },
+                "heightMm": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 10000
+                },
+                "rotation": {
+                  "type": "number",
+                  "enum": [
+                    0,
+                    90,
+                    180,
+                    270
+                  ]
+                }
+              },
+              "required": [
+                "widthMm",
+                "heightMm",
+                "rotation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "artifacts": {
           "type": "object",
           "properties": {
-            "primitives": {
-              "type": "string"
-            },
             "tiles": {
-              "type": "string"
+              "type": "object",
+              "properties": {
+                "prefix": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "format": {
+                  "type": "string",
+                  "const": "webp"
+                },
+                "tileSize": {
+                  "type": "number",
+                  "const": 256
+                },
+                "dpi": {
+                  "type": "integer",
+                  "minimum": 10,
+                  "maximum": 1200
+                },
+                "levels": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
+                "widthPx": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "heightPx": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "prefix",
+                "format",
+                "tileSize",
+                "dpi",
+                "levels",
+                "widthPx",
+                "heightPx"
+              ],
+              "additionalProperties": false
             },
-            "detections": {
-              "type": "string"
+            "primitives": {
+              "type": "string",
+              "maxLength": 1024
             },
-            "rooms": {
-              "type": "string"
+            "text": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "thumbnail": {
+              "type": "string",
+              "maxLength": 1024
             }
           },
           "additionalProperties": false
+        },
+        "regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "floor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              },
+              "polygonMm": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 3,
+                "maxItems": 256
+              },
+              "scaleDenominator": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              }
+            },
+            "required": [
+              "id",
+              "floor",
+              "polygonMm",
+              "scaleDenominator"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8
         },
         "stats": {
-          "type": "object",
-          "properties": {
-            "detections": {
-              "type": "integer"
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "paths": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "segments": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "textLines": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "glyphs": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "paths",
+                "segments",
+                "textLines",
+                "glyphs"
+              ],
+              "additionalProperties": false
             },
-            "green": {
-              "type": "integer"
-            },
-            "yellow": {
-              "type": "integer"
-            },
-            "red": {
-              "type": "integer"
-            },
-            "rooms": {
-              "type": "integer"
+            {
+              "type": "null"
             }
-          },
-          "required": [
-            "detections",
-            "green",
-            "yellow",
-            "red",
-            "rooms"
-          ],
-          "additionalProperties": false
+          ]
+        },
+        "workerVersion": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jobId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "createdAt": {
-          "type": "string",
-          "format": "date-time"
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "id",
         "sheetId",
-        "versionNo",
         "status",
-        "sha256",
-        "pageIndex",
+        "progress",
+        "page",
         "artifacts",
-        "createdAt"
+        "regions",
+        "stats",
+        "workerVersion",
+        "updatedAt"
       ],
       "additionalProperties": false
     }

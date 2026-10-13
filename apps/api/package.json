@@ -9,6 +9,7 @@
     "start": "node dist/main.js",
     "dev": "SWC_NODE_PROJECT=tsconfig.build.json node --watch -r @swc-node/register src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit --noUnusedLocals --noUnusedParameters",
     "test": "vitest run",
     "test:watch": "vitest",
     "openapi": "node dist/scripts/export-openapi.js",

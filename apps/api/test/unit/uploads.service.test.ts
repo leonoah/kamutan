@@ -41,55 +41,67 @@ describe('UploadsService (Firestore/Storage layout, in-memory fakes)', () => {
     projectId = (await repo.createProject(orgId, { name: 'P' }, 'editorUid')).id;
   });
 
-  it('issues orgs/{orgId}/uploads/{uid}/{fileId} without the user filename', async () => {
+  it('issues orgs/{orgId}/quarantine/{uuid} without the user filename (SEC-13)', async () => {
     const r = await service.createUpload(editor, projectId, { filename: '../../evil.pdf', sizeBytes: 10 });
-    expect(r.storagePath).toBe(storagePaths.upload(orgId, 'editorUid', r.fileId));
+    expect(r.fileId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(r.storagePath).toBe(storagePaths.quarantine(orgId, r.fileId));
     expect(r.storagePath).not.toContain('evil');
     expect(r).toMatchObject({ fileKind: 'pdf', contentType: 'application/pdf', maxBytes: 100 * 1024 * 1024 });
     expect(Date.parse(r.expiresAt) - Date.now()).toBeLessThanOrEqual(600_000);
   });
 
-  it('finalize: verifies, copies to sources/{sha}.{ext}, deletes the upload, writes docs + job + audit, publishes', async () => {
+  it('finalize: verifies, moves quarantine → uploads/{sheetSetId}/source.{ext}, writes set + job + audit, publishes v3', async () => {
     const up = await upload('קומה א.pdf', SAMPLE.pdf);
     const res = await service.finalize(editor, projectId, { uploadToken: up.uploadToken }, TRACE);
     const sha = res.sheetSet.sha256;
-    const source = storagePaths.source(orgId, projectId, sha, 'pdf');
+    const dest = storagePaths.projectUpload(orgId, projectId, sha, 'pdf');
 
     expect(res.deduplicated).toBe(false);
-    expect(res.sheetSet).toMatchObject({ id: sha, name: 'קומה א.pdf', fileKind: 'pdf', storagePath: source, status: 'uploaded', uploadedBy: 'editorUid' });
-    expect(res.sheet).toMatchObject({ sheetSetId: sha, currentVersionId: res.sheetVersion.id });
-    expect(res.sheetVersion).toMatchObject({ versionNo: 1, status: 'queued', sha256: sha, pageIndex: 0 });
+    expect(res.sheetSet).toMatchObject({ id: sha, name: 'קומה א.pdf', fileKind: 'pdf', storagePath: dest, status: 'queued', uploadedBy: 'editorUid' });
+    expect(res.sheetSet).toMatchObject({ ingestJobId: res.jobId, versionId: res.versionId });
 
-    // Storage: source written (attachment metadata), upload object removed.
-    expect(storage.objects.get(source)).toMatchObject({ contentType: 'application/pdf', metadata: { sha256: sha, uploadedBy: 'editorUid' } });
+    // Storage: moved (attachment metadata), nothing left in quarantine.
+    expect(storage.objects.get(dest)).toMatchObject({ contentType: 'application/pdf', metadata: { sha256: sha, uploadedBy: 'editorUid', originalName: 'קומה א.pdf' } });
     expect(storage.objects.has(up.storagePath)).toBe(false);
+    expect([...storage.objects.keys()]).toEqual([dest]);
 
-    // Firestore docs at ADR 0008 paths.
-    expect(repo.docs.has(fsPaths.sheetSet(orgId, projectId, sha))).toBe(true);
-    expect(repo.docs.get(fsPaths.version(orgId, projectId, res.sheet.id, res.sheetVersion.id))?.status).toBe('queued');
-    expect(repo.docs.get(fsPaths.job(res.jobId))).toMatchObject({ orgId, projectId, versionId: res.sheetVersion.id, type: 'ingest.sheet_version', status: 'queued', progress: 0 });
+    // Firestore docs at ADR 0008 paths; sheets are created by the worker, not here.
+    expect(repo.docs.get(fsPaths.sheetSet(orgId, projectId, sha))).toMatchObject({ status: 'queued', uploadFileId: up.fileId });
+    expect([...repo.docs.keys()].some((k) => k.includes('/sheets/'))).toBe(false);
+    expect(repo.docs.get(fsPaths.job(res.jobId))).toMatchObject({
+      orgId,
+      projectId,
+      sheetSetId: sha,
+      sheetId: null,
+      versionId: res.versionId,
+      type: 'ingest.sheet_version',
+      status: 'queued',
+      progress: { stage: 'ingest', pct: 0 },
+      attempts: 0,
+    });
     const audit = [...repo.docs.entries()].filter(([k]) => k.startsWith(`orgs/${orgId}/auditLog/`)).map(([, v]) => v);
     expect(audit.map((a) => a.action)).toEqual(['create', 'upload']); // project create, upload
     expect(audit[1]?.prevHash).toBe(audit[0]?.hash);
 
-    // Pub/Sub message = contract payload.
+    // Pub/Sub message = contract payload (initial ingest: all pages).
     expect(queue.messages).toHaveLength(1);
     const msg = queue.messages[0];
     expect(IngestSheetVersionJobSchema.parse(msg?.data)).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       type: 'ingest.sheet_version',
       jobId: res.jobId,
       orgId,
       projectId,
       sheetSetId: sha,
-      sheetId: res.sheet.id,
-      versionId: res.sheetVersion.id,
-      storagePath: source,
+      sheetId: null,
+      pageIndex: null,
+      versionId: res.versionId,
+      storagePath: dest,
       sha256: sha,
       fileKind: 'pdf',
       traceparent: TRACE,
     });
-    expect(msg?.attributes).toEqual({ type: 'ingest.sheet_version', jobId: res.jobId, orgId, schemaVersion: '2' });
+    expect(msg?.attributes).toEqual({ type: 'ingest.sheet_version', jobId: res.jobId, orgId, schemaVersion: '3' });
   });
 
   it('dedupes identical bytes within a project: same docs/job, no new message, duplicate upload deleted', async () => {
@@ -100,7 +112,7 @@ describe('UploadsService (Firestore/Storage layout, in-memory fakes)', () => {
 
     expect(r2).toMatchObject({ deduplicated: true, jobId: r1.jobId });
     expect(r2.sheetSet.id).toBe(r1.sheetSet.id);
-    expect(r2.sheetVersion.id).toBe(r1.sheetVersion.id);
+    expect(r2.versionId).toBe(r1.versionId);
     expect(queue.messages).toHaveLength(1);
     expect(storage.objects.has(second.storagePath)).toBe(false);
     expect([...repo.docs.keys()].filter((k) => k.includes('/sheetSets/'))).toHaveLength(1);
@@ -155,7 +167,15 @@ describe('UploadsService (Firestore/Storage layout, in-memory fakes)', () => {
     await expect(service.finalize(editor, projectId, { uploadToken: 'garbage.token-garbage' }, TRACE)).rejects.toMatchObject({ status: 400 });
   });
 
-  it('a failed publish keeps the upload and the version `uploaded`; retrying finalize publishes once', async () => {
+  it('rejects oversize objects with 413 and deletes them from quarantine', async () => {
+    const big = Buffer.concat([SAMPLE.pdf, Buffer.alloc(100 * 1024 * 1024)]);
+    const up = await upload('big.pdf', big);
+    await expect(service.finalize(editor, projectId, { uploadToken: up.uploadToken }, TRACE)).rejects.toMatchObject({ status: 413 });
+    expect(storage.objects.size).toBe(0);
+    expect(queue.messages).toHaveLength(0);
+  });
+
+  it('a failed publish leaves the set `uploaded`; retrying finalize with the same token publishes once', async () => {
     let fail = true;
     const flaky: IngestQueue = {
       publish: async (p) => {
@@ -168,17 +188,17 @@ describe('UploadsService (Firestore/Storage layout, in-memory fakes)', () => {
     const svc = makeService(flaky);
     const up = await upload('a.dxf', SAMPLE.dxf, svc);
     await expect(svc.finalize(editor, projectId, { uploadToken: up.uploadToken }, TRACE)).rejects.toMatchObject({ status: 503 });
-    expect(storage.objects.has(up.storagePath)).toBe(true);
-    const version = [...repo.docs.entries()].find(([k]) => k.includes('/versions/'));
-    expect(version?.[1].status).toBe('uploaded');
+    expect(storage.objects.has(up.storagePath)).toBe(false); // checks passed → already moved
+    const set = [...repo.docs.entries()].find(([k]) => k.includes('/sheetSets/'));
+    expect(set?.[1].status).toBe('uploaded');
 
     fail = false;
     const r = await svc.finalize(editor, projectId, { uploadToken: up.uploadToken }, TRACE);
-    expect(r).toMatchObject({ deduplicated: true, sheetVersion: { status: 'queued' } });
+    expect(r).toMatchObject({ deduplicated: true, sheetSet: { status: 'queued' } });
     expect(queue.messages).toHaveLength(1);
-    expect(storage.objects.has(up.storagePath)).toBe(false);
-    // Same token again: upload is gone → 409, nothing re-published.
-    await expect(svc.finalize(editor, projectId, { uploadToken: up.uploadToken }, TRACE)).rejects.toMatchObject({ status: 409 });
+    // Same token again: idempotent, nothing re-published.
+    const again = await svc.finalize(editor, projectId, { uploadToken: up.uploadToken }, TRACE);
+    expect(again).toMatchObject({ jobId: r.jobId, sheetSet: { status: 'queued' } });
     expect(queue.messages).toHaveLength(1);
   });
 });

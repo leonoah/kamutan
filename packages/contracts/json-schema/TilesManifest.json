@@ -1,0 +1,181 @@
+{
+  "$ref": "#/definitions/TilesManifest",
+  "definitions": {
+    "TilesManifest": {
+      "type": "object",
+      "properties": {
+        "sheetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "versionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "widthMm": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 10000
+                },
+                "heightMm": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 10000
+                },
+                "rotation": {
+                  "type": "number",
+                  "enum": [
+                    0,
+                    90,
+                    180,
+                    270
+                  ]
+                }
+              },
+              "required": [
+                "widthMm",
+                "heightMm",
+                "rotation"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tiles": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "type": "string",
+              "const": "webp"
+            },
+            "tileSize": {
+              "type": "number",
+              "const": 256
+            },
+            "dpi": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "levels": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "widthPx": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "heightPx": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            }
+          },
+          "required": [
+            "format",
+            "tileSize",
+            "dpi",
+            "levels",
+            "widthPx",
+            "heightPx"
+          ],
+          "additionalProperties": false
+        },
+        "levelGrid": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "z": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "widthPx": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "heightPx": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "cols": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "rows": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "mmPerPx": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "z",
+              "widthPx",
+              "heightPx",
+              "cols",
+              "rows",
+              "mmPerPx"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "thumbnailUrl": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "urls": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uri"
+          },
+          "propertyNames": {
+            "pattern": "^\\d+\\/\\d+_\\d+$"
+          }
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maxBatch": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "sheetId",
+        "versionId",
+        "page",
+        "tiles",
+        "levelGrid",
+        "thumbnailUrl",
+        "urls",
+        "expiresAt",
+        "maxBatch"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/TilesManifest.json"
+}

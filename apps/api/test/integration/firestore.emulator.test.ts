@@ -9,14 +9,17 @@ import { randomUUID } from 'node:crypto';
 import { PubSub } from '@google-cloud/pubsub';
 import { fsPaths, storagePaths } from '@kamutan/contracts';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
-import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessService } from '../../src/access/access.service';
 import { auditHash } from '../../src/db/audit-chain';
 import { FirestoreRepository } from '../../src/db/firestore.repository';
+import { JobsService } from '../../src/jobs/jobs.service';
 import { InMemoryIngestQueue, PubSubIngestQueue } from '../../src/queue/ingest-queue';
 import { ProjectsService } from '../../src/projects/projects.service';
+import { SheetsService } from '../../src/sheets/sheets.service';
+import { FakeUrlSigner } from '../../src/sheets/url-signer';
 import { FirebaseObjectStorage } from '../../src/uploads/storage/firebase.storage';
 import type { ObjectStorage } from '../../src/uploads/storage/object-storage';
 import { UploadTokenSigner } from '../../src/uploads/upload-token';
@@ -95,24 +98,113 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
     expect(new Set([...p1.items, ...p2.items].map((p) => p.id)).size).toBe(5);
   });
 
-  it('createSheetSetBundle is atomic and dedupes concurrent finalizations of the same sha256', async () => {
+  it('createSheetSetIngest is atomic and dedupes concurrent finalizations of the same sha256', async () => {
     const p = await repo.createProject(orgA, { name: 'race' }, uid('aEditor'));
     const sha = 'e'.repeat(64);
     const input = {
       name: 'a.pdf',
       sha256: sha,
       fileKind: 'pdf' as const,
-      storagePath: storagePaths.source(orgA, p.id, sha, 'pdf'),
+      storagePath: storagePaths.projectUpload(orgA, p.id, sha, 'pdf'),
       uploadedBy: uid('aEditor'),
+      uploadFileId: randomUUID(),
       sizeBytes: 10,
       jobType: 'ingest.sheet_version',
     };
-    const results = await Promise.all([1, 2, 3].map(() => repo.createSheetSetBundle(orgA, p.id, input)));
+    const results = await Promise.all([1, 2, 3].map(() => repo.createSheetSetIngest(orgA, p.id, input)));
     expect(results.filter((r) => !r.deduplicated)).toHaveLength(1);
-    expect(new Set(results.map((r) => r.bundle.jobId)).size).toBe(1);
-    expect((await db.collection(`orgs/${orgA}/projects/${p.id}/sheets`).get()).size).toBe(1);
-    const jobId = results[0]?.bundle.jobId as string;
-    expect((await db.doc(fsPaths.job(jobId)).get()).data()).toMatchObject({ orgId: orgA, projectId: p.id, status: 'queued', progress: 0 });
+    expect(new Set(results.map((r) => r.sheetSet.ingestJobId)).size).toBe(1);
+    expect((await db.collection(`orgs/${orgA}/projects/${p.id}/sheetSets`).get()).size).toBe(1);
+    expect((await db.collection(`orgs/${orgA}/projects/${p.id}/sheets`).get()).size).toBe(0); // worker creates sheets
+    const set = results[0]?.sheetSet;
+    expect((await db.doc(fsPaths.job(set?.ingestJobId as string)).get()).data()).toMatchObject({
+      orgId: orgA,
+      projectId: p.id,
+      sheetSetId: sha,
+      sheetId: null,
+      versionId: set?.versionId,
+      status: 'queued',
+      progress: { stage: 'ingest', pct: 0 },
+      attempts: 0,
+    });
+    expect((await repo.findSheetSetByUploadFileId(orgA, p.id, input.uploadFileId))?.id).toBe(sha);
+    await repo.setSheetSetStatus(orgA, p.id, sha, 'queued');
+    expect((await repo.getSheetSet(orgA, p.id, sha))?.status).toBe('queued');
+  });
+
+  describe('sheets, regions, confirm, reprocess, jobs (worker docs written directly)', () => {
+    const sha = 'd'.repeat(64);
+    let pid: string;
+    const sid = `${sha}-p0`;
+    const vid = 'v1';
+    const sheets = () => new SheetsService(access, repo, queue, new FakeUrlSigner());
+    const jobs = () => new JobsService(access, repo);
+    const queue = new InMemoryIngestQueue();
+    const region = { id: 'r1', floor: 'ground', polygonMm: [{ x: 10, y: 10 }, { x: 300, y: 10 }, { x: 300, y: 200 }], scaleDenominator: 50 };
+
+    beforeAll(async () => {
+      pid = (await repo.createProject(orgA, { name: 'sheets' }, uid('aEditor'))).id;
+      await repo.createSheetSetIngest(orgA, pid, {
+        name: 'set.pdf',
+        sha256: sha,
+        fileKind: 'pdf',
+        storagePath: storagePaths.projectUpload(orgA, pid, sha, 'pdf'),
+        uploadedBy: uid('aEditor'),
+        uploadFileId: randomUUID(),
+        sizeBytes: 10,
+        jobType: 'ingest.sheet_version',
+      });
+      // What the worker writes after splitting/processing (Timestamps, nested maps — no nested arrays).
+      const now = Timestamp.now();
+      await db.doc(fsPaths.sheet(orgA, pid, sid)).set({
+        sheetSetId: sha, pageIndex: 0, title: 'חשמל', discipline: 'electrical', floors: ['ground'], scaleDenominator: 50,
+        classification: { discipline: 'electrical', floors: ['ground'], sheetTitle: 'חשמל', scaleText: '1:50', confidence: 0.9, level: 'yellow', reasons: [] },
+        confirmed: false, currentVersionId: vid, updatedAt: now,
+      });
+      await db.doc(fsPaths.version(orgA, pid, sid, vid)).set({
+        versionNo: 1, status: 'ready', progress: { stage: 'done', pct: 100 }, page: { widthMm: 841, heightMm: 594, rotation: 0 },
+        artifacts: {
+          tiles: { prefix: storagePaths.tilesPrefix(orgA, pid, sid, vid), format: 'webp', tileSize: 256, dpi: 300, levels: 7, widthPx: 9933, heightPx: 7016 },
+          thumbnail: storagePaths.thumbnail(orgA, pid, sid, vid),
+        },
+        regions: [], stats: { paths: 1, segments: 1, textLines: 1, glyphs: 1 }, workerVersion: 'it', updatedAt: now,
+      });
+    });
+
+    it('lists sheets with their current version (getAll) and reads versions', async () => {
+      const page = await sheets().list(user(uid('aViewer')), pid, { limit: 10 });
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]).toMatchObject({ id: sid, confirmed: false, currentVersion: { id: vid, status: 'ready' } });
+      expect(page.items[0]?.updatedAt).toMatch(/Z$/);
+      await expect(sheets().list(user(uid('bAdmin')), pid, { limit: 10 })).rejects.toMatchObject({ status: 404 });
+      expect((await sheets().list(user(uid('aViewer')), pid, { limit: 10, sheetSetId: sha })).items).toHaveLength(1);
+    });
+
+    it('stores regions as maps (Firestore has no nested arrays) and confirms in a transaction with audit', async () => {
+      await sheets().putRegions(user(uid('aEditor')), pid, sid, [region]);
+      expect((await db.doc(fsPaths.version(orgA, pid, sid, vid)).get()).get('regions')).toEqual([region]);
+      const res = await sheets().confirm(user(uid('aEditor')), pid, sid, { discipline: 'lighting', floors: ['first'], scaleDenominator: 100 });
+      expect(res).toMatchObject({ confirmed: true, discipline: 'lighting', confirmedBy: uid('aEditor') });
+      const snap = await db.doc(fsPaths.sheet(orgA, pid, sid)).get();
+      expect(snap.get('confirmedAt')).toBeInstanceOf(Timestamp);
+      const actions = (await db.collection(`orgs/${orgA}/auditLog`).get()).docs.map((d) => d.get('action'));
+      expect(actions).toEqual(expect.arrayContaining(['set_regions', 'confirm']));
+    });
+
+    it('tiles manifest signs only this org/version paths', async () => {
+      const m = await sheets().tilesManifest(user(uid('aViewer')), pid, sid, vid, { z: 0 });
+      expect(Object.keys(m.urls)).toEqual(['0/0_0']);
+      expect(m.urls['0/0_0']).toContain(`orgs/${orgA}/projects/${pid}/sheets/${sid}/versions/${vid}/tiles/0/0_0.webp`);
+    });
+
+    it('reprocess creates version + job atomically, refuses while in flight; jobs readable by members only', async () => {
+      const r = await sheets().reprocess(user(uid('aEditor')), pid, sid, TRACE);
+      expect(r.sheetVersion).toMatchObject({ status: 'queued', versionNo: 2, regions: [region] });
+      expect((await db.doc(fsPaths.sheet(orgA, pid, sid)).get()).get('currentVersionId')).toBe(r.sheetVersion.id);
+      await expect(sheets().reprocess(user(uid('aEditor')), pid, sid, TRACE)).rejects.toMatchObject({ status: 409 });
+      await expect(jobs().get(user(uid('aViewer')), r.jobId)).resolves.toMatchObject({ orgId: orgA, sheetId: sid, status: 'queued' });
+      await expect(jobs().get(user(uid('bAdmin')), r.jobId)).rejects.toMatchObject({ status: 404 });
+    });
   });
 
   it('audit log forms a verifiable hash chain', async () => {
@@ -128,7 +220,7 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
   });
 
   describe.skipIf(!hasStorage)('full finalize with the Storage emulator', () => {
-    it('verifies, copies to sources/, deletes the upload and publishes', async () => {
+    it('verifies, moves quarantine → uploads/{sheetSetId}/source.png and publishes', async () => {
       const storage: ObjectStorage = new FirebaseObjectStorage(app, BUCKET);
       const queue = new InMemoryIngestQueue();
       const uploads = new UploadsService(access, repo, queue, storage, new UploadTokenSigner(UPLOAD_SECRET));
@@ -136,11 +228,12 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
       const up = await uploads.createUpload(user(uid('aEditor')), p.id, { filename: 'a.png', sizeBytes: SAMPLE.png.length });
       await getStorage(app).bucket(BUCKET).file(up.storagePath).save(SAMPLE.png, { contentType: 'image/png' });
       const res = await uploads.finalize(user(uid('aEditor')), p.id, { uploadToken: up.uploadToken }, TRACE);
-      expect(res.sheetSet.storagePath).toBe(storagePaths.source(orgA, p.id, res.sheetSet.sha256, 'png'));
+      expect(res.sheetSet.storagePath).toBe(storagePaths.projectUpload(orgA, p.id, res.sheetSet.sha256, 'png'));
       expect(await storage.exists(res.sheetSet.storagePath)).toBe(true);
       const [stillThere] = await getStorage(app).bucket(BUCKET).file(up.storagePath).exists();
       expect(stillThere).toBe(false);
       expect(queue.messages).toHaveLength(1);
+      expect(queue.messages[0]?.data).toMatchObject({ schemaVersion: 3, storagePath: res.sheetSet.storagePath, sheetId: null });
     });
   });
 
@@ -153,15 +246,16 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
       const q = new PubSubIngestQueue(PROJECT, topicName, client);
       const sha = 'f'.repeat(64);
       const payload = {
-        schemaVersion: 2 as const,
+        schemaVersion: 3 as const,
         type: 'ingest.sheet_version' as const,
         jobId: 'job1',
         orgId: orgA,
         projectId: 'p1',
         sheetSetId: sha,
-        sheetId: 's1',
+        sheetId: null,
+        pageIndex: null,
         versionId: 'v1',
-        storagePath: storagePaths.source(orgA, 'p1', sha, 'pdf'),
+        storagePath: storagePaths.projectUpload(orgA, 'p1', sha, 'pdf'),
         sha256: sha,
         fileKind: 'pdf' as const,
         traceparent: null,

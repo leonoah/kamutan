@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Sha256HexSchema, TimestampSchema } from './common.js';
 import { DocIdSchema } from './org.js';
-import { FileKindSchema, SheetSchema, SheetSetSchema, SheetVersionSchema } from './sheets.js';
+import { FileKindSchema, SheetSetSchema } from './sheets.js';
 
 /** Per-file size limit (SEC-14). */
 export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
@@ -41,8 +41,9 @@ export type CreateUploadRequest = z.infer<typeof CreateUploadRequestSchema>;
  * directly to Cloud Storage (resumable, Firebase JS SDK) at `storagePath`.
  */
 export const CreateUploadResponseSchema = z.object({
+  /** UUID of the pending upload. */
   fileId: DocIdSchema,
-  /** orgs/{orgId}/uploads/{uid}/{fileId} */
+  /** orgs/{orgId}/quarantine/{fileId} (SEC-13; create-only for editors, see storage.rules). */
   storagePath: z.string(),
   /** Opaque HMAC token (10 min); pass it to finalize. */
   uploadToken: z.string().min(16),
@@ -63,13 +64,17 @@ export const FinalizeUploadRequestSchema = z
   .strict();
 export type FinalizeUploadRequest = z.infer<typeof FinalizeUploadRequestSchema>;
 
+/**
+ * Sprint 1: finalize no longer creates sheet/version docs — the worker creates `sheets/{sheetSetId}-p{i}`
+ * (+ `versions/{versionId}`) while splitting. Follow progress on jobs/{jobId}.
+ */
 export const FinalizeUploadResponseSchema = z.object({
   sheetSet: SheetSetSchema,
-  sheet: SheetSchema,
-  sheetVersion: SheetVersionSchema,
   /** True when identical bytes (same sha256) already existed in this project. */
   deduplicated: z.boolean(),
   /** jobs/{jobId} of the ingest job (the existing one when deduplicated). */
   jobId: DocIdSchema,
+  /** Version id every page sheet of this set will get. */
+  versionId: DocIdSchema,
 });
 export type FinalizeUploadResponse = z.infer<typeof FinalizeUploadResponseSchema>;

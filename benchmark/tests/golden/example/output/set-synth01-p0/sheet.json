@@ -1,0 +1,19 @@
+{
+  "sheetSetId": "set-synth01",
+  "pageIndex": 0,
+  "title": "ת. חשמל / קומת קרקע",
+  "discipline": "electrical",
+  "floors": ["0"],
+  "scaleDenominator": 50,
+  "classification": {
+    "discipline": "electrical",
+    "floors": ["0"],
+    "sheetTitle": "ת. חשמל / קומת קרקע",
+    "scaleText": "1:50",
+    "confidence": 0.93,
+    "level": "yellow",
+    "reasons": ["TITLE_BLOCK_KEYWORD"]
+  },
+  "confirmed": false,
+  "currentVersionId": "v1"
+}

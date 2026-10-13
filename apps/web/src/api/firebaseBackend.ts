@@ -95,7 +95,15 @@ export function createFirestoreRealtime(db: Firestore): RealtimeSource {
       const unsubSheets = onSnapshot(
         collection(db, base),
         (snap) => {
-          sheets = snap.docs.map((d) => ({ ...(d.data() as Omit<Sheet, "id">), id: d.id }));
+          sheets = snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              ...(data as Omit<Sheet, "id">),
+              id: d.id,
+              ...(data.updatedAt ? { updatedAt: toIso(data.updatedAt) } : {}),
+              ...(data.confirmedAt ? { confirmedAt: toIso(data.confirmedAt) } : {}),
+            };
+          });
           const wanted = new Set(sheets.filter((s) => s.currentVersionId).map((s) => `${s.id}/${s.currentVersionId}`));
           for (const [key, off] of versionSubs) {
             if (!wanted.has(key)) {
@@ -112,7 +120,7 @@ export function createFirestoreRealtime(db: Firestore): RealtimeSource {
               onSnapshot(
                 doc(db, `${base}/${sheetId}/versions/${versionId}`),
                 (d) => {
-                  versions.set(key, d.exists() ? withId<SheetVersion>(d.id, d.data()) : null);
+                  versions.set(key, d.exists() ? { ...withId<SheetVersion>(d.id, d.data()), sheetId } : null);
                   emit();
                 },
                 onError,

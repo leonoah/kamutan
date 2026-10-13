@@ -64,6 +64,9 @@ class Glyph:
     key_v1: str = ""  # older signature (all flattened pieces), kept for the spike comparison
     cluster: int = -1
     label: str | None = None
+    # stroke polylines in the line frame (bezier interiors dropped): [(has_curve, (k,2) vertices)]
+    polys: list[tuple[bool, np.ndarray]] = field(default_factory=list)
+    paths: list[int] = field(default_factory=list)  # VectorSheet path indices of the strokes
 
 
 @dataclass
@@ -419,7 +422,19 @@ def extract_text_lines(vs: VectorSheet, sheet: str = "") -> list[TextLine]:
                 key = stroke_key(polys, bbox[0], base, H)
                 cb = np.array([comps[c].bbox for c in ci])
                 pbb = np.array([cb[:, 0].min(), cb[:, 1].min(), cb[:, 2].max(), cb[:, 3].max()])
-                glyphs.append(Glyph(comps=ci, bbox=bbox, segs=segs, key=key, feat=feat, page_bbox=pbb, key_v1=key_v1))
+                glyphs.append(
+                    Glyph(
+                        comps=ci,
+                        bbox=bbox,
+                        segs=segs,
+                        key=key,
+                        feat=feat,
+                        page_bbox=pbb,
+                        key_v1=key_v1,
+                        polys=polys,
+                        paths=[p for c in ci for p in comps[c].paths],
+                    )
+                )
             glyphs.sort(key=lambda g: g.bbox[0])
             pb = np.array([comps[int(idx[k])].bbox for k in grp])
             lines.append(
