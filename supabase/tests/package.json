@@ -11,7 +11,7 @@
     "@electric-sql/pglite": "0.5.8",
     "@electric-sql/pglite-postgis": "0.2.8",
     "@types/node": "^26.6.4",
-    "typescript": "^5.6.3",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.3"
   }
 }
