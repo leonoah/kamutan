@@ -46,10 +46,10 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       python: ${{ steps.filter.outputs.python }}
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
-      - uses: dorny/paths-filter@v3 # TODO: pin SHA
+      - uses: dorny/paths-filter@v4 # TODO: pin SHA
         id: filter
         with:
           filters: |
@@ -75,13 +75,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4 # TODO: pin SHA
+      - uses: pnpm/action-setup@v6 # TODO: pin SHA
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4 # TODO: pin SHA
+      - uses: actions/setup-node@v7 # TODO: pin SHA
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -128,10 +128,10 @@ jobs:
       MYPY_VERSION: "2.4.0"
       BANDIT_VERSION: "1.9.4"
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6 # TODO: pin SHA
+      - uses: astral-sh/setup-uv@v7 # TODO: pin SHA
         with:
           enable-cache: true
           cache-dependency-glob: ${{ matrix.project }}/uv.lock
@@ -170,13 +170,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4 # TODO: pin SHA
+      - uses: pnpm/action-setup@v6 # TODO: pin SHA
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4 # TODO: pin SHA
+      - uses: actions/setup-node@v7 # TODO: pin SHA
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -194,7 +194,7 @@ jobs:
     env:
       GITLEAKS_VERSION: "8.21.2"
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -219,7 +219,7 @@ jobs:
     container:
       image: semgrep/semgrep:latest # TODO(SEC-46): pin by digest
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
       - name: Semgrep CE (OWASP Top 10 + TS + Python + custom Kamutan rules)
@@ -242,7 +242,7 @@ jobs:
     env:
       OSV_VERSION: "2.2.3"
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
       - name: Install osv-scanner (verified checksum)
@@ -283,7 +283,7 @@ jobs:
             dockerfile: infra/docker/worker-drawing.Dockerfile
             requires: workers/drawing/pyproject.toml
     steps:
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         with:
           persist-credentials: false
       - name: Check that the service exists yet
@@ -291,9 +291,9 @@ jobs:
         run: |
           if [ -f "${{ matrix.requires }}" ]; then echo "ok=true" >> "$GITHUB_OUTPUT";
           else echo "ok=false" >> "$GITHUB_OUTPUT"; echo "::notice::${{ matrix.requires }} missing — skipping ${{ matrix.image }} image"; fi
-      - uses: docker/setup-buildx-action@v3 # TODO: pin SHA
+      - uses: docker/setup-buildx-action@v4 # TODO: pin SHA
         if: steps.exists.outputs.ok == 'true'
-      - uses: docker/build-push-action@v6 # TODO: pin SHA
+      - uses: docker/build-push-action@v7 # TODO: pin SHA
         if: steps.exists.outputs.ok == 'true'
         with:
           context: .
@@ -305,7 +305,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
       - name: Trivy (block on fixable CRITICAL/HIGH)
         if: steps.exists.outputs.ok == 'true'
-        uses: aquasecurity/trivy-action@0.28.0 # TODO: pin SHA
+        uses: aquasecurity/trivy-action@v0.36.0 # TODO: pin SHA
         with:
           image-ref: kamutan/${{ matrix.image }}:ci
           severity: CRITICAL,HIGH
@@ -337,11 +337,11 @@ jobs:
             echo "::notice::KAMUTAN_DATA_URL/KAMUTAN_DATA_KEY not configured — benchmark skipped."
             echo "### Benchmark skipped: data secrets not configured" >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/checkout@v4 # TODO: pin SHA
+      - uses: actions/checkout@v7 # TODO: pin SHA
         if: steps.data.outputs.available == 'true'
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v6 # TODO: pin SHA
+      - uses: astral-sh/setup-uv@v7 # TODO: pin SHA
         if: steps.data.outputs.available == 'true'
         with:
           enable-cache: true
