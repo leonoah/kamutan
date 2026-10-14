@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
-    "dev": "SWC_NODE_PROJECT=tsconfig.build.json node --watch -r @swc-node/register src/main.ts",
+    "dev": "SWC_NODE_PROJECT=tsconfig.build.json node --watch --env-file-if-exists=.env -r @swc-node/register src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -21,6 +21,7 @@
     "@nestjs/swagger": "^7.4.2",
     "@nestjs/throttler": "^6.4.0",
     "bullmq": "^5.34.0",
+    "firebase-admin": "^14.5.0",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",
     "jose": "^6.2.12",
@@ -44,7 +45,7 @@
     "@types/pg": "^8.11.10",
     "@types/supertest": "^7.2.1",
     "supertest": "^7.0.0",
-    "typescript": "^7.0.2",
+    "typescript": "^5.9.3",
     "unplugin-swc": "^1.5.1",
     "vitest": "^5.0.3"
   }

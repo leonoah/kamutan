@@ -1,20 +1,18 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { getStorage } from 'firebase-admin/storage';
+import { getFirebaseApp } from '../firebase/firebase-app';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { LocalStorageController } from './local-storage.controller';
 import { LocalObjectStorage } from './storage/local.storage';
 import { OBJECT_STORAGE, type ObjectStorage } from './storage/object-storage';
-import { SupabaseObjectStorage } from './storage/supabase.storage';
+import { FirebaseObjectStorage } from './storage/firebase.storage';
 import { UploadTokenSigner } from './upload-token';
 import { UploadsController } from './uploads.controller';
 import { UPLOAD_TOKEN_SIGNER, UploadsService } from './uploads.service';
 
 export function createObjectStorage(cfg: AppConfig): ObjectStorage {
-  if (cfg.STORAGE_DRIVER === 'supabase') {
-    return new SupabaseObjectStorage(
-      cfg.SUPABASE_URL as string,
-      cfg.SUPABASE_SERVICE_ROLE_KEY as string,
-      cfg.STORAGE_BUCKET,
-    );
+  if (cfg.STORAGE_DRIVER === 'firebase') {
+    return new FirebaseObjectStorage(getStorage(getFirebaseApp(cfg)).bucket(cfg.STORAGE_BUCKET));
   }
   return new LocalObjectStorage(cfg.STORAGE_LOCAL_DIR, cfg.PUBLIC_API_URL, cfg.UPLOAD_TOKEN_SECRET as string);
 }

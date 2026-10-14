@@ -14,7 +14,7 @@ export function testConfig(overrides: Record<string, string> = {}): AppConfig {
     LOG_LEVEL: 'silent',
     PUBLIC_API_URL: 'http://api.test',
     CORS_ORIGINS: 'http://localhost:5173',
-    SUPABASE_JWT_SECRET: JWT_SECRET,
+    DEV_JWT_SECRET: JWT_SECRET,
     DATA_DRIVER: 'memory',
     QUEUE_DRIVER: 'memory',
     STORAGE_DRIVER: 'local',

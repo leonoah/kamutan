@@ -2,13 +2,13 @@ import { z } from 'zod';
 import { RoleSchema } from './roles.js';
 
 /**
- * Supabase access-token claims the API relies on. The custom access token hook
- * may add `org_roles` ({orgId: role}); the API treats the DB membership table as
- * authoritative and uses the claim only as a hint.
+ * Identity-token claims the API relies on (Firebase ID token). `sub` is the Firebase
+ * uid (an opaque string, not a UUID). The API treats the membership table as
+ * authoritative; `org_roles` is only a hint and never trusted for authorization.
  */
 export const AccessTokenClaimsSchema = z
   .object({
-    sub: z.string().uuid(),
+    sub: z.string().min(1).max(128),
     role: z.string().optional(),
     aud: z.union([z.string(), z.array(z.string())]).optional(),
     exp: z.number().int(),

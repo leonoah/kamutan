@@ -19,33 +19,26 @@ export const EnvSchema = z
     CORS_ORIGINS: csv.default('http://localhost:5173'),
     SWAGGER_ENABLED: bool.default('true'),
 
-    // --- Auth (Supabase JWT) ---
-    SUPABASE_URL: z.string().url().optional(),
-    /** Legacy HS256 shared secret. */
-    SUPABASE_JWT_SECRET: z.string().min(32).optional(),
-    /** JWKS for asymmetric Supabase signing keys; defaults to `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` when JWT_USE_JWKS=true. */
-    SUPABASE_JWKS_URL: z.string().url().optional(),
-    JWT_USE_JWKS: bool.default('false'),
+    // --- Auth (Firebase ID tokens) ---
+    /** Firebase project id. Tokens are verified against Google's public keys; iss/aud derive from it. */
+    FIREBASE_PROJECT_ID: z.string().optional(),
+    /** Dev/test only: HS256 shared secret for locally minted tokens. Rejected in production. */
+    DEV_JWT_SECRET: z.string().min(32).optional(),
+    /** Expected `aud` when FIREBASE_PROJECT_ID is not set (tests with DEV_JWT_SECRET). */
     JWT_AUDIENCE: z.string().default('authenticated'),
-    /** Expected `iss`; defaults to `${SUPABASE_URL}/auth/v1` when SUPABASE_URL is set. */
-    JWT_ISSUER: z.string().optional(),
 
     // --- Data ---
-    DATA_DRIVER: z.enum(['pg', 'memory']).default('pg'),
-    DATABASE_URL: z.string().optional(),
-    DATABASE_SSL: z.enum(['disable', 'require', 'verify-full']).default('disable'),
-    DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+    DATA_DRIVER: z.enum(['firestore', 'memory']).default('firestore'),
 
     // --- Queue ---
     QUEUE_DRIVER: z.enum(['bullmq', 'memory']).default('memory'),
     REDIS_URL: z.string().optional(),
 
     // --- Storage ---
-    STORAGE_DRIVER: z.enum(['supabase', 'local']).default('local'),
+    STORAGE_DRIVER: z.enum(['firebase', 'local']).default('local'),
     STORAGE_LOCAL_DIR: z.string().default('.local-storage'),
-    /** Private bucket for drawings (supabase/migrations 0008). Object names start with '{orgId}/'. */
-    STORAGE_BUCKET: z.string().default('drawings'),
-    SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+    /** Firebase Storage bucket (e.g. `my-project.firebasestorage.app`). Object names start with '{orgId}/'. */
+    STORAGE_BUCKET: z.string().optional(),
     /** HMAC secret for upload tokens (>= 32 chars). */
     UPLOAD_TOKEN_SECRET: z.string().min(32).optional(),
 
@@ -59,30 +52,28 @@ export const EnvSchema = z
       if (!cond) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
     };
     req(
-      Boolean(env.SUPABASE_JWT_SECRET) || env.JWT_USE_JWKS || Boolean(env.SUPABASE_JWKS_URL),
-      'SUPABASE_JWT_SECRET',
-      'configure SUPABASE_JWT_SECRET and/or JWKS (JWT_USE_JWKS / SUPABASE_JWKS_URL)',
+      Boolean(env.FIREBASE_PROJECT_ID) || Boolean(env.DEV_JWT_SECRET),
+      'FIREBASE_PROJECT_ID',
+      'set FIREBASE_PROJECT_ID (or DEV_JWT_SECRET for local development only)',
     );
-    if (env.JWT_USE_JWKS && !env.SUPABASE_JWKS_URL) {
-      req(Boolean(env.SUPABASE_URL), 'SUPABASE_URL', 'SUPABASE_URL is required to derive the JWKS URL');
-    }
-    if (env.DATA_DRIVER === 'pg') req(Boolean(env.DATABASE_URL), 'DATABASE_URL', 'required when DATA_DRIVER=pg');
     if (env.QUEUE_DRIVER === 'bullmq') req(Boolean(env.REDIS_URL), 'REDIS_URL', 'required when QUEUE_DRIVER=bullmq');
-    if (env.STORAGE_DRIVER === 'supabase') {
-      req(Boolean(env.SUPABASE_URL), 'SUPABASE_URL', 'required when STORAGE_DRIVER=supabase');
-      req(Boolean(env.SUPABASE_SERVICE_ROLE_KEY), 'SUPABASE_SERVICE_ROLE_KEY', 'required when STORAGE_DRIVER=supabase');
+    if (env.STORAGE_DRIVER === 'firebase') {
+      req(Boolean(env.STORAGE_BUCKET), 'STORAGE_BUCKET', 'required when STORAGE_DRIVER=firebase');
+      req(Boolean(env.FIREBASE_PROJECT_ID), 'FIREBASE_PROJECT_ID', 'required when STORAGE_DRIVER=firebase');
+    }
+    if (env.DATA_DRIVER === 'firestore') {
+      req(Boolean(env.FIREBASE_PROJECT_ID), 'FIREBASE_PROJECT_ID', 'required when DATA_DRIVER=firestore');
     }
     req(Boolean(env.UPLOAD_TOKEN_SECRET), 'UPLOAD_TOKEN_SECRET', 'required (>= 32 chars)');
     if (env.NODE_ENV === 'production') {
-      req(env.DATA_DRIVER === 'pg', 'DATA_DRIVER', 'memory driver is not allowed in production');
+      req(env.DATA_DRIVER === 'firestore', 'DATA_DRIVER', 'memory driver is not allowed in production');
+      req(!env.DEV_JWT_SECRET, 'DEV_JWT_SECRET', 'dev tokens are not allowed in production');
       req(env.QUEUE_DRIVER === 'bullmq', 'QUEUE_DRIVER', 'memory queue is not allowed in production');
-      req(env.STORAGE_DRIVER === 'supabase', 'STORAGE_DRIVER', 'local storage is not allowed in production');
-      req(env.DATABASE_SSL !== 'disable', 'DATABASE_SSL', 'TLS is required in production (SEC-21)');
+      req(env.STORAGE_DRIVER === 'firebase', 'STORAGE_DRIVER', 'local storage is not allowed in production');
       req(!env.CORS_ORIGINS.includes('*'), 'CORS_ORIGINS', 'wildcard origin is not allowed');
       req(Boolean(env.REDIS_URL?.startsWith('rediss://')), 'REDIS_URL', 'rediss:// (TLS) is required in production');
     }
   });
-
 export type AppConfig = z.infer<typeof EnvSchema>;
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -97,16 +88,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return parsed.data;
 }
 
+/** Google's public keys for Firebase ID tokens (RS256). */
+export const FIREBASE_JWKS_URL =
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+
 export function jwksUrl(cfg: AppConfig): string | undefined {
-  if (cfg.SUPABASE_JWKS_URL) return cfg.SUPABASE_JWKS_URL;
-  if (cfg.JWT_USE_JWKS && cfg.SUPABASE_URL) {
-    return `${cfg.SUPABASE_URL.replace(/\/$/, '')}/auth/v1/.well-known/jwks.json`;
-  }
-  return undefined;
+  return cfg.FIREBASE_PROJECT_ID ? FIREBASE_JWKS_URL : undefined;
 }
 
 export function jwtIssuer(cfg: AppConfig): string | undefined {
-  if (cfg.JWT_ISSUER) return cfg.JWT_ISSUER;
-  if (cfg.SUPABASE_URL) return `${cfg.SUPABASE_URL.replace(/\/$/, '')}/auth/v1`;
-  return undefined;
+  return cfg.FIREBASE_PROJECT_ID ? `https://securetoken.google.com/${cfg.FIREBASE_PROJECT_ID}` : undefined;
+}
+
+/** Firebase tokens carry the project id as `aud`. */
+export function jwtAudience(cfg: AppConfig): string {
+  return cfg.FIREBASE_PROJECT_ID ?? cfg.JWT_AUDIENCE;
 }

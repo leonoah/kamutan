@@ -3,7 +3,7 @@ import { ApiError, type ApiClient, type Project, type SheetSet, type UploadTarge
 
 export type TokenGetter = () => Promise<string | null>;
 
-/** REST adapter for the NestJS API (`/v1`, Bearer = Supabase access token). */
+/** REST adapter for the NestJS API (`/v1`, Bearer = Firebase ID token). */
 export function createHttpClient(getToken: TokenGetter, baseUrl = env.apiUrl): ApiClient {
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const token = await getToken();
@@ -51,7 +51,7 @@ export function createHttpClient(getToken: TokenGetter, baseUrl = env.apiUrl): A
     uploadFile: (target, file, onProgress, signal) =>
       new Promise<void>((resolve, reject) => {
         // XHR (not fetch) because fetch has no upload progress events.
-        // TODO(sprint-1): switch to TUS resumable uploads (Supabase Storage) per 04_architecture.
+        // TODO(sprint-1): switch to resumable uploads (Firebase Storage) per 04_architecture.
         const xhr = new XMLHttpRequest();
         xhr.open(target.method, target.url);
         for (const [k, v] of Object.entries(target.headers)) xhr.setRequestHeader(k, v);

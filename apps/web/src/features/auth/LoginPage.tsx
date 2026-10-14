@@ -32,6 +32,19 @@ export function LoginPage() {
 
   if (status === "signedIn") return <Navigate to={from} replace />;
 
+  async function onGoogle() {
+    setErrors({});
+    setSubmitting(true);
+    try {
+      await getAuthService().signInWithGoogle();
+      navigate(from, { replace: true });
+    } catch (err) {
+      if (!(err instanceof AuthError && err.code === "cancelled")) setErrors({ form: t("auth.errorGeneric") });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     const next: typeof errors = {};
@@ -69,10 +82,20 @@ export function LoginPage() {
           <h1 className="text-hero text-foreground">{t("auth.title")}</h1>
           <p className="mt-2 text-body text-muted-foreground">{t("auth.subtitle")}</p>
 
+          <Button type="button" variant="secondary" size="lg" disabled={submitting} onClick={onGoogle} className="mt-8 gap-2">
+            <GoogleIcon />
+            {t("auth.google")}
+          </Button>
+          <div className="mt-6 flex items-center gap-3 text-meta text-muted-foreground" aria-hidden>
+            <span className="h-px flex-1 bg-border" />
+            {t("auth.or")}
+            <span className="h-px flex-1 bg-border" />
+          </div>
+
           <div
             role="group"
             aria-label={t("auth.modeLabel")}
-            className="mt-8 grid grid-cols-2 gap-1 rounded border border-border bg-surface-sunken p-1"
+            className="mt-6 grid grid-cols-2 gap-1 rounded border border-border bg-surface-sunken p-1"
           >
             {(["password", "magic"] as const).map((m) => (
               <button
@@ -148,6 +171,17 @@ export function LoginPage() {
       </main>
       <LoginVisual />
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
+      <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5a5.6 5.6 0 0 1-2.4 3.7v3h3.9c2.3-2.1 3.5-5.2 3.5-8.9z" />
+      <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.9-3c-1.1.7-2.5 1.2-4.1 1.2-3.1 0-5.8-2.1-6.7-5H1.3v3.1A12 12 0 0 0 12 24z" />
+      <path fill="#FBBC05" d="M5.3 14.3a7.2 7.2 0 0 1 0-4.6V6.6H1.3a12 12 0 0 0 0 10.8l4-3.1z" />
+      <path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A12 12 0 0 0 1.3 6.6l4 3.1c.9-2.8 3.6-4.9 6.7-4.9z" />
+    </svg>
   );
 }
 

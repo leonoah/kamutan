@@ -5,14 +5,26 @@ import { createTestApp } from '../support/app';
 import { testConfig } from '../support/helpers';
 
 const base = {
-  SUPABASE_JWT_SECRET: 'x'.repeat(32),
+  DEV_JWT_SECRET: 'x'.repeat(32),
   UPLOAD_TOKEN_SECRET: 'y'.repeat(32),
 };
 
 describe('config', () => {
-  it('development defaults run without Postgres/Redis only when told so', () => {
+  it('development defaults run without Firestore/Redis only when told so', () => {
     expect(() => loadConfig({ ...base, DATA_DRIVER: 'memory' })).not.toThrow();
-    expect(() => loadConfig({ ...base })).toThrow(/DATABASE_URL/);
+    expect(() => loadConfig({ ...base })).toThrow(/FIREBASE_PROJECT_ID/);
+  });
+
+  it('requires some way to verify tokens', () => {
+    expect(() => loadConfig({ UPLOAD_TOKEN_SECRET: 'y'.repeat(32), DATA_DRIVER: 'memory' })).toThrow(/FIREBASE_PROJECT_ID/);
+  });
+
+  it('derives the Firebase issuer and audience from the project id', async () => {
+    const { jwtAudience, jwtIssuer, jwksUrl } = await import('../../src/config/config');
+    const cfg = loadConfig({ ...base, FIREBASE_PROJECT_ID: 'kamutan-dev', DATA_DRIVER: 'memory' });
+    expect(jwtIssuer(cfg)).toBe('https://securetoken.google.com/kamutan-dev');
+    expect(jwtAudience(cfg)).toBe('kamutan-dev');
+    expect(jwksUrl(cfg)).toContain('securetoken@system.gserviceaccount.com');
   });
 
   it('refuses insecure production settings and never echoes secret values', () => {
@@ -32,14 +44,12 @@ describe('config', () => {
   it('accepts a complete production config', () => {
     const cfg = loadConfig({
       NODE_ENV: 'production',
-      SUPABASE_URL: 'https://proj.supabase.co',
-      JWT_USE_JWKS: 'true',
-      DATABASE_URL: 'postgres://u:p@db:5432/postgres',
-      DATABASE_SSL: 'require',
+      FIREBASE_PROJECT_ID: 'kamutan-prod',
+      DATA_DRIVER: 'firestore',
       QUEUE_DRIVER: 'bullmq',
       REDIS_URL: 'rediss://default:p@redis:6380',
-      STORAGE_DRIVER: 'supabase',
-      SUPABASE_SERVICE_ROLE_KEY: 'k',
+      STORAGE_DRIVER: 'firebase',
+      STORAGE_BUCKET: 'kamutan-prod.firebasestorage.app',
       UPLOAD_TOKEN_SECRET: 'y'.repeat(32),
       CORS_ORIGINS: 'https://app.kamutan.co.il, https://staging.kamutan.co.il',
     });

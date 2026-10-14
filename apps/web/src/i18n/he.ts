@@ -31,6 +31,8 @@ const he = {
     modePassword: "סיסמה",
     modeMagic: "קישור למייל",
     modeLabel: "שיטת כניסה",
+    google: "כניסה עם Google",
+    or: "או",
     magicSubmit: "שלחו לי קישור כניסה",
     magicSent: "שלחנו קישור כניסה אל {{email}}. הקישור בתוקף לשעה.",
     errorRequired: "צריך למלא אימייל",

@@ -7,7 +7,7 @@ import {
   type JWTVerifyGetKey,
   type JWTVerifyOptions,
 } from 'jose';
-import { type AppConfig, jwksUrl, jwtIssuer } from '../config/config';
+import { type AppConfig, jwksUrl, jwtAudience, jwtIssuer } from '../config/config';
 import type { AuthContext } from './auth-context';
 
 export class InvalidTokenError extends Error {
@@ -28,11 +28,9 @@ export interface JwtVerifierOptions {
 }
 
 /**
- * Verifies Supabase access tokens.
- * - HS256 with the project JWT secret (legacy), and/or
- * - asymmetric keys (RS256/ES256) from the project JWKS endpoint.
- * Only end-user tokens (`role: authenticated`) are accepted: anon and
- * service_role keys are rejected so they can never act through the API.
+ * Verifies Firebase ID tokens (RS256, Google's public keys, iss/aud pinned to the
+ * project). An HS256 shared secret is supported for local dev and tests only.
+ * Tokens that declare a non-end-user `role` (e.g. service keys) are rejected.
  */
 export class JwtVerifier {
   private readonly secret?: Uint8Array;
@@ -54,11 +52,11 @@ export class JwtVerifier {
   static fromConfig(cfg: AppConfig): JwtVerifier {
     const url = jwksUrl(cfg);
     return new JwtVerifier({
-      hs256Secret: cfg.SUPABASE_JWT_SECRET,
+      hs256Secret: cfg.DEV_JWT_SECRET,
       jwks: url
         ? createRemoteJWKSet(new URL(url), { cacheMaxAge: 10 * 60_000, cooldownDuration: 30_000 })
         : undefined,
-      audience: cfg.JWT_AUDIENCE,
+      audience: jwtAudience(cfg),
       issuer: jwtIssuer(cfg),
     });
   }
@@ -92,7 +90,12 @@ export class JwtVerifier {
 
     const claims = AccessTokenClaimsSchema.safeParse(payload);
     if (!claims.success) throw new InvalidTokenError('claims shape');
-    if (claims.data.role !== 'authenticated') throw new InvalidTokenError('not an end-user token');
-    return { userId: claims.data.sub, aal: claims.data.aal ?? null, claims: claims.data };
+    if (claims.data.role !== undefined && claims.data.role !== 'authenticated') {
+      throw new InvalidTokenError('not an end-user token');
+    }
+    // Firebase marks MFA sign-ins with `firebase.sign_in_second_factor`.
+    const fb = (payload as { firebase?: { sign_in_second_factor?: string } }).firebase;
+    const aal = claims.data.aal ?? (fb?.sign_in_second_factor ? 'aal2' : 'aal1');
+    return { userId: claims.data.sub, aal, claims: claims.data };
   }
 }

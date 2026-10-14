@@ -5,7 +5,7 @@ import { unauthorized } from '../common/api-exception';
 import { IS_PUBLIC } from './decorators';
 import { InvalidTokenError, JwtVerifier } from './jwt-verifier';
 
-/** Global guard: every route requires a valid Supabase Bearer token unless @Public(). */
+/** Global guard: every route requires a valid Firebase ID token (Bearer) unless @Public(). */
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger('AuthGuard');

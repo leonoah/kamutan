@@ -1,4 +1,17 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { initializeApp } from "firebase/app";
+import {
+  GoogleAuthProvider,
+  getAuth,
+  isSignInWithEmailLink,
+  onIdTokenChanged,
+  sendSignInLinkToEmail,
+  signInWithEmailAndPassword,
+  signInWithEmailLink,
+  signInWithPopup,
+  signOut,
+  type Auth,
+  type User,
+} from "firebase/auth";
 import { env } from "@/lib/env";
 
 export interface AuthSession {
@@ -7,7 +20,7 @@ export interface AuthSession {
   accessToken: string;
 }
 
-export type AuthErrorCode = "invalid_credentials" | "generic";
+export type AuthErrorCode = "invalid_credentials" | "cancelled" | "generic";
 
 export class AuthError extends Error {
   constructor(public code: AuthErrorCode, message: string = code) {
@@ -19,46 +32,94 @@ export class AuthError extends Error {
 export interface AuthService {
   getSession(): Promise<AuthSession | null>;
   signInWithPassword(email: string, password: string): Promise<AuthSession>;
-  /** Supabase magic link (OTP by email). Resolves when the email was sent. */
+  /** Google sign-in popup. */
+  signInWithGoogle(): Promise<AuthSession>;
+  /** Email-link sign-in. Resolves when the email was sent. */
   sendMagicLink(email: string, redirectTo: string): Promise<void>;
   signOut(): Promise<void>;
   onChange(cb: (session: AuthSession | null) => void): () => void;
 }
 
-/* ---------- Supabase ---------- */
+/* ---------- Firebase ---------- */
 
-export function createSupabaseAuth(client: SupabaseClient): AuthService {
-  const toSession = (s: { access_token: string; user: { id: string; email?: string } } | null): AuthSession | null =>
-    s ? { userId: s.user.id, email: s.user.email ?? "", accessToken: s.access_token } : null;
+const EMAIL_LINK_KEY = "kamutan.emailForSignIn";
+
+function toSession(user: User | null, accessToken: string): AuthSession | null {
+  return user ? { userId: user.uid, email: user.email ?? "", accessToken } : null;
+}
+
+const INVALID_CREDENTIAL_CODES = new Set([
+  "auth/invalid-credential",
+  "auth/wrong-password",
+  "auth/user-not-found",
+  "auth/invalid-email",
+]);
+
+function mapError(err: unknown): AuthError {
+  const code = (err as { code?: string } | null)?.code ?? "";
+  if (INVALID_CREDENTIAL_CODES.has(code)) return new AuthError("invalid_credentials", code);
+  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+    return new AuthError("cancelled", code);
+  }
+  return new AuthError("generic", code || (err instanceof Error ? err.message : "error"));
+}
+
+export function createFirebaseAuth(auth: Auth): AuthService {
+  // Completes an email-link (magic link) sign-in when the user lands back on the app.
+  const ready: Promise<void> = (async () => {
+    if (!isSignInWithEmailLink(auth, window.location.href)) return;
+    const email = localStorage.getItem(EMAIL_LINK_KEY);
+    if (!email) return; // opened on another device: the user must request a new link
+    try {
+      await signInWithEmailLink(auth, email, window.location.href);
+      localStorage.removeItem(EMAIL_LINK_KEY);
+    } catch {
+      /* expired / used link: fall through to the login screen */
+    }
+  })();
+
+  async function current(): Promise<AuthSession | null> {
+    await ready;
+    await auth.authStateReady();
+    const user = auth.currentUser;
+    // getIdToken() returns a cached token and refreshes it shortly before expiry.
+    return user ? toSession(user, await user.getIdToken()) : null;
+  }
 
   return {
-    async getSession() {
-      const { data } = await client.auth.getSession();
-      return toSession(data.session);
-    },
+    getSession: current,
     async signInWithPassword(email, password) {
-      const { data, error } = await client.auth.signInWithPassword({ email, password });
-      if (error) {
-        throw new AuthError(error.status === 400 ? "invalid_credentials" : "generic", error.message);
+      try {
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        return toSession(cred.user, await cred.user.getIdToken()) as AuthSession;
+      } catch (err) {
+        throw mapError(err);
       }
-      const s = toSession(data.session);
-      if (!s) throw new AuthError("generic", "No session returned");
-      return s;
+    },
+    async signInWithGoogle() {
+      try {
+        const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+        return toSession(cred.user, await cred.user.getIdToken()) as AuthSession;
+      } catch (err) {
+        throw mapError(err);
+      }
     },
     async sendMagicLink(email, redirectTo) {
-      const { error } = await client.auth.signInWithOtp({
-        email,
-        // Invite-only orgs (SEC-01): never auto-create users from the login screen.
-        options: { emailRedirectTo: redirectTo, shouldCreateUser: false },
-      });
-      if (error) throw new AuthError("generic", error.message);
+      try {
+        await sendSignInLinkToEmail(auth, email, { url: redirectTo, handleCodeInApp: true });
+        localStorage.setItem(EMAIL_LINK_KEY, email);
+      } catch (err) {
+        throw mapError(err);
+      }
     },
     async signOut() {
-      await client.auth.signOut();
+      await signOut(auth);
     },
     onChange(cb) {
-      const { data } = client.auth.onAuthStateChange((_event, session) => cb(toSession(session)));
-      return () => data.subscription.unsubscribe();
+      return onIdTokenChanged(auth, (user) => {
+        if (!user) return cb(null);
+        void user.getIdToken().then((token) => cb(toSession(user, token)));
+      });
     },
   };
 }
@@ -106,6 +167,12 @@ export function createMockAuth(opts: { persist?: boolean; latencyMs?: number } =
       set(s);
       return s;
     },
+    async signInWithGoogle() {
+      await wait();
+      const s: AuthSession = { userId: "mock-google-user", email: "google.user@example.com", accessToken: "mock-token" };
+      set(s);
+      return s;
+    },
     async sendMagicLink() {
       await wait();
     },
@@ -126,13 +193,9 @@ let active: AuthService | null = null;
 export function getAuthService(): AuthService {
   if (!active) {
     active =
-      env.useMocks || !env.supabaseUrl
+      env.useMocks || !env.firebase.apiKey
         ? createMockAuth()
-        : createSupabaseAuth(
-            createClient(env.supabaseUrl, env.supabaseAnonKey, {
-              auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
-            }),
-          );
+        : createFirebaseAuth(getAuth(initializeApp(env.firebase)));
   }
   return active;
 }

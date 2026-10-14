@@ -1,17 +1,14 @@
 import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 import { InMemoryRepository } from './in-memory.repository';
-import { PgPoolDatabase } from './pg-pool.database';
-import { PgRepository } from './pg.repository';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getFirebaseApp } from '../firebase/firebase-app';
+import { FirestoreRepository } from './firestore.repository';
 import { REPOSITORY, type Repository } from './repository';
 
 export function createRepository(cfg: AppConfig): Repository {
   if (cfg.DATA_DRIVER === 'memory') return new InMemoryRepository();
-  const ssl =
-    cfg.DATABASE_SSL === 'disable' ? false : { rejectUnauthorized: cfg.DATABASE_SSL === 'verify-full' };
-  return new PgRepository(
-    new PgPoolDatabase({ connectionString: cfg.DATABASE_URL, ssl, max: cfg.DATABASE_POOL_MAX }),
-  );
+  return new FirestoreRepository(getFirestore(getFirebaseApp(cfg)));
 }
 
 @Global()
