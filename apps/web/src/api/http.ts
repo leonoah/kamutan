@@ -1,10 +1,18 @@
 import { env } from "@/lib/env";
-import { ApiError, type ApiClient, type Project, type SheetSet, type UploadTarget } from "./types";
+import { ApiError, type ApiClient, type Project, type SheetSet } from "./types";
+
+interface ApiErrorBody {
+  code?: string;
+  message?: string;
+  details?: unknown;
+}
 
 export type TokenGetter = () => Promise<string | null>;
 
 /** REST adapter for the NestJS API (`/v1`, Bearer = Firebase ID token). */
 export function createHttpClient(getToken: TokenGetter, baseUrl = env.apiUrl): ApiClient {
+  const uploadTokens = new Map<string, string>();
+
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const token = await getToken();
     const res = await fetch(`${baseUrl}/v1${path}`, {
@@ -20,9 +28,11 @@ export function createHttpClient(getToken: TokenGetter, baseUrl = env.apiUrl): A
       let code = "http_error";
       let message = res.statusText;
       try {
-        const body = (await res.json()) as { code?: string; message?: string };
+        const raw = (await res.json()) as { error?: ApiErrorBody } & ApiErrorBody;
+        const body = raw.error ?? raw;
         code = body.code ?? code;
         message = body.message ?? message;
+        if (body.details) console.warn(`[api] ${res.status} ${path}`, body.details);
       } catch {
         /* non-JSON error body */
       }
@@ -55,16 +65,36 @@ export function createHttpClient(getToken: TokenGetter, baseUrl = env.apiUrl): A
           `/projects/${encodeURIComponent(projectId)}/sheet-sets`,
         )
       ).items.map((s) => ({ id: s.id, projectId: s.projectId, name: s.name, fileCount: 1, createdAt: s.createdAt })),
-    createUpload: (projectId, req) =>
-      request<UploadTarget>(`/projects/${encodeURIComponent(projectId)}/uploads`, {
+    createUpload: async (projectId, req) => {
+      const r = await request<{
+        uploadId: string;
+        uploadToken: string;
+        uploadUrl: string;
+        method: "PUT";
+        headers: Record<string, string>;
+        expiresAt: string;
+      }>(`/projects/${encodeURIComponent(projectId)}/uploads`, {
         method: "POST",
-        body: JSON.stringify(req),
-      }),
-    createSheetSet: (projectId, uploadIds, name) =>
-      request<SheetSet>(`/projects/${encodeURIComponent(projectId)}/sheet-sets`, {
-        method: "POST",
-        body: JSON.stringify({ uploadIds, name }),
-      }),
+        body: JSON.stringify({ filename: req.fileName, sizeBytes: req.sizeBytes }),
+      });
+      uploadTokens.set(r.uploadId, r.uploadToken);
+      return { uploadId: r.uploadId, url: r.uploadUrl, method: r.method, headers: r.headers, expiresAt: r.expiresAt };
+    },
+    // The API finalizes one upload per sheet set, so each upload becomes its own set.
+    createSheetSet: async (projectId, uploadIds, name) => {
+      const sets: SheetSet[] = [];
+      for (const id of uploadIds) {
+        const uploadToken = uploadTokens.get(id);
+        if (!uploadToken) throw new ApiError(410, "upload_expired", "Upload token missing; re-upload the file");
+        const r = await request<{ sheetSet: { id: string; projectId: string; name: string; createdAt: string } }>(
+          `/projects/${encodeURIComponent(projectId)}/sheet-sets`,
+          { method: "POST", body: JSON.stringify(uploadIds.length === 1 && name ? { uploadToken, name } : { uploadToken }) },
+        );
+        uploadTokens.delete(id);
+        sets.push({ ...r.sheetSet, fileCount: 1 });
+      }
+      return sets[0]!;
+    },
     uploadFile: (target, file, onProgress, signal) =>
       new Promise<void>((resolve, reject) => {
         // XHR (not fetch) because fetch has no upload progress events.
