@@ -61,6 +61,13 @@ def understand(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     return run(args, progress)
 
 
+def find_similar(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
+    """Sprint 4: "learn from correction" — search stored primitives for drawings like an exemplar box."""
+    from ..symbols.similar import run
+
+    return run(args, progress)
+
+
 def boq_parse(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     """Sprint 3 (Worker-BOQ): parse a past BOQ workbook (.xls / .xlsx) → ``kamutan.boq-import/1``."""
     from ..library_import.parse import parse_workbook
@@ -236,6 +243,7 @@ TASKS: dict[str, Callable[[dict[str, Any], Progress], Any]] = {
     "page": page,
     "understand": understand,
     "boq_parse": boq_parse,
+    "find_similar": find_similar,
     "parse_pdf": parse_pdf,
     "parse_dxf": parse_dxf,
     "parse_raster": parse_raster,

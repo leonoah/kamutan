@@ -35,6 +35,8 @@ function serverObjects(f: OrgFx): string[] {
     paths.boqEvidence(f.org, f.project, 'b1'),
     paths.boqExportFile(f.org, f.project, 'e1'),
     paths.libraryImportObject(f.org, '1a2b3c4d-0000-4000-8000-000000000001', 'xlsx'),
+    // Sprint 4: find_similar candidate crops
+    paths.similarThumb(f.org, f.project, 'ss1', 'c_1'),
   ];
 }
 

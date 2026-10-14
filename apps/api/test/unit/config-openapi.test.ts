@@ -44,7 +44,7 @@ describe('config', () => {
 });
 
 describe('OpenAPI', () => {
-  it('documents the Sprint 0 + 1 + 2 + 3 endpoints under /api/v1', async () => {
+  it('documents the Sprint 0 + 1 + 2 + 3 + 4 endpoints under /api/v1', async () => {
     const t = await createTestApp(testConfig());
     try {
       const doc = buildOpenApi(t.app);
@@ -86,6 +86,15 @@ describe('OpenAPI', () => {
           '/api/v1/projects/{projectId}/boq/export',
           '/api/v1/projects/{projectId}/boq/lines/{lineId}',
           '/api/v1/projects/{projectId}/boq/lines/{lineId}/evidence',
+          // Sprint 4
+          '/api/v1/projects/{projectId}/corrections',
+          '/api/v1/projects/{projectId}/corrections/batch',
+          '/api/v1/projects/{projectId}/corrections/{correctionId}/revert',
+          '/api/v1/projects/{projectId}/correction-batches/{batchId}/revert',
+          '/api/v1/projects/{projectId}/review-queue',
+          '/api/v1/projects/{projectId}/rooms/{sheetId}/{roomId}/settings',
+          '/api/v1/projects/{projectId}/similar-searches',
+          '/api/v1/projects/{projectId}/similar-searches/{searchId}',
         ].sort(),
       );
       const tiles = doc.paths['/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/tiles-manifest']?.get;
@@ -98,6 +107,11 @@ describe('OpenAPI', () => {
       expect((boq?.parameters ?? []).map((p) => ('name' in p ? p.name : ''))).toEqual(expect.arrayContaining(['cursor', 'limit', 'chapter', 'level', 'status']));
       expect(doc.paths['/api/v1/projects/{projectId}/boq/export']?.post).toBeDefined();
       expect(doc.paths['/api/v1/boq-rules/{ruleId}']?.patch).toBeDefined();
+      const queue = doc.paths['/api/v1/projects/{projectId}/review-queue']?.get;
+      expect((queue?.parameters ?? []).map((p) => ('name' in p ? p.name : ''))).toEqual(expect.arrayContaining(['kind', 'sheetId', 'floor', 'level', 'cursor', 'limit']));
+      expect(doc.paths['/api/v1/projects/{projectId}/corrections']?.post).toBeDefined();
+      expect(doc.paths['/api/v1/projects/{projectId}/corrections']?.get).toBeDefined();
+      expect(doc.paths['/api/v1/projects/{projectId}/rooms/{sheetId}/{roomId}/settings']?.put).toBeDefined();
     } finally {
       await t.app.close();
     }

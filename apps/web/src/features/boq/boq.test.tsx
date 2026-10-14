@@ -18,7 +18,8 @@ vi.mock("@kamutan/viewer", async (importOriginal) => {
   return {
     ...actual,
     DrawingViewer: (p: DrawingViewerProps) => {
-      seen.props = p;
+      // React dev builds call function components without props to describe warning stacks: keep the last real props.
+      if (p) seen.props = p;
       return <div role="application" aria-label={p.ariaLabel} dir="ltr" />;
     },
   };

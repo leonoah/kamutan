@@ -1,5 +1,131 @@
 import { env } from "@/lib/env";
-import { ApiError, type ApiClient, type BoqBuild, type BoqLine, type BoqRule, type BoqTemplate, type LibraryImport, type Project } from "./types";
+import {
+  ApiError,
+  type ApiClient,
+  type BoqBuild,
+  type BoqLine,
+  type BoqRule,
+  type BoqTemplate,
+  type Correction,
+  type LibraryImport,
+  type Project,
+  type CreateCorrectionRequest,
+  type ReviewQueueItem,
+  type RoomSettings,
+  type RoomSettingsResponse,
+  type SimilarSearch,
+} from "./types";
+
+/* ---------------- Sprint 4 adapters (contracts corrections.ts ↔ app DTOs) ---------------- */
+
+/** Strict create body: drop the client-only `id` / `batchId` (the server assigns both). */
+export function toCorrectionBody(req: CreateCorrectionRequest): Omit<CreateCorrectionRequest, "id" | "batchId"> {
+  const { id: _id, batchId: _b, ...body } = req;
+  return body;
+}
+
+interface ReviewQueueItemDto {
+  id: string;
+  kind: ReviewQueueItem["kind"];
+  level: "green" | "yellow" | "red";
+  risk: number;
+  score: number | null;
+  qtyImpact: number;
+  title: string;
+  reasons: string[];
+  suggestedAction: string;
+  sheetId: string | null;
+  versionId: string | null;
+  floor: string | null;
+  bboxMm: { x: number; y: number; w: number; h: number } | null;
+  thumbUrl: string | null;
+  class: string | null;
+  itemCode: string | null;
+  lineIds: string[];
+  detectionIds: string[];
+  memberBboxesMm?: { x: number; y: number; w: number; h: number }[];
+  count: number;
+  ref: { detectionId?: string; clusterId?: string; linkGroupId?: string; roomId?: string; correctionId?: string; lineId?: string; signature?: string };
+}
+interface ReviewQueuePageDto {
+  items: ReviewQueueItemDto[];
+  nextCursor: string | null;
+  total: number;
+}
+const ACTION: Record<string, ReviewQueueItem["suggestedAction"]> = {
+  accept: "accept",
+  reject: "reject",
+  reclassify: "reclassify",
+  resolve_unknown: "resolve",
+  review_link: "link",
+  room_settings: "settings",
+  name_room: "settings",
+  close_room: "settings",
+  redo_correction: "open",
+  review_line: "accept",
+};
+export function toQueueItem(v: ReviewQueueItemDto): ReviewQueueItem {
+  const bbox = v.bboxMm ?? { x: 0, y: 0, w: 0, h: 0 };
+  return {
+    id: v.id,
+    kind: v.kind,
+    sheetId: v.sheetId ?? "",
+    versionId: v.versionId ?? "",
+    bboxMm: bbox,
+    thumbUrl: v.thumbUrl,
+    level: v.kind === "unknown_cluster" ? "unknown" : v.level,
+    reasons: v.reasons,
+    risk: v.risk,
+    suggestedAction: ACTION[v.suggestedAction] ?? "accept",
+    class: v.class,
+    itemCode: v.itemCode,
+    lineId: v.ref.lineId ?? v.lineIds[0] ?? null,
+    detectionIds: v.detectionIds,
+    members:
+      v.kind === "cluster" || v.kind === "unknown_cluster"
+        ? v.detectionIds.map((id, i) => ({ detectionId: id, bboxMm: v.memberBboxesMm?.[i] ?? bbox, score: v.score ?? 0, thumbUrl: null }))
+        : undefined,
+    clusterId: v.ref.clusterId ?? null,
+    linkGroupId: v.ref.linkGroupId ?? null,
+    roomId: v.ref.roomId ?? null,
+    correctionId: v.ref.correctionId ?? null,
+    score: v.score,
+    title: v.title,
+  };
+}
+
+interface RoomSettingsResponseDto {
+  settings: RoomSettings & { sheetId: string; roomId: string; by: string | null; at: string | null };
+  isDefault: boolean;
+}
+export function toRoomSettings(v: RoomSettingsResponseDto): RoomSettingsResponse {
+  return { settings: { ...v.settings, id: `${v.settings.sheetId}__${v.settings.roomId}` }, isDefault: v.isDefault };
+}
+/** Strict PUT body (contracts PutRoomSettingsRequestSchema). */
+export function toRoomSettingsBody(s: RoomSettings): RoomSettings {
+  return {
+    claddingHeightM: s.claddingHeightM,
+    floorTiled: s.floorTiled,
+    floorMaterialItemCode: s.floorMaterialItemCode,
+    wallMaterialItemCode: s.wallMaterialItemCode,
+    partialCladding: s.partialCladding.map((p) => ({ wallId: p.wallId, fromM: p.fromM, toM: p.toM, heightM: p.heightM, ...(p.bottomM !== undefined ? { bottomM: p.bottomM } : {}) })),
+    wasteFactor: s.wasteFactor,
+    includeInWaterproofing: s.includeInWaterproofing,
+    ...(s.keepOpenings?.length ? { keepOpenings: s.keepOpenings } : {}),
+    ...(s.type !== undefined ? { type: s.type } : {}),
+  };
+}
+
+interface SimilarSearchDto {
+  id: string;
+  status: SimilarSearch["status"];
+  exemplar: SimilarSearch["exemplar"];
+  candidates: (SimilarSearch["candidates"][number] & { id: string; thumb: string | null })[];
+  error: { code: string; message: string } | null;
+}
+export function toSimilar(v: SimilarSearchDto, thumbUrls: Record<string, string>): SimilarSearch {
+  return { id: v.id, status: v.status, exemplar: v.exemplar, candidates: v.candidates, thumbs: thumbUrls, error: v.error };
+}
 
 /** GET /v1/projects/:pid/boq (contracts BoqView). */
 interface BoqViewDto {
@@ -191,5 +317,72 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
     listBoqRules: async (orgId) => (await request<{ items: BoqRule[] }>(`/boq-rules?orgId=${enc(orgId)}`)).items,
     patchBoqRule: (orgId, ruleId, req) =>
       request(`/boq-rules/${enc(ruleId)}?orgId=${enc(orgId)}`, { method: "PATCH", body: JSON.stringify(req) }),
+
+    /* Sprint 4 — corrections, review queue, room settings, find-similar (contracts corrections.ts) */
+    listCorrections: async (projectId, q = {}) => {
+      const items: Correction[] = [];
+      let cursor: string | null = null;
+      for (let i = 0; i < 20; i++) {
+        const qs = new URLSearchParams({ limit: "500" });
+        if (q.sheetId) qs.set("sheetId", q.sheetId);
+        if (cursor) qs.set("cursor", cursor);
+        const page: { items: Correction[]; nextCursor: string | null } = await request(`/projects/${enc(projectId)}/corrections?${qs.toString()}`);
+        items.push(...page.items);
+        if (!page.nextCursor) break;
+        cursor = page.nextCursor;
+      }
+      return { items };
+    },
+    createCorrection: async (projectId, req) =>
+      (await post<{ correction: Correction }>(`/projects/${enc(projectId)}/corrections`, toCorrectionBody(req))).correction,
+    createCorrectionsBatch: async (projectId, req) => {
+      const r = await post<{ batch: { id: string }; items: Correction[] }>(`/projects/${enc(projectId)}/corrections/batch`, {
+        items: req.corrections.map(toCorrectionBody),
+        source: req.source ?? "other",
+        similarSearchId: req.similarSearchId ?? null,
+      });
+      return { items: r.items, batchId: r.batch.id };
+    },
+    revertCorrection: async (projectId, id) =>
+      (await post<{ correction: Correction }>(`/projects/${enc(projectId)}/corrections/${enc(id)}/revert`, {})).correction,
+    revertCorrectionsBatch: async (projectId, batchId) => {
+      const r = await post<{ reverted: number }>(`/projects/${enc(projectId)}/correction-batches/${enc(batchId)}/revert`, {});
+      return { reverted: r.reverted };
+    },
+    getReviewQueue: async (projectId, filter) => {
+      const items: ReviewQueueItem[] = [];
+      let cursor: string | null = null;
+      let total = 0;
+      // The ranked list is paged (≤ 200 per page): the panel shows up to 1,000 items.
+      for (let i = 0; i < 5; i++) {
+        const qs = new URLSearchParams({ limit: "200" });
+        if (filter) qs.set("kind", filter);
+        if (cursor) qs.set("cursor", cursor);
+        const page: ReviewQueuePageDto = await request(`/projects/${enc(projectId)}/review-queue?${qs.toString()}`);
+        total = page.total;
+        items.push(...page.items.map(toQueueItem));
+        if (!page.nextCursor) break;
+        cursor = page.nextCursor;
+      }
+      return { items, total };
+    },
+    getRoomSettings: async (projectId, sheetId, roomId) =>
+      toRoomSettings(await request(`/projects/${enc(projectId)}/rooms/${enc(sheetId)}/${enc(roomId)}/settings`)),
+    putRoomSettings: async (projectId, sheetId, roomId, req) =>
+      toRoomSettings(
+        await request(`/projects/${enc(projectId)}/rooms/${enc(sheetId)}/${enc(roomId)}/settings`, { method: "PUT", body: JSON.stringify(toRoomSettingsBody(req)) }),
+      ),
+    findSimilar: async (projectId, req) => {
+      const r = await post<{ search: SimilarSearchDto }>(`/projects/${enc(projectId)}/similar-searches`, {
+        exemplar: { sheetId: req.exemplar.sheetId, versionId: req.exemplar.versionId, bboxMm: req.exemplar.bboxMm, class: req.exemplar.class },
+        scope: req.scope,
+        correctionId: req.correctionId ?? null,
+      });
+      return toSimilar(r.search, {});
+    },
+    getSimilarSearch: async (projectId, id) => {
+      const v = await request<{ search: SimilarSearchDto; thumbUrls: Record<string, string> }>(`/projects/${enc(projectId)}/similar-searches/${enc(id)}`);
+      return toSimilar(v.search, v.thumbUrls ?? {});
+    },
   };
 }

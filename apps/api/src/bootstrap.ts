@@ -16,7 +16,8 @@ export function configureApp(app: NestExpressApplication, cfg: AppConfig): void 
   app.disable('x-powered-by');
   app.set('trust proxy', true); // behind Google Front End / Hosting; needed for per-IP throttling
   // In Cloud Functions the body is already parsed by the functions framework (body-parser skips it then).
-  app.useBodyParser('json', { limit: '256kb' });
+  // Sprint 4: 2 MB — a correction batch (≤ 500 items, ≤ 20 000 geometry points) must fit.
+  app.useBodyParser('json', { limit: '2mb' });
   const common = {
     crossOriginResourcePolicy: { policy: 'same-origin' as const },
     referrerPolicy: { policy: 'no-referrer' as const },

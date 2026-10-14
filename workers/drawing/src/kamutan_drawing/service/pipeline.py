@@ -521,12 +521,16 @@ def _process_page(
         "jobId": job.jobId,
         "updatedAt": SERVER_TIMESTAMP,
     }
+    region_floors: dict[str, str] = {}
     if understanding is not None:
         vfields["artifacts"].update(understanding["artifacts"])
         stats.update(understanding["stats"])
+        region_floors = understanding.get("regionFloors") or {}
     # reprocess: the API copied the user's regions from the previous version — keep them
     if not (job.is_reprocess and vdoc.get("regions")):
-        vfields["regions"] = list(res.get("regions") or [])[:8]
+        vfields["regions"] = [
+            {**r, "floor": region_floors.get(str(r.get("id")), r.get("floor"))} for r in list(res.get("regions") or [])[:8]
+        ]
     docs.set(paths.version(sid), vfields)
 
     cls = _clean_classification(res["classification"])  # discipline/floors/title/scale/confidence/level/reasons (no PII)
@@ -535,11 +539,15 @@ def _process_page(
     if not job.is_reprocess or sheet.get("currentVersionId") in (None, job.versionId):
         sfields["currentVersionId"] = job.versionId
     if not sheet.get("confirmed"):  # the worker never overwrites a user's confirmation
+        floors = list(cls["floors"])
+        if region_floors and vfields.get("regions"):
+            # Sprint 4: floors inferred from the construction plans' walls (still "קומה לא ודאית" until confirmed)
+            floors = list(dict.fromkeys(str(r["floor"]) for r in vfields["regions"] if r.get("floor"))) or floors
         sfields.update(
             {
                 "title": cls["sheetTitle"],
                 "discipline": cls["discipline"],
-                "floors": list(cls["floors"]),
+                "floors": floors[:16],
                 "scaleDenominator": _scale(res.get("scaleDenominator")),
             }
         )
@@ -646,6 +654,8 @@ def _understand(
         "rooms": opts.understand_rooms,
         # Sprint 3: the owner's confirmation makes the regions' floors authoritative (no "קומה לא ודאית")
         "floorsConfirmed": bool(sheet.get("confirmed")),
+        # Sprint 4: walls of the project's construction / architecture plans (wall borrowing + floor inference)
+        "referenceWalls": _reference_walls_files(job, blobs, docs, sid, discipline, workdir, f"refs/u{index}"),
     }
     try:
         res = run_task(
@@ -684,7 +694,28 @@ def _understand(
         blobs.write(pre + LINKS_FILE, data, "application/gzip", cache_control=IMMUTABLE)
         artifacts["links"] = pre + LINKS_FILE
         stats["links"] = _clean_link_stats(res.get("linkStats") or {})
+    # Sprint 4 (Worker-A/B): extended fixture records next to detections.json.gz (not in the strict
+    # SheetVersion.artifacts yet: readers find it by name under the version prefix)
+    fx_file = res.get("fixturesFile")
+    if fx_file is not None:
+        if fx_file != FIXTURES_FILE:
+            raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid fixtures artifact name")
+        data = Path(safe_output_path(workdir, f"{out_dir}/{FIXTURES_FILE}")).read_bytes()
+        blobs.write(pre + FIXTURES_FILE, data, "application/gzip", cache_control=IMMUTABLE)
+        if FIXTURES_IN_ARTIFACTS:
+            artifacts["fixtures"] = pre + FIXTURES_FILE
+    # Sprint 4 (Worker-B's rooms.reference): walls of construction / architecture plans, borrowed by later sheets
+    walls_file = res.get("wallsFile")
+    if walls_file is not None:
+        if walls_file != WALLS_FILE:
+            raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid walls artifact name")
+        data = Path(safe_output_path(workdir, f"{out_dir}/{WALLS_FILE}")).read_bytes()
+        blobs.write(pre + WALLS_FILE, data, "application/gzip", cache_control=IMMUTABLE)
+        if FIXTURES_IN_ARTIFACTS:
+            artifacts["walls"] = pre + WALLS_FILE
+    region_floors = _clean_region_floors(res.get("regionFloors"), regions)
     return {
+        "regionFloors": region_floors,
         "artifacts": artifacts,
         "stats": stats,
         "summary": {
@@ -769,6 +800,56 @@ def _refine_labels(
 
 
 LINKS_FILE = "links.json.gz"
+FIXTURES_FILE = "fixtures.json.gz"
+WALLS_FILE = "walls.json.gz"  # kamutan.walls/1 — SheetVersion.artifacts.walls (readers fall back to the name)
+# contracts SheetVersion.artifacts.fixtures / .walls (optional, Sprint 4 integration)
+FIXTURES_IN_ARTIFACTS = True
+# sheets whose walls the others borrow, best source first (a master plan also shows demolished walls)
+WALL_SOURCES = {"construction": 0, "architecture": 1, "architecture_master": 2, "master": 2}
+MAX_REFERENCE_SHEETS = 8
+_FLOOR = re.compile(r"^[^\x00-\x1f\x7f]{1,32}$")
+
+
+def _reference_walls_files(
+    job: IngestSheetVersionJob, blobs: BlobStore, docs: DocStore, sid: str, discipline: Any, workdir: str, rel_dir: str
+) -> list[str]:
+    """Copy ``walls.json.gz`` of the project's other current construction / architecture versions into the workdir
+    (construction first); returns the relative paths for the ``understand`` task. Construction sheets borrow from
+    nobody (they are the plans of record); a master sheet borrows from construction / architecture only."""
+    if discipline == "construction":
+        return []
+    mine = WALL_SOURCES.get(str(discipline))
+    cands: list[tuple[int, str, str]] = []
+    for osid, s in _list_docs(docs, f"{job.project_path}/sheets"):
+        if osid == sid or not isinstance(s, dict):
+            continue
+        rank = WALL_SOURCES.get(str(s.get("discipline")))
+        vid = s.get("currentVersionId")
+        if rank is None or not isinstance(vid, str) or not vid or (mine is not None and rank >= mine):
+            continue
+        cands.append((rank, osid, vid))
+    out: list[str] = []
+    for _, osid, vid in sorted(cands)[:MAX_REFERENCE_SHEETS]:
+        try:
+            data = blobs.read(version_prefix(job.orgId, job.projectId, osid, vid) + WALLS_FILE)
+        except BlobNotFound:
+            continue
+        if len(data) > 20 * 1024 * 1024:
+            continue
+        rel = f"{rel_dir}/{len(out)}.json.gz"
+        dest = Path(workdir) / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        out.append(rel)
+    return out
+
+
+def _clean_region_floors(raw: Any, regions: list[dict[str, Any]]) -> dict[str, str]:
+    """``regionFloors`` from the sandbox (untrusted): only known region ids, floor strings like the contracts'."""
+    ids = {str(r.get("id")) for r in regions}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw.items() if str(k) in ids and isinstance(v, str) and _FLOOR.match(v)}
 
 
 def _clean_link_stats(d: dict[str, Any]) -> dict[str, Any]:

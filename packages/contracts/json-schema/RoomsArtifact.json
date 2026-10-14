@@ -97,6 +97,173 @@
                   "maxLength": 200
                 },
                 "maxItems": 16
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bathroom",
+                  "wc",
+                  "kitchen",
+                  "bedroom",
+                  "living",
+                  "corridor",
+                  "balcony",
+                  "courtyard",
+                  "storage",
+                  "stairs",
+                  "other"
+                ]
+              },
+              "wet": {
+                "type": "boolean"
+              },
+              "walls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^w_[A-Za-z0-9_-]+$"
+                    },
+                    "aMm": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "bMm": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "lengthM": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "exterior": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "aMm",
+                    "bMm",
+                    "lengthM",
+                    "exterior"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 512
+              },
+              "openings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^o_[A-Za-z0-9_-]+$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "door",
+                        "window",
+                        "opening"
+                      ]
+                    },
+                    "wallId": {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^w_[A-Za-z0-9_-]+$"
+                    },
+                    "widthM": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "heightM": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "centerMm": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "wallId",
+                    "widthM",
+                    "heightM",
+                    "centerMm"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 256
+              },
+              "externalCorners": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 256
+              },
+              "ceilingHeightM": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 10
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "niche": {
+                "type": "boolean"
               }
             },
             "required": [

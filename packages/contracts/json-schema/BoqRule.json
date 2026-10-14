@@ -76,6 +76,18 @@
               "type": "integer",
               "minimum": 0
             },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "updatedAt": {
               "anyOf": [
                 {
@@ -143,6 +155,12 @@
                       "fixture_basin",
                       "faucet_basin",
                       "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
                       "room",
                       "floor_tiling",
                       "wall_cladding",
@@ -253,6 +271,18 @@
               "type": "integer",
               "minimum": 0
             },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "updatedAt": {
               "anyOf": [
                 {
@@ -340,6 +370,12 @@
                       "fixture_basin",
                       "faucet_basin",
                       "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
                       "room",
                       "floor_tiling",
                       "wall_cladding",
@@ -454,6 +490,18 @@
               "type": "integer",
               "minimum": 0
             },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "updatedAt": {
               "anyOf": [
                 {
@@ -521,6 +569,12 @@
                       "fixture_basin",
                       "faucet_basin",
                       "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
                       "room",
                       "floor_tiling",
                       "wall_cladding",
@@ -575,6 +629,12 @@
                       "fixture_basin",
                       "faucet_basin",
                       "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
                       "room",
                       "floor_tiling",
                       "wall_cladding",
@@ -711,6 +771,18 @@
               "type": "integer",
               "minimum": 0
             },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "updatedAt": {
               "anyOf": [
                 {
@@ -783,6 +855,12 @@
                       "fixture_basin",
                       "faucet_basin",
                       "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
                       "room",
                       "floor_tiling",
                       "wall_cladding",
@@ -809,6 +887,23 @@
                   "type": "number",
                   "minimum": 0,
                   "maximum": 5000
+                },
+                "authorityOrder": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 8
+                },
+                "matchRooms": {
+                  "type": "boolean"
+                },
+                "roomMatchRadiusMm": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 5000
                 }
               },
               "required": [
@@ -816,6 +911,1328 @@
                 "classes",
                 "discipline",
                 "radiusMm"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "itemCode",
+            "priority",
+            "enabled",
+            "source",
+            "updatedAt",
+            "kind",
+            "match"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "itemCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "itemDescription": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "maxItems": 8
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "default",
+                "user",
+                "custom"
+              ]
+            },
+            "defaultsVersion": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "plumbing_point"
+            },
+            "match": {
+              "type": "object",
+              "properties": {
+                "fixtureClasses": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "socket_single",
+                      "socket_double",
+                      "socket_triple",
+                      "socket_power",
+                      "socket_power_double",
+                      "socket_3phase",
+                      "socket_box_6",
+                      "socket_prep",
+                      "data_point",
+                      "tv_point",
+                      "phone_point",
+                      "speaker",
+                      "intercom",
+                      "doorbell",
+                      "heater_feed",
+                      "panel",
+                      "breaker",
+                      "switch_single",
+                      "switch_2way",
+                      "switch_fan",
+                      "luminaire_ceiling",
+                      "luminaire_wall",
+                      "luminaire_pendant",
+                      "luminaire_strip",
+                      "luminaire_outdoor",
+                      "ceiling_fan",
+                      "fixture_wc_concealed",
+                      "fixture_wc_monoblock",
+                      "fixture_basin",
+                      "faucet_basin",
+                      "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
+                      "room",
+                      "floor_tiling",
+                      "wall_cladding",
+                      "region",
+                      "note_point",
+                      "bezek_point",
+                      "waterproof_marker",
+                      "switch_cross",
+                      "switch_shutter",
+                      "conduit_cobra",
+                      "water_heater_feed",
+                      "legend_entry",
+                      "legend_box"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 32
+                },
+                "withFaucetClasses": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "socket_single",
+                      "socket_double",
+                      "socket_triple",
+                      "socket_power",
+                      "socket_power_double",
+                      "socket_3phase",
+                      "socket_box_6",
+                      "socket_prep",
+                      "data_point",
+                      "tv_point",
+                      "phone_point",
+                      "speaker",
+                      "intercom",
+                      "doorbell",
+                      "heater_feed",
+                      "panel",
+                      "breaker",
+                      "switch_single",
+                      "switch_2way",
+                      "switch_fan",
+                      "luminaire_ceiling",
+                      "luminaire_wall",
+                      "luminaire_pendant",
+                      "luminaire_strip",
+                      "luminaire_outdoor",
+                      "ceiling_fan",
+                      "fixture_wc_concealed",
+                      "fixture_wc_monoblock",
+                      "fixture_basin",
+                      "faucet_basin",
+                      "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
+                      "room",
+                      "floor_tiling",
+                      "wall_cladding",
+                      "region",
+                      "note_point",
+                      "bezek_point",
+                      "waterproof_marker",
+                      "switch_cross",
+                      "switch_shutter",
+                      "conduit_cobra",
+                      "water_heater_feed",
+                      "legend_entry",
+                      "legend_box"
+                    ]
+                  },
+                  "maxItems": 8
+                },
+                "withoutFaucetClasses": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "socket_single",
+                      "socket_double",
+                      "socket_triple",
+                      "socket_power",
+                      "socket_power_double",
+                      "socket_3phase",
+                      "socket_box_6",
+                      "socket_prep",
+                      "data_point",
+                      "tv_point",
+                      "phone_point",
+                      "speaker",
+                      "intercom",
+                      "doorbell",
+                      "heater_feed",
+                      "panel",
+                      "breaker",
+                      "switch_single",
+                      "switch_2way",
+                      "switch_fan",
+                      "luminaire_ceiling",
+                      "luminaire_wall",
+                      "luminaire_pendant",
+                      "luminaire_strip",
+                      "luminaire_outdoor",
+                      "ceiling_fan",
+                      "fixture_wc_concealed",
+                      "fixture_wc_monoblock",
+                      "fixture_basin",
+                      "faucet_basin",
+                      "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
+                      "room",
+                      "floor_tiling",
+                      "wall_cladding",
+                      "region",
+                      "note_point",
+                      "bezek_point",
+                      "waterproof_marker",
+                      "switch_cross",
+                      "switch_shutter",
+                      "conduit_cobra",
+                      "water_heater_feed",
+                      "legend_entry",
+                      "legend_box"
+                    ]
+                  },
+                  "maxItems": 8
+                },
+                "faucetRadiusMm": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 3000
+                },
+                "roomTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "bathroom",
+                      "wc",
+                      "kitchen",
+                      "bedroom",
+                      "living",
+                      "corridor",
+                      "balcony",
+                      "courtyard",
+                      "storage",
+                      "stairs",
+                      "other"
+                    ]
+                  },
+                  "maxItems": 16
+                },
+                "roomNamePatterns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "maxItems": 8
+                },
+                "floors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
+                  "maxItems": 16
+                },
+                "perRoom": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "fixtureClasses",
+                "perRoom"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "itemCode",
+            "priority",
+            "enabled",
+            "source",
+            "updatedAt",
+            "kind",
+            "match"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "itemCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "itemDescription": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "maxItems": 8
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "default",
+                "user",
+                "custom"
+              ]
+            },
+            "defaultsVersion": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "tiling_floor"
+            },
+            "match": {
+              "type": "object",
+              "properties": {
+                "roomTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "bathroom",
+                      "wc",
+                      "kitchen",
+                      "bedroom",
+                      "living",
+                      "corridor",
+                      "balcony",
+                      "courtyard",
+                      "storage",
+                      "stairs",
+                      "other"
+                    ]
+                  },
+                  "maxItems": 16
+                },
+                "wetOnly": {
+                  "type": "boolean"
+                },
+                "includeNiches": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "wetOnly"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "itemCode",
+            "priority",
+            "enabled",
+            "source",
+            "updatedAt",
+            "kind",
+            "match"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "itemCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "itemDescription": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "maxItems": 8
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "default",
+                "user",
+                "custom"
+              ]
+            },
+            "defaultsVersion": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "tiling_cladding"
+            },
+            "match": {
+              "type": "object",
+              "properties": {
+                "roomTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "bathroom",
+                      "wc",
+                      "kitchen",
+                      "bedroom",
+                      "living",
+                      "corridor",
+                      "balcony",
+                      "courtyard",
+                      "storage",
+                      "stairs",
+                      "other"
+                    ]
+                  },
+                  "maxItems": 16
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "full",
+                    "partial"
+                  ]
+                },
+                "subtractOpenings": {
+                  "type": "boolean"
+                },
+                "defaultDoorHeightM": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "defaultWindowHeightM": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "defaultWindowSillM": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "defaultWindowHeadM": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 4
+                },
+                "capAtCeiling": {
+                  "type": "boolean"
+                },
+                "excludeNiches": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "mode",
+                "subtractOpenings"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "itemCode",
+            "priority",
+            "enabled",
+            "source",
+            "updatedAt",
+            "kind",
+            "match"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "itemCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "itemDescription": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "maxItems": 8
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "default",
+                "user",
+                "custom"
+              ]
+            },
+            "defaultsVersion": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "tiling_corner"
+            },
+            "match": {
+              "type": "object",
+              "properties": {
+                "roomTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "bathroom",
+                      "wc",
+                      "kitchen",
+                      "bedroom",
+                      "living",
+                      "corridor",
+                      "balcony",
+                      "courtyard",
+                      "storage",
+                      "stairs",
+                      "other"
+                    ]
+                  },
+                  "maxItems": 16
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "itemCode",
+            "priority",
+            "enabled",
+            "source",
+            "updatedAt",
+            "kind",
+            "match"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "itemCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "itemDescription": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "maxItems": 8
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "default",
+                "user",
+                "custom"
+              ]
+            },
+            "defaultsVersion": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "waterproofing"
+            },
+            "match": {
+              "type": "object",
+              "properties": {
+                "roomTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "bathroom",
+                      "wc",
+                      "kitchen",
+                      "bedroom",
+                      "living",
+                      "corridor",
+                      "balcony",
+                      "courtyard",
+                      "storage",
+                      "stairs",
+                      "other"
+                    ]
+                  },
+                  "maxItems": 16
+                },
+                "wetOnly": {
+                  "type": "boolean"
+                },
+                "requireFixtureClasses": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "socket_single",
+                      "socket_double",
+                      "socket_triple",
+                      "socket_power",
+                      "socket_power_double",
+                      "socket_3phase",
+                      "socket_box_6",
+                      "socket_prep",
+                      "data_point",
+                      "tv_point",
+                      "phone_point",
+                      "speaker",
+                      "intercom",
+                      "doorbell",
+                      "heater_feed",
+                      "panel",
+                      "breaker",
+                      "switch_single",
+                      "switch_2way",
+                      "switch_fan",
+                      "luminaire_ceiling",
+                      "luminaire_wall",
+                      "luminaire_pendant",
+                      "luminaire_strip",
+                      "luminaire_outdoor",
+                      "ceiling_fan",
+                      "fixture_wc_concealed",
+                      "fixture_wc_monoblock",
+                      "fixture_basin",
+                      "faucet_basin",
+                      "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
+                      "room",
+                      "floor_tiling",
+                      "wall_cladding",
+                      "region",
+                      "note_point",
+                      "bezek_point",
+                      "waterproof_marker",
+                      "switch_cross",
+                      "switch_shutter",
+                      "conduit_cobra",
+                      "water_heater_feed",
+                      "legend_entry",
+                      "legend_box"
+                    ]
+                  },
+                  "maxItems": 8
+                }
+              },
+              "required": [
+                "wetOnly"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id",
+            "itemCode",
+            "priority",
+            "enabled",
+            "source",
+            "updatedAt",
+            "kind",
+            "match"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "itemCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "itemDescription": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "maxItems": 8
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "default",
+                "user",
+                "custom"
+              ]
+            },
+            "defaultsVersion": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wasteFactor": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.5
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "one_off_suggestion"
+            },
+            "match": {
+              "type": "object",
+              "properties": {
+                "always": {
+                  "type": "boolean"
+                },
+                "classes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "socket_single",
+                      "socket_double",
+                      "socket_triple",
+                      "socket_power",
+                      "socket_power_double",
+                      "socket_3phase",
+                      "socket_box_6",
+                      "socket_prep",
+                      "data_point",
+                      "tv_point",
+                      "phone_point",
+                      "speaker",
+                      "intercom",
+                      "doorbell",
+                      "heater_feed",
+                      "panel",
+                      "breaker",
+                      "switch_single",
+                      "switch_2way",
+                      "switch_fan",
+                      "luminaire_ceiling",
+                      "luminaire_wall",
+                      "luminaire_pendant",
+                      "luminaire_strip",
+                      "luminaire_outdoor",
+                      "ceiling_fan",
+                      "fixture_wc_concealed",
+                      "fixture_wc_monoblock",
+                      "fixture_basin",
+                      "faucet_basin",
+                      "faucet_wall",
+                      "fixture_shower",
+                      "fixture_bath",
+                      "fixture_kitchen_sink",
+                      "fixture_washing_machine",
+                      "garden_tap",
+                      "ac_unit",
+                      "room",
+                      "floor_tiling",
+                      "wall_cladding",
+                      "region",
+                      "note_point",
+                      "bezek_point",
+                      "waterproof_marker",
+                      "switch_cross",
+                      "switch_shutter",
+                      "conduit_cobra",
+                      "water_heater_feed",
+                      "legend_entry",
+                      "legend_box"
+                    ]
+                  },
+                  "maxItems": 32
+                },
+                "textPatterns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 40
+                  },
+                  "maxItems": 16
+                },
+                "roomTypes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "bathroom",
+                      "wc",
+                      "kitchen",
+                      "bedroom",
+                      "living",
+                      "corridor",
+                      "balcony",
+                      "courtyard",
+                      "storage",
+                      "stairs",
+                      "other"
+                    ]
+                  },
+                  "maxItems": 16
+                },
+                "floors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
+                  "maxItems": 16
+                },
+                "quantity": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000
+                }
+              },
+              "required": [
+                "quantity"
               ],
               "additionalProperties": false
             }

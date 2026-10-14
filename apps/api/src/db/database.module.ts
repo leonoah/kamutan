@@ -8,6 +8,9 @@ import { InMemoryBoqRepository } from './boq-memory.repository';
 import { FirestoreRepository } from './firestore.repository';
 import { InMemoryRepository } from './in-memory.repository';
 import { REPOSITORY, type Repository } from './repository';
+import { FirestoreReviewRepository } from './review-firestore.repository';
+import { InMemoryReviewRepository } from './review-memory.repository';
+import { REVIEW_REPOSITORY, type ReviewRepository } from './review-repository';
 
 export function createRepository(cfg: AppConfig): Repository {
   if (cfg.DATA_DRIVER === 'memory') return new InMemoryRepository();
@@ -22,12 +25,20 @@ export function createBoqRepository(core: Repository): BoqRepository {
   throw new Error('unsupported repository for the BOQ repository');
 }
 
+/** Sprint 4 collections (corrections, room settings, similar searches, debounced builds) share the core store too. */
+export function createReviewRepository(core: Repository): ReviewRepository {
+  if (core instanceof InMemoryRepository) return new InMemoryReviewRepository(core);
+  if (core instanceof FirestoreRepository) return new FirestoreReviewRepository(core);
+  throw new Error('unsupported repository for the review repository');
+}
+
 @Global()
 @Module({
   providers: [
     { provide: REPOSITORY, inject: [APP_CONFIG], useFactory: createRepository },
     { provide: BOQ_REPOSITORY, inject: [REPOSITORY], useFactory: createBoqRepository },
+    { provide: REVIEW_REPOSITORY, inject: [REPOSITORY], useFactory: createReviewRepository },
   ],
-  exports: [REPOSITORY, BOQ_REPOSITORY],
+  exports: [REPOSITORY, BOQ_REPOSITORY, REVIEW_REPOSITORY],
 })
 export class DatabaseModule {}

@@ -20,6 +20,8 @@ export interface PointFeature extends FeatureBase {
   position: Vec2;
   /** Marker radius in CSS px (default 6). */
   radiusPx?: number;
+  /** Short chip drawn next to the point (e.g. the running number of a manual count "3"). */
+  label?: string;
 }
 
 /** A closed polygon (room, region, symbol bbox). Paper mm, y down. */
@@ -77,7 +79,46 @@ export interface PathFeature extends FeatureBase {
 
 export type OverlayFeature = PointFeature | MarkerFeature | PolygonFeature | PathFeature;
 
-export type ViewerTool = "select" | "pan" | "lasso" | "measure" | "calibrate";
+/**
+ * Tools (spec §כלי תיקון על השרטוט): select, pan, lasso, measure (2-click length), calibrate (2-click scale) and the
+ * Sprint-4 correction tools: add (click-to-add, snaps to a nearby symbol), remove (click a symbol), move (drag a
+ * symbol), link (drag from a switch to a point), count (numbered clicks, Enter saves), area (polygon with snapping,
+ * double-click / Enter closes) and length (polyline, Enter finishes).
+ */
+export type ViewerTool = "select" | "pan" | "lasso" | "measure" | "calibrate" | "add" | "remove" | "move" | "link" | "count" | "area" | "length";
+
+export interface PointToolEvent {
+  tool: "add" | "remove";
+  /** Click position (snapped onto a nearby symbol for `add`), paper mm. */
+  mm: [number, number];
+  /** Nearest pickable marker/point within the snap radius, if any. */
+  hitId: string | null;
+}
+export interface MoveResult {
+  id: string;
+  fromMm: [number, number];
+  toMm: [number, number];
+}
+export interface LinkResult {
+  fromId: string;
+  toId: string;
+}
+export interface CountResult {
+  pointsMm: [number, number][];
+}
+export interface AreaResult {
+  polygonMm: [number, number][];
+  /** Paper mm² / mm and, at the sheet scale, real m² / m (null when the scale is unknown). */
+  paperMm2: number;
+  paperPerimeterMm: number;
+  areaM2: number | null;
+  perimeterM: number | null;
+}
+export interface LengthResult {
+  pathMm: [number, number][];
+  paperMm: number;
+  lengthM: number | null;
+}
 
 /** Tiles of one sheet version + a URL builder (signed URLs from the API, or static files in dev). */
 export interface TileSource {
@@ -133,4 +174,16 @@ export interface ViewerLabels {
   scaleSuggestion: (measured: string, nearest: string) => string;
   scaleResult: (measured: string) => string;
   formatLength: (realMm: number | null, paperMm: number) => string;
+  /* Sprint 4 tools */
+  addHint: string;
+  removeHint: string;
+  moveHint: string;
+  linkHint: string;
+  countHint: string;
+  areaHint: string;
+  lengthHint: string;
+  /** "12.4 מ״ר · היקף 14.2 מ״א" */
+  formatArea: (areaM2: number | null, perimeterM: number | null, paperMm2: number) => string;
+  /** Running count chip ("3 נספרו · Enter לשמירה"). */
+  formatCount: (n: number) => string;
 }

@@ -246,7 +246,8 @@ def test_sample_architecture_basement_and_floor(sample_dir):
     assert len(rooms) >= 10
     assert sum(1 for r in rooms if r.name == "חדר שינה") >= 4
     assert sum(1 for r in rooms if r.name == "חדר רחצה") >= 3
-    assert {"basement", "ground"} <= {r.floor for r in rooms}
+    # the stacked second plan is the first floor (Sprint-4 floor inference; older artifacts: the title's "ground")
+    assert {r.floor for r in rooms} in ({"basement", "first"}, {"basement", "ground"})
     assert "מטבח" in names
     _check_sane(rooms)
 
@@ -267,8 +268,9 @@ def test_sample_electrical_matches_architecture_rooms(sample_dir):
     """The electrical sheet carries the same walls: the first-floor rooms match the architecture sheet."""
     vs_a, tx_a, e_a = _load_artifacts("6fa88f92")
     vs_e, tx_e, e_e = _load_artifacts("c054fd3a")
-    ra = sorted(round(r.area_m2, 1) for r in segment(vs_a, tx_a, e_a["regions"], 50) if r.floor == "ground")
-    re_ = sorted(round(r.area_m2, 1) for r in segment(vs_e, tx_e, e_e["regions"], 50) if r.floor == "ground")
+    upper = e_a["regions"][-1]["floor"]  # "first" since the Sprint-4 floor inference ("ground" before)
+    ra = sorted(round(r.area_m2, 1) for r in segment(vs_a, tx_a, e_a["regions"], 50) if r.floor == upper)
+    re_ = sorted(round(r.area_m2, 1) for r in segment(vs_e, tx_e, e_e["regions"], 50) if r.floor == upper)
     common = [a for a in ra if any(abs(a - b) <= 0.3 for b in re_)]
     assert len(common) >= 6, (ra, re_)
 

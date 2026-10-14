@@ -12,7 +12,8 @@ vi.mock("@kamutan/viewer", async (importOriginal) => {
   return {
     ...actual,
     DrawingViewer: (p: DrawingViewerProps) => {
-      seen.props = p;
+      // React dev builds call function components without props to describe warning stacks: keep the last real props.
+      if (p) seen.props = p;
       return (
         <div role="application" aria-label={p.ariaLabel} dir="ltr">
           {p.popover ? (
@@ -159,7 +160,7 @@ describe("Review workspace with the Sprint-2 overlay", { timeout: 30_000 }, () =
     await user.click(within(card2).getByRole("button", { name: "החל על 3 מופעים" }));
     await waitFor(() => expect(markers()).toHaveLength(147));
     expect(spy).toHaveBeenLastCalledWith("p-noah", "u_2", expect.objectContaining({ ignore: true, createLegendEntry: false }));
-    expect(within(queue).getByText("אין סמלים לא מוכרים בגיליון הזה.")).toBeInTheDocument();
+    expect(queue.querySelector('[data-queue-item^="uc:noah-eb8be8a3-p0:"]')).toBeNull();
   });
 
   it("rolls back the optimistic answer when the API fails", async () => {
@@ -175,13 +176,20 @@ describe("Review workspace with the Sprint-2 overlay", { timeout: 30_000 }, () =
     expect(within(queue).getByRole("article", { name: "סמל לא מוכר × 3 מופעים" })).toBeInTheDocument();
   });
 
-  it("header shows the real verified share; the queue lists non-green items lowest score first", async () => {
-    await open();
+  it("header shows the real verified share; the queue lists all kinds of open items ranked by risk, with a time estimate", async () => {
+    const { api } = await open();
     expect(screen.getByRole("progressbar", { name: /% מאומת$/ })).toBeInTheDocument();
     const queue = screen.getByRole("region", { name: "תור בדיקה" });
-    const items = within(queue).getAllByRole("button", { name: /^התמקד ב/ });
-    expect(items.length).toBeGreaterThan(10);
-    expect(within(items[0]!).getByText("לבדיקה")).toBeInTheDocument();
+    await waitFor(() => expect(within(queue).getAllByRole("button", { name: /^התמקד ב/ }).length).toBeGreaterThan(10), LAZY);
+    const ranked = (await api.getReviewQueue("p-noah")).items;
+    const risks = ranked.map((i) => i.risk);
+    expect(risks).toEqual([...risks].sort((a, b) => b - a));
+    const shown = [...queue.querySelectorAll("[data-queue-item]")].map((e) => e.getAttribute("data-queue-item"));
+    expect(shown).toEqual(ranked.map((i) => i.id));
+    expect(new Set(ranked.map((i) => i.kind))).toEqual(new Set(["cluster", "detection", "unknown_cluster", "room"]));
+    expect(within(queue).getByTestId("queue-remaining")).toHaveTextContent(/^נותרו \d+ · כ-\d+ דק'$/);
+    // entry: the highest-risk item of the opened sheet is active
+    expect(queue.querySelector("article[data-active]")).not.toBeNull();
   });
 
   it("has no axe violations with the overlay, counts and 'מה זה?' cards", async () => {

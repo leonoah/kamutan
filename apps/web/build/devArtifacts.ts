@@ -16,36 +16,43 @@ const TYPES: Record<string, string> = {
  */
 export function devArtifacts(root = process.env.KAMUTAN_DEV_ARTIFACTS ?? "/home/claude/kamutan-data/artifacts"): Plugin {
   const base = resolve(root);
+  type Mw = (req: { url?: string }, res: import("node:http").ServerResponse, next: (e?: unknown) => void) => void;
+  const serve: Mw = (req, res, next) => {
+    try {
+      const url = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
+      const file = resolve(base, `.${url}`);
+      // Sprint 2 artifacts are gzip JSON (legend/detections/rooms.json.gz): served as JSON with
+      // Content-Encoding: gzip so the browser inflates them (like GCS objects with contentEncoding metadata).
+      const gz = file.endsWith(".json.gz");
+      const ext = gz ? ".json" : file.slice(file.lastIndexOf("."));
+      if (!file.startsWith(base + sep) || !TYPES[ext]) {
+        res.statusCode = 404;
+        return res.end();
+      }
+      const st = statSync(file, { throwIfNoEntry: false });
+      if (!st?.isFile()) {
+        res.statusCode = 404;
+        return res.end();
+      }
+      res.setHeader("Content-Type", TYPES[ext]!);
+      if (gz) res.setHeader("Content-Encoding", "gzip");
+      res.setHeader("Content-Length", String(st.size));
+      res.setHeader("Cache-Control", "private, max-age=600");
+      createReadStream(file).pipe(res);
+    } catch (e) {
+      next(e);
+    }
+  };
   return {
     name: "kamutan-dev-artifacts",
+    // Dev server and `vite preview` only (the speed protocol measures a production build in mock mode); `vite
+    // build` never calls these hooks, so nothing is bundled.
     apply: "serve",
     configureServer(server) {
-      server.middlewares.use("/dev-artifacts", (req, res, next) => {
-        try {
-          const url = decodeURIComponent((req.url ?? "/").split("?")[0] ?? "/");
-          const file = resolve(base, `.${url}`);
-          // Sprint 2 artifacts are gzip JSON (legend/detections/rooms.json.gz): served as JSON with
-          // Content-Encoding: gzip so the browser inflates them (like GCS objects with contentEncoding metadata).
-          const gz = file.endsWith(".json.gz");
-          const ext = gz ? ".json" : file.slice(file.lastIndexOf("."));
-          if (!file.startsWith(base + sep) || !TYPES[ext]) {
-            res.statusCode = 404;
-            return res.end();
-          }
-          const st = statSync(file, { throwIfNoEntry: false });
-          if (!st?.isFile()) {
-            res.statusCode = 404;
-            return res.end();
-          }
-          res.setHeader("Content-Type", TYPES[ext]!);
-          if (gz) res.setHeader("Content-Encoding", "gzip");
-          res.setHeader("Content-Length", String(st.size));
-          res.setHeader("Cache-Control", "private, max-age=600");
-          createReadStream(file).pipe(res);
-        } catch (e) {
-          next(e);
-        }
-      });
+      server.middlewares.use("/dev-artifacts", serve);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use("/dev-artifacts", serve);
     },
   };
 }

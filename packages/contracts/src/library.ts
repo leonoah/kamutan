@@ -16,6 +16,7 @@ import { JobProgressSchema, JobStatusSchema, LIBRARY_IMPORT_KINDS } from './jobs
 import { sha256Hex } from './sha256.js';
 import { DisciplineSchema, ProcessingErrorSchema } from './sheets.js';
 import { SymbolClassSchema, type SymbolClass } from './taxonomy.js';
+import { RoomTypeSchema, type RoomType } from './understanding.js';
 
 // ---------------------------------------------------------------------------
 // Item library
@@ -187,7 +188,19 @@ export type PatchBoqTemplateRequest = z.infer<typeof PatchBoqTemplateRequestSche
 // Rules
 // ---------------------------------------------------------------------------
 
-export const BOQ_RULE_KINDS = ['class_to_item', 'composite_lighting', 'install_count', 'authority'] as const;
+export const BOQ_RULE_KINDS = [
+  'class_to_item',
+  'composite_lighting',
+  'install_count',
+  'authority',
+  // Sprint 4
+  'plumbing_point',
+  'tiling_floor',
+  'tiling_cladding',
+  'tiling_corner',
+  'waterproofing',
+  'one_off_suggestion',
+] as const;
 export const BoqRuleKindSchema = z.enum(BOQ_RULE_KINDS);
 export type BoqRuleKind = z.infer<typeof BoqRuleKindSchema>;
 
@@ -229,6 +242,98 @@ export const AuthorityMatchSchema = z
     classes: ClassesSchema,
     discipline: DisciplineSchema,
     radiusMm: z.number().min(0).max(5000),
+    /**
+     * v5: per floor, the first discipline of this list that has a sheet on the floor is the authority (overrides
+     * `discipline`); e.g. AC: plumbing drain marks, electrical AC sockets only on floors without a plumbing sheet.
+     */
+    authorityOrder: z.array(DisciplineSchema).min(1).max(8).optional(),
+    /**
+     * v5: secondary items are placed by the sheets' room-outline alignment and matched one-to-one — same room first,
+     * else within `roomMatchRadiusMm` (real mm); unmatched secondary items are kept (yellow).
+     */
+    matchRooms: z.boolean().optional(),
+    roomMatchRadiusMm: z.number().min(0).max(5000).optional(),
+  })
+  .strict();
+
+// --- Sprint 4: plumbing + tiling -------------------------------------------------------------------------------
+
+const RoomTypesSchema = z.array(RoomTypeSchema).max(16);
+const RoomNamePatternsSchema = z.array(z.string().trim().min(1).max(40)).max(8);
+const FloorsFilterSchema = z.array(z.string().min(1).max(32)).max(16);
+
+/**
+ * One unit per fixture (`perRoom: false`) or per room that contains ≥ 1 matching fixture (`perRoom: true`, e.g.
+ * shower / bath per bathroom). Faucet filters look for a detection of one of the faucet classes within
+ * `faucetRadiusMm` of the fixture (3.02 basin + wall faucet vs 3.03 basin + flower faucet). Optional filters: room
+ * types, room-name substrings ("הורים"), floors. Higher priority wins when several rules match the same fixture.
+ */
+export const PlumbingPointMatchSchema = z
+  .object({
+    fixtureClasses: ClassesSchema,
+    withFaucetClasses: z.array(SymbolClassSchema).max(8).optional(),
+    withoutFaucetClasses: z.array(SymbolClassSchema).max(8).optional(),
+    faucetRadiusMm: z.number().min(0).max(3000).optional(),
+    roomTypes: RoomTypesSchema.optional(),
+    roomNamePatterns: RoomNamePatternsSchema.optional(),
+    floors: FloorsFilterSchema.optional(),
+    perRoom: z.boolean(),
+  })
+  .strict();
+
+/**
+ * Floor area (m²) of rooms whose room settings say `floorTiled` (defaults by type); optional type filter.
+ * `includeNiches` (v4): niches inside / attached to a matching room (washing-machine alcove) count with it.
+ */
+export const TilingFloorMatchSchema = z.object({ roomTypes: RoomTypesSchema.optional(), wetOnly: z.boolean(), includeNiches: z.boolean().optional() }).strict();
+
+/**
+ * Wall cladding (m²). `full`: perimeter × H − openings, H = settings.claddingHeightM (capped at the room's
+ * `ceilingHeightM` when known and `capAtCeiling`). Openings (not in settings.keepOpenings) subtract
+ * width × clipped height: doors [0, `defaultDoorHeightM`] (when the drawing has no height), windows
+ * [`defaultWindowSillM`, `defaultWindowHeadM`] ∩ [0, H] (legacy `defaultWindowHeightM` = head − sill when only that is
+ * given). `excludeNiches`: niche rooms / walls are not clad. `partial`: Σ settings.partialCladding (toM − fromM) × heightM.
+ */
+export const TilingCladdingMatchSchema = z
+  .object({
+    roomTypes: RoomTypesSchema.optional(),
+    mode: z.enum(['full', 'partial']),
+    subtractOpenings: z.boolean(),
+    defaultDoorHeightM: z.number().min(0).max(4).optional(),
+    /** @deprecated v3; use defaultWindowSillM + defaultWindowHeadM. */
+    defaultWindowHeightM: z.number().min(0).max(4).optional(),
+    defaultWindowSillM: z.number().min(0).max(4).optional(),
+    defaultWindowHeadM: z.number().min(0).max(4).optional(),
+    capAtCeiling: z.boolean().optional(),
+    excludeNiches: z.boolean().optional(),
+  })
+  .strict();
+
+/** External corner trim (m') = room.externalCorners × the room's effective cladding height (rooms with full cladding). */
+export const TilingCornerMatchSchema = z.object({ roomTypes: RoomTypesSchema.optional() }).strict();
+
+/**
+ * One unit (קומפלט) per room with settings.includeInWaterproofing. v4: `requireFixtureClasses` — the default only
+ * includes rooms containing a detection of one of these classes (shower / bath); an explicit room setting wins.
+ */
+export const WaterproofingMatchSchema = z
+  .object({ roomTypes: RoomTypesSchema.optional(), wetOnly: z.boolean(), requireFixtureClasses: z.array(SymbolClassSchema).max(8).optional() })
+  .strict();
+
+/**
+ * One-off items (new water feed, manifold, pumps…) suggested from the drawing / notes. A line is produced with
+ * `quantity` when ANY trigger fires (or always with `always: true`); the line is NEVER green (max yellow, reason
+ * "הצעה – לאשר ידנית") until a reviewer accepts it.
+ */
+export const OneOffSuggestionMatchSchema = z
+  .object({
+    always: z.boolean().optional(),
+    classes: z.array(SymbolClassSchema).max(32).optional(),
+    /** Plain substrings searched in the sheet OCR text / notes (no regex). */
+    textPatterns: z.array(z.string().trim().min(2).max(40)).max(16).optional(),
+    roomTypes: RoomTypesSchema.optional(),
+    floors: FloorsFilterSchema.optional(),
+    quantity: z.number().finite().positive().max(1000),
   })
   .strict();
 
@@ -248,6 +353,8 @@ const ruleBase = {
   source: z.enum(['default', 'user', 'custom']),
   /** DEFAULT_BOQ_RULES_VERSION the doc was seeded from (absent on pre-versioning docs = 0). */
   defaultsVersion: z.number().int().nonnegative().optional(),
+  /** Sprint 4: material waste of the line (orderQty = qty × (1 + wasteFactor)); room settings override per room. */
+  wasteFactor: z.number().min(0).max(0.5).nullable().optional(),
   updatedAt: TimestampSchema.nullable(),
   updatedBy: UidSchema.nullable().optional(),
 };
@@ -258,6 +365,12 @@ export const BoqRuleSchema = z.discriminatedUnion('kind', [
   z.object({ ...ruleBase, kind: z.literal('composite_lighting'), match: CompositeLightingMatchSchema }),
   z.object({ ...ruleBase, kind: z.literal('install_count'), match: InstallCountMatchSchema }),
   z.object({ ...ruleBase, kind: z.literal('authority'), match: AuthorityMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('plumbing_point'), match: PlumbingPointMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('tiling_floor'), match: TilingFloorMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('tiling_cladding'), match: TilingCladdingMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('tiling_corner'), match: TilingCornerMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('waterproofing'), match: WaterproofingMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('one_off_suggestion'), match: OneOffSuggestionMatchSchema }),
 ]);
 export type BoqRule = z.infer<typeof BoqRuleSchema>;
 
@@ -464,12 +577,30 @@ const defaultTemplate: Omit<BoqTemplate, 'updatedAt' | 'updatedBy'> = {
 export const DEFAULT_BOQ_TEMPLATE: Readonly<Omit<BoqTemplate, 'updatedAt' | 'updatedBy'>> = Object.freeze(defaultTemplate);
 
 const DEFAULT_RULE_REASON = 'שיוך לפריט לפי כלל ברירת מחדל';
+/** Sprint 4: reason of one-off suggestion lines (never green). */
+export const ONE_OFF_SUGGESTION_REASON = 'הצעה – לאשר ידנית';
 
 type RuleSeed = Omit<BoqRule, 'updatedAt' | 'updatedBy' | 'source' | 'enabled'> & { enabled?: boolean };
 const c2i = (id: string, classes: SymbolClass[], itemCode: string, itemDescription: string, priority = 100, extra: Partial<RuleSeed> = {}): RuleSeed =>
   ({ id, kind: 'class_to_item', match: { classes }, itemCode, itemDescription, unit: 'יחידה', priority, ...extra }) as RuleSeed;
 const lighting = (id: string, match: z.infer<typeof CompositeLightingMatchSchema>, itemCode: string, itemDescription: string, priority = 200): RuleSeed =>
   ({ id, kind: 'composite_lighting', match: { pointMergeMm: 600, ...match }, itemCode, itemDescription, unit: 'יחידה', priority }) as RuleSeed;
+const plumb = (id: string, match: z.infer<typeof PlumbingPointMatchSchema>, itemCode: string, itemDescription: string, priority = 100): RuleSeed =>
+  ({ id, kind: 'plumbing_point', match, itemCode, itemDescription, unit: 'יחידה', priority }) as RuleSeed;
+const oneOff = (id: string, match: z.infer<typeof OneOffSuggestionMatchSchema>, itemCode: string, itemDescription: string): RuleSeed =>
+  ({ id, kind: 'one_off_suggestion', match, itemCode, itemDescription, unit: 'יחידה', priority: 10, reasons: [ONE_OFF_SUGGESTION_REASON] }) as RuleSeed;
+const WET: RoomType[] = ['bathroom', 'wc'];
+const PLUMBING_FIXTURES: SymbolClass[] = [
+  'fixture_wc_concealed',
+  'fixture_wc_monoblock',
+  'fixture_basin',
+  'fixture_shower',
+  'fixture_bath',
+  'fixture_kitchen_sink',
+  'fixture_washing_machine',
+];
+/** Waste factor of tiling materials (brief: default 7%). */
+const TILING_WASTE = 0.07;
 
 /**
  * Default rule set (Sprint 3 brief "Domain rules"). Item codes follow the sample BOQ (chapter 04 + 9.01); when an
@@ -517,8 +648,60 @@ export const DEFAULT_BOQ_RULES: readonly RuleSeed[] = Object.freeze([
     unit: 'יחידה',
     priority: 100,
   } as RuleSeed,
+  // --- Sprint 4: plumbing points (chapter 03 of the sample) ---
+  plumb('r_plumb_ac_drain', { fixtureClasses: ['ac_unit'], perRoom: false }, '3.01', 'ניקוז למזגן'),
+  plumb('r_plumb_basin_wall_faucet', { fixtureClasses: ['fixture_basin', 'fixture_kitchen_sink'], withFaucetClasses: ['faucet_wall'], faucetRadiusMm: 600, perRoom: false }, '3.02', "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז קיר", 110),
+  plumb('r_plumb_basin_flower_faucet', { fixtureClasses: ['fixture_basin', 'fixture_kitchen_sink'], withoutFaucetClasses: ['faucet_wall'], faucetRadiusMm: 600, perRoom: false }, '3.03', "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז פרח"),
+  plumb('r_plumb_wc_concealed', { fixtureClasses: ['fixture_wc_concealed'], perRoom: false }, '3.04', "נק' מים וניקוז לניאגרה סמויה, לרבות ביטון הניאגרה, ותליית האסלה"),
+  plumb('r_plumb_washing_machine', { fixtureClasses: ['fixture_washing_machine'], perRoom: false }, '3.05', "נק' מים וניקוז למכונת כביסה"),
+  plumb('r_plumb_garden_tap', { fixtureClasses: ['garden_tap'], perRoom: false }, '3.06', "נק' מים קרים עבור תמי 4/ ברז גן"),
+  plumb('r_plumb_wc_monoblock', { fixtureClasses: ['fixture_wc_monoblock'], perRoom: false }, '3.07', "נק' מים וניקוז עבור ניאגרה מונובלוק. העבודה תכלול התקנת ניאגרה, אסלה ומושב"),
+  plumb('r_plumb_shower_basement', { fixtureClasses: ['fixture_shower'], floors: ['basement', '-1'], perRoom: true }, '3.13', "נק' מים חמים קרים וניקוז למקלחון מרתף", 120),
+  plumb('r_plumb_shower', { fixtureClasses: ['fixture_shower'], roomTypes: ['bathroom', 'wc', 'other'], perRoom: true }, '3.11', "נק' מים חמים קרים וניקוז עבור מקלחון חדר רחצה"),
+  plumb('r_plumb_bath', { fixtureClasses: ['fixture_bath'], perRoom: true }, '3.12', "נק' מים חמים קרים וניקוז לאמבטיה חדר רחצה"),
+  // --- Sprint 4: one-off plumbing items: suggestions only (yellow until accepted) ---
+  oneOff('r_oneoff_water_feed', { classes: PLUMBING_FIXTURES, textPatterns: ['הזנת מים', 'שעון מים'], quantity: 1 }, '3.08', 'הזנת מים חדשה מהשעון הראשי ועד הבית'),
+  oneOff('r_oneoff_manifold', { classes: PLUMBING_FIXTURES, textPatterns: ['מרכזיית מים', 'מרכזיה'], quantity: 1 }, '3.09', 'אספקה והתקנה של מרכזיית מים עם ברזי שליטה נפרדים'),
+  oneOff('r_oneoff_heater_feed', { classes: ['water_heater_feed'], textPatterns: ['דוד'], quantity: 1 }, '3.10', 'הזנת מים חדשה עבור דוד'),
+  oneOff('r_oneoff_greywater_pump', { textPatterns: ['משאבה', 'דלוחין'], floors: ['basement', '-1'], roomTypes: WET, quantity: 1 }, '3.14', 'אספקה והתקנה של משאבה לניקוז דלוחין קומת מרתף'),
+  oneOff('r_oneoff_rain_pump', { roomTypes: ['courtyard'], textPatterns: ['חצר אנגלית'], quantity: 1 }, '3.15', 'אספקה והתקנה של משאבה לניקוז מי גשם בחצר אנגלית'),
+  // --- Sprint 4: tiling + waterproofing (chapter 05 of the sample) ---
+  {
+    id: 'r_tile_cladding_wet',
+    kind: 'tiling_cladding',
+    match: { roomTypes: WET, mode: 'full', subtractOpenings: true, defaultDoorHeightM: 2.1, defaultWindowSillM: 1.0, defaultWindowHeadM: 2.1, capAtCeiling: true, excludeNiches: true },
+    itemCode: '5.01',
+    itemDescription: 'חיפוי קירות חדרי רחצה באריחי קרמיקה',
+    unit: 'מ"ר',
+    priority: 100,
+    wasteFactor: TILING_WASTE,
+  } as RuleSeed,
+  { id: 'r_tile_floor_wet', kind: 'tiling_floor', match: { roomTypes: WET, wetOnly: false, includeNiches: true }, itemCode: '5.02', itemDescription: 'ריצוף ריצפות חדרי רחצה וחצר אנגלית באריחי גרניט פורצלן', unit: 'מ"ר', priority: 100, wasteFactor: TILING_WASTE } as RuleSeed,
+  { id: 'r_tile_corners', kind: 'tiling_corner', match: { roomTypes: WET }, itemCode: '5.03', itemDescription: 'חיתוך גרונג במפגש אריחי קרמיקה בפינות חיצוניות', unit: 'מ"א', priority: 100 } as RuleSeed,
+  { id: 'r_waterproofing_wet', kind: 'waterproofing', match: { roomTypes: WET, wetOnly: true, requireFixtureClasses: ['fixture_shower', 'fixture_bath'] }, itemCode: '5.05', itemDescription: 'איטום ריצפות חדרי הרחצה בשתי שכבות סיכה', unit: 'קומפלט', priority: 100 } as RuleSeed,
+  {
+    id: 'r_tile_partial_kitchen',
+    kind: 'tiling_cladding',
+    match: { roomTypes: ['kitchen'], mode: 'partial', subtractOpenings: false },
+    itemCode: '5.06',
+    itemDescription: 'חיפוי קיר מטבח באריחי גרניט פורצלן',
+    unit: 'מ"ר',
+    priority: 100,
+    wasteFactor: TILING_WASTE,
+  } as RuleSeed,
+  {
+    id: 'r_tile_partial_other',
+    kind: 'tiling_cladding',
+    match: { roomTypes: ['wc', 'bathroom', 'living', 'corridor', 'other'], mode: 'partial', subtractOpenings: false },
+    itemCode: '5.07',
+    itemDescription: 'חיפוי קיר חלקי באריחי קרמיקה',
+    unit: 'מ"ר',
+    priority: 90,
+    wasteFactor: TILING_WASTE,
+  } as RuleSeed,
   // --- classes that never become BOQ lines (itemCode null = not counted); configurable: set an itemCode to count them ---
-  ...(['waterproof_marker', 'note_point', 'breaker', 'legend_entry', 'legend_box', 'region', 'room'] as SymbolClass[]).map(
+  // Sprint 4: faucets only qualify basin rules; tiling hatches are replaced by room-based tiling rules.
+  ...(['waterproof_marker', 'note_point', 'breaker', 'legend_entry', 'legend_box', 'region', 'room', 'faucet_basin', 'faucet_wall', 'floor_tiling', 'wall_cladding'] as SymbolClass[]).map(
     (cls): RuleSeed =>
       ({ id: `r_none_${cls}`, kind: 'class_to_item', match: { classes: [cls] }, itemCode: null, itemDescription: 'לא נכלל בכתב הכמויות', unit: null, priority: 0 }) as RuleSeed,
   ),
@@ -530,19 +713,40 @@ export const DEFAULT_BOQ_RULES: readonly RuleSeed[] = Object.freeze([
       ['r_auth_feeds', 'feeds', ['heater_feed', 'water_heater_feed', 'panel', 'conduit_cobra'], 'electrical'],
       ['r_auth_switches', 'switches', ['switch_single', 'switch_2way', 'switch_fan', 'switch_cross', 'switch_shutter'], 'lighting'],
       ['r_auth_luminaires', 'luminaires', ['luminaire_ceiling', 'luminaire_wall', 'luminaire_pendant', 'luminaire_strip', 'luminaire_outdoor', 'ceiling_fan'], 'lighting'],
+      // Sprint 4: fixtures appear on architecture AND plumbing sheets → the plumbing sheet wins.
+      ['r_auth_fixtures', 'fixtures', [...PLUMBING_FIXTURES, 'faucet_basin', 'faucet_wall', 'garden_tap'], 'plumbing'],
     ] as Array<[string, string, SymbolClass[], string]>
   ).map(
     ([id, family, classes, discipline]): RuleSeed =>
       ({ id, kind: 'authority', match: { family, classes, discipline, radiusMm: 150 }, itemCode: null, itemDescription: null, unit: null, priority: 0 }) as RuleSeed,
   ),
+  // v5: AC positions — the plumbing sheet's drain marks are the plan of record; the electrical AC sockets only fill
+  // floors without a plumbing sheet; copies matched per room (a drain mark and its socket are 0.3–1 m apart).
+  {
+    id: 'r_auth_ac',
+    kind: 'authority',
+    match: { family: 'ac', classes: ['ac_unit'], discipline: 'plumbing', radiusMm: 150, authorityOrder: ['plumbing', 'electrical'], matchRooms: true, roomMatchRadiusMm: 1600 },
+    itemCode: null,
+    itemDescription: null,
+    unit: null,
+    priority: 0,
+  } as RuleSeed,
 ]);
 
 /**
  * Version of the shipped default rule set. Bump whenever DEFAULT_BOQ_RULES changes: seeding then REPLACES every rule doc
  * with `source: 'default'` and an older `defaultsVersion` (never `user` / `custom` docs) and creates missing ones.
  * 2 = Sprint 3 integration (9.01 excludes only demolished; r_none_* rules).
+ * 3 = Sprint 4 (plumbing points 3.01–3.07/3.11–3.13, one-off suggestions 3.08–3.10/3.14/3.15, tiling 5.01–5.03/5.05–5.07,
+ *     fixture + AC authority).
+ * 4 = Sprint 4 integration (Data back-solve): cladding capped at ceiling height, niches not clad, door 2.1 m, window
+ *     sill 1.0 / head 2.1, floor tiling = bathrooms + WCs incl. niches, waterproofing only rooms with shower/bath.
+ * 5 = Sprint 4 final: AC authority = plumbing sheet per floor (electrical fills floors without one), room-aware matching
+ *     (`r_auth_ac` authorityOrder / matchRooms / roomMatchRadiusMm). Floor tiling stays bathrooms + WCs: the English
+ *     courtyard is OUT by default (the sample 5.02 text names it, but its quantity matches without it — GT-D-007 open;
+ *     a user adds it with a measure correction or a courtyard roomSettings doc + a rule edit).
  */
-export const DEFAULT_BOQ_RULES_VERSION = 2;
+export const DEFAULT_BOQ_RULES_VERSION = 5;
 
 /** A seeded rule doc. */
 export const defaultRuleDoc = (r: RuleSeed): Omit<BoqRule, 'updatedAt' | 'updatedBy'> =>

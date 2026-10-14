@@ -43,7 +43,7 @@ describe.skipIf(!readable(join(ART, 'dev-index.json')))('export from the real lo
       if (!items.length) continue;
       const groups = groupEvidence(items);
       // the "ראיות" counts add up to the line quantity (composite lines: one per switch group)
-      expect(groups.reduce((a, g) => a + g.count, 0), l.code).toBe(l.qty);
+      expect(groups.reduce((a, g) => a + g.count, 0), l.code).toBeCloseTo(l.qty, 2);
       evidence.set(
         l.id,
         groups.map((g) => {
@@ -72,7 +72,7 @@ describe.skipIf(!readable(join(ART, 'dev-index.json')))('export from the real lo
       const c = r.getCell(1).value;
       if (typeof c === 'string' && /^\d+\.\d+$/.test(c)) qtyByCode.set(c, r.getCell(4).value);
     });
-    for (const l of lines) expect(qtyByCode.get(l.code), l.code).toBe(effectiveQty(l));
+    for (const l of lines) expect(qtyByCode.get(l.code) as number, l.code).toBeCloseTo(effectiveQty(l), 2);
     const evWs = wb.getWorksheet(EVIDENCE_SHEET) as ExcelJS.Worksheet;
     const sheets = new Set<unknown>();
     const floors = new Set<unknown>();

@@ -1,51 +1,261 @@
 {
   "schema_version": "1.0",
-  "description": "MVP class taxonomy subset (test plan, detection record). Unknown classes are reported as warnings by `kbench validate`, not errors. core=true marks classes gated at the per-class F1 regression threshold.",
+  "description": "MVP class taxonomy subset (test plan, detection record). Unknown classes are reported as warnings by `kbench validate`, not errors. core=true marks classes gated at the per-class F1 regression threshold. Sprint 4: plumbing fixtures (fixture_shower, fixture_bath, fixture_kitchen_sink, fixture_washing_machine, garden_tap) and ac_unit (domain 'hvac': AC positions read from electrical sheets; they drive plumbing BOQ 3.01 condensate drains but are not plumbing fixtures, and keeping them out of 'plumbing' keeps per-domain plumbing micro-F1 about sanitary fixtures).",
   "classes": {
-    "socket_single": {"domain": "electrical", "core": true, "he": "שקע בודד"},
-    "socket_double": {"domain": "electrical", "core": true, "he": "שקע כפול"},
-    "socket_triple": {"domain": "electrical", "core": true, "he": "שלישיית שקעים"},
-    "socket_power": {"domain": "electrical", "core": true, "he": "שקע כח"},
-    "socket_power_double": {"domain": "electrical", "core": false, "he": "שקע כח כפול"},
-    "socket_3phase": {"domain": "electrical", "core": false, "he": "שקע תלת פאזי"},
-    "socket_box_6": {"domain": "electrical", "core": false, "he": "אביזר עדה פלאסט (פרט A)"},
-    "socket_prep": {"domain": "electrical", "core": false, "he": "הכנה לשקע"},
-    "data_point": {"domain": "electrical", "core": false, "he": "נק' רשת"},
-    "tv_point": {"domain": "electrical", "core": false, "he": "נק' TV"},
-    "phone_point": {"domain": "electrical", "core": false, "he": "נק' טלפון"},
-    "speaker": {"domain": "electrical", "core": false, "he": "נק' רמקול"},
-    "intercom": {"domain": "electrical", "core": false, "he": "אינטרקום"},
-    "doorbell": {"domain": "electrical", "core": false, "he": "פעמון"},
-    "heater_feed": {"domain": "electrical", "core": false, "he": "הזנה לתנור/דוד/ונטה"},
-    "panel": {"domain": "electrical", "core": false, "he": "לוח חשמל/תקשורת"},
-    "breaker": {"domain": "electrical", "core": true, "he": "מפסק (בלוח)"},
-    "switch_single": {"domain": "lighting", "core": true, "he": "מפסק/מתג"},
-    "switch_2way": {"domain": "lighting", "core": true, "he": "מחליף"},
-    "switch_fan": {"domain": "lighting", "core": false, "he": "מפסק למאוורר"},
-    "luminaire_ceiling": {"domain": "lighting", "core": true, "he": "גוף תאורה תקרתי"},
-    "luminaire_wall": {"domain": "lighting", "core": true, "he": "גוף תאורה קיר"},
-    "luminaire_pendant": {"domain": "lighting", "core": true, "he": "גוף תלוי"},
-    "luminaire_strip": {"domain": "lighting", "core": true, "he": "פס לד"},
-    "luminaire_outdoor": {"domain": "lighting", "core": true, "he": "גוף חוץ / פרוז'קטור"},
-    "ceiling_fan": {"domain": "lighting", "core": false, "he": "מאוורר תקרה"},
-    "fixture_wc_concealed": {"domain": "plumbing", "core": true, "he": "אסלה תלויה + מיכל סמוי"},
-    "fixture_wc_monoblock": {"domain": "plumbing", "core": true, "he": "אסלה מונובלוק"},
-    "fixture_basin": {"domain": "plumbing", "core": true, "he": "כיור"},
-    "faucet_basin": {"domain": "plumbing", "core": true, "he": "ברז פרח"},
-    "faucet_wall": {"domain": "plumbing", "core": true, "he": "ברז קיר"},
-    "room": {"domain": "tiling", "core": false, "he": "חדר"},
-    "floor_tiling": {"domain": "tiling", "core": false, "he": "ריצוף"},
-    "wall_cladding": {"domain": "tiling", "core": false, "he": "חיפוי"},
-    "region": {"domain": "other", "core": false, "he": "אזור סימון (context)"},
-    "note_point": {"domain": "other", "core": false, "he": "ראה הערה (סימון +)"},
-    "bezek_point": {"domain": "electrical", "core": false, "he": "נק' קצה לבזק"},
-    "waterproof_marker": {"domain": "electrical", "core": false, "he": "אביזר מוגן מים"},
-    "switch_cross": {"domain": "lighting", "core": false, "he": "מצלב"},
-    "switch_shutter": {"domain": "lighting", "core": false, "he": "מתג לתריס"},
-    "conduit_cobra": {"domain": "electrical", "core": false, "he": "צינור קוברה 50 מ\"מ"},
-    "water_heater_feed": {"domain": "electrical", "core": false, "he": "הזנה לדוד חשמל"},
-    "legend_entry": {"domain": "other", "core": false, "he": "שורת מקרא"},
-    "legend_box": {"domain": "other", "core": false, "he": "מסגרת מקרא"},
-    "unknown": {"domain": "other", "core": false, "he": "לא מזוהה"}
+    "socket_single": {
+      "domain": "electrical",
+      "core": true,
+      "he": "שקע בודד"
+    },
+    "socket_double": {
+      "domain": "electrical",
+      "core": true,
+      "he": "שקע כפול"
+    },
+    "socket_triple": {
+      "domain": "electrical",
+      "core": true,
+      "he": "שלישיית שקעים"
+    },
+    "socket_power": {
+      "domain": "electrical",
+      "core": true,
+      "he": "שקע כח"
+    },
+    "socket_power_double": {
+      "domain": "electrical",
+      "core": false,
+      "he": "שקע כח כפול"
+    },
+    "socket_3phase": {
+      "domain": "electrical",
+      "core": false,
+      "he": "שקע תלת פאזי"
+    },
+    "socket_box_6": {
+      "domain": "electrical",
+      "core": false,
+      "he": "אביזר עדה פלאסט (פרט A)"
+    },
+    "socket_prep": {
+      "domain": "electrical",
+      "core": false,
+      "he": "הכנה לשקע"
+    },
+    "data_point": {
+      "domain": "electrical",
+      "core": false,
+      "he": "נק' רשת"
+    },
+    "tv_point": {
+      "domain": "electrical",
+      "core": false,
+      "he": "נק' TV"
+    },
+    "phone_point": {
+      "domain": "electrical",
+      "core": false,
+      "he": "נק' טלפון"
+    },
+    "speaker": {
+      "domain": "electrical",
+      "core": false,
+      "he": "נק' רמקול"
+    },
+    "intercom": {
+      "domain": "electrical",
+      "core": false,
+      "he": "אינטרקום"
+    },
+    "doorbell": {
+      "domain": "electrical",
+      "core": false,
+      "he": "פעמון"
+    },
+    "heater_feed": {
+      "domain": "electrical",
+      "core": false,
+      "he": "הזנה לתנור/דוד/ונטה"
+    },
+    "panel": {
+      "domain": "electrical",
+      "core": false,
+      "he": "לוח חשמל/תקשורת"
+    },
+    "breaker": {
+      "domain": "electrical",
+      "core": true,
+      "he": "מפסק (בלוח)"
+    },
+    "switch_single": {
+      "domain": "lighting",
+      "core": true,
+      "he": "מפסק/מתג"
+    },
+    "switch_2way": {
+      "domain": "lighting",
+      "core": true,
+      "he": "מחליף"
+    },
+    "switch_fan": {
+      "domain": "lighting",
+      "core": false,
+      "he": "מפסק למאוורר"
+    },
+    "luminaire_ceiling": {
+      "domain": "lighting",
+      "core": true,
+      "he": "גוף תאורה תקרתי"
+    },
+    "luminaire_wall": {
+      "domain": "lighting",
+      "core": true,
+      "he": "גוף תאורה קיר"
+    },
+    "luminaire_pendant": {
+      "domain": "lighting",
+      "core": true,
+      "he": "גוף תלוי"
+    },
+    "luminaire_strip": {
+      "domain": "lighting",
+      "core": true,
+      "he": "פס לד"
+    },
+    "luminaire_outdoor": {
+      "domain": "lighting",
+      "core": true,
+      "he": "גוף חוץ / פרוז'קטור"
+    },
+    "ceiling_fan": {
+      "domain": "lighting",
+      "core": false,
+      "he": "מאוורר תקרה"
+    },
+    "fixture_wc_concealed": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "אסלה תלויה + מיכל סמוי"
+    },
+    "fixture_wc_monoblock": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "אסלה מונובלוק"
+    },
+    "fixture_basin": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "כיור"
+    },
+    "faucet_basin": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "ברז פרח"
+    },
+    "faucet_wall": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "ברז קיר"
+    },
+    "fixture_shower": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "מקלחת (נק' מקלחת)"
+    },
+    "fixture_bath": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "אמבטיה"
+    },
+    "fixture_kitchen_sink": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "כיור מטבח"
+    },
+    "fixture_washing_machine": {
+      "domain": "plumbing",
+      "core": true,
+      "he": "מכונת כביסה"
+    },
+    "garden_tap": {
+      "domain": "plumbing",
+      "core": false,
+      "he": "ברז גינה"
+    },
+    "ac_unit": {
+      "domain": "hvac",
+      "core": false,
+      "he": "מזגן (מיקום יחידה / נק' ניקוז)"
+    },
+    "room": {
+      "domain": "tiling",
+      "core": false,
+      "he": "חדר"
+    },
+    "floor_tiling": {
+      "domain": "tiling",
+      "core": false,
+      "he": "ריצוף"
+    },
+    "wall_cladding": {
+      "domain": "tiling",
+      "core": false,
+      "he": "חיפוי"
+    },
+    "region": {
+      "domain": "other",
+      "core": false,
+      "he": "אזור סימון (context)"
+    },
+    "note_point": {
+      "domain": "other",
+      "core": false,
+      "he": "ראה הערה (סימון +)"
+    },
+    "bezek_point": {
+      "domain": "electrical",
+      "core": false,
+      "he": "נק' קצה לבזק"
+    },
+    "waterproof_marker": {
+      "domain": "electrical",
+      "core": false,
+      "he": "אביזר מוגן מים"
+    },
+    "switch_cross": {
+      "domain": "lighting",
+      "core": false,
+      "he": "מצלב"
+    },
+    "switch_shutter": {
+      "domain": "lighting",
+      "core": false,
+      "he": "מתג לתריס"
+    },
+    "conduit_cobra": {
+      "domain": "electrical",
+      "core": false,
+      "he": "צינור קוברה 50 מ\"מ"
+    },
+    "water_heater_feed": {
+      "domain": "electrical",
+      "core": false,
+      "he": "הזנה לדוד חשמל"
+    },
+    "legend_entry": {
+      "domain": "other",
+      "core": false,
+      "he": "שורת מקרא"
+    },
+    "legend_box": {
+      "domain": "other",
+      "core": false,
+      "he": "מסגרת מקרא"
+    },
+    "unknown": {
+      "domain": "other",
+      "core": false,
+      "he": "לא מזוהה"
+    }
   }
 }

@@ -1,10 +1,11 @@
-# @kamutan/api — notes (Sprint 0 + 1 + 2 + 3, Firebase, ADR 0008)
+# @kamutan/api — notes (Sprint 0 + 1 + 2 + 3 + 4, Firebase, ADR 0008)
 
 NestJS 11 (TypeScript strict) Core API. Sprint 0: **login → create project → upload & store a file**. Sprint 1:
 **quarantine upload → ingest via Pub/Sub → sheets list / confirm / regions / tiles (signed URLs) / reprocess / job status**.
 Sprint 2: **overlay artifacts (legend/detections/rooms + crops, signed) / legend confirmation / unknown-symbol resolution**.
 Sprint 3: **item library + past-BOQ import, BOQ templates + rules, BOQ build request, lines + review PATCH, evidence, Excel
-export (exceljs, client format)**.
+export (exceljs, client format)**. Sprint 4: **corrections (single / batch / revert / list) with a debounced auto rebuild,
+risk-ranked review queue, room settings (tiling inputs), learn-from-correction (`symbols.find_similar`)**.
 Runs as Cloud Functions 2nd gen `api` (europe-west1) behind the Firebase Hosting rewrite `/api/**`
 (same origin → no CORS needed), and locally via `src/main.ts`. Contracts (Zod, source of truth for DTOs,
 Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
@@ -51,6 +52,16 @@ Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/c
 | GET | `/projects/:projectId/boq/lines/:lineId/evidence` | viewer | Sprint 3. `{lineId, buildId, items[≤2000] {sheetId, versionId, detectionId, linkGroupId, floor}, bySheet, truncated}` from `boq/{buildId}/evidence.json.gz` (the line's `evidenceRef` only when it is THIS org/project's evidence path, else the line's `buildId` / project's `latestBuildId`). Lenient parse (malformed → []), gzip caps as Sprint 2, parsed `lines` cached per path (4). |
 | GET | `/projects/:projectId/boq/evidence?sheetId=&versionId=` | viewer | Sprint 3 (integration). Marker → line lookup for one sheet version from the latest build's evidence: `{sheetId, versionId, buildId, detections {detectionId: lineIds[]}, linkGroups {linkGroupId: lineIds[]}}`. |
 | POST | `/projects/:projectId/boq/export` | editor | Sprint 3. `{templateId?, split: summed\|byFloor, markDraft}` → 409 `export_blocked` (`issues: [{path:'red', message:'<n>'}]`) when org `blockExportOnRed` and red lines exist; 409 `not_ready` without lines; else xlsx (see below) → `orgs/{o}/projects/{p}/exports/{uuid}.xlsx` + `exports/{uuid}` record + audit `exports/create`; returns `{exportId, url (V4 signed, **120 s**, attachment + UTF-8 filename), expiresAt, fileName, counts, hasWarnings}`. Own tier `EXPORT_THROTTLE_LIMIT` (10/min/user). |
+| POST | `/projects/:projectId/corrections` | reviewer (accept/reject) / **editor** (every other kind) | Sprint 4. `CreateCorrectionRequest` (brief shape; per-kind rules in the contract, strict). Sheet + version must exist (404) and be `ready` (409 `not_ready`); anchor + geometry inside the page ±10 mm (400). Tx: `corrections/{id}` + audit `corrections/create` (ids/classes/codes + `hasReason`, never the reason text). Then BOQ stale (`correction`) + debounced rebuild → `{correction, rebuild: RebuildOutcome}` (201). |
+| POST | `/projects/:projectId/corrections/batch` | highest role of the items' kinds | Sprint 4. `{items[1..500], source, similarSearchId?}`; all-or-nothing (one tx: items + `correctionBatches/{batchId}` + ONE audit event `corrections/batch` with the ids); ≤ 20 000 geometry points per batch (400); unknown `similarSearchId` 404. Strict rate limit. → `{batch, items, rebuild}` (201). |
+| POST | `/projects/:projectId/corrections/:correctionId/revert` | role of the correction's kind | Sprint 4. Undo = `revertedAt/revertedBy` (never a delete); 409 when already reverted; audit `corrections/revert`; stale + rebuild. |
+| POST | `/projects/:projectId/correction-batches/:batchId/revert` | highest role of the batch kinds | Sprint 4 (extra, UX "a batch is one undo step"). Reverts every not-yet-reverted item + the batch doc; 409 twice; audit `corrections/revert_batch {reverted}`. |
+| GET | `/projects/:projectId/corrections?sheetId=&batchId=&kind=&includeReverted=&cursor=&limit≤500` | viewer | Sprint 4. Newest first (`at` desc, id desc); reverted hidden unless `includeReverted=true`; cursor = last id. |
+| GET | `/projects/:projectId/review-queue?kind=&sheetId=&floor=&level=yellow\|red&cursor=&limit≤200` | viewer | Sprint 4. `ReviewQueuePage {items, nextCursor (offset), total, counts {byKind, byLevel}, buildId, stale, generatedAt, expiresAt}`. See "Review queue" below. |
+| GET | `/projects/:projectId/rooms/:sheetId/:roomId/settings` | viewer | Sprint 4. Stored `RoomSettings` or the type defaults (`isDefault: true`) + room facts of the sheet's CURRENT version (type, wet, area, perimeter, walls, openings, externalCorners). 404 when neither exists. |
+| PUT | `/projects/:projectId/rooms/:sheetId/:roomId/settings` | editor | Sprint 4. Whole doc (strict). Validated against the current version's room: wall ids, span ≤ wall length (+5 cm), no overlapping spans per wall, `keepOpenings` ⊂ room openings (400); room must exist (404). Tx + audit `roomSettings/update` (numbers/flags); stale (`room`) + rebuild. |
+| POST | `/projects/:projectId/similar-searches` | reviewer | Sprint 4. `{exemplar {sheetId, versionId, bboxMm (0<w,h≤200), class}, scope sheet\|project, correctionId?}`; version ready (409), box inside the page (400). Tx: `similarSearches/{id}` (queued) + `jobs/{jobId}` (`symbols.find_similar`, `searchId`) + audit; publish `FindSimilarJob` (503 + search/job `failed` on error). Strict rate limit. 202 `{search, jobId}`. |
+| GET | `/projects/:projectId/similar-searches/:searchId` | viewer | Sprint 4. `SimilarSearchView {search, thumbUrls {candId: url}, expiresAt}`; candidates parsed leniently (malformed / duplicate / foreign-thumb dropped, score desc); crops signed from `orgs/{o}/projects/{p}/similar/{searchId}/{candId}.webp` (ids-derived, ≤ 256). |
 | GET | `/jobs/:jobId` | viewer of `job.orgId` | Top-level job doc; membership checked in the service against the doc's `orgId` (non-members → 404). Tolerates worker docs with numeric `progress` + `stage`. |
 
 OpenAPI: `/api/docs` (UI) and `/api/docs/openapi.json` when `SWAGGER_ENABLED=true` and not production; static copy
@@ -86,6 +97,7 @@ insufficient role → **403**, MFA-gated → `403 mfa_required`.
 | Sprint 3 library | `orgs/{o}/itemLibrary/{itemId}`, `boqTemplates/{id}`, `boqRules/{id}`, `libraryImports/{uuid}` | API (manual items, seeds, admin edits, imports); worker (`library.import` upserts items / template, import status) |
 | Sprint 3 BOQ | `.../projects/{p}/boqLines/{lineId}` (worker computes; API PATCH review fields), `boqBuilds/{id}` (API queued → worker), `exports/{id}` (API), project `boq {latestBuildId, builtAt, stale, pendingBuildId, staleReason, staleAt}` | see contracts `boq.ts`; API sets `pendingBuildId` + `stale=true`; worker sets `latestBuildId/builtAt/stale=false/pendingBuildId=null` |
 | Sprint 3 Storage | `orgs/{o}/imports/{uuid}.{xls\|xlsx}` (client create-only), `.../boq/{buildId}/evidence.json.gz` (worker), `.../exports/{id}.xlsx` (API) | `BoqStorage` port: each method pinned to one path regex (`LIBRARY_IMPORT_PATH_RE`, `BOQ_EVIDENCE_PATH_RE`, `BOQ_EXPORT_PATH_RE`) |
+| Sprint 4 review | `.../projects/{p}/corrections/{id}`, `correctionBatches/{id}`, `roomSettings/{sheetId}__{roomId}`, `similarSearches/{id}` (worker fills candidates), project `boq.autoBuildId`, build `trigger/debounceUntil/afterBuildId` | API (all writes except similar results); Storage `.../projects/{p}/similar/{searchId}/{candId}.webp` worker, API signs |
 | Audit | `orgs/{orgId}/auditLog/{eventId}` `{actorId, actorKind, entity, entityId, action, after, at, prevHash, hash}` | API: org/project create+update, upload, confirm, set_regions, reprocess, Sprint 2: `legendEntries/{confirm,reassign,ignore}`, `unknownClusters/resolve` (per-org SHA-256 chain in the same transaction) |
 | LegendEntry (Sprint 2) | `.../projects/{pid}/legendEntries/{entryId}` `{sheetId, versionId, label, labelConfidence, suggestedClass, class, itemCode, signature, thumbPath, status suggested\|confirmed\|ignored, confirmedBy?, confirmedAt?, updatedAt}` | **worker** writes `suggested`; API: decisions + entries created from resolved clusters (`le_<sheetId>_<clusterId>`) |
 | SymbolMapping (Sprint 2) | `orgs/{orgId}/symbolMappings/{signature}` `{class\|null, ignored, itemCode, label, confirmedBy, confirmedAt, uses}` | API only (confirm / reassign / resolve, upsert + uses++); worker reads |
@@ -140,6 +152,52 @@ cannot be stored. The contract (`RegionSchema.polygonMm`) uses objects everywher
   boq-lines.json + evidence): `EXPORT_SAMPLE_PATH=/home/claude/kamutan-data/debug/export_sample.xlsx npx vitest run
   test/unit/export-real-sample.test.ts` (skipped when the data dir is absent). The fixture-based sample
   (`test/fixtures/noah-boq.ts`) is written by excel.test.ts to `EXPORT_FIXTURE_SAMPLE_PATH` / tmp.
+
+## Sprint 4 — corrections, review queue, room settings, find-similar
+
+- **Code layout**: `src/review/` (ReviewController; CorrectionsService, RebuildService, ReviewQueueService + pure
+  `queue.ts`, RoomSettingsService, SimilarService, `artifact-views.ts` = lenient cached views of detections / rooms /
+  links per version), `src/db/review-*.ts` (ReviewRepository port + pure `planAutoBuild`/mappers, Firestore + in-memory
+  implementations sharing the core store + audit chain). `REVIEW_REPOSITORY` global provider.
+- **Role decision** (SEC-07 "תיקון פריטים ושינוי סטטוס" = reviewer ✓): `accept` / `reject` are review decisions →
+  **reviewer+**; every kind that changes what is counted/measured (`add remove reclassify move link unlink measure
+  count`) → **editor+** (same line as Sprint 3's `qtyOverride`). Batch = highest role of its kinds; revert = role of
+  the reverted kind; room settings PUT editor+; find-similar POST reviewer+ (read-only compute; applying it is a batch
+  with its own check). Contract constant `CORRECTION_KIND_MIN_ROLE`. Route guard = reviewer, service re-checks.
+- **Debounced auto rebuild (no double builds, serverless-safe)** — `RebuildService.afterChange` after every correction /
+  revert / batch / room-settings PUT, one transaction (`scheduleAutoBuild`): project.boq stale (+ reason, staleAt); org
+  `settings.autoRebuild === false` → stop (`off`); an active **queued** build (`boq.pendingBuildId` or `boq.autoBuildId`)
+  → only `debounceUntil = now + 5 s` (capped at createdAt + 60 s), no message (`debounced`); only a **running** build →
+  ONE follow-up build `afterBuildId = running` (`followup`); nothing active → new build `trigger: auto`,
+  `debounceUntil` + job + audit `boqBuilds/request` (`scheduled`), and the single `boq.build` message is published right
+  away. **Worker-BOQ contract**: sleep until `debounceUntil`, re-read the build doc, loop (cap 60 s from createdAt);
+  with `afterBuildId` wait until that build is terminal; clear `pendingBuildId` only when it equals its own build id.
+  `autoBuildId` makes the API robust even if the worker clears `pendingBuildId` unconditionally. Publish failure →
+  build failed + `rebuild.autoRebuild = 'failed'`; the user's edit is kept (the BOQ stays stale).
+- **Review queue** (`queue.ts`): risk = |qty impact| × (1 − score) × level weight (red 3, yellow 1); items:
+  `detection` (non-green, not `verified` in the build's evidence), `cluster` (≥ 3 detections of one sheet version with
+  the same signature|legendEntryId + class + level + first reason + line; members lowest score first, risk = Σ),
+  `unknown_cluster` (count × 3, signed `unknown/{id}.webp` crop), `link_group` (non-green), `room` (non-green, unnamed,
+  or wet/bathroom/wc/kitchen/courtyard without stored settings: impact = area m²), `unmatched_correction` (from the build
+  evidence `corrections.unmatched`, only while the correction is active; impact = quantity / clicks / 1, red),
+  `line` (red/yellow **draft** line with no queued per-item cause — rule default, one-off suggestion; impact = qty).
+  Tie-break: kind order, sheet id, item id → deterministic. **Cache**: the build-derived base is cached per
+  (org, project, latestBuildId, current ready versions) — artifacts are immutable per version; each request only reads
+  project + sheets list + corrections + room-settings ids and applies the overlay (corrections on the same version
+  match by detection id; on another version of the sheet by `anchorMm` within `radiusMm`). 2 000 detections: the
+  cached call is < 300 ms in the e2e suite (asserted). Filters apply after the overlay; `counts` are unfiltered.
+- **Security**: signer now also allows `SIMILAR_THUMB_PATH_RE` crops (never anything else); worker artifacts / result
+  docs are parsed leniently with caps (50 000 detections, 2 000 rooms, 5 000 groups, 500 candidates).
+- **Bootstrap**: JSON body limit 256 kB → **2 MB** (a 500-item batch with geometry); body-parser errors (413 / 400)
+  are mapped to the ApiError shape instead of 500 (`http-exception.filter.ts`). `groupEvidence` sums an item's
+  `quantity` when present (tiling m² lines) — `BoqLineEvidenceResponse.bySheet.count` is no longer an integer.
+
+- **Integration round**: overlay manifest adds `fixtures` / `walls` signed URLs (version `artifacts.fixtures/walls`,
+  paths derived from ids); `toArtifacts` keeps both keys. Room settings GET defaults use rules v4
+  (`defaultRoomSettings` with the room's `ceilingHeightM`, `niche`, and `hasShowerOrBath` from the current version's
+  detections with that `roomId`); PUT rejects `claddingHeightM` above the ceiling (request or room) with 400. Export:
+  area / length lines (`מ"ר`, `מ"א`, m2, m …) are displayed with 2 decimals (`numFmt 0.00`, `qtyFormat`), values stay
+  exact so the formulas compute on them; `export-real-sample` compares with `toBeCloseTo(…, 2)`.
 
 ## Upload flow (SEC-13/14/15)
 
@@ -257,6 +315,31 @@ Sprint 3 tests:
 - `integration/firestore.emulator.test.ts` — + Sprint 3 block (seed idempotent, requestBuild dotted `boq.*` fields +
   dedupe + failBuild, patchLine transaction + audit, markStale, library + import queue + export record). CI only.
 
+Sprint 4 tests:
+- `e2e/review.e2e.test.ts` (21) — corrections lifecycle (doc + audit without reason text, stale, ONE debounced build +
+  message; 5 more edits → `debounced`, no message, one build doc; running build → exactly one follow-up, robust to the
+  worker clearing pendingBuildId; autoRebuild off; publish failure keeps the correction), revert (409 twice), list
+  (reverted hidden, newest first, cursor, kind), validation (404/409/400, strict, "unknown" class), role matrix (viewer
+  403, reviewer add 403, reviewer reject ok, editor/admin ok, outsider 404, anon 401, reviewer revert of an editor kind
+  403), cross-org (B admin with A ids / A sheet in B project → 404 everywhere), batch (500 → one batchId + one audit;
+  501 / empty → 400; mixed kinds by reviewer 403; all-or-nothing; batch revert; geometry cap 400; > 2 MB → 413),
+  room settings (defaults, validation ×8, roles, audit, stale `room`), similar searches (roles, 409/400, job message
+  contract, lenient result + signed crops only for valid thumbs, apply = batch with `similarSearchId`, publish 503),
+  review queue (exact expected ranking of 10 items with risks, cluster/unknown/unmatched/room details, counts,
+  determinism, filters, cursor paging, overlay after accept / partial cluster / room settings / revert without
+  recomputing the base, older-version anchor match, 2 000-detection timing).
+- `unit/review.unit.test.ts` — `planAutoBuild` table (off / create / debounce / follow-up / stuck / cap), roleForKinds,
+  pure queue (anchor radius, same-version id rule, unknown cluster shrink, room settings/accept), untrusted artifact
+  views, room validation helper, similar mapper, **service-level isolation** (every Sprint 4 method: org B admin → 404;
+  viewer / reviewer role checks without guards).
+- `integration/firestore.emulator.test.ts` — Sprint 4 block (500-item batch in one transaction, list by batch/sheet,
+  revert 409, batch revert, room settings, similar + job, scheduleAutoBuild scheduled → debounced → off). CI only.
+- `unit/config-openapi.test.ts` — Sprint 4 paths + review-queue query params.
+
+Commands (all green, 14.10.2026, Sprint 4): `pnpm turbo run lint typecheck test build --filter=@kamutan/api
+--filter=@kamutan/contracts --filter=@kamutan/firebase-tests` (api 223 passed / 18 emulator-skipped; contracts 100;
+firebase-tests 45 passed / 164 emulator-skipped), `pnpm --filter @kamutan/api openapi`.
+
 Commands (all green, 14.10.2026, Sprint 3): `pnpm turbo run lint typecheck test build --filter=@kamutan/api
 --filter=@kamutan/contracts` (api 187 passed, 16 emulator-skipped; contracts 71 passed), `pnpm --filter @kamutan/api openapi`.
 
@@ -268,6 +351,24 @@ Sprint 1 commands (12.10.2026): `pnpm --filter @kamutan/contracts build test`,
 `lint` = `tsc --noEmit --noUnusedLocals --noUnusedParameters` (no ESLint in the repo, same convention as web/viewer).
 
 ## Known gaps / follow-ups
+
+Sprint 4:
+- **The debounce lives in the worker** (sleep until `debounceUntil`, re-read, loop, honour `afterBuildId`). Until
+  Worker-BOQ implements it, an auto build runs immediately on receipt (still only one message per debounce window).
+  Cloud Tasks with `scheduleTime` would move the delay out of the worker if wanted.
+- Unmatched corrections come only from the build's evidence (`corrections.unmatched`) — Worker-BOQ must write it;
+  without it the queue shows no "תיקון לא הותאם" cards. Corrections created after the latest build are applied in the
+  queue overlay (they hide the items they address) but their BOQ effect waits for the rebuild.
+- Queue clusters are per sheet version (detection ids are per version); a project-wide cluster card would need
+  sheet/version per member. Detection items have no crop (`thumbUrl` null) — the web crops from tiles by `bboxMm`.
+- Queue reads every current version's detections/rooms/links once per (build, versions) per instance (cache 32 bases,
+  256 version views); a cold instance on a large project pays the artifact reads on the first request.
+- Corrections list / queue read ≤ 10 000 corrections per project and sort in memory (no composite index).
+- `itemCode` / `class` in corrections are not checked against the org library / the detection's class family; the
+  worker's re-match decides. `roomId` / `detectionId` existence is not checked (the worker reports unmatched ones).
+- Room settings PUT validates against the CURRENT version's room; settings of a room that disappears after a
+  reprocess are kept (doc id `{sheetId}__{roomId}`) and simply not applied.
+- No MFA on any Sprint 4 action (none is admin-level). Per-instance throttling as before.
 
 Sprint 3:
 - **Emulator suites not run here** (jar download blocked) — the new FirestoreBoqRepository block and the rules suites

@@ -15,6 +15,8 @@
   ``detections.json.gz``, ``rooms.json.gz`` + crops per version; their paths are in the index entry
   (top level and under ``artifacts``) and per-sheet legend / detection / room counts are printed and
   saved in ``understanding-report.json``. ``--no-understand`` skips the stage.
+* Sprint 4: fixtures (Worker-B's ``fixtures.detect`` via understand) are part of ``detections.json.gz``;
+  the extended records are in ``fixtures.json.gz`` (index key ``fixtures``).
 * Sprint 3: lighting sheets get ``links.json.gz`` (``kamutan.links/1``, switch ↔ luminaire groups);
   its path is in the index entry (``links`` and ``artifacts.links``) and ``stats.links``. While the
   orchestrator does not upload it yet (service/ owned by Worker-BOQ), it is computed here from the
@@ -123,6 +125,12 @@ def index_entry(file_id: str, res: IngestResult, page: PageOutcome | None) -> di
     }
     if not entry["links"] and sheet.get("discipline") in LINK_DISCIPLINES and entry["detections"]:
         _local_links(entry, vdir, prefix.rsplit("/tiles", 1)[0] + "/")
+    if (vdir / "fixtures.json.gz").exists():  # Sprint 4: extended fixture records
+        entry["fixtures"] = v["artifacts"].get("fixtures") or prefix.rsplit("/tiles", 1)[0] + "/fixtures.json.gz"
+        entry["artifacts"]["fixtures"] = entry["fixtures"]
+    if (vdir / "walls.json.gz").exists():  # Sprint 4: walls borrowed by the MEP sheets (kamutan.walls/1)
+        entry["walls"] = v["artifacts"].get("walls") or prefix.rsplit("/tiles", 1)[0] + "/walls.json.gz"
+        entry["artifacts"]["walls"] = entry["walls"]
     (vdir / "version.json").write_text(json.dumps(entry, ensure_ascii=False, indent=2))
     return entry
 
@@ -199,6 +207,16 @@ def main() -> int:
     rows = []
     und_rows: list[dict[str, Any]] = []
     t_all = time.monotonic()
+    # Sprint 4: construction / architecture plans first — the MEP and master sheets borrow their walls
+    # (walls.json.gz) and infer stacked plans' floors from them (the service reads the project's current versions)
+    order = {"construction": 0, "architecture": 1, "architecture_master": 2}
+
+    def rank(f: Path) -> tuple[int, str]:
+        fid = f.stem.removeprefix("sheet_")
+        disc = (index.get(fid) or {}).get("discipline") or expected.get(fid, {}).get("discipline")
+        return order.get(str(disc), 3), fid
+
+    files.sort(key=rank)
     for f in files:
         fid = f.stem.removeprefix("sheet_")
         if a.force:

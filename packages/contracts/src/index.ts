@@ -8,6 +8,7 @@ export * from './understanding.js';
 export * from './geometry.js';
 export * from './tiles.js';
 export * from './review.js';
+export * from './corrections.js';
 export * from './boq.js';
 export * from './library.js';
 export { sha256Hex } from './sha256.js';

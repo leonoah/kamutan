@@ -98,7 +98,7 @@ export function groupByChapter(lines: readonly BoqLine[], chapters: readonly Boq
 export interface Receipt {
   total: number;
   detected: number;
-  /** Manual delta (override − computed); 0 when not overridden. */
+  /** Manual part: corrections (manual add / count / measure) + override delta. */
   manual: number;
   evidenceCount: number;
   sheets: number;
@@ -108,10 +108,13 @@ export interface Receipt {
 }
 export function receiptOf(l: BoqLine): Receipt {
   const total = effectiveQty(l);
+  const manualRows = (l.breakdown ?? []).filter((b) => b.manual);
+  const fromCorrections = manualRows.length ? manualRows.reduce((s, b) => s + b.qty, 0) : (l.manualCount ?? 0);
+  const detected = Math.round((l.qty - fromCorrections) * 100) / 100;
   return {
     total,
-    detected: l.qty,
-    manual: isOverridden(l) ? total - l.qty : 0,
+    detected,
+    manual: Math.round((total - detected) * 100) / 100,
     evidenceCount: l.evidenceCount,
     sheets: new Set(l.sourceVersions.map((s) => s.sheetId)).size,
     byFloor: sortFloors(Object.keys(l.byFloor ?? {})).map((f) => [f, l.byFloor[f] ?? 0]),
@@ -160,6 +163,8 @@ export function nextNeedingReview(ordered: readonly BoqLine[], currentId: string
 /** Domain of a line (for the shared תחום filter): composite / install lines are lighting; chapter 04 electrical. */
 export function lineDomain(l: Pick<BoqLine, "ruleId" | "chapter" | "code">): string {
   const r = l.ruleId ?? "";
+  if (l.chapter === "03") return "plumbing";
+  if (l.chapter === "05") return "tiling";
   if (/comp|light|install/i.test(r)) return "lighting";
   if (["4.09", "4.10", "4.11", "4.12", "4.14", "4.15", "4.16", "9.01"].includes(l.code)) return "lighting";
   if (l.chapter === "04") return "electrical";

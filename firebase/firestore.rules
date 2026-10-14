@@ -5,9 +5,11 @@ rules_version = '2';
 // Principles
 //  * Tenant = path: every tenant document lives under orgs/{orgId}; membership is
 //    exists(orgs/{orgId}/members/{uid}). A document can never move between orgs.
-//  * Clients READ their org's data; clients WRITE only in two places:
-//      1. projects/*/corrections       create-only (editor/reviewer/admin), immutable
-//      2. projects/*/reviewItems       status/resolution fields only (editor/reviewer/admin)
+//  * Clients READ their org's data; clients WRITE only in ONE place:
+//      projects/*/reviewItems       status/resolution fields only (editor/reviewer/admin)
+//    Sprint 4: projects/*/corrections is NO LONGER client-writable — corrections go through
+//    POST /v1/projects/:pid/corrections[/batch] (role per kind, page/version checks, audit hash chain, BOQ stale +
+//    debounced rebuild). correctionBatches / roomSettings / similarSearches are API-only too.
 //    Sprint 3: projects/*/boqLines is NO LONGER client-writable — status / note / qtyOverride go through
 //    PATCH /v1/projects/:pid/boq/lines/:id (role per field, transition check, audit hash chain). One write path
 //    means one place for the state machine, the audit event and the "approved = locked" rule.
@@ -149,27 +151,29 @@ service cloud.firestore {
           allow write: if false;
         }
 
-        // -------------------------------------------------------------- corrections
-        // Create-only, author == caller, createdAt == server time, immutable.
+        // -------------------------------------------------------------- corrections (Sprint 4: API only)
+        // The human edits (add/remove/reclassify/move/link/unlink/measure/count/accept/reject). Written ONLY by the
+        // API (role per kind: accept/reject reviewer+, others editor+; audited; undo = revertedAt). Members read them
+        // (history panel, live overlay). No client write: one write path for the role check and the audit chain.
         match /corrections/{correctionId} {
           allow read: if isMember(orgId);
-          allow create: if canCorrect(orgId) && validCorrection(request.resource.data);
-          allow update, delete: if false;
-
-          function validCorrection(d) {
-            return d.keys().hasAll(['authorId', 'createdAt', 'targetType', 'targetId', 'action'])
-              && d.keys().hasOnly(['authorId', 'createdAt', 'targetType', 'targetId', 'action',
-                                   'sheetId', 'versionId', 'payload', 'note'])
-              && d.authorId == request.auth.uid
-              && d.createdAt == request.time
-              && d.targetType in ['detection', 'room', 'link', 'legendEntry', 'reviewItem', 'measurement']
-              && d.action in ['accept', 'reject', 'reclass', 'add', 'move', 'remove', 'setSupply', 'setLifecycle']
-              && str(d.targetId, 128)
-              && optStr(d, 'sheetId', 128)
-              && optStr(d, 'versionId', 128)
-              && optStr(d, 'note', 2000)
-              && (!('payload' in d) || (d.payload is map && d.payload.size() <= 20));
-          }
+          allow write: if false;
+        }
+        // One doc per batch POST (≤ 500 corrections, one undo step).
+        match /correctionBatches/{batchId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+        // Tiling inputs per room (`{sheetId}__{roomId}`): PUT /v1/projects/:pid/rooms/:sid/:rid/settings (editor+).
+        match /roomSettings/{settingsId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+        // Learn-from-correction searches: API creates `queued` + job; the worker writes candidates. Crops live in
+        // Storage under projects/*/similar/** and are reachable only through API-signed URLs.
+        match /similarSearches/{searchId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
         }
 
         // -------------------------------------------------------------- reviewItems

@@ -16,6 +16,7 @@ Openings are closed so that rooms become closed faces:
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from dataclasses import dataclass, field
 
@@ -31,10 +32,27 @@ WALL_STROKE_MIN_MM = 0.45  # heavy pen (sample: 0.55 mm wall outlines vs 0.25 mm
 MIN_FILL_AREA_MM2 = 0.3
 SECONDARY_MIN_AREA_MM2 = 1.5
 DOOR_R_M = (0.5, 1.3)
-DOOR_SWEEP_DEG = (60.0, 120.0)
+DOOR_SWEEP_DEG = (60.0, 180.0)  # a door in a 45° wall swings up to 135°; pivot doors up to 180°
+JAMB_SEARCH_R = (0.6, 2.0)  # other jamb of an open / pivot door, in door radii from the hinge
 WINDOW_MAX_M = 3.0
 WINDOW_JAMB_M = 0.3  # wall continuing past each end of a window, real metres
 WALL_T_M = (0.06, 0.6)  # wall thickness range, real metres
+BORROW_TOL_MM = 1.0  # reference walls closer than this to own walls are the same wall (alignment noise)
+
+
+@dataclass
+class Opening:
+    """A door (swing arc) or window (glazing lines) closing a wall gap; ``a``–``b`` is the closing line (paper mm)."""
+
+    kind: str  # door | window
+    a: tuple[float, float]
+    b: tuple[float, float]
+    width_mm: float  # paper mm (door: leaf radius, window: glazing length)
+    via: str = "leaf"  # door: leaf (closed-leaf end on a wall) | jamb (other jamb searched) ; window: glazing
+
+    @property
+    def center(self) -> tuple[float, float]:
+        return ((self.a[0] + self.b[0]) / 2, (self.a[1] + self.b[1]) / 2)
 
 
 @dataclass
@@ -44,6 +62,8 @@ class WallSet:
     door_arcs: list[tuple[float, float, float]] = field(default_factory=list)  # (cx, cy, r) paper mm
     source: str = "none"  # fills | strokes | parallel | none
     stats: dict[str, float] = field(default_factory=dict)
+    openings: list[Opening] = field(default_factory=list)
+    borrowed: BaseGeometry | None = None  # walls taken from a reference sheet (MEP thin partitions)
 
 
 def _rings(vs: VectorSheet, i: int) -> list[np.ndarray]:
@@ -109,8 +129,16 @@ def extract_walls(
     *,
     scale_den: int,
     exclude_paths: set[int] | None = None,
+    reference: BaseGeometry | None = None,
+    reference_closures: BaseGeometry | None = None,
+    openings: bool = True,
 ) -> WallSet:
-    """Walls inside ``box`` (x0,y0,x1,y1 paper mm)."""
+    """Walls inside ``box`` (x0,y0,x1,y1 paper mm).
+
+    ``reference``: walls of another sheet of the same floor, already moved into this sheet's frame
+    (:mod:`.reference`); pieces of it that this sheet lacks (thin partitions drawn as single lines on MEP
+    sheets) and that are wall-like are added (``WallSet.borrowed``). ``openings=False`` skips doors / windows.
+    """
     mm_per_m = 1000.0 / scale_den
     ex = exclude_paths or set()
     inbox = _path_mask(vs, box, ex)
@@ -171,12 +199,37 @@ def extract_walls(
         if not pw.is_empty:
             walls = walls.union(pw) if not walls.is_empty else pw
             src = "parallel"
-    ws = WallSet(walls=walls, source=src, stats=stats)
-    if walls.is_empty:
+    borrowed: BaseGeometry | None = None
+    if reference is not None and not reference.is_empty and not walls.is_empty:
+        extra = reference.intersection(shapely.box(*box)).difference(walls.buffer(BORROW_TOL_MM))
+        keep = [g for g in _poly_parts(extra) if g.area >= 1.5 and _is_wall_like(g, mm_per_m)]
+        if keep:
+            borrowed = shapely.union_all(keep).buffer(BORROW_TOL_MM, join_style="mitre")
+            walls = walls.union(borrowed)
+            stats["borrowedParts"] = float(len(keep))
+    ws = WallSet(walls=walls, source=src, stats=stats, borrowed=borrowed)
+    if walls.is_empty or not openings:
         return ws
     _add_doors(vs, inbox, ws, mm_per_m)
     _add_windows(vs, inbox, ws, mm_per_m)
+    if reference_closures is not None and not reference_closures.is_empty:
+        own = shapely.union_all([walls, *ws.bridges]).buffer(BORROW_TOL_MM)
+        extra = reference_closures.intersection(shapely.box(*box)).difference(own)
+        keep = [g for g in _poly_parts(extra) if g.length >= 0.3 * mm_per_m]
+        if keep:
+            closing = shapely.union_all(keep).buffer(BORROW_TOL_MM, join_style="mitre")
+            ws.bridges.append(closing)
+            ws.borrowed = closing if ws.borrowed is None else ws.borrowed.union(closing)
+            ws.stats["borrowedClosures"] = float(len(keep))
     return ws
+
+
+def _poly_parts(g: BaseGeometry) -> list[BaseGeometry]:
+    if g.is_empty:
+        return []
+    if isinstance(g, Polygon):
+        return [g]
+    return [p for p in getattr(g, "geoms", []) if isinstance(p, Polygon)]
 
 
 def parallel_walls(vs: VectorSheet, mask: np.ndarray, mm_per_m: float) -> BaseGeometry:
@@ -326,12 +379,68 @@ def _add_doors(vs: VectorSheet, mask: np.ndarray, ws: WallSet, mm_per_m: float) 
         e1 = np.array([cx + rad * np.cos(a_end), cy + rad * np.sin(a_end)])
         d0 = walls.distance(shapely.Point(*e0))
         d1 = walls.distance(shapely.Point(*e1))
-        if min(d0, d1) > near:
+        if min(d0, d1) > 0.15 * rad:
+            # the closed-leaf end is not on a wall: door in a slanted wall, pivot / double door — close the
+            # opening between the hinge and the other jamb instead
+            j = _other_jamb(walls, (cx, cy), rad, [e0, e1])
+            if j is None:
+                continue
+            ws.bridges.append(LineString([(cx, cy), j]).buffer(0.05 * mm_per_m, cap_style="square"))
+            ws.door_arcs.append((cx, cy, rad))
+            ws.openings.append(Opening("door", (cx, cy), j, float(np.hypot(j[0] - cx, j[1] - cy)), "jamb"))
+            seen.append((cx, cy))
             continue
         end = e0 if d0 <= d1 else e1
         ws.bridges.append(LineString([(cx, cy), (float(end[0]), float(end[1]))]).buffer(0.05 * mm_per_m, cap_style="square"))
         ws.door_arcs.append((cx, cy, rad))
+        ws.openings.append(Opening("door", (cx, cy), (float(end[0]), float(end[1])), float(rad), "leaf"))
         seen.append((cx, cy))
+
+
+def _other_jamb(
+    walls: BaseGeometry, hinge: tuple[float, float], rad: float, ends: list[np.ndarray]
+) -> tuple[float, float] | None:
+    """Nearest wall *corner* (a jamb: the wall outline turns ≥ 45° there) across the opening: 0.6–2.0 radii from
+    the hinge, within ±60° of an arc end's direction, joined to the hinge through free space (the closing line
+    does not run inside a wall)."""
+    hx, hy = hinge
+    h = shapely.Point(hx, hy)
+    zone = h.buffer(JAMB_SEARCH_R[1] * rad)
+    local = walls.intersection(zone.buffer(1.0))
+    if local.is_empty:
+        return None
+    pts: list[tuple[float, float]] = []
+    simple = local.simplify(0.2, preserve_topology=True)
+    for poly in getattr(simple, "geoms", [simple]):
+        if not isinstance(poly, Polygon):
+            continue
+        for ring in (poly.exterior, *poly.interiors):
+            cs = np.asarray(ring.coords)[:-1]
+            n = len(cs)
+            for i in range(n):
+                a, b, c = cs[i - 1], cs[i], cs[(i + 1) % n]
+                t = math.degrees(math.atan2(c[1] - b[1], c[0] - b[0]) - math.atan2(b[1] - a[1], b[0] - a[0]))
+                t = (t + 180.0) % 360.0 - 180.0
+                d = math.hypot(b[0] - hx, b[1] - hy)
+                if abs(t) >= 45.0 and JAMB_SEARCH_R[0] * rad <= d <= JAMB_SEARCH_R[1] * rad and zone.contains(shapely.Point(b)):
+                    pts.append((float(b[0]), float(b[1])))
+    if not pts:
+        return None
+    dirs = [math.atan2(e[1] - hy, e[0] - hx) for e in ends]
+    inner = walls.buffer(-0.08)
+    best: tuple[float, tuple[float, float]] | None = None
+    for px, py in pts:
+        ang = math.atan2(py - hy, px - hx)
+        if min(abs((ang - d + math.pi) % (2 * math.pi) - math.pi) for d in dirs) > math.radians(60):
+            continue
+        dist = math.hypot(px - hx, py - hy)
+        if best is not None and dist >= best[0]:
+            continue
+        seg = LineString([(hx + (px - hx) * 0.1, hy + (py - hy) * 0.1), (hx + (px - hx) * 0.9, hy + (py - hy) * 0.9)])
+        if not inner.is_empty and seg.intersection(inner).length > 0.05 * dist:
+            continue
+        best = (dist, (px, py))
+    return best[1] if best else None
 
 
 def _add_windows(vs: VectorSheet, mask: np.ndarray, ws: WallSet, mm_per_m: float) -> None:
@@ -378,6 +487,21 @@ def _add_windows(vs: VectorSheet, mask: np.ndarray, ws: WallSet, mm_per_m: float
             for g in group:
                 ws.bridges.append(LineString(cands[g][0]).buffer(0.25, cap_style="flat", join_style="mitre"))
                 used[g] = True
+            # the window: mean of the glazing lines' end points (chord), its width = the glazing length
+            starts, stops = [], []
+            for g in group:
+                r = cands[g][0]
+                if np.hypot(*(r[0] - ra[0])) <= np.hypot(*(r[0] - ra[-1])):
+                    starts.append(r[0])
+                    stops.append(r[-1])
+                else:
+                    starts.append(r[-1])
+                    stops.append(r[0])
+            wa = np.mean(starts, axis=0)
+            wb_ = np.mean(stops, axis=0)
+            ws.openings.append(
+                Opening("window", (float(wa[0]), float(wa[1])), (float(wb_[0]), float(wb_[1])), float(la), "glazing")
+            )
 
 
 def _in_wall_line(lines: list[np.ndarray], walls: BaseGeometry, mm_per_m: float) -> bool:

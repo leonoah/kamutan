@@ -39,6 +39,12 @@ export const CLASS_INFO: Readonly<Record<string, ClassInfo>> = Object.freeze({
   fixture_basin: { domain: "plumbing", he: "כיור" },
   faucet_basin: { domain: "plumbing", he: "ברז פרח" },
   faucet_wall: { domain: "plumbing", he: "ברז קיר" },
+  fixture_shower: { domain: "plumbing", he: "מקלחון" },
+  fixture_bath: { domain: "plumbing", he: "אמבטיה" },
+  fixture_kitchen_sink: { domain: "plumbing", he: "כיור מטבח" },
+  fixture_washing_machine: { domain: "plumbing", he: "מכונת כביסה" },
+  garden_tap: { domain: "plumbing", he: "ברז גן" },
+  ac_unit: { domain: "hvac", he: "מזגן (מיקום)" },
   room: { domain: "tiling", he: "חדר" },
   floor_tiling: { domain: "tiling", he: "ריצוף" },
   wall_cladding: { domain: "tiling", he: "חיפוי" },
@@ -48,7 +54,7 @@ export const CLASS_INFO: Readonly<Record<string, ClassInfo>> = Object.freeze({
 export const UNKNOWN_CLASS = "unknown";
 
 /** Domains shown in pickers, in this order (tiling/other are not symbol classes). */
-export const SYMBOL_DOMAINS = ["electrical", "lighting", "plumbing"] as const;
+export const SYMBOL_DOMAINS = ["electrical", "lighting", "plumbing", "hvac"] as const;
 
 /** Classes the user can assign to a symbol, grouped by domain (in taxonomy order). */
 export const SYMBOL_CLASS_GROUPS: { domain: string; classes: string[] }[] = SYMBOL_DOMAINS.map((domain) => ({

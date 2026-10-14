@@ -23,4 +23,16 @@ export const defaultLabels: ViewerLabels = {
     realMm == null
       ? `${isolate(nf1.format(paperMm))} מ״מ על הנייר · קנה מידה לא ידוע`
       : `${isolate(nf.format(realMm / 1000))} מ״א`,
+  addHint: "לחצו על השרטוט להוספת פריט ידני · נצמד לסמל קרוב",
+  removeHint: "לחצו על פריט כדי להסיר אותו מהספירה",
+  moveHint: "גררו פריט למקומו הנכון",
+  linkHint: "גררו ממפסק אל נקודת המאור כדי לקשר (או לנתק קישור קיים)",
+  countHint: "לחצו על כל מופע · Backspace מבטל את האחרון · Enter לשמירה",
+  areaHint: "לחצו לקודקודים (נצמד לפינות) · לחיצה כפולה או Enter לסגירה",
+  lengthHint: "לחצו לנקודות הקו · Enter או לחיצה כפולה לסיום",
+  formatArea: (areaM2, perimeterM, paperMm2) =>
+    areaM2 == null
+      ? `${isolate(nf1.format(paperMm2))} מ״מ² על הנייר · קנה מידה לא ידוע`
+      : `${isolate(nf1.format(areaM2))} מ״ר · היקף ${isolate(nf1.format(perimeterM ?? 0))} מ״א`,
+  formatCount: (n) => `${isolate(String(n))} נספרו · Enter לשמירה`,
 };

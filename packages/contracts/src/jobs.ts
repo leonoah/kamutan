@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Sha256HexSchema, TimestampSchema } from './common.js';
 import { LIBRARY_IMPORT_PATH_RE, PROJECT_UPLOAD_PATH_RE, SOURCE_PATH_RE } from './firestore.js';
+import { SimilarExemplarSchema, SimilarScopeSchema, SIMILAR_MAX_CANDIDATES } from './corrections.js';
 import { DocIdSchema } from './org.js';
 import { FileKindSchema, ProcessingErrorSchema } from './sheets.js';
 
@@ -13,6 +14,8 @@ export const JOB_TYPES = Object.freeze({
   boqBuild: 'boq.build',
   /** Sprint 3: parse a past BOQ (xls/xlsx) into the org item library (+ a template). */
   libraryImport: 'library.import',
+  /** Sprint 4: "learn from correction" — find symbols similar to an exemplar (Worker-A). */
+  findSimilar: 'symbols.find_similar',
 } as const);
 export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
 
@@ -137,11 +140,37 @@ export const LibraryImportJobSchema = z
   });
 export type LibraryImportJob = z.infer<typeof LibraryImportJobSchema>;
 
+export const FIND_SIMILAR_JOB_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Topic `ingest`, type `symbols.find_similar` (Sprint 4, Worker-A). The worker loads jobs/{jobId} (orgId must
+ * match) and orgs/{orgId}/projects/{projectId}/similarSearches/{searchId}; builds a template from the exemplar's
+ * strokes (sheet version primitives inside `bboxMm`), searches the exemplar's sheet (`scope: sheet`) or every
+ * current ready version of the project (`scope: project`), and writes `status`, `candidates` (score desc, ≤
+ * `maxCandidates`, `alreadyDetected` = detection id at that position or null, `currentClass`), `thumbs` and
+ * `finishedAt`; crops go to orgs/{o}/projects/{p}/similar/{searchId}/{candidateId}.webp (≤ 256 px).
+ */
+export const FindSimilarJobSchema = z
+  .object({
+    schemaVersion: z.literal(FIND_SIMILAR_JOB_SCHEMA_VERSION),
+    type: z.literal(JOB_TYPES.findSimilar),
+    jobId: DocIdSchema,
+    orgId: DocIdSchema,
+    projectId: DocIdSchema,
+    searchId: DocIdSchema,
+    exemplar: SimilarExemplarSchema,
+    scope: SimilarScopeSchema,
+    maxCandidates: z.number().int().min(1).max(SIMILAR_MAX_CANDIDATES),
+    traceparent: TraceparentSchema.nullable(),
+  })
+  .strict();
+export type FindSimilarJob = z.infer<typeof FindSimilarJobSchema>;
+
 /**
  * Every message on topic `ingest` (discriminate on `type`; attribute `type` carries it too). Python: validate with
  * json-schema/IngestTopicJob.json (anyOf) and dispatch on `type`.
  */
-export const IngestTopicJobSchema = z.union([IngestSheetVersionJobSchema, BoqBuildJobSchema, LibraryImportJobSchema]);
+export const IngestTopicJobSchema = z.union([IngestSheetVersionJobSchema, BoqBuildJobSchema, LibraryImportJobSchema, FindSimilarJobSchema]);
 export type IngestTopicJob = z.infer<typeof IngestTopicJobSchema>;
 
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const;
@@ -170,6 +199,8 @@ export const JobSchema = z.object({
   buildId: DocIdSchema.optional(),
   /** `library.import`: libraryImports/{importId}. */
   importId: z.string().uuid().optional(),
+  /** `symbols.find_similar`: similarSearches/{searchId}. */
+  searchId: DocIdSchema.optional(),
   /** null for an initial ingest (all pages); the sheet for a reprocess. */
   sheetId: DocIdSchema.nullable().optional(),
   versionId: DocIdSchema.optional(),

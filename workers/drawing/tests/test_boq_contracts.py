@@ -151,3 +151,53 @@ def test_import_docs_validate():
     jsonschema.validate({**tpl, "id": "tpl_default"}, schema("BoqTemplate"))
     assert docs.get(f"orgs/o1/libraryImports/{IMP}")["status"] == "succeeded"
     assert lib_rows()  # shared fixture import
+
+
+# ----------------------------------------------------------------------------- Sprint 4
+def test_sprint4_docs_validate():
+    from .test_boq_s4 import BATH, seed_s4
+
+    blobs, docs = seed_s4()
+    docs.set(f"{P}/boqBuilds/b1", {"jobId": "j-b1", "requestedBy": "u1", "createdAt": "2026-10-14T10:00:00.000Z"})
+    out = build(blobs, docs, "b1")
+    line_s = schema("BoqLine")
+    seen = set()
+    for lid, d in docs.list_docs(f"{P}/boqLines"):
+        jsonschema.validate(project(d, "BoqLine", id=lid), line_s)
+        seen |= {k for k in ("orderQty", "wasteFactor", "manualCount") if k in d}
+    assert seen == {"orderQty", "wasteFactor", "manualCount"}
+    for k in seen:  # the fields are in the contract, not stripped by `project`
+        assert k in definition("BoqLine")["properties"], k
+    ev = json.loads(gzip.decompress(blobs.read(out.evidence_ref)))
+    jsonschema.validate(ev, schema("BoqEvidenceArtifact"))
+    assert any("quantity" in e and "roomId" in e for items in ev["lines"].values() for e in items)
+    b = docs.get(f"{P}/boqBuilds/b1")
+    jsonschema.validate(project(b, "BoqBuild", id="b1"), schema("BoqBuild"))
+    for u in b["unmatchedCorrections"]:
+        jsonschema.validate(u, schema("UnmatchedCorrection"))
+    for cid, c in docs.list_docs(f"{P}/corrections"):
+        jsonschema.validate({**c, "id": cid}, schema("Correction"))
+    for _, rs in docs.list_docs(f"{P}/roomSettings"):
+        jsonschema.validate(rs, schema("RoomSettings"))
+    jsonschema.validate({"schema": "kamutan.rooms/1", "rooms": [BATH]}, schema("RoomsArtifact"))
+
+
+def test_room_defaults_mirror_contracts():
+    """tiling.default_settings == contracts defaultRoomSettings (values copied from corrections.ts)."""
+    from kamutan_drawing.boq.tiling import DEFAULT_WASTE_FACTOR, default_settings
+
+    src = (
+        (CONTRACTS.parent / "src" / "corrections.ts").read_text()
+        if (CONTRACTS.parent / "src" / "corrections.ts").exists()
+        else ""
+    )
+    if "defaultRoomSettings" not in src:
+        pytest.skip("contracts defaultRoomSettings not present")
+    assert f"DEFAULT_WASTE_FACTOR = {DEFAULT_WASTE_FACTOR}" in src
+    assert "DEFAULT_CLADDING_HEIGHT_M = 2.6" in src and "facts.hasShowerOrBath ?? type !== 'wc'" in src
+    assert default_settings("bathroom", True)["includeInWaterproofing"] is True  # fixtures unknown: bathroom yes …
+    assert default_settings("wc", True)["includeInWaterproofing"] is False  # … wc no
+    assert default_settings("wc", True, has_shower_or_bath=True)["includeInWaterproofing"] is True
+    assert default_settings("bathroom", True, ceiling_m=2.2)["claddingHeightM"] == 2.2
+    assert default_settings("bathroom", True, niche=True) == {**default_settings("kitchen", False), "floorTiled": True}
+    assert default_settings("kitchen", False)["claddingHeightM"] == 0.0

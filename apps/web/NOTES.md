@@ -300,3 +300,110 @@ Sprint-2 review tests now open `?panel=counts` (counts is the secondary tab).
   evidence re-attached); the synthetic fallback only runs for sheets without real links.
 - `boq.test.tsx` hardened: lazy route chunks preloaded in `beforeAll`, `userEvent` without delays, waits (not test timeouts)
   raised to 25 s, axe scoped to the panel / dialog. Passes in `pnpm turbo run test --concurrency=2`.
+
+---
+
+# Sprint 4 — Review queue, correction tools, learn from correction, rooms, plumbing + tiling (web + viewer)
+
+Shapes: `docs/agents/SPRINT4_BRIEF.md` + the API agent's `packages/contracts/src/corrections.ts`, mirrored by hand in
+`src/api/types.ts` (`Correction`, `CreateCorrectionRequest`, `CorrectionUnit` = `m2|m|unit`, `ReviewQueueItem`,
+`RoomSettings` (+ `keepOpenings`, `type`), `RoomSettingsResponse`, `SimilarSearch`/`SimilarCandidate`, `Room` + `type/wet/
+walls/openings/externalCorners`, `BoqLine` + `orderQty/wasteFactor/manualCount/breakdown`). Taxonomy + 5 plumbing
+fixtures and `ac_unit` (domain `hvac`).
+
+## API (contracts corrections.ts → app DTOs, `src/api/http.ts`)
+| call | route | adaptation |
+| --- | --- | --- |
+| list corrections | `GET /projects/:p/corrections?limit=500[&sheetId][&cursor]` → `{items, nextCursor}` | pages followed |
+| create | `POST /projects/:p/corrections` → `{correction, rebuild}` | strict body: client-only `id` / `batchId` stripped |
+| batch | `POST /projects/:p/corrections/batch {items, source, similarSearchId}` → `{batch, items, rebuild}` | → `{items, batchId: batch.id}`; source `cluster` / `lasso` / `similar` / `selection` |
+| undo | `POST …/corrections/:id/revert`, `POST …/correction-batches/:batchId/revert` | |
+| queue | `GET /projects/:p/review-queue?limit=200[&kind][&cursor]` | ≤ 5 pages; `ref.*` → `clusterId/linkGroupId/roomId/correctionId/lineId`, `memberBboxesMm` → `members`, unknown clusters → level `unknown`, `suggestedAction` mapped |
+| room settings | `GET|PUT /projects/:p/rooms/:sheetId/:roomId/settings` → `{settings, isDefault, room}` | strict PUT body (`toRoomSettingsBody`) |
+| find similar | `POST /projects/:p/similar-searches {exemplar:{sheetId, versionId, bboxMm, class}, scope, correctionId}` → `{search, jobId}`; `GET …/:id` → `{search, thumbUrls}` | polled every 300 ms until done (`useSimilarSearch`) |
+
+Optimistic writes (`features/corrections/queries.ts` `useCorrectionActions`): the correction enters the cache at once
+(overlay re-derived synchronously by `applyCorrections`), the call runs in the background, an error rolls back + toast
+"לא הצלחנו לשמור את התיקון". The server's ids / batch id replace the provisional ones by position and re-key the undo
+step; an undo of a step still in flight waits for its ids. Session history: ≤ 100 steps, a group action = 1 step,
+redo re-sends with fresh ids (the reverted originals stay for the audit).
+
+## Model (pure, shared with the mock)
+- `features/corrections/model.ts`: `applyCorrections` (accept → green "אושר ידנית", reject/remove → flagged, never
+  counted, reclassify (learned → ✦ "תוקן בלמידה"), move, add → `m_<corrId>` ◈; re-match by `detectionId`, else
+  `anchorMm` within `radiusMm` + class family; unmatched reported), `applyLinkCorrections` (link / unlink / accept /
+  reject a group), `manualItems` (count / measure), history helpers.
+- `features/tiling/model.ts`: room type from the worker or the name, wet = bathroom / wc (contracts), defaults by type,
+  walls from the polygon (`w_…` ids, collinear merged), openings (door 2.1 m, window 1.2 m over a 1.0 m sill),
+  `tilingQuantities` (floor, perimeter × height − openings, partial, corners × height, waterproofing, order m²),
+  contributions → 5.01 / 5.02 / 5.03 / 5.05 / 5.06 / 5.07.
+- `features/review/queueModel.ts`: ranked queue (risk = impact × (1 − score) × level weight); clusters = ≥ 3 items with
+  the same sheet + class + level + first reason; unknown clusters, link groups, rooms (unnamed / not closed / wet or
+  courtyard without settings), unmatched corrections, lines without items; time estimate 3 s / item, 5 s / card.
+
+## Screens
+- **Review queue** (left pane, `ReviewQueuePanel`): all kinds, risk order, "נותרו N · כ-X דק'" + progress bar. Cluster
+  cards: 64 px crops cut from the sheet's own tiles (`TileCrop`, signed tile URLs, cached) — hover flashes the item on
+  the drawing, click = "חריג" (red ✕, stays for review), "פתח ופצל" shows up to 60. "מה זה?" cards keep the Sprint-2
+  flow. Selecting an item switches sheet (opens at the item via the initial view) / zooms; after A/R/E the next item
+  on the SAME sheet loads (no sheet reload between items), then the global next. Entry: the top item of the opened
+  sheet is active. Clicking a marker activates its queue card.
+- **Tool rail** (viewer, physical keys): V select · L lasso · + add · Del remove · W move · G link · M area · D length ·
+  C count · S calibrate; undo/redo buttons; "נדחו" layer (rejected as grey ✕).
+- **Lasso** → card "נבחרו 14 פריטים (9 שקע כפול, 5 שקע בודד)" + אשר הכל / דחה הכל / שייך לסוג… / ספור ידנית כאן (one batch).
+- **E / add** → ⌘K-style picker (search, recent first, sheet's domain first; "+" again changes the add class).
+- **Learn from correction**: after a reclassify / add a banner "רוצה שאחפש סמלים דומים בכל הפרויקט?" (⇧L) → preview
+  panel: "נמצאו N דומים ב-M גיליונות", similarity slider updating grid + drawing preview (dashed blue boxes) live,
+  counts (above threshold · will change · already that class · excluded), click a crop to exclude, "זכור לארגון",
+  "החל על N" → one batch (source `similar`), toast with "בטל".
+- **Manual count / area / length** → "לאיזה סעיף לשייך את הכמות?" (library items, same unit first) → `count` /
+  `measure` correction; numbered points / labelled polygon on the drawing. Calibration (S): the viewer's 2-click dialog
+  → `confirmSheet` with the new 1:n + toast.
+- **Room panel** (click a room in select mode, or E on a room item): type (→ defaults), wet (derived), area / perimeter,
+  openings (each can be kept), cladding height + the formula "9.64 מ״א × 2.4 מ׳ − 0 מ״ר פתחים = 23.14 מ״ר", floor
+  tiling, waterproofing, partial cladding per wall (pick on the drawing — nearest wall within 4 mm, no GPU picking
+  needed), waste % → preview by line (5.01/5.02/…; order qty) → PUT settings; room item leaves the queue.
+- **BOQ**: chapters 03 / 05 (plumbing / tiling domains in the shared filter), "כמות להזמנה" toggle column, receipts:
+  manual part ("4 = 2 שזוהו + 2 ידני", from `manualCount` / manual breakdown rows + overrides), per-room breakdown with
+  the formula, "להזמנה (פחת 7%)".
+
+## Keyboard (event.code → works on a Hebrew layout; off in inputs and while a dialog is open)
+A accept (lasso > selected BOQ row > active queue item > clicked item) · R reject · E reclassify / room panel / qty
+override · N/J next · P/K previous · ⇧N skip · F focus · ⇧L find similar · [ ] step · Z / ⌘Z undo · ⇧Z / ⌘⇧Z redo ·
+? shortcut map · Esc tool → select · V L + Del W G M D C S tools.
+
+## Mock mode
+`src/api/mockReview.ts` (corrections store, ranked queue, room settings, find-similar) + `mockSprint4Engine.ts`
+(stand-in Worker-BOQ): every correction / room setting re-derives the BOQ at once — plumbing / tiling are computed
+only when the base lines have no chapter 03 / 05 (Worker-BOQ's real lines in dev already have both: then saved room
+settings are layered on as deltas), then corrections (reject −1, add +1 manual, reclassify moves, count / measure).
+Find-similar: candidates from the REAL detections artifacts — same original class 0.70–0.99, same family 0.42–0.72,
+same domain 0.20–0.45 (stable jitter), done after 600 ms (0 in tests). Rooms are queued only on the authoritative
+sheet per floor. Mock validation mirrors the contract's per-kind rules.
+
+## Speed protocol (`scripts/queue-speed.mjs`)
+100 keyboard actions (A A N R A P A A R N …) on the real worker data in mock mode, UI latency = keydown → next painted
+frame after the commit (`window.__kamutanQueue`, mock/dev builds only):
+- production build (`--start --prod`): **median 27.8 ms, p95 57.5 ms, max 95.3 ms** (PASS < 100 ms); 123 → 64 items;
+- dev server (React dev build): median 60.3 ms, p95 95.7 ms, max 148.5 ms.
+Measured on SwiftShader (software WebGL, shared CPU). Memoised panes (`useLatestFns`, memo'd BOQ panel / drawing /
+queue cards) took the dev median from 110 ms to 60 ms.
+
+## Tests (Sprint 4 additions; web 197 total, viewer 59)
+`features/corrections/model.test.ts`, `features/tiling/model.test.ts`, `features/review/queueModel.test.ts`,
+`api/mockSprint4Engine.test.ts`, `api/http.test.ts` (contract routes / strict bodies / adapters),
+`features/review/corrections.test.tsx` (cluster A in one batch with a Hebrew-layout key + undo/redo, N/P, R, E picker →
+learn panel → slider → batch, tools add/remove/move/count/area/lasso, link, room panel → PUT + axe, BOQ 05 chapter +
+order column + manual receipt, shortcut map + axe), viewer `DrawingViewer.test.tsx` (add snap 8 px, remove, move, link,
+count, area snapping + m², length, ⇧= not zoom, background click, point labels). Viewer mocks in tests keep the last
+real props (React dev calls components without props to print warning stacks).
+
+## Known gaps
+- Real API: the review queue is per build (`stale` / `buildId` not shown yet); room-settings "accept defaults" (A on a
+  room) is a PUT, not in the undo history; unmatched corrections: R reverts, A only hides locally (no "redo on the new
+  version" action yet).
+- Link edits re-derive the composite lighting lines only in the real worker (the mock keeps 4.09–4.16 as built).
+- "זכור לארגון" in the learn panel is UI-only (no contract field yet); `similarSearches` crops (`thumbUrls`) are used
+  when present, else crops are cut from tiles.
+- Move tool keeps the class; no multi-select drag. Lifecycle keys 1/2/3 and "\\" (hide queue) are not wired.
+- Speed measured on software GL; a real-GPU run should be faster.

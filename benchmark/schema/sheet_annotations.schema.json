@@ -67,7 +67,7 @@
         "supply": {"enum": ["contractor", "client", "existing"], "description": "Who supplies the item (workplan v2, decision 11)"},
         "link_group": {"type": "array", "items": {"type": "string"}, "description": "Link groups (switch<->fixtures, fixtures->point)"},
         "boq_code": {"type": ["string", "null"], "pattern": "^[0-9]+(\\.[0-9]+)*$", "description": "BOQ line code as TEXT (\"4.10\" != \"4.1\")"},
-        "domain": {"enum": ["electrical", "lighting", "plumbing", "tiling", "drywall", "other"]},
+        "domain": {"enum": ["electrical", "lighting", "plumbing", "hvac", "tiling", "drywall", "other"]},
         "quantity": {"type": "number", "minimum": 0, "description": "Real-world quantity this item contributes (m2 / m); default 1 for symbols"},
         "difficulty": {"type": "array", "items": {"enum": ["overlap", "rotated", "partial", "text_collision", "raster"]}},
         "annotator": {"type": "string", "minLength": 1, "description": "human:<name> | agent:<role> | model:<version>"},

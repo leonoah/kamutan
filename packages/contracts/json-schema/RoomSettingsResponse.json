@@ -1,0 +1,412 @@
+{
+  "$ref": "#/definitions/RoomSettingsResponse",
+  "definitions": {
+    "RoomSettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "type": "object",
+          "properties": {
+            "claddingHeightM": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 6
+            },
+            "floorTiled": {
+              "type": "boolean"
+            },
+            "floorMaterialItemCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "wallMaterialItemCode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "partialCladding": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "wallId": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "pattern": "^w_[A-Za-z0-9_-]+$"
+                  },
+                  "fromM": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 200
+                  },
+                  "toM": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 200
+                  },
+                  "heightM": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 6
+                  },
+                  "bottomM": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 6
+                  }
+                },
+                "required": [
+                  "wallId",
+                  "fromM",
+                  "toM",
+                  "heightM"
+                ],
+                "additionalProperties": false
+              },
+              "maxItems": 64
+            },
+            "wasteFactor": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 0.5
+            },
+            "includeInWaterproofing": {
+              "type": "boolean"
+            },
+            "keepOpenings": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^o_[A-Za-z0-9_-]+$"
+              },
+              "maxItems": 256
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "bathroom",
+                    "wc",
+                    "kitchen",
+                    "bedroom",
+                    "living",
+                    "corridor",
+                    "balcony",
+                    "courtyard",
+                    "storage",
+                    "stairs",
+                    "other"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ceilingHeightM": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 10
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sheetId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "roomId": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^r_[A-Za-z0-9_-]+$"
+            },
+            "by": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "claddingHeightM",
+            "floorTiled",
+            "floorMaterialItemCode",
+            "wallMaterialItemCode",
+            "partialCladding",
+            "wasteFactor",
+            "includeInWaterproofing",
+            "sheetId",
+            "roomId",
+            "by",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "room": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "versionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "bathroom",
+                        "wc",
+                        "kitchen",
+                        "bedroom",
+                        "living",
+                        "corridor",
+                        "balcony",
+                        "courtyard",
+                        "storage",
+                        "stairs",
+                        "other"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "wet": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "areaM2": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "perimeterM": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "walls": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "pattern": "^w_[A-Za-z0-9_-]+$"
+                      },
+                      "lengthM": {
+                        "type": "number"
+                      },
+                      "exterior": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "lengthM",
+                      "exterior"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "openings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "wallId": {
+                        "type": "string"
+                      },
+                      "widthM": {
+                        "type": "number"
+                      },
+                      "heightM": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "wallId",
+                      "widthM",
+                      "heightM"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "externalCorners": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ceilingHeightM": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "niche": {
+                  "type": "boolean"
+                },
+                "hasShowerOrBath": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "versionId",
+                "name",
+                "type",
+                "wet",
+                "areaM2",
+                "perimeterM",
+                "walls",
+                "openings",
+                "externalCorners"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rebuild": {
+          "type": "object",
+          "properties": {
+            "stale": {
+              "type": "boolean"
+            },
+            "autoRebuild": {
+              "type": "string",
+              "enum": [
+                "scheduled",
+                "debounced",
+                "followup",
+                "off",
+                "failed"
+              ]
+            },
+            "buildId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "notBefore": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "stale",
+            "autoRebuild",
+            "buildId",
+            "notBefore"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "settings",
+        "isDefault",
+        "room"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/RoomSettingsResponse.json"
+}

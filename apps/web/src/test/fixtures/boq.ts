@@ -18,7 +18,11 @@ export const DEFAULT_CHAPTERS: BoqChapter[] = [
   { code: "02", title: "פרק 02 - עבודות בנייה", notes: [] },
   { code: "03", title: "פרק 03 – עבודות אינסטלציה", notes: [] },
   { code: "04", title: "פרק 04 – עבודות חשמל", notes: CH04_NOTES },
-  { code: "05", title: "פרק 05 - עבודות ריצוף, חיפוי ואיטום", notes: [] },
+  {
+    code: "05",
+    title: "פרק 05 - עבודות ריצוף, חיפוי ואיטום",
+    notes: ["הכמויות נטו לפי שטח והיקף החדרים, בניכוי פתחים. עמודת \"כמות להזמנה\" כוללת פחת לפי חומר (ברירת מחדל 7%)."],
+  },
   { code: "06", title: "פרק 06 - עבודות גבס", notes: [] },
   { code: "07", title: "פרק 07 - עבודות שפכטל, טיח וצבע", notes: [] },
   { code: "08", title: "פרק 08 - שונות", notes: [] },
@@ -70,8 +74,27 @@ const ITEMS: [string, string, string, string, string[]][] = [
   ["9.01", "08", "התקנת גופי התאורה בבית", "יחידה", ["install_count"]],
   ["1.01", "01", "פירוק ופינוי מחיצות פנים וחוץ בהתאם לתכנית הריסה", "קומפלט", []],
   ["1.05", "01", "פירוק ופינוי מזגנים", "קומפלט", []],
-  ["3.02", "03", "נקודת מים חמים/קרים לכיור", "נק'", []],
-  ["5.01", "05", "ריצוף באריחי פורצלן", "מ\"ר", []],
+  // Sprint 4: plumbing points (chapter 03) and tiling (chapter 05), wording as in the client's sample BOQ.
+  ["3.01", "03", "ניקוז למזגן", "יחידה", ["ac_unit"]],
+  ["3.02", "03", "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז קיר", "יחידה", ["fixture_basin", "faucet_wall"]],
+  ["3.03", "03", "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז פרח", "יחידה", ["fixture_basin", "faucet_basin", "fixture_kitchen_sink"]],
+  ["3.04", "03", "נק' מים וניקוז לניאגרה סמויה, לרבות ביטון הניאגרה, ותליית האסלה", "יחידה", ["fixture_wc_concealed"]],
+  ["3.05", "03", "נק' מים וניקוז למכונת כביסה", "יחידה", ["fixture_washing_machine"]],
+  ["3.06", "03", "נק' מים קרים עבור תמי 4/ ברז גן", "יחידה", ["garden_tap"]],
+  ["3.07", "03", "נק' מים וניקוז עבור ניאגרה מונובלוק. העבודה תכלול התקנת ניאגרה, אסלה ומושב", "יחידה", ["fixture_wc_monoblock"]],
+  ["3.08", "03", "הזנת מים חדשה מהשעון הראשי ועד הבית", "יחידה", ["one_off"]],
+  ["3.09", "03", "אספקה והתקנה של מרכזיית מים עם ברזי שליטה נפרדים", "יחידה", ["one_off"]],
+  ["3.10", "03", "הזנת מים חדשה עבור דוד", "יחידה", ["one_off"]],
+  ["3.11", "03", "נק' מים חמים קרים וניקוז עבור מקלחון חדר רחצה", "יחידה", ["fixture_shower"]],
+  ["3.12", "03", "נק' מים חמים קרים וניקוז לאמבטיה חדר רחצה", "יחידה", ["fixture_bath"]],
+  ["3.14", "03", "אספקה והתקנה של משאבה לניקוז דלוחין קומת מרתף", "יחידה", ["one_off"]],
+  ["3.15", "03", "אספקה והתקנה של משאבה לניקוז מי גשם בחצר אנגלית חדשה", "יחידה", ["one_off"]],
+  ["5.01", "05", "חיפוי קירות חדרי רחצה באריחי קרמיקה. העבודה תכלול מילוי רובה אקרילית בין האריחים", "מ\"ר", ["wall_cladding"]],
+  ["5.02", "05", "ריצוף ריצפות חדרי רחצה וחצר אנגלית באריחי גרניט פורצלן. העבודה תכלול מילוי רובה אקרילית בין האריחים", "מ\"ר", ["floor_tiling"]],
+  ["5.03", "05", "חיתוך גרונג במפגש אריחי קרמיקה בפינות חיצוניות (קירות חדרי רחצה)", "מ\"א", ["corner_trim"]],
+  ["5.05", "05", "איטום ריצפות חדרי הרחצה בשתי שכבות סיכה", "קומפלט", ["waterproofing"]],
+  ["5.06", "05", "חיפוי קיר מטבח באריחי גרניט פורצלן", "מ\"ר", ["wall_cladding", "kitchen"]],
+  ["5.07", "05", "חיפוי קיר שרותי אורחים באריח קרמיקה דמוי בריק", "מ\"ר", ["wall_cladding", "partial"]],
 ];
 
 export function libraryItems(): LibraryItem[] {
@@ -109,6 +132,23 @@ export const CLASS_TO_CODE: Record<string, string> = {
   doorbell: "4.22",
   panel: "4.24",
 };
+
+/** Sprint 4: plumbing fixture → point item (basins: wall vs flower faucet decided by a nearby faucet). */
+export const PLUMBING_CLASS_TO_CODE: Record<string, string> = {
+  ac_unit: "3.01",
+  fixture_basin: "3.03",
+  faucet_basin: "",
+  faucet_wall: "",
+  fixture_kitchen_sink: "3.03",
+  fixture_wc_concealed: "3.04",
+  fixture_washing_machine: "3.05",
+  garden_tap: "3.06",
+  fixture_wc_monoblock: "3.07",
+  fixture_shower: "3.11",
+  fixture_bath: "3.12",
+};
+/** One-off plumbing lines suggested from the template (always yellow, never green). */
+export const PLUMBING_ONE_OFFS = ["3.08", "3.09", "3.10", "3.14", "3.15"];
 
 /** Link-group kind (+ point count) → composite lighting item code. */
 export const COMPOSITE_CODES = { single1: "4.09", two_way: "4.10", shared2: "4.11", shared3: "4.16", sensor: "4.15", add_to_existing: "4.12" } as const;

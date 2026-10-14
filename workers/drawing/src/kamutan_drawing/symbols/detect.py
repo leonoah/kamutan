@@ -130,6 +130,7 @@ class Detection:
     class_conf: float = 0.0
     in_region: bool = True
     id: str = ""
+    signature: str | None = None  # stroke signature (Sprint 4: review clusters, re-match tie-break)
 
     def to_json(self, sheet_id: str) -> dict[str, Any]:
         e = self.type_entry or self.entry
@@ -149,7 +150,15 @@ class Detection:
             "supply": self.supply,
             "annotations": list(dict.fromkeys(self.annotations)),
             "clusterId": self.cluster_id,
+            "signature": _sig_or_none(self.signature or (self.entry.signature if self.entry is not None else None)),
         }
+
+
+_SIG_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+
+
+def _sig_or_none(sig: str | None) -> str | None:
+    return sig if sig and _SIG_RE.match(sig) else None
 
 
 @dataclass
@@ -895,6 +904,7 @@ def _unknown_clusters(
                     source="unknown",
                     cluster_id=cid,
                     reasons=[R_NOT_IN_LEGEND],
+                    signature=sig,
                 )
             )
     _ = det_boxes, in_box

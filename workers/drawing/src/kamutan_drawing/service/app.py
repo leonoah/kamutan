@@ -5,7 +5,8 @@ POST /pubsub/ingest  body = Pub/Sub push envelope:
      "subscription": "projects/.../subscriptions/..."}
 
 The job is routed on its ``type``: ``boq.build`` → :func:`kamutan_drawing.boq.build.run_boq_build`,
-``library.import`` → :func:`kamutan_drawing.library_import.importer.run_library_import`, anything else
+``library.import`` → :func:`kamutan_drawing.library_import.importer.run_library_import`,
+``symbols.find_similar`` → :func:`kamutan_drawing.service.similar.run_find_similar`, anything else
 (``ingest.sheet_version``) → :func:`process_sheet_version` exactly as before.
 
 Response semantics (Pub/Sub retries on any non-2xx):
@@ -40,6 +41,7 @@ from ..library_import.importer import run_library_import
 from ..stores.base import BlobStore, DocStore
 from .contracts import IngestSheetVersionJob
 from .pipeline import Options, process_sheet_version
+from .similar import FIND_SIMILAR_TYPE, FindSimilarJob, run_find_similar
 
 log = logging.getLogger(__name__)
 
@@ -77,7 +79,9 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
             return JSONResponse({"status": "rejected", "reason": "bad_envelope"}, status_code=200)
         jtype = payload.get("type") if isinstance(payload, dict) else None
         model: Any
-        model = {BOQ_BUILD_TYPE: BoqBuildJob, LIBRARY_IMPORT_TYPE: LibraryImportJob}.get(str(jtype), IngestSheetVersionJob)
+        model = {BOQ_BUILD_TYPE: BoqBuildJob, LIBRARY_IMPORT_TYPE: LibraryImportJob, FIND_SIMILAR_TYPE: FindSimilarJob}.get(
+            str(jtype), IngestSheetVersionJob
+        )
         try:
             job = model.model_validate(payload)
         except ValidationError as e:
@@ -92,6 +96,10 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
             elif isinstance(job, LibraryImportJob):
                 await run_in_threadpool(
                     functools.partial(run_library_import, limits=opts.limits, workdir_root=opts.workdir_root), job, blobs, docs
+                )
+            elif isinstance(job, FindSimilarJob):
+                await run_in_threadpool(
+                    functools.partial(run_find_similar, limits=opts.limits, workdir_root=opts.workdir_root), job, blobs, docs
                 )
             else:
                 await run_in_threadpool(process_sheet_version, job, blobs, docs, opts)

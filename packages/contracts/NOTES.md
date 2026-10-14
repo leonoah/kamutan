@@ -1,4 +1,4 @@
-# @kamutan/contracts — notes (Firebase, ADR 0008)
+# @kamutan/contracts — notes (Firebase, ADR 0008; through Sprint 4)
 
 Zod schemas + inferred TS types shared by web, api and (via JSON Schema) the Python worker. Field names mirror
 `firebase/model.ts` (DB agent); **this package is the TS source of truth**. DTO convention: Firestore doc fields +
@@ -122,6 +122,72 @@ Zod schemas + inferred TS types shared by web, api and (via JSON Schema) the Pyt
   boqRules/boqRule/libraryImport`; `storagePaths.links/boqEvidence/boqExportFile/libraryImport`; `BOQ_EVIDENCE_PATH_RE`,
   `BOQ_EXPORT_PATH_RE`, `LIBRARY_IMPORT_PATH_RE`; `ARTIFACT_PATH_RE` also matches `links.json.gz` (exports/evidence are
   never signable as sheet artifacts). `project.ts`: `Project.boq?`. `errors.ts`: + `export_blocked`.
+- **Sprint 4 — `corrections.ts`** (brief shapes, exact field names): `Correction` (`kind` add|remove|reclassify|move|link|
+  unlink|measure|count|accept|reject, `sheetId`, `versionId`, `anchorMm`, `radiusMm` (default 3, ≤ 50), `detectionId`,
+  `signature`, `class` (taxonomy, never "unknown"), `itemCode`, `linkGroupId`, `switchIds?`, `pointIds?`, `geometry
+  {type point|polygon|polyline, mm[]}`, `quantity`, `unit` m2|m|unit, `roomId`, `floor`, `reason`, `batchId`, `by`, `at`,
+  `revertedAt`, `revertedBy?`) with per-kind superRefine (add: class|itemCode, no detectionId; remove: detectionId|
+  linkGroupId; accept/reject: + roomId; reclassify: detectionId + class|itemCode; move: detectionId + 1 point; link:
+  pointIds + switchIds|linkGroupId; unlink: linkGroupId; measure: itemCode + polygon/m2 | polyline/m; count: points,
+  quantity = clicks; unit only for measure/count) — **not in JSON Schema, Python must re-check**.
+  `CORRECTION_KIND_MIN_ROLE` (accept/reject reviewer, else editor), `CreateCorrectionRequest`,
+  `CreateCorrectionBatchRequest` (1..`CORRECTION_BATCH_MAX` 500, `source` cluster|lasso|similar|selection|other,
+  `similarSearchId`), `CorrectionBatch` (doc), `RebuildOutcome`, `ListCorrectionsQuery`, `CorrectionPage`, revert
+  responses. `RoomSettings` / `PutRoomSettingsRequest` (`claddingHeightM` 0..6, `floorTiled`, material codes,
+  `partialCladding [{wallId w_…, fromM < toM, heightM, bottomM?}]`, `wasteFactor` 0..0.5, `includeInWaterproofing`,
+  `keepOpenings?`, `type?` override), `defaultRoomSettings(type, wet)` (bathroom/wc 2.6 m + floor + waterproofing;
+  courtyard floor; kitchen none — backsplash `KITCHEN_BACKSPLASH_HEIGHT_M` 0.6 via partialCladding), `roomSettingsId`.
+  `ReviewQueueItem/Query/Page` (kinds detection|cluster|unknown_cluster|link_group|room|unmatched_correction|line,
+  `REVIEW_LEVEL_WEIGHT`, `REVIEW_DEFAULT_SCORE`, `REVIEW_CLUSTER_MIN` 3). Find-similar: `SimilarExemplar`,
+  `CreateSimilarSearchRequest`, `SimilarCandidate` (`c_…`, `thumb` = `{id}.webp`|null), `SimilarSearch` (doc),
+  `SimilarSearchView` (+ `thumbUrls`).
+- **Sprint 4 — other files**: `understanding` Room + optional `type` (`ROOM_TYPES`), `wet`, `walls [{id w_…, aMm, bMm,
+  lengthM, exterior}]`, `openings [{id o_…, kind door|window|opening, wallId, widthM, heightM|null, centerMm}]`,
+  `externalCorners` (superRefine: unique wall/opening ids, opening.wallId ∈ walls); Detection + optional `signature`.
+  `library` rule kinds `plumbing_point {fixtureClasses, with/withoutFaucetClasses, faucetRadiusMm, roomTypes,
+  roomNamePatterns, floors, perRoom}`, `tiling_floor {roomTypes?, wetOnly}`, `tiling_cladding {roomTypes?, mode
+  full|partial, subtractOpenings, defaultDoor/WindowHeightM}`, `tiling_corner {roomTypes?}`, `waterproofing {roomTypes?,
+  wetOnly}`, `one_off_suggestion {always?, classes?, textPatterns?, roomTypes?, floors?, quantity}` (never green,
+  `ONE_OFF_SUGGESTION_REASON`), rule `wasteFactor?`; **`DEFAULT_BOQ_RULES_VERSION` 3** (3.01–3.07, 3.11–3.13 points,
+  3.08–3.10/3.14/3.15 suggestions, 5.01/5.02/5.03/5.05/5.06/5.07 tiling with 7% waste, `r_auth_fixtures`
+  (plumbing sheets win) + `r_auth_ac` (electrical), faucets + floor_tiling/wall_cladding → `r_none_*`). `boq`:
+  `BoqLine.orderQty/wasteFactor/manualCount`, evidence item `source auto|manual`, `correctionId`, `quantity`, `roomId`,
+  `verified`; evidence artifact `corrections {applied[], unmatched[UnmatchedCorrection]}`; `BoqBuild.trigger/
+  debounceUntil/afterBuildId`, `BOQ_REBUILD_DEBOUNCE_MS` 5 000 / `BOQ_REBUILD_MAX_WAIT_MS` 60 000; `STALE_REASONS` +
+  correction, room; `bySheet.count` no longer int. `org`: `OrgSettings.autoRebuild` (default true). `jobs`:
+  `JOB_TYPES.findSimilar` + `FindSimilarJob` v1 (in `IngestTopicJob`), `Job.searchId`. `firestore`: `fsPaths.
+  corrections/correction/correctionBatch/roomSettings/similarSearch`, `storagePaths.similarThumb`,
+  `SIMILAR_THUMB_PATH_RE`. Taxonomy regenerated (50 classes: + fixture_shower/bath/kitchen_sink/washing_machine,
+  garden_tap, ac_unit). **Breaking**: the Sprint-0 client `Correction` (`targetType/action/payload`) and
+  `CORRECTION_TARGET_TYPES/ACTIONS` are gone. 121 JSON schemas.
+- **Sprint 4 integration (rules v4, for the Worker integrator to mirror)**: `DEFAULT_BOQ_RULES_VERSION` **4**
+  (regenerated `json-schema/defaults/boq-defaults.json`). Per Data's back-solve:
+  `r_tile_cladding_wet` match `{roomTypes [bathroom, wc], mode full, subtractOpenings, defaultDoorHeightM 2.1,
+  defaultWindowSillM 1.0, defaultWindowHeadM 2.1, capAtCeiling: true, excludeNiches: true}` — H = settings
+  claddingHeightM capped at the room's `ceilingHeightM`; doors subtract width × min(2.1 or drawn height, H), windows
+  width × (min(head, H) − sill)⁺; niches are not clad. `r_tile_corners` = externalCorners × H (unchanged formula).
+  `r_tile_floor_wet` `{roomTypes [bathroom, wc], wetOnly false, includeNiches: true}` (the niche area counts with its
+  room). `r_waterproofing_wet` `{roomTypes [bathroom, wc], wetOnly: true, requireFixtureClasses [fixture_shower,
+  fixture_bath]}` — default only for rooms with a shower / bath; an explicit room setting wins.
+  `defaultRoomSettings(type, wet, {ceilingHeightM, niche, hasShowerOrBath})` implements the same defaults
+  (`DEFAULT_CLADDING_HEIGHT_M` 2.6; unknown fixtures → bathroom waterproofed, wc not). Room + optional
+  `ceilingHeightM`, `niche`; RoomSettings + optional `ceilingHeightM`.
+  **Artifacts**: `VersionArtifacts.fixtures` (`fixtures.json.gz`, `FixturesArtifact` `kamutan.fixtures/1` = Worker-B
+  `fixtures_json`: `FixtureRecord` = Detection fields with `id` any ≤ 128 chars + optional `source`, `attachedTo`,
+  `label`, `leaderMm`, `sheetId`, `duplicates`, extra keys passthrough) and `VersionArtifacts.walls` (`walls.json.gz`,
+  `WallsArtifact` `kamutan.walls/1` = `rooms.reference_walls_json`: `drawings [{floor, scaleDenominator, sheetId,
+  regionId, polygonsMm [{exterior, holes}], closuresMm?}]`); `storagePaths.fixtures/walls`; `ARTIFACT_PATH_RE` /
+  `UNDERSTANDING_ARTIFACT_PATH_RE` include both; `OverlayManifest.fixtures/walls` (`{url}|null`). Taxonomy domains are
+  free strings (`hvac` for `ac_unit` needs no generator change). 124 JSON schemas.
+- **Sprint 4 final (rules v5, Worker integrator)**: `DEFAULT_BOQ_RULES_VERSION` **5**. `AuthorityMatchSchema` + optional
+  `authorityOrder` (disciplines; per floor the first one with a sheet on that floor is the authority), `matchRooms`
+  (secondary copies placed by room-outline alignment and matched one-to-one, same room first; unmatched kept yellow),
+  `roomMatchRadiusMm`. `r_auth_ac` = `{discipline 'plumbing', authorityOrder [plumbing, electrical], matchRooms true,
+  roomMatchRadiusMm 1600}`: the plumbing sheet's drain marks are the plan of record for 3.01, the electrical AC sockets
+  only fill floors without a plumbing sheet. Floor tiling (`r_tile_floor_wet`) stays bathrooms + WCs (+ niches): the
+  English courtyard is **out by default** — the sample 5.02 description names it but the quantity (18.1) matches the
+  bathrooms + guest WC incl. niches without it (Data's F1 18.109; GT-D-007 open). `defaultRoomSettings` unchanged
+  (v4 already: waterproofing only with shower / bath, unknown → bathroom yes, wc no; the worker mirrors it exactly).
 - `errors` — `ApiErrorSchema` + codes (+ `not_ready`, `export_blocked`). `auth` — `IdTokenClaimsSchema` (Firebase ID token claims).
 
 Build: `pnpm --filter @kamutan/contracts build` → `dist/cjs`, `dist/esm`, `dist/types`.

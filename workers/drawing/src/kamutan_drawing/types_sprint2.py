@@ -157,9 +157,45 @@ class Room:
     level: Level
     reasons: list[str] = field(default_factory=list)
     region_id: str | None = None
+    # Sprint 4 (Worker-B): tiling inputs (see rooms/geometry.py, rooms/types.py)
+    type: str = "other"
+    wet: bool = False
+    type_source: str = "none"  # name | fixtures | none
+    walls: list[dict[str, Any]] = field(default_factory=list)  # {id, aMm{x,y}, bMm{x,y}, lengthM, exterior}
+    openings: list[dict[str, Any]] = field(default_factory=list)  # {id, kind, wallId, widthM, heightM, centerMm}
+    external_corners: int = 0
+    external_corners_mm: list[tuple[float, float]] = field(default_factory=list)
+    ceiling_height_m: float | None = None  # from a level mark "-2.55 H=220" inside the room (understand)
 
-    def to_json(self) -> dict[str, Any]:
-        """``kamutan.rooms/1`` room object."""
+    def to_json(self, *, extended: bool = False, extras: bool = False) -> dict[str, Any]:
+        """``kamutan.rooms/1`` room object.
+
+        ``extended=True`` adds the Sprint-4 contract fields ``type``, ``wet``, ``walls``, ``openings``,
+        ``externalCorners`` (contracts ``Room``, optional — what ``rooms.json.gz`` carries). ``extras=True`` (debug
+        tools only; NOT in the strict contract) also adds ``externalCornersMm`` and ``typeSource``."""
+        d = self._base_json()
+        if extended or extras:
+            d.update(
+                {
+                    "type": self.type,
+                    "wet": self.wet,
+                    "walls": self.walls[:512],
+                    "openings": [o for o in self.openings if o.get("wallId")][:256],
+                    "externalCorners": max(0, min(256, int(self.external_corners))),
+                }
+            )
+            if self.ceiling_height_m:
+                d["ceilingHeightM"] = round(float(self.ceiling_height_m), 2)
+        if extras:
+            d.update(
+                {
+                    "externalCornersMm": [{"x": round(x, 2), "y": round(y, 2)} for x, y in self.external_corners_mm],
+                    "typeSource": self.type_source,
+                }
+            )
+        return d
+
+    def _base_json(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,

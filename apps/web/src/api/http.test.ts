@@ -122,4 +122,120 @@ describe("REST client", () => {
       ["/api/v1/boq-rules/r1?orgId=o1", "PATCH", { enabled: false }],
     ]);
   });
+
+  it("Sprint 4: corrections / batch / revert / queue / room settings / similar-searches follow the API contracts", async () => {
+    const correction = { id: "c1", kind: "accept", batchId: null };
+    const responses: Record<string, unknown> = {
+      "POST /api/v1/projects/p1/corrections": { correction, rebuild: { stale: true, autoRebuild: "scheduled", buildId: "b9", notBefore: null } },
+      "POST /api/v1/projects/p1/corrections/batch": { batch: { id: "bt_7" }, items: [correction, { ...correction, id: "c2" }], rebuild: {} },
+      "POST /api/v1/projects/p1/corrections/c1/revert": { correction: { ...correction, revertedAt: "t" }, rebuild: {} },
+      "POST /api/v1/projects/p1/correction-batches/bt_7/revert": { batch: { id: "bt_7" }, reverted: 2, rebuild: {} },
+      "GET /api/v1/projects/p1/corrections?limit=500&sheetId=s1": { items: [correction], nextCursor: null },
+      "GET /api/v1/projects/p1/review-queue?limit=200": {
+        items: [
+          {
+            id: "cl:abc",
+            kind: "cluster",
+            level: "yellow",
+            risk: 2.5,
+            score: 0.6,
+            qtyImpact: 3,
+            title: "שקע כפול (4.01) · 3 מופעים",
+            reasons: ["התאמה חלקית"],
+            suggestedAction: "accept",
+            sheetId: "s1",
+            versionId: "v1",
+            floor: "ground",
+            bboxMm: { x: 1, y: 2, w: 3, h: 4 },
+            thumbUrl: null,
+            class: "socket_double",
+            itemCode: "4.01",
+            lineIds: ["ln_4_01"],
+            detectionIds: ["d_1", "d_2", "d_3"],
+            memberBboxesMm: [{ x: 1, y: 2, w: 1, h: 1 }, { x: 2, y: 2, w: 1, h: 1 }, { x: 3, y: 2, w: 1, h: 1 }],
+            count: 3,
+            ref: { signature: "sigsigsig" },
+          },
+          { id: "uc:s1:v1:u_1", kind: "unknown_cluster", level: "red", risk: 1, score: null, qtyImpact: 2, title: "סמל לא מוכר", reasons: [], suggestedAction: "resolve_unknown", sheetId: "s1", versionId: "v1", floor: null, bboxMm: null, thumbUrl: "https://x/u.webp", class: null, itemCode: null, lineIds: [], detectionIds: ["d_9"], count: 1, ref: { clusterId: "u_1" } },
+        ],
+        nextCursor: null,
+        total: 2,
+        counts: { byKind: {}, byLevel: { yellow: 1, red: 1 } },
+        buildId: "b1",
+        stale: false,
+        generatedAt: "t",
+        expiresAt: null,
+      },
+      "GET /api/v1/projects/p1/rooms/s1/r_1/settings": { settings: { sheetId: "s1", roomId: "r_1", claddingHeightM: 2.6, by: null, at: null }, isDefault: true, room: null },
+      "PUT /api/v1/projects/p1/rooms/s1/r_1/settings": { settings: { sheetId: "s1", roomId: "r_1", claddingHeightM: 2.4, by: "u", at: "t" }, isDefault: false, room: null },
+      "POST /api/v1/projects/p1/similar-searches": { search: { id: "sim1", status: "queued", exemplar: {}, candidates: [], error: null }, jobId: "j1" },
+      "GET /api/v1/projects/p1/similar-searches/sim1": {
+        search: { id: "sim1", status: "succeeded", exemplar: {}, candidates: [{ id: "c_1", sheetId: "s1", versionId: "v1", centerMm: { x: 1, y: 1 }, bboxMm: { x: 0, y: 0, w: 2, h: 2 }, score: 0.9, alreadyDetected: "d_1", currentClass: "socket_single", thumb: "c_1.webp" }], error: null },
+        thumbUrls: { c_1: "https://x/c_1.webp" },
+        expiresAt: null,
+      },
+    };
+    const fetchImpl = vi.fn(async (url: string, init: RequestInit) => json(responses[`${init.method ?? "GET"} ${url}`] ?? {}));
+    const api = createHttpClient(async () => "t", "/api/v1", fetchImpl as unknown as typeof fetch);
+    const req = {
+      id: "corr_local",
+      batchId: "batch_local",
+      kind: "accept" as const,
+      sheetId: "s1",
+      versionId: "v1",
+      anchorMm: { x: 1, y: 2 },
+      radiusMm: 3,
+      detectionId: "d_1",
+      signature: null,
+      class: "socket_double",
+      itemCode: null,
+      linkGroupId: null,
+      geometry: null,
+      quantity: null,
+      unit: null,
+      roomId: null,
+      floor: null,
+      reason: null,
+    };
+    expect(await api.createCorrection("p1", req)).toEqual(correction);
+    expect(await api.createCorrectionsBatch("p1", { batchId: "batch_local", corrections: [req, req], source: "cluster" })).toEqual({ items: [correction, { ...correction, id: "c2" }], batchId: "bt_7" });
+    expect((await api.revertCorrection("p1", "c1")).revertedAt).toBe("t");
+    expect(await api.revertCorrectionsBatch("p1", "bt_7")).toEqual({ reverted: 2 });
+    expect((await api.listCorrections("p1", { sheetId: "s1" })).items).toHaveLength(1);
+    const q = await api.getReviewQueue("p1");
+    expect(q.total).toBe(2);
+    expect(q.items[0]).toMatchObject({ kind: "cluster", lineId: "ln_4_01", itemCode: "4.01", members: [{ detectionId: "d_1", bboxMm: { x: 1, y: 2, w: 1, h: 1 } }, {}, {}] });
+    expect(q.items[1]).toMatchObject({ kind: "unknown_cluster", level: "unknown", clusterId: "u_1", suggestedAction: "resolve", bboxMm: { x: 0, y: 0, w: 0, h: 0 } });
+    expect(await api.getRoomSettings("p1", "s1", "r_1")).toMatchObject({ isDefault: true, settings: { id: "s1__r_1" } });
+    await api.putRoomSettings("p1", "s1", "r_1", {
+      claddingHeightM: 2.4,
+      floorTiled: true,
+      floorMaterialItemCode: null,
+      wallMaterialItemCode: null,
+      partialCladding: [{ wallId: "w_1", fromM: 0, toM: 1, heightM: 0.6 }],
+      wasteFactor: 0.07,
+      includeInWaterproofing: true,
+      keepOpenings: [],
+    });
+    const s = await api.findSimilar("p1", { exemplar: { sheetId: "s1", versionId: "v1", bboxMm: { x: 0, y: 0, w: 2, h: 2 }, class: "socket_power", detectionId: "d_1" }, scope: "project" });
+    expect(s.status).toBe("queued");
+    const done = await api.getSimilarSearch("p1", "sim1");
+    expect(done.thumbs).toEqual({ c_1: "https://x/c_1.webp" });
+    expect(done.candidates[0]!.alreadyDetected).toBe("d_1");
+
+    const calls = (fetchImpl.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => [u, i.method ?? "GET", i.body ? JSON.parse(i.body as string) : null]);
+    const { id: _id, batchId: _b, ...strict } = req;
+    expect(calls[0]).toEqual(["/api/v1/projects/p1/corrections", "POST", strict]); // client-only id / batchId stripped (strict schema)
+    expect(calls[1]).toEqual(["/api/v1/projects/p1/corrections/batch", "POST", { items: [strict, strict], source: "cluster", similarSearchId: null }]);
+    expect(calls[7]).toEqual([
+      "/api/v1/projects/p1/rooms/s1/r_1/settings",
+      "PUT",
+      { claddingHeightM: 2.4, floorTiled: true, floorMaterialItemCode: null, wallMaterialItemCode: null, partialCladding: [{ wallId: "w_1", fromM: 0, toM: 1, heightM: 0.6 }], wasteFactor: 0.07, includeInWaterproofing: true },
+    ]);
+    expect(calls[8]).toEqual([
+      "/api/v1/projects/p1/similar-searches",
+      "POST",
+      { exemplar: { sheetId: "s1", versionId: "v1", bboxMm: { x: 0, y: 0, w: 2, h: 2 }, class: "socket_power" }, scope: "project", correctionId: null },
+    ]);
+  });
 });

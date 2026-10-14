@@ -60,6 +60,10 @@ DETECT_DISCIPLINES = {"electrical", "lighting", "plumbing"}
 ROOM_DISCIPLINES = {"architecture", "architecture_master", "construction", "demolition"}
 STAGE_PCT = {"legend": 88, "detect": 91, "rooms": 96}
 LINKS_FILE = "links.json.gz"
+FIXTURES_FILE = "fixtures.json.gz"
+WALLS_FILE = "walls.json.gz"
+# sheets whose walls other sheets of the same floor borrow (kamutan.walls/1, Worker-B's rooms.reference)
+WALL_SOURCE_DISCIPLINES = {"construction", "architecture", "architecture_master", "master"}
 THUMB_PX = 256
 MAX_DETECTIONS = 50_000
 
@@ -77,6 +81,16 @@ try:
     HAVE_LIFECYCLE = True
 except ImportError:  # pragma: no cover
     HAVE_LIFECYCLE = False
+try:  # Sprint 4, Worker-B: sanitary fixtures / faucets / garden taps / AC positions (feature-flagged)
+    from ..fixtures import detect as fixtures_detect
+
+    HAVE_FIXTURES = True
+except ImportError:  # pragma: no cover - only before Worker-B's package lands
+    HAVE_FIXTURES = False
+# fixtures run on these disciplines (the module gates by discipline itself; electrical → AC positions only)
+FIXTURE_DISCIPLINES = {"architecture", "architecture_master", "master", "construction", "plumbing", "electrical"}
+# Worker-A's Sprint-2 plumbing text anchors, superseded by the fixtures stage where it runs
+TEXT_ANCHOR_SUPERSEDED = {"fixture_wc_concealed", "fixture_wc_monoblock", "faucet_wall", "faucet_basin", "fixture_basin"}
 
 
 def gz_json(obj: Any) -> bytes:
@@ -199,14 +213,34 @@ def understand(
     raster_image: Any = None,
     floors_confirmed: bool = False,
     links: bool = True,
+    fixtures: bool = True,
+    reference_walls: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Run legend → detect → rooms → links on one sheet. Writes the artifacts into ``out_dir`` when given.
 
     ``floors_confirmed``: the user confirmed the sheet's floors / regions — they are used as is and
-    no "קומה לא ודאית" reason is added."""
+    no "קומה לא ודאית" reason is added. ``reference_walls``: Worker-B's ``ReferenceWalls`` of the project's
+    construction / architecture sheets (``walls.json.gz`` of their current versions, construction first) — the
+    MEP sheets' ``rooms.segment`` borrows the thin partitions they lack. Wall-source sheets write their own
+    ``walls.json.gz`` (``wallsFile``)."""
     from ..classify.sheet import classify_page
 
     mappings = mappings or {}
+    # Sprint 4: a region whose walls clearly align with another floor's construction / architecture drawing (stacked
+    # two-plan sheets titled "basement + ground" whose second plan is the first floor) takes that floor for its
+    # detections / rooms; the "קומה לא ודאית" chip stays until the owner confirms. Never on confirmed sheets.
+    region_floors: dict[str, str] = {}
+    if reference_walls and not floors_confirmed and not raster and HAVE_ROOMS and regions:
+        try:
+            from ..rooms import infer_region_floors
+
+            inferred = infer_region_floors(vs, regions, scale_den, reference_walls, exclude_paths=text_paths, sheet_id=sheet_id)
+        except Exception:  # best effort
+            log.warning("floor inference failed", exc_info=True)
+            inferred = {}
+        if inferred:
+            region_floors = {rid: fl for rid, (fl, _) in inferred.items()}
+            regions = [{**r, "floor": region_floors.get(str(r.get("id")), r.get("floor"))} for r in regions]
     prog = progress or (lambda st, pct: None)
     timings: dict[str, float] = {}
     t = time.monotonic()
@@ -279,19 +313,63 @@ def understand(
     has_names = HAVE_ROOMS and any(match_room_name(s.text) is not None for s in spans if len(s.text) <= 40)
     if rooms and HAVE_ROOMS and not raster and (discipline in ROOM_DISCIPLINES or has_names):
         try:
-            room_objs = list(rooms_segment(vs, spans, regions, scale_den, exclude_paths=text_paths))
+            kw: dict[str, Any] = {"reference_walls": reference_walls} if reference_walls else {}
+            room_objs = list(rooms_segment(vs, spans, regions, scale_den, exclude_paths=text_paths, **kw))
         except Exception:  # rooms are best effort; detections must still be written
             log.warning("rooms.segment failed", exc_info=True)
             room_objs = []
     _assign_rooms(det.detections, room_objs, regions)
+    _room_ceilings(room_objs, spans)
+    walls_doc: dict[str, Any] | None = None
+    if rooms and HAVE_ROOMS and not raster and discipline in WALL_SOURCE_DISCIPLINES:
+        try:
+            from ..rooms import reference_walls as rooms_reference_walls
+            from ..rooms import reference_walls_json
+
+            refs = rooms_reference_walls(vs, regions, scale_den, sheet_id=sheet_id, exclude_paths=text_paths)
+            walls_doc = reference_walls_json(refs) if refs else None
+        except Exception:  # best effort: only the MEP sheets' wall borrowing depends on it
+            log.warning("rooms.reference_walls failed", exc_info=True)
+            walls_doc = None
+    lap("rooms")
+
+    # ---------------------------------------------------------------- fixtures (Sprint 4, Worker-B's module)
+    fx_objs: list[Any] = []
+    fx_dets: list[Detection] = []
+    if fixtures and HAVE_FIXTURES and not raster and discipline in FIXTURE_DISCIPLINES:
+        try:
+            fx_objs = list(
+                fixtures_detect(
+                    vs,
+                    spans,
+                    room_objs,
+                    discipline,
+                    regions=regions,
+                    scale_denominator=scale_den,
+                    detections=[d.to_json(sheet_id) for d in det.detections],
+                )
+            )
+        except Exception:  # fixtures are best effort; the other detections must still be written
+            log.warning("fixtures.detect failed", exc_info=True)
+            fx_objs = []
+        else:
+            # the fixtures stage supersedes the Sprint-2 plumbing text anchors on the sheets where it runs
+            det.detections = [d for d in det.detections if not (d.source == "text" and d.cls in TEXT_ANCHOR_SUPERSEDED)]
+        fx_dets = [d for d in (_fixture_detection(f) for f in fx_objs) if d is not None]
+        if room_objs:
+            _apply_room_types(room_objs, fx_dets)
+    elif room_objs:
+        _apply_room_types(room_objs, [])
+    lap("fixtures")
+    all_dets = det.detections + fx_dets
     if not floors_confirmed:
-        _flag_uncertain_floors(det.detections, room_objs, regions, spans, title_block)
-    if HAVE_LIFECYCLE and det.detections:
+        _flag_uncertain_floors(all_dets, room_objs, regions, spans, title_block)
+    if HAVE_LIFECYCLE and all_dets:
         try:
             plan_spans = spans
             lc = lifecycle_classify(
                 vs,
-                [d.bbox for d in det.detections],
+                [d.bbox for d in all_dets],
                 {
                     "text": plan_spans,
                     "discipline": discipline,
@@ -300,16 +378,21 @@ def understand(
                     **({"default": "new"} if discipline in DETECT_DISCIPLINES else {}),
                 },
             )
-            for d, r in zip(det.detections, lc, strict=False):
+            for d, r in zip(all_dets, lc, strict=False):
                 d.lifecycle = r.lifecycle
                 if r.lifecycle == "existing":
                     d.supply = "existing"
         except Exception:
             log.warning("lifecycle.classify failed", exc_info=True)
-    lap("rooms")
+    # Sprint 4: a fixture on a plan is what will be installed — on renovation plans the existing one drawn in the
+    # demolition pen is replaced at the same spot (plumbing points are priced as new); only "existing" (kept) stays
+    for d in fx_dets:
+        if d.lifecycle in ("unknown", "demolish"):
+            d.lifecycle = "new"
+    lap("lifecycle")
 
     # ---------------------------------------------------------------- outputs
-    dets_json = [d.to_json(sheet_id) for d in det.detections][:MAX_DETECTIONS]
+    dets_json = [d.to_json(sheet_id) for d in all_dets][:MAX_DETECTIONS]
     # link to a confirmed entry with the same signature on another sheet
     link = {
         eid: str(m["entryId"]) for eid, m in applied.items() if m.get("entryId") and m.get("status") in ("confirmed", "ignored")
@@ -318,7 +401,8 @@ def understand(
         if dj["legendEntryId"] in link:
             dj["legendEntryId"] = link[dj["legendEntryId"]]
     clusters_json = [c.to_json() for c in det.clusters]
-    rooms_json = {"schema": ROOMS_SCHEMA, "rooms": [r.to_json() for r in room_objs]}
+    # Sprint 4: the contracts' Room carries type / wet / walls / openings / externalCorners (tiling inputs)
+    rooms_json = {"schema": ROOMS_SCHEMA, "rooms": [_room_json(r) for r in room_objs]}
     files: list[dict[str, str]] = []
     thumbs: dict[str, str | None] = {}
     if out_dir is not None:
@@ -373,6 +457,11 @@ def understand(
             # reported under its own key (not ``files``): an orchestrator that does not know the
             # links artifact yet keeps working; one that does uploads ``linksFile`` → artifacts.links
             (out_dir / LINKS_FILE).write_bytes(gz_json(links_doc))
+        if fx_objs:
+            # Worker-B's extended fixture records (source / attachedTo / label / leaderMm), ``fixturesFile``
+            (out_dir / FIXTURES_FILE).write_bytes(gz_json(_fixtures_doc(fx_objs, fx_dets)))
+        if walls_doc is not None:
+            (out_dir / WALLS_FILE).write_bytes(gz_json(walls_doc))
     lap("write")
     return {
         "legend": leg_json,
@@ -386,7 +475,39 @@ def understand(
         "detected": run_detect,
         **({"linkStats": link_stats} if link_stats is not None else {}),
         **({"linksFile": LINKS_FILE} if links_doc is not None and out_dir is not None else {}),
+        **({"fixturesFile": FIXTURES_FILE} if fx_objs and out_dir is not None else {}),
+        **({"fixtureStats": _fixture_stats(fx_dets)} if fx_objs else {}),
+        **({"wallsFile": WALLS_FILE} if walls_doc is not None and out_dir is not None else {}),
+        **({"referenceWalls": len(reference_walls)} if reference_walls else {}),
+        **({"regionFloors": region_floors} if region_floors else {}),
     }
+
+
+def _room_ceilings(rooms: list[Any], spans: list[TextSpan]) -> None:
+    """Room ``ceiling_height_m`` from the level marks ("-2.55 H=220") inside it (lowest when several)."""
+    if not rooms:
+        return
+    from shapely.geometry import Point, Polygon
+
+    from ..boq.spaces import level_marks
+
+    marks = level_marks([{"text": s.text, "bboxMm": list(s.bbox)} for s in spans if "H" in s.text or "." in s.text])
+    for r in rooms:
+        pts = getattr(r, "polygon_mm", None) or []
+        if not marks or len(pts) < 3 or not hasattr(r, "ceiling_height_m"):
+            continue
+        poly = Polygon(pts).buffer(0)
+        hs = [h for x, y, h in marks if poly.contains(Point(x, y))]
+        if hs:
+            r.ceiling_height_m = min(hs)
+
+
+def _room_json(r: Any) -> dict[str, Any]:
+    try:
+        out: dict[str, Any] = r.to_json(extended=True)
+    except TypeError:  # pragma: no cover - a Sprint-2 room object
+        out = r.to_json()
+    return out
 
 
 def _union(a: BBox, b: BBox) -> BBox:
@@ -477,6 +598,84 @@ def _flag_uncertain_floors(
                 r.level = _demote(r.reasons, r.level, R_FLOOR)
 
 
+def _fixture_detection(f: Any) -> Detection | None:
+    """Worker-B's ``FixtureDetection`` (or its ``to_json`` dict) → a :class:`Detection`, so the floor rule,
+    lifecycle and the artifact writer treat fixtures like every other detection (id kept: ``d_fx_<n>``)."""
+    try:
+        j = f.to_json() if hasattr(f, "to_json") else dict(f)
+        b = j["bboxMm"]
+        x0, y0 = float(b["x"]), float(b["y"])
+        d = Detection(
+            cls=str(j["class"]),
+            center=(float(j["centerMm"]["x"]), float(j["centerMm"]["y"])),
+            bbox=(x0, y0, x0 + float(b["w"]), y0 + float(b["h"])),
+            angle=round(float(j.get("angleDeg") or 0.0)) % 360,
+            score=float(j.get("score") or 0.0),
+            level=str(j.get("level") or "yellow"),
+            reasons=[str(r) for r in j.get("reasons") or []],
+            annotations=[str(a) for a in j.get("annotations") or []],
+            room_id=j.get("roomId"),
+            floor=j.get("floor"),
+            source="fixture",
+            id=str(j["id"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        log.warning("dropping a malformed fixture record")
+        return None
+    if not d.id.startswith("d_"):
+        d.id = "d_" + d.id
+    return d
+
+
+def _fixtures_doc(objs: list[Any], dets: list[Detection]) -> dict[str, Any]:
+    """``fixtures.json.gz``: Worker-B's ``fixtures_json`` (extended records), with the floor / lifecycle the
+    understand stage settled on copied in, so it agrees with ``detections.json.gz``."""
+    try:
+        from ..fixtures import fixtures_json
+
+        doc: dict[str, Any] = dict(fixtures_json(objs))
+    except Exception:  # noqa: BLE001 - older fixtures module: plain records
+        doc = {"schema": "kamutan.fixtures/1", "fixtures": [o.to_json() if hasattr(o, "to_json") else dict(o) for o in objs]}
+    by_id = {d.id: d for d in dets}
+    for rec in doc.get("fixtures") or []:
+        d = by_id.get(str(rec.get("id"))) or by_id.get("d_" + str(rec.get("id")))
+        if d is not None:
+            rec.update(
+                {"floor": d.floor, "lifecycle": d.lifecycle, "supply": d.supply, "level": d.level, "reasons": list(d.reasons)}
+            )
+    return doc
+
+
+def _fixture_stats(dets: list[Detection]) -> dict[str, Any]:
+    return {"total": len(dets), "byClass": dict(sorted(Counter(d.cls for d in dets).items()))}
+
+
+def _apply_room_types(rooms: list[Any], fx: list[Detection]) -> None:
+    """Room ``type`` / ``wet`` from the name and the fixtures inside (Worker-B's ``rooms.types.room_type``),
+    when the room objects carry those fields (Sprint-4 rooms) and the fixtures were not known to ``segment``."""
+    try:
+        from ..rooms import apply_fixtures
+        from ..rooms.types import room_type
+    except ImportError:  # pragma: no cover
+        return
+    if all(hasattr(r, "type_source") for r in rooms):
+        apply_fixtures(rooms, fx)  # Worker-B's: type / wet / typeSource
+        return
+    by_room: dict[str, list[str]] = {}
+    for d in fx:
+        if d.room_id:
+            by_room.setdefault(str(d.room_id), []).append(d.cls)
+    for r in rooms:
+        if not (hasattr(r, "type") and hasattr(r, "wet")):
+            continue
+        t, wet, notes = room_type(
+            getattr(r, "name", None), by_room.get(str(getattr(r, "id", "")), []), float(getattr(r, "area_m2", 0.0))
+        )
+        r.type, r.wet = t, wet
+        if notes and hasattr(r, "type_notes"):
+            r.type_notes = notes
+
+
 def _assign_rooms(dets: list[Detection], rooms: list[Any], regions: list[dict[str, Any]]) -> None:
     for d in dets:
         r = assign_room(rooms, d.center[0], d.center[1]) if (rooms and HAVE_ROOMS) else None
@@ -515,6 +714,14 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     render, close = _open_render(
         kind, str(inside(str(args["path"]))) if args.get("path") else None, int(args.get("index", 0)), vs
     )
+    refs: list[Any] = []
+    for rel in args.get("referenceWalls") or []:
+        try:
+            from ..rooms import reference_walls_from_json
+
+            refs.extend(reference_walls_from_json(json.loads(gzip.decompress(inside(str(rel)).read_bytes()))))
+        except (OSError, ValueError, KeyError, TypeError, ImportError):
+            log.warning("ignoring an unreadable reference walls file")
     raster_image = None
     try:
         if raster and render is not None:
@@ -539,6 +746,8 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             raster_image=raster_image,
             floors_confirmed=bool(args.get("floorsConfirmed", False)),
             links=bool(args.get("links", True)),
+            fixtures=bool(args.get("fixtures", True)),
+            reference_walls=refs or None,
         )
     finally:
         close()
@@ -549,6 +758,7 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
 __all__ = [
     "DETECT_DISCIPLINES",
     "LINKS_FILE",
+    "WALLS_FILE",
     "Detection",
     "apply_confirmed_floors",
     "detection_stats",

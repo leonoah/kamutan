@@ -10,6 +10,10 @@
     kbench eval-boq --truth GT_DIR --pred-lines boq-lines.json --out boq.json [--report boq.md] [--scope 4. --scope 9.01]
     kbench excel-check --sample boq_sample.xls --export export.xlsx [--lines boq-lines.json] [--report r.md]
     kbench links-implied --truth GT_DIR [--out implied.json] [--skip-existing-points] [--skip-existing-switches] [--alt]
+    kbench plumbing-implied --truth GT_DIR [--out implied.json] [--report r.md]
+    kbench eval-fixtures --truth GT_DIR --pred-detections ARTIFACTS_DIR --out f.json [--report f.md] [--center-tol-mm 3]
+    kbench eval-tiling-rooms --truth GT_DIR --pred-rooms ARTIFACTS_DIR --out t.json [--report t.md]
+    kbench tiling-expected --truth GT_DIR [--height 2.6] [--clad-niches] [--courtyard none|landing|whole] [--out e.json]
 
 Exit codes: 0 ok · 1 regression / validation errors · 2 usage / not comparable.
 """
@@ -195,7 +199,12 @@ def cmd_eval_boq(a: argparse.Namespace) -> int:
     truth = load_project(a.truth)
     import hashlib
 
-    m = _meta(a) | evaluate_boq_lines(truth, load_pred_lines(a.pred_lines), tuple(a.scope or DEFAULT_SCOPE))
+    expected = None
+    if a.expected:
+        ex = json.loads(Path(a.expected).read_text(encoding="utf-8"))
+        expected = ex.get("lines") or ex.get("recommended_defaults", {}).get("expected") or ex
+        expected = {k: float(v) for k, v in expected.items() if isinstance(v, (int, float))}
+    m = _meta(a) | evaluate_boq_lines(truth, load_pred_lines(a.pred_lines), tuple(a.scope or DEFAULT_SCOPE), expected)
     m["source"] = {"pred_lines": str(a.pred_lines), "sha256": hashlib.sha256(Path(a.pred_lines).read_bytes()).hexdigest()}
     _write_json(a.out, m)
     if a.report:
@@ -205,6 +214,91 @@ def cmd_eval_boq(a: argparse.Namespace) -> int:
         f"gated lines={g['n_lines']} EM={g['exact_match']['p']} sumAE={g['sum_ae']} medPE={g['median_pe']} "
         f"green_P={m['boq_lines']['green_line_precision']['p']} extra={len(m['boq_lines']['extra_lines'])}"
     )
+    return 0
+
+
+def cmd_plumbing_implied(a: argparse.Namespace) -> int:
+    from .plumbing import PlumbingRules, compare_implied, implied_plumbing, render_implied_markdown
+
+    truth = load_project(a.truth)
+    imp = implied_plumbing(truth, PlumbingRules(faucet_radius_mm=a.faucet_radius_mm))
+    rows = compare_implied(truth, imp)
+    if a.out:
+        _write_json(a.out, {"implied": imp, "lines": rows})
+    md = render_implied_markdown(rows, imp)
+    if a.report:
+        Path(a.report).write_text(md, encoding="utf-8")
+    print(md)
+    return 0
+
+
+def cmd_eval_fixtures(a: argparse.Namespace) -> int:
+    from .plumbing import fixture_classes, fixture_subset
+    from .worker import WorkerEvalConfig, evaluate_worker, load_worker_predictions, render_worker_markdown
+
+    truth = load_project(a.truth)
+    sheet_map = json.loads(Path(a.sheet_map).read_text(encoding="utf-8")) if a.sheet_map else None
+    preds = load_worker_predictions(a.pred_detections, set(truth.sheets), sheet_map, rooms_root=a.pred_rooms)
+    classes = fixture_classes()
+    t_sub = fixture_subset(truth, classes)
+    t_sub.sheets = {k: v for k, v in t_sub.sheets.items() if any(f.cls != "room" for f in v.features)}
+    preds.project = fixture_subset(preds.project, classes)
+    cfg = WorkerEvalConfig(
+        base=EvalConfig(match=MatchParams(center_tol_mm=a.center_tol_mm, mode="center"), exclude_disputed=False),
+        room_iou=a.room_iou,
+        include_missing_sheets=a.include_missing_sheets,
+    )
+    m = {
+        "kbench_version": __version__,
+        "gt_version": a.gt_version,
+        "model_version": a.model_version,
+        "code_sha": a.code_sha,
+        "classes": sorted(classes),
+    }
+    m |= evaluate_worker(t_sub, preds, cfg, {})
+    _write_json(a.out, m)
+    if a.report:
+        Path(a.report).write_text(render_worker_markdown(m, title="kbench — plumbing fixtures + AC"), encoding="utf-8")
+    s = m["symbols"]["detection"]["micro"]
+    print(
+        f"fixture sheets={m['sheets']['symbols']} micro P={s['precision']} R={s['recall']} F1={s['f1']} "
+        f"missing={m['sheets']['missing_predictions']}"
+    )
+    return 0
+
+
+def cmd_eval_tiling_rooms(a: argparse.Namespace) -> int:
+    from .tiling import TilingEvalConfig, evaluate_tiling_rooms, load_tiling_truth, render_tiling_markdown
+    from .worker import load_worker_predictions
+
+    truth = load_project(a.truth)
+    tiling = load_tiling_truth(a.truth)
+    sheet_map = json.loads(Path(a.sheet_map).read_text(encoding="utf-8")) if a.sheet_map else None
+    preds = load_worker_predictions(a.pred_rooms, set(truth.sheets), sheet_map)
+    cfg = TilingEvalConfig(room_iou=a.room_iou, opening_tol_mm=a.opening_tol_mm, width_tol_m=a.width_tol_m)
+    m = _meta(a) | evaluate_tiling_rooms(truth, tiling, preds.project, cfg)
+    _write_json(a.out, m)
+    if a.report:
+        Path(a.report).write_text(render_tiling_markdown(m), encoding="utf-8")
+    t = m["tiling_rooms"]
+    print(
+        f"rooms matched={t['n_matched']}/{t['n_truth_rooms']} type_acc={t['type_accuracy']} wet={t['wet']} "
+        f"openings={t['openings']} missing={t['missing_pred_sheets']}"
+    )
+    return 0
+
+
+def cmd_tiling_expected(a: argparse.Namespace) -> int:
+    from .tiling import TilingRules, expected_lines, load_tiling_truth
+
+    tiling = load_tiling_truth(a.truth)
+    rules = TilingRules(
+        cladding_height_m=a.height, clad_niches=a.clad_niches, floor_courtyard=a.courtyard, cap_at_ceiling=not a.no_ceiling_cap
+    )
+    m = expected_lines(tiling, rules)
+    if a.out:
+        _write_json(a.out, m)
+    print(json.dumps(m["lines"], ensure_ascii=False))
     return 0
 
 
@@ -316,6 +410,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--truth", required=True)
     s.add_argument("--pred-lines", required=True)
     s.add_argument("--scope", action="append", help="code prefix ('4.') or exact code ('9.01'); default 4. + 9.01")
+    s.add_argument("--expected", help="JSON {code: qty} (or tiling-expected output) shown as a second reference column")
     s.add_argument("--out", required=True)
     s.add_argument("--report")
     meta_args(s)
@@ -328,6 +423,47 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--skip-existing-switches", action="store_true")
     s.add_argument("--alt", action="store_true", help="use alt readings of disputed groups")
     s.set_defaults(fn=cmd_links_implied)
+
+    s = sub.add_parser("plumbing-implied", help="plumbing BOQ (chapter 03) implied by the fixture truth")
+    s.add_argument("--truth", required=True)
+    s.add_argument("--faucet-radius-mm", type=float, default=5.0)
+    s.add_argument("--out")
+    s.add_argument("--report")
+    s.set_defaults(fn=cmd_plumbing_implied)
+
+    s = sub.add_parser("eval-fixtures", help="plumbing fixture + AC detection metrics (worker detections)")
+    s.add_argument("--truth", required=True)
+    s.add_argument("--pred-detections", required=True)
+    s.add_argument("--pred-rooms")
+    s.add_argument("--sheet-map")
+    s.add_argument("--center-tol-mm", type=float, default=3.0)
+    s.add_argument("--room-iou", type=float, default=0.5)
+    s.add_argument("--include-missing-sheets", action="store_true")
+    s.add_argument("--out", required=True)
+    s.add_argument("--report")
+    meta_args(s)
+    s.set_defaults(fn=cmd_eval_fixtures)
+
+    s = sub.add_parser("eval-tiling-rooms", help="room type / wet / openings / perimeter vs tiling/wet_rooms.json")
+    s.add_argument("--truth", required=True)
+    s.add_argument("--pred-rooms", required=True)
+    s.add_argument("--sheet-map")
+    s.add_argument("--room-iou", type=float, default=0.5)
+    s.add_argument("--opening-tol-mm", type=float, default=10.0)
+    s.add_argument("--width-tol-m", type=float, default=0.05)
+    s.add_argument("--out", required=True)
+    s.add_argument("--report")
+    meta_args(s)
+    s.set_defaults(fn=cmd_eval_tiling_rooms)
+
+    s = sub.add_parser("tiling-expected", help="tiling quantities (5.01/5.02/5.03/5.05) from the wet-room truth")
+    s.add_argument("--truth", required=True)
+    s.add_argument("--height", type=float, default=2.6)
+    s.add_argument("--clad-niches", action="store_true")
+    s.add_argument("--no-ceiling-cap", action="store_true")
+    s.add_argument("--courtyard", choices=["none", "landing", "whole"], default="none")
+    s.add_argument("--out")
+    s.set_defaults(fn=cmd_tiling_expected)
 
     s = sub.add_parser("excel-check", help="xlsx export vs the sample BOQ format (checklist)")
     s.add_argument("--sample", required=True, help="client's sample .xls (sheet כמויות)")

@@ -197,6 +197,14 @@
             "links": {
               "type": "string",
               "maxLength": 1024
+            },
+            "fixtures": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "walls": {
+              "type": "string",
+              "maxLength": 1024
             }
           },
           "additionalProperties": false

@@ -19,7 +19,7 @@ export interface DetectionContext {
  */
 export function DetectionDetails({ d, ctx, onClose, compact = false }: { d: Detection; ctx: DetectionContext; onClose?: () => void; compact?: boolean }) {
   const { t } = useTranslation();
-  const level = uiLevel(levelKeyOf(d));
+  const level = d.manual ? "manual" : uiLevel(levelKeyOf(d));
   const name = className(d.class, t("understanding.unknownClass"));
   const roomName = ctx.room ? (ctx.room.name ?? t("understanding.unnamedRoom")) : t("understanding.noRoom");
   const floor = d.floor ? t(`floors.${d.floor}`, { defaultValue: d.floor }) : "—";

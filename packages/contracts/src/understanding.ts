@@ -26,6 +26,8 @@ import { DetectionClassSchema, SymbolClassSchema } from './taxonomy.js';
 export const LEGEND_SCHEMA = 'kamutan.legend/1' as const;
 export const DETECTIONS_SCHEMA = 'kamutan.detections/1' as const;
 export const ROOMS_SCHEMA = 'kamutan.rooms/1' as const;
+export const FIXTURES_SCHEMA = 'kamutan.fixtures/1' as const;
+export const WALLS_SCHEMA = 'kamutan.walls/1' as const;
 
 /** Axis-aligned box in paper mm (x, y = top-left corner). */
 export const BBoxMmSchema = z
@@ -144,6 +146,8 @@ export const DetectionSchema = z.object({
   /** Raw annotations near the symbol ("2X", "H=30"). */
   annotations: z.array(z.string().min(1).max(32)).max(16),
   clusterId: ClusterIdSchema.nullable(),
+  /** Sprint 4 (optional): stroke signature of the symbol (groups review-queue clusters, find_similar exemplar). */
+  signature: SymbolSignatureSchema.nullable().optional(),
 });
 export type Detection = z.infer<typeof DetectionSchema>;
 
@@ -184,6 +188,46 @@ export type DetectionsArtifact = z.infer<typeof DetectionsArtifactSchema>;
 // rooms.json.gz — kamutan.rooms/1
 // ---------------------------------------------------------------------------
 
+/** Sprint 4: room types (Worker-B classifies from the room name + fixtures). */
+export const ROOM_TYPES = ['bathroom', 'wc', 'kitchen', 'bedroom', 'living', 'corridor', 'balcony', 'courtyard', 'storage', 'stairs', 'other'] as const;
+export const RoomTypeSchema = z.enum(ROOM_TYPES);
+export type RoomType = z.infer<typeof RoomTypeSchema>;
+/** Room types that are wet by default (tiling / waterproofing defaults). */
+export const WET_ROOM_TYPES: readonly RoomType[] = Object.freeze(['bathroom', 'wc']);
+
+export const WallIdSchema = idWith('w_');
+export const OpeningIdSchema = idWith('o_');
+
+/** Sprint 4: one wall segment of a room outline (paper mm; `lengthM` at the region's scale). */
+export const RoomWallSchema = z
+  .object({
+    id: WallIdSchema,
+    aMm: PointMmSchema,
+    bMm: PointMmSchema,
+    lengthM: z.number().finite().nonnegative(),
+    /** true = faces outside the room's building envelope (not shared with another room). */
+    exterior: z.boolean(),
+  })
+  .strict();
+export type RoomWall = z.infer<typeof RoomWallSchema>;
+
+export const OPENING_KINDS = ['door', 'window', 'opening'] as const;
+export const OpeningKindSchema = z.enum(OPENING_KINDS);
+
+/** Sprint 4: a door / window / opening in one of the room's walls (subtracted from cladding). */
+export const RoomOpeningSchema = z
+  .object({
+    id: OpeningIdSchema,
+    kind: OpeningKindSchema,
+    wallId: WallIdSchema,
+    widthM: z.number().finite().nonnegative(),
+    /** null when the drawing does not give it (the tiling rule then uses its default height). */
+    heightM: z.number().finite().nonnegative().nullable(),
+    centerMm: PointMmSchema,
+  })
+  .strict();
+export type RoomOpening = z.infer<typeof RoomOpeningSchema>;
+
 export const RoomSchema = z.object({
   id: RoomIdSchema,
   /** OCR'd room name ("סלון"); null when the room has no readable label. */
@@ -198,6 +242,18 @@ export const RoomSchema = z.object({
   confidence: conf01,
   level: ConfidenceLevelSchema,
   reasons: ReasonsSchema,
+  // --- Sprint 4 (Worker-B; optional so Sprint-2/3 artifacts stay valid) ---
+  type: RoomTypeSchema.optional(),
+  /** Wet room (bathroom / wc / shower / laundry …): floor tiling + waterproofing defaults. */
+  wet: z.boolean().optional(),
+  walls: z.array(RoomWallSchema).max(512).optional(),
+  openings: z.array(RoomOpeningSchema).max(256).optional(),
+  /** Number of external (convex) corners where cladding meets — corner trim = n × cladding height. */
+  externalCorners: z.number().int().min(0).max(256).optional(),
+  /** Ceiling height (m) when the drawing gives it (section / note); caps the default cladding height. */
+  ceilingHeightM: z.number().finite().positive().max(10).nullable().optional(),
+  /** Niche (washing-machine alcove …): floor tiled with its room, walls NOT clad. */
+  niche: z.boolean().optional(),
 });
 export type Room = z.infer<typeof RoomSchema>;
 
@@ -210,9 +266,65 @@ export const RoomsArtifactSchema = z
     uniqueIds(a.rooms, ['rooms'], ctx);
     a.rooms.forEach((r, i) => {
       if (r.level !== 'green' && r.reasons.length === 0) issue(ctx, ['rooms', i, 'reasons'], 'a non-green room needs at least one reason');
+      // Sprint 4: wall / opening ids unique within the room; every opening sits on one of the room's walls.
+      if (r.walls) uniqueIds(r.walls, ['rooms', String(i), 'walls'], ctx);
+      if (r.openings) {
+        uniqueIds(r.openings, ['rooms', String(i), 'openings'], ctx);
+        const walls = new Set((r.walls ?? []).map((w) => w.id));
+        r.openings.forEach((o, j) => {
+          if (!walls.has(o.wallId)) issue(ctx, ['rooms', i, 'openings', j, 'wallId'], 'opening.wallId is not a wall of this room');
+        });
+      }
     });
   });
 export type RoomsArtifact = z.infer<typeof RoomsArtifactSchema>;
+
+// ---------------------------------------------------------------------------
+// fixtures.json.gz — kamutan.fixtures/1 (Sprint 4, Worker-B `fixtures_json`)
+// ---------------------------------------------------------------------------
+
+/**
+ * A fixture record = a Detection (same fields; the id may lack the `d_` prefix in older files) + Worker-B's extended,
+ * all-optional fields: `source` (shape | text | shape+text), `attachedTo` (faucet → basin/sink/shower id), `label`
+ * (supporting plumbing text), `leaderMm` (leader polyline), `sheetId` + `duplicates` ("sheetId/detectionId" copies on
+ * other sheets, after floor de-duplication). Unknown extra keys are allowed (passthrough).
+ */
+export const FixtureRecordSchema = DetectionSchema.extend({
+  id: z.string().min(1).max(128),
+  source: z.string().max(32).optional(),
+  attachedTo: z.string().max(128).nullable().optional(),
+  label: z.string().max(300).nullable().optional(),
+  leaderMm: z.array(PointMmSchema).max(512).optional(),
+  sheetId: DocIdSchema.optional(),
+  duplicates: z.array(z.string().max(300)).max(64).optional(),
+}).passthrough();
+export type FixtureRecord = z.infer<typeof FixtureRecordSchema>;
+
+export const FixturesArtifactSchema = z
+  .object({ schema: z.literal(FIXTURES_SCHEMA), fixtures: z.array(FixtureRecordSchema).max(MAX_DETECTIONS) })
+  .passthrough()
+  .superRefine((a, ctx) => uniqueIds(a.fixtures, ['fixtures'], ctx));
+export type FixturesArtifact = z.infer<typeof FixturesArtifactSchema>;
+
+// ---------------------------------------------------------------------------
+// walls.json.gz — kamutan.walls/1 (Sprint 4, Worker-B `reference_walls_json`)
+// ---------------------------------------------------------------------------
+
+const RingSchema = z.array(PointMmSchema).max(20_000);
+export const WallPolygonSchema = z.object({ exterior: RingSchema, holes: z.array(RingSchema).max(1000) }).passthrough();
+/** One drawing (sheet region) of reference walls; polygons simplified at 0.1 mm, paper mm. */
+export const WallsDrawingSchema = z
+  .object({
+    floor: FloorSchema.nullable(),
+    scaleDenominator: z.number().int().positive().nullable(),
+    sheetId: DocIdSchema.nullable(),
+    regionId: z.string().max(64).nullable(),
+    polygonsMm: z.array(WallPolygonSchema).max(5000),
+    closuresMm: z.array(WallPolygonSchema).max(5000).optional(),
+  })
+  .passthrough();
+export const WallsArtifactSchema = z.object({ schema: z.literal(WALLS_SCHEMA), drawings: z.array(WallsDrawingSchema).max(64) }).passthrough();
+export type WallsArtifact = z.infer<typeof WallsArtifactSchema>;
 
 // ---------------------------------------------------------------------------
 // Firestore: legendEntries + symbolMappings
@@ -286,6 +398,9 @@ export const OverlayManifestSchema = z.object({
   rooms: SignedUrlRefSchema.nullable(),
   /** Sprint 3: links.json.gz (kamutan.links/1, switch↔luminaire arcs); null when the version has none. Always set by the API. */
   links: SignedUrlRefSchema.nullable().optional(),
+  /** Sprint 4: fixtures.json.gz (kamutan.fixtures/1) / walls.json.gz (kamutan.walls/1); null when absent. Always set by the API. */
+  fixtures: SignedUrlRefSchema.nullable().optional(),
+  walls: SignedUrlRefSchema.nullable().optional(),
   /** Crop URLs keyed by legend entry id (`le_…`) or unknown cluster id (`u_…`). */
   thumbs: z.record(z.string().regex(/^(le|u)_[A-Za-z0-9_-]+$/), z.string().url()),
   stats: VersionStatsSchema.nullable(),

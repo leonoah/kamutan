@@ -1,12 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Lasso, Maximize, Minus, MousePointer2, Plus, Ruler, Scaling } from "lucide-react";
+import { Maximize, Minus, Plus } from "lucide-react";
+import { TOOL_META, toolForKey } from "./tools";
 import {
   DrawingViewer,
   defaultLabels,
   formatScale,
+  type AreaResult,
   type CalibrationResult,
+  type CountResult,
   type DrawingViewerHandle,
+  type LengthResult,
+  type LinkResult,
+  type MoveResult,
+  type PointToolEvent,
+  type Vec2,
   type LassoResult,
   type MeasureResult,
   type OverlayFeature,
@@ -39,6 +47,21 @@ export interface SheetViewerProps {
   onLasso?: (r: LassoResult) => void;
   onMeasure?: (r: MeasureResult) => void;
   onCalibrate?: (r: CalibrationResult) => void;
+  /* Sprint 4 correction tools (see DrawingViewer) */
+  onPointTool?: (e: PointToolEvent) => void;
+  onMove?: (r: MoveResult) => void;
+  onLink?: (r: LinkResult) => void;
+  onCount?: (r: CountResult) => void;
+  onArea?: (r: AreaResult) => void;
+  onLength?: (r: LengthResult) => void;
+  onBackgroundClick?: (mm: [number, number]) => void;
+  snapPoints?: readonly Vec2[];
+  /** Overrides the sheet's scale (e.g. right after a calibration, before the sheet doc refreshes). */
+  scaleDenominator?: number | null;
+  /** Tool keys handled here (canvas focused). Off when the page owns the keyboard (review workspace). */
+  toolKeys?: boolean;
+  /** Extra floating content over the canvas (e.g. the lasso action card), RTL. */
+  overlayExtra?: React.ReactNode;
   /** Deep link: initial view in paper mm [x0, y0, x1, y1]. */
   initialViewMm?: readonly [number, number, number, number] | null;
   /** Extra controls rendered at the end of the bottom strip (e.g. the review lifecycle toggle). */
@@ -46,13 +69,7 @@ export interface SheetViewerProps {
   className?: string;
 }
 
-const TOOL_META: Record<ViewerTool, { key: string; code: string; icon: typeof Lasso; label: string }> = {
-  select: { key: "V", code: "KeyV", icon: MousePointer2, label: "viewer.select" },
-  pan: { key: "H", code: "KeyH", icon: MousePointer2, label: "viewer.select" },
-  lasso: { key: "L", code: "KeyL", icon: Lasso, label: "viewer.lasso" },
-  measure: { key: "D", code: "KeyD", icon: Ruler, label: "viewer.measure" },
-  calibrate: { key: "S", code: "KeyS", icon: Scaling, label: "viewer.calibrate" },
-};
+
 
 /**
  * The drawing canvas as used by the app: Deck.gl viewer + tool rail + scale/zoom strip.
@@ -76,6 +93,17 @@ export default function SheetViewer({
   onLasso,
   onMeasure,
   onCalibrate,
+  onPointTool,
+  onMove,
+  onLink,
+  onCount,
+  onArea,
+  onLength,
+  onBackgroundClick,
+  snapPoints,
+  scaleDenominator,
+  toolKeys = true,
+  overlayExtra,
   initialViewMm,
   footerExtra,
   className,
@@ -104,7 +132,7 @@ export default function SheetViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomRequest?.seq]);
   const name = row.sheet.title ?? row.sheet.classification?.sheetTitle ?? row.sheet.id;
-  const scale = row.sheet.scaleDenominator ?? null;
+  const scale = scaleDenominator !== undefined ? scaleDenominator : (row.sheet.scaleDenominator ?? null);
 
   const labels = useMemo<Partial<ViewerLabels>>(
     () => ({
@@ -116,8 +144,8 @@ export default function SheetViewer({
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if ((e.target as HTMLElement).closest("input, textarea, select")) return;
-    const hit = tools.find((k) => TOOL_META[k].code === e.code);
+    if (!toolKeys || (e.target as HTMLElement).closest("input, textarea, select")) return;
+    const hit = toolForKey(tools, e);
     if (hit) {
       e.preventDefault();
       onToolChange(hit);
@@ -154,6 +182,14 @@ export default function SheetViewer({
             onLasso={onLasso}
             onMeasure={onMeasure}
             onCalibrate={onCalibrate}
+            onPointTool={onPointTool}
+            onMove={onMove}
+            onLink={onLink}
+            onCount={onCount}
+            onArea={onArea}
+            onLength={onLength}
+            onBackgroundClick={onBackgroundClick}
+            snapPoints={snapPoints}
             scaleDenominator={scale}
             onViewChange={setView}
             initialViewMm={initialViewMm ?? null}
@@ -172,6 +208,7 @@ export default function SheetViewer({
           </p>
         ) : null}
 
+        {overlayExtra}
         {/* Tool rail — left edge of the canvas, not mirrored */}
         <div
           dir="rtl"
@@ -180,10 +217,14 @@ export default function SheetViewer({
           aria-orientation="vertical"
           className="absolute left-3 top-3 z-10 flex flex-col gap-0.5 rounded border border-border bg-surface p-1 shadow-float"
         >
-          {tools.map((k) => {
+          {tools.map((k, i) => {
             const { key, icon: Icon, label } = TOOL_META[k];
             const active = tool === k;
+            // A thin divider between the selection tools and the correction tools.
+            const divider = i > 0 && (k === "add" || k === "area") ? <span aria-hidden className="mx-1 my-0.5 h-px bg-border" /> : null;
             return (
+              <Fragment key={k}>
+              {divider}
               <button
                 key={k}
                 type="button"
@@ -199,6 +240,7 @@ export default function SheetViewer({
               >
                 <Icon className="size-4" aria-hidden />
               </button>
+              </Fragment>
             );
           })}
         </div>

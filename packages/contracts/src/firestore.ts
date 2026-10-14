@@ -17,7 +17,14 @@ export const fsPaths = Object.freeze({
   /** Sprint 2: org memory of confirmed symbol → class/itemCode, doc id = symbol signature. API-written only. */
   symbolMapping: (o: string, signature: string) => `orgs/${o}/symbolMappings/${signature}`,
   reviewItem: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/reviewItems/${id}`,
+  /** Sprint 4: human corrections (API-only writes). */
+  corrections: (o: string, p: string) => `orgs/${o}/projects/${p}/corrections`,
   correction: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/corrections/${id}`,
+  correctionBatch: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/correctionBatches/${id}`,
+  /** Sprint 4: tiling inputs per room, doc id `{sheetId}__{roomId}` (API-only writes). */
+  roomSettings: (o: string, p: string, sheetId: string, roomId: string) => `orgs/${o}/projects/${p}/roomSettings/${sheetId}__${roomId}`,
+  /** Sprint 4: find_similar requests/results (API creates, worker fills). */
+  similarSearch: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/similarSearches/${id}`,
   boqLines: (o: string, p: string) => `orgs/${o}/projects/${p}/boqLines`,
   boqLine: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqLines/${id}`,
   /** Sprint 3: aggregation runs (API creates `queued`; worker runs). */
@@ -77,10 +84,15 @@ export const storagePaths = Object.freeze({
   llmCachePrefix: (o: string) => `orgs/${o}/llm-cache/`,
   /** Sprint 3: switch↔luminaire link graph of a lighting sheet version (`kamutan.links/1`, worker). */
   links: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/links.json.gz`,
+  /** Sprint 4: fixtures (`kamutan.fixtures/1`) and reference walls (`kamutan.walls/1`) of a sheet version (worker). */
+  fixtures: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/fixtures.json.gz`,
+  walls: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/walls.json.gz`,
   /** Sprint 3: evidence of one BOQ build (`kamutan.boq-evidence/1`, worker; API reads server-side). */
   boqEvidence: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/evidence.json.gz`,
   /** Sprint 3: Excel export (API writes; signed URL only, 2 min). */
   boqExportFile: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}.xlsx`,
+  /** Sprint 4: find_similar candidate crop (worker; API signs, never client-readable). */
+  similarThumb: (o: string, p: string, searchId: string, candidateId: string) => `orgs/${o}/projects/${p}/similar/${searchId}/${candidateId}.webp`,
   /** Sprint 3: past-BOQ upload slot (client create-only; API verifies magic bytes). */
   libraryImport: (o: string, importId: string, ext: 'xls' | 'xlsx') => `orgs/${o}/imports/${importId}.${ext}`,
 
@@ -100,17 +112,19 @@ export const PROJECT_UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})
 /** Any object under a sheet version's artifact directory (what the API may sign for reading). */
 export const ARTIFACT_PATH_RE = new RegExp(
   `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(?:tiles/\\d{1,2}/\\d{1,5}_\\d{1,5}\\.webp|thumbnail\\.webp|primitives\\.msgpack\\.gz|text\\.json\\.gz` +
-    `|legend\\.json\\.gz|detections\\.json\\.gz|rooms\\.json\\.gz|links\\.json\\.gz|legend/le_${ID}\\.webp|unknown/u_${ID}\\.webp)$`,
+    `|legend\\.json\\.gz|detections\\.json\\.gz|rooms\\.json\\.gz|links\\.json\\.gz|fixtures\\.json\\.gz|walls\\.json\\.gz|legend/le_${ID}\\.webp|unknown/u_${ID}\\.webp)$`,
 );
 /** Sprint 3: evidence file of a build. */
 export const BOQ_EVIDENCE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/boq/(${ID})/evidence\\.json\\.gz$`);
 /** Sprint 3: Excel export object. */
 export const BOQ_EXPORT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/exports/(${ID})\\.xlsx$`);
+/** Sprint 4: find_similar candidate crops. */
+export const SIMILAR_THUMB_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/similar/(${ID})/(c_[A-Za-z0-9_-]{1,64})\\.webp$`);
 /** Sprint 3: past-BOQ upload slot. */
 export const LIBRARY_IMPORT_PATH_RE = new RegExp(`^orgs/(${ID})/imports/(${UUID})\\.(xls|xlsx)$`);
 /** The three Sprint-2 understanding artifacts (what the API may read server-side). */
 export const UNDERSTANDING_ARTIFACT_PATH_RE = new RegExp(
-  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(legend|detections|rooms|links)\\.json\\.gz$`,
+  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(legend|detections|rooms|links|fixtures|walls)\\.json\\.gz$`,
 );
 /** @deprecated Sprint 0 (see storagePaths.upload). */
 export const UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/uploads/(${ID})/(${ID})$`);

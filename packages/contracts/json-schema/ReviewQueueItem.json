@@ -1,0 +1,298 @@
+{
+  "$ref": "#/definitions/ReviewQueueItem",
+  "definitions": {
+    "ReviewQueueItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "detection",
+            "cluster",
+            "unknown_cluster",
+            "link_group",
+            "room",
+            "unmatched_correction",
+            "line"
+          ]
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "green",
+            "yellow",
+            "red"
+          ]
+        },
+        "risk": {
+          "type": "number",
+          "minimum": 0
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qtyImpact": {
+          "type": "number",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "maxItems": 32
+        },
+        "suggestedAction": {
+          "type": "string",
+          "enum": [
+            "accept",
+            "reject",
+            "reclassify",
+            "resolve_unknown",
+            "review_link",
+            "room_settings",
+            "name_room",
+            "close_room",
+            "redo_correction",
+            "review_line"
+          ]
+        },
+        "sheetId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "versionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "floor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 32
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bboxMm": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "w": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "h": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "x",
+                "y",
+                "w",
+                "h"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thumbUrl": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "class": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "itemCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[0-9A-Za-z.\\-/]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lineIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "maxItems": 32
+        },
+        "detectionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 500
+        },
+        "memberBboxesMm": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "w": {
+                "type": "number",
+                "minimum": 0
+              },
+              "h": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "w",
+              "h"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ref": {
+          "type": "object",
+          "properties": {
+            "detectionId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "clusterId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "linkGroupId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "roomId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "correctionId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "lineId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "signature": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "level",
+        "risk",
+        "score",
+        "qtyImpact",
+        "title",
+        "reasons",
+        "suggestedAction",
+        "sheetId",
+        "versionId",
+        "floor",
+        "bboxMm",
+        "thumbUrl",
+        "class",
+        "itemCode",
+        "lineIds",
+        "detectionIds",
+        "count",
+        "ref"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ReviewQueueItem.json"
+}

@@ -29,20 +29,7 @@ export type ReviewItem = z.infer<typeof ReviewItemSchema>;
 /** Fields a client may change on a reviewItem (firestore.rules). */
 export const REVIEW_ITEM_CLIENT_FIELDS = ['status', 'resolution', 'resolvedBy', 'resolvedAt'] as const;
 
-export const CORRECTION_TARGET_TYPES = ['detection', 'room', 'link', 'legendEntry', 'reviewItem', 'measurement'] as const;
-export const CORRECTION_ACTIONS = ['accept', 'reject', 'reclass', 'add', 'move', 'remove', 'setSupply', 'setLifecycle'] as const;
-
-/** orgs/{orgId}/projects/{projectId}/corrections/{correctionId} — client-created, immutable. */
-export const CorrectionSchema = z.object({
-  id: DocIdSchema,
-  authorId: UidSchema,
-  createdAt: TimestampSchema,
-  targetType: z.enum(CORRECTION_TARGET_TYPES),
-  targetId: z.string().min(1).max(128),
-  action: z.enum(CORRECTION_ACTIONS),
-  sheetId: DocIdSchema.optional(),
-  versionId: DocIdSchema.optional(),
-  payload: z.record(z.string(), z.unknown()).optional(),
-  note: z.string().max(2000).optional(),
-});
-export type Correction = z.infer<typeof CorrectionSchema>;
+/**
+ * Sprint 4: the Sprint-0 client-written correction shape (`targetType/action/payload`) was replaced by the brief's
+ * API-only `Correction` (see corrections.ts). firestore.rules no longer lets clients create corrections.
+ */

@@ -1,5 +1,6 @@
 import {
   ApiError,
+  type Detection,
   type BoqBuild,
   type BoqEvidenceArtifact,
   type BoqEvidenceItem,
@@ -22,10 +23,15 @@ import {
   type PatchBoqLineRequest,
   type PatchLibraryItemRequest,
   type ProjectBoqState,
+  type Correction,
   type Role,
+  type RoomSettings,
+  type RoomsArtifact,
   type SheetRow,
 } from "./types";
 import { computeBoq, synthesizeLinks, type EngineSheet } from "./mockBoqEngine";
+import { applyCorrectionDeltas, applyRoomSettingsDeltas, computePlumbing, computeTiling, type S4Sheet } from "./mockSprint4Engine";
+import { applyCorrections, applyLinkCorrections } from "@/features/corrections/model";
 import { fetchArtifact } from "@/features/understanding/artifacts";
 import { allowedTransitions } from "@/features/boq/model";
 import { DEFAULT_TEMPLATE, SECOND_TEMPLATE, defaultRules, libraryItems } from "@/test/fixtures/boq";
@@ -52,6 +58,10 @@ export interface BoqMockDeps {
   devBase: string | null;
   /** dev only: ignore Worker-BOQ's lines and always use the mock engine (`?mockBoq=engine`). */
   engineOnly?: boolean;
+  /* Sprint 4 */
+  rooms?(row: SheetRow): Promise<RoomsArtifact | null>;
+  corrections?(projectId: string): readonly Correction[];
+  roomSettings?(projectId: string): ReadonlyMap<string, RoomSettings>;
 }
 
 const COMPOSITE = new Set(["4.09", "4.10", "4.11", "4.12", "4.14", "4.15", "4.16"]);
@@ -62,6 +72,8 @@ interface ProjectBoq {
   lines: Map<string, BoqLine>;
   evidence: Record<string, BoqEvidenceItem[]>;
   links: Map<string, LinksArtifact>;
+  /** Sprint 4: automatic lines before plumbing/tiling + human corrections are layered on (see `derive`). */
+  base: { lines: BoqLine[]; evidence: Record<string, BoqEvidenceItem[]> } | null;
 }
 
 type DevBoq = { lines: BoqLine[]; evidence: Record<string, BoqEvidenceItem[]>; sig: string };
@@ -98,6 +110,11 @@ export function normalizeLine(raw: Record<string, unknown>, i: number): BoqLine 
     sourceVersions: Array.isArray(raw.sourceVersions) ? (raw.sourceVersions as BoqLine["sourceVersions"]) : [],
     computedAt: (raw.computedAt as string | undefined) ?? null,
     ...(typeof raw.order === "number" ? { order: raw.order } : {}),
+    // Sprint 4 (Worker-BOQ): order quantity / waste, manual items, per-room breakdown.
+    ...(typeof raw.orderQty === "number" ? { orderQty: raw.orderQty } : {}),
+    ...(typeof raw.wasteFactor === "number" ? { wasteFactor: raw.wasteFactor } : {}),
+    ...(typeof raw.manualCount === "number" ? { manualCount: raw.manualCount } : {}),
+    ...(Array.isArray(raw.breakdown) ? { breakdown: raw.breakdown as BoqLine["breakdown"] } : {}),
   };
 }
 
@@ -114,14 +131,62 @@ export function createBoqMock(deps: BoqMockDeps) {
   const proj = (projectId: string): ProjectBoq => {
     let p = projects.get(projectId);
     if (!p) {
-      p = { state: null, builds: new Map(), lines: new Map(), evidence: {}, links: new Map() };
+      p = { state: null, builds: new Map(), lines: new Map(), evidence: {}, links: new Map(), base: null };
       projects.set(projectId, p);
     }
     return p;
   };
 
-  /** Keep overrides / statuses / notes of lines that survive a rebuild (brief: never overwritten). */
+  /** Automatic lines of a build (before Sprint-4 layers): remembered, then derived. */
   function install(p: ProjectBoq, lines: BoqLine[], evidence: Record<string, BoqEvidenceItem[]>) {
+    p.base = { lines, evidence };
+    installDerived(p, lines, evidence);
+  }
+
+  /**
+   * Sprint 4 layers on top of the automatic lines (mock stand-in for Worker-BOQ): plumbing (03) and tiling (05)
+   * when the base has none, then human corrections (adds / rejects / reclassifies / counts / measures).
+   */
+  async function derive(projectId: string, p: ProjectBoq) {
+    if (!p.base) return;
+    const rows = deps.rows(projectId).filter((r) => r.version?.status === "ready");
+    const corrections = deps.corrections?.(projectId) ?? [];
+    const sheets: S4Sheet[] = [];
+    const perSheet = new Map<string, { row: SheetRow; raw: Detection[]; corrected: Detection[] }>();
+    for (const row of rows) {
+      const det = await deps.detections(row);
+      const rooms = (await deps.rooms?.(row))?.rooms ?? [];
+      const raw = det?.detections ?? [];
+      const corrected = applyCorrections(raw, corrections, row.sheet.id).detections;
+      sheets.push({ row, detections: raw, rooms });
+      if (raw.length || corrections.some((c) => c.sheetId === row.sheet.id)) perSheet.set(row.sheet.id, { row, raw, corrected });
+    }
+    const at = now();
+    const lib = [...library.values()];
+    let lines = [...p.base.lines];
+    let evidence = { ...p.base.evidence };
+    if (!lines.some((l) => l.chapter === "03")) {
+      const pl = computePlumbing(sheets, lib, at);
+      lines = [...lines, ...pl.lines];
+      evidence = { ...evidence, ...pl.evidence };
+    }
+    const settings = deps.roomSettings?.(projectId) ?? new Map();
+    if (!lines.some((l) => l.chapter === "05")) lines = [...lines, ...computeTiling(sheets, settings, lib, at)];
+    else lines = applyRoomSettingsDeltas(lines, sheets, settings, lib, at);
+    const out = applyCorrectionDeltas({ lines, evidence }, perSheet, corrections, lib, at);
+    installDerived(p, out.lines, out.evidence);
+  }
+
+  /** Re-derive after a correction / room-settings change (built BOQs only) — "the BOQ updates immediately". */
+  async function recompute(projectId: string) {
+    const p = projects.get(projectId);
+    if (!p?.state || !p.base) return;
+    await derive(projectId, p);
+    deps.emit();
+  }
+
+  /** Keep overrides / statuses / notes of lines that survive a rebuild (brief: never overwritten). */
+  function installDerived(p: ProjectBoq, lines: BoqLine[], evidence: Record<string, BoqEvidenceItem[]>) {
     const prev = p.lines;
     p.lines = new Map(
       lines.map((l) => {
@@ -166,6 +231,7 @@ export function createBoqMock(deps: BoqMockDeps) {
     if (dev && projectId === "p-noah") {
       install(p, dev.lines, structuredClone(dev.evidence));
       await attachLinks(projectId, p);
+      await derive(projectId, p);
       return;
     }
     const rows = deps.rows(projectId).filter((r) => r.version?.status === "ready");
@@ -183,6 +249,12 @@ export function createBoqMock(deps: BoqMockDeps) {
       if (l) Object.assign(l, { qtyOverride: l.qty + 2, qtyOverrideReason: "2 שקעים נוספים לפי שיחה עם הלקוח" });
     }
     p.links = res.links;
+    await derive(projectId, p);
+    // derive() rebuilt the line objects: re-seed the demo override on the first build.
+    if (first) {
+      const l = p.lines.get("bl_4_01");
+      if (l && l.qtyOverride == null) Object.assign(l, { qtyOverride: l.qty + 2, qtyOverrideReason: "2 שקעים נוספים לפי שיחה עם הלקוח" });
+    }
     void buildId;
   }
 
@@ -239,6 +311,7 @@ export function createBoqMock(deps: BoqMockDeps) {
         if (p?.state && dev && !deps.engineOnly) {
           install(p, dev.lines, structuredClone(dev.evidence));
           await attachLinks("p-noah", p);
+          await derive("p-noah", p);
           deps.emit();
         } else if (p?.state) markStaleLocal("p-noah");
       }
@@ -274,6 +347,7 @@ export function createBoqMock(deps: BoqMockDeps) {
       const p = proj("p-noah");
       install(p, lines, structuredClone(evidence));
       await attachLinks("p-noah", p);
+      await derive("p-noah", p);
       const bid = (raw as { buildId?: unknown }).buildId;
       p.state = { latestBuildId: typeof bid === "string" ? bid : `dev-${sig.length}`, builtAt: now(), stale: false };
       deps.emit();
@@ -307,6 +381,12 @@ export function createBoqMock(deps: BoqMockDeps) {
     markStale(projectId?: string) {
       for (const [id, p] of projects) if ((!projectId || id === projectId) && p.state) p.state = { ...p.state, stale: true };
       deps.emit();
+    },
+    recompute,
+    /** Link graph of a sheet (real, synthesized or none) with the hand-made link edits applied. */
+    links(projectId: string, sheetId: string): LinksArtifact | null {
+      const raw = projects.get(projectId)?.links.get(sheetId) ?? devLinks.get(sheetId) ?? null;
+      return applyLinkCorrections(raw, deps.corrections?.(projectId) ?? [], sheetId);
     },
     linksUrl(row: SheetRow): string | null {
       for (const p of projects.values()) {

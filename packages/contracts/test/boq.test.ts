@@ -200,7 +200,7 @@ describe('library / templates / rules', () => {
     expect(install?.itemCode).toBe('9.01');
     expect(install?.match).toMatchObject({ excludeSupply: [], excludeLifecycle: ['demolish'], excludeClasses: ['ceiling_fan'] });
     const none = DEFAULT_BOQ_RULES.filter((r) => r.id.startsWith('r_none_'));
-    expect(none.map((r) => r.itemCode)).toEqual(Array(7).fill(null));
+    expect(none.map((r) => r.itemCode)).toEqual(Array(11).fill(null));
     expect(none.every((r) => r.kind === 'class_to_item')).toBe(true);
   });
   it('template rejects duplicate chapters / missing qty column', () => {

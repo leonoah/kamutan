@@ -1,4 +1,4 @@
-import { ARTIFACT_PATH_RE } from '@kamutan/contracts';
+import { ARTIFACT_PATH_RE, SIMILAR_THUMB_PATH_RE } from '@kamutan/contracts';
 import type { App } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 
@@ -9,13 +9,16 @@ export interface SignedUrl {
   expiresAt: Date;
 }
 
-/** Issues short-lived read URLs for worker artifacts (tiles, thumbnail). Only artifact paths can be signed. */
+/**
+ * Issues short-lived read URLs for worker artifacts (tiles, thumbnail, crops). Only sheet-version artifact paths and
+ * (Sprint 4) find_similar candidate crops can be signed.
+ */
 export interface UrlSigner {
   signRead(paths: readonly string[]): Promise<Map<string, SignedUrl>>;
 }
 
 export function assertArtifactPath(path: string): void {
-  if (!ARTIFACT_PATH_RE.test(path)) throw new Error('refusing to sign a non-artifact path');
+  if (!ARTIFACT_PATH_RE.test(path) && !SIMILAR_THUMB_PATH_RE.test(path)) throw new Error('refusing to sign a non-artifact path');
 }
 
 async function pool<T, R>(items: readonly T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {

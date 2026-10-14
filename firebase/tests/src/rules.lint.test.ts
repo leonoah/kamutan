@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  BOQ_LINE_API_FIELDS, BOQ_LINE_TRANSITIONS, CLIENT_READABLE_STORAGE_PREFIXES, COLLECTIONS, INGEST_STAGES, JOB_TYPES,
+  BOQ_LINE_API_FIELDS, BOQ_LINE_TRANSITIONS, CLIENT_READABLE_STORAGE_PREFIXES, COLLECTIONS, CORRECTION_KINDS, INGEST_STAGES, JOB_TYPES,
   REVIEW_ITEM_CLIENT_FIELDS, paths,
 } from '../../model';
 import { FIREBASE_DIR, FIRESTORE_RULES, STORAGE_RULES } from './env';
@@ -21,9 +21,11 @@ const IMPORTS = '/b/{bucket}/o/orgs/{orgId}/imports/{fileName}';
 const LEGACY_UPLOAD = '/b/{bucket}/o/orgs/{orgId}/uploads/{rest=**}';
 const PROJ = '/b/{bucket}/o/orgs/{orgId}/projects/{projectId}';
 
-/** The ONLY places a client may write (ADR 0008 §authz-2). Sprint 3: boqLines moved to the API (no client write). */
+/**
+ * The ONLY place a client may write (ADR 0008 §authz-2). Sprint 3: boqLines moved to the API; Sprint 4: corrections
+ * moved to the API (role per kind + audit + rebuild scheduling).
+ */
 const CLIENT_WRITABLE: Record<string, string[]> = {
-  [`${DOCS}/orgs/{orgId}/projects/{projectId}/corrections/{correctionId}`]: ['create'],
   [`${DOCS}/orgs/{orgId}/projects/{projectId}/reviewItems/{itemId}`]: ['update'],
 };
 
@@ -70,7 +72,7 @@ describe('firestore.rules (static)', () => {
     }
   });
 
-  it('client writes exist ONLY on corrections(create), reviewItems(update)', () => {
+  it('client writes exist ONLY on reviewItems(update)', () => {
     const found: Record<string, string[]> = {};
     for (const a of fs.allows) {
       const writes = a.methods.filter((m) => WRITE_METHODS.has(m));
@@ -126,9 +128,9 @@ describe('firestore.rules (static)', () => {
     const ri = blockOf(FIRESTORE_RULES, 'reviewItems');
     expect(ri).toContain(`hasOnly([${REVIEW_ITEM_CLIENT_FIELDS.map((f) => `'${f}'`).join(', ')}])`);
     const corr = blockOf(FIRESTORE_RULES, 'corrections');
-    expect(corr).toContain('d.authorId == request.auth.uid');
-    expect(corr).toContain('d.createdAt == request.time');
-    expect(corr).toMatch(/allow update, delete: if false;/);
+    expect(corr).toContain('allow read: if isMember(orgId);');
+    expect(corr).toContain('allow write: if false;');
+    expect(corr).not.toMatch(/allow (create|update)/);
   });
 });
 
@@ -192,6 +194,7 @@ describe('storage.rules (static)', () => {
       IMPORTS,
       `${PROJ}/exports/{rest=**}`,
       `${PROJ}/boq/{rest=**}`,
+      `${PROJ}/similar/{rest=**}`,
     ]) {
       expect(st.matchPaths, p).toContain(p);
       const allows = st.allows.filter((a) => a.path === p);
@@ -332,8 +335,8 @@ describe('Sprint 3 — BOQ, library, rules, imports, exports (static)', () => {
     for (const w of writes) expect(isDenyAll(w.condition), `${p} line ${w.line}`).toBe(true);
   });
 
-  it('job types include boq.build and library.import', () => {
-    expect(JOB_TYPES).toEqual(['ingest.sheet_version', 'boq.build', 'library.import']);
+  it('job types include boq.build, library.import and (Sprint 4) symbols.find_similar', () => {
+    expect(JOB_TYPES).toEqual(['ingest.sheet_version', 'boq.build', 'library.import', 'symbols.find_similar']);
   });
 
   it('import slot name check mirrors LIBRARY_IMPORT_PATH_RE; export/evidence/links objects land in deny-all matches', () => {
@@ -346,6 +349,40 @@ describe('Sprint 3 — BOQ, library, rules, imports, exports (static)', () => {
     }
     const imp = `/b/{bucket}/o/${paths.libraryImportObject('o', '0b6f1c2e-6a7d-4f53-9b1e-2f0c8d3a4e51', 'xlsx')}`;
     expect(st.matchPaths.filter((m) => m !== '/b/{bucket}/o/{allPaths=**}' && matchPathToRegExp(m).test(imp))).toEqual([IMPORTS]);
+  });
+});
+
+describe('Sprint 4 — corrections, batches, room settings, similar searches (static)', () => {
+  const PRJ = `${DOCS}/orgs/{orgId}/projects/{projectId}`;
+  const DOCS4 = [`${PRJ}/corrections/{correctionId}`, `${PRJ}/correctionBatches/{batchId}`, `${PRJ}/roomSettings/{settingsId}`, `${PRJ}/similarSearches/{searchId}`];
+
+  it.each(DOCS4)('%s: members read, every client write denied', (p) => {
+    const allows = fs.allows.filter((a) => a.path === p);
+    expect(allows.find((a) => a.methods.includes('read'))?.condition).toBe('isMember(orgId)');
+    const writes = allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)));
+    expect(writes.length).toBeGreaterThan(0);
+    for (const w of writes) expect(isDenyAll(w.condition), `${p} line ${w.line}`).toBe(true);
+  });
+
+  it('no collection-group match exposes the Sprint 4 collections', () => {
+    for (const p of fs.matchPaths.filter((m) => m.includes('{path=**}'))) expect(p).not.toMatch(/corrections|correctionBatches|roomSettings|similarSearches/);
+  });
+
+  it('similar/ crops land in exactly one deny-all storage match; model paths + kinds follow the brief', () => {
+    const target = `/b/{bucket}/o/${paths.similarThumb('o', 'p', 'ss1', 'c_1')}`;
+    const hits = st.matchPaths.filter((m) => m !== '/b/{bucket}/o/{allPaths=**}' && matchPathToRegExp(m).test(target));
+    expect(hits).toEqual([`${PROJ}/similar/{rest=**}`]);
+    expect(st.allows.filter((a) => a.path === hits[0]).map((a) => [a.methods.sort().join(','), a.condition])).toEqual([['read,write', 'false']]);
+    expect(paths.roomSettings('o', 'p', 's1-p0', 'r_1')).toBe('orgs/o/projects/p/roomSettings/s1-p0__r_1');
+    expect(paths.correctionBatch('o', 'p', 'b')).toBe('orgs/o/projects/p/correctionBatches/b');
+    expect(paths.similarSearch('o', 'p', 's')).toBe('orgs/o/projects/p/similarSearches/s');
+    expect(CORRECTION_KINDS).toEqual(['add', 'remove', 'reclassify', 'move', 'link', 'unlink', 'measure', 'count', 'accept', 'reject']);
+    const model = readFileSync(join(FIREBASE_DIR, 'model.ts'), 'utf8');
+    const iface = model.slice(model.indexOf('export interface Correction {'), model.indexOf('}\n', model.indexOf('export interface Correction {')));
+    for (const f of ['kind', 'sheetId', 'versionId', 'anchorMm', 'radiusMm', 'detectionId', 'signature', 'class', 'itemCode', 'linkGroupId', 'geometry', 'quantity', 'unit', 'roomId', 'floor', 'reason', 'batchId', 'by', 'at', 'revertedAt']) {
+      expect(iface, f).toContain(`  ${f}`);
+    }
+    expect(iface).not.toContain('authorId');
   });
 });
 

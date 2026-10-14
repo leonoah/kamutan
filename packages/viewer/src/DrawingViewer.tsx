@@ -30,7 +30,7 @@ import {
   type Vec2,
 } from "./math/coords";
 import { calibrate, formatScale, realLengthMm, scaleDenominatorFrom, suggestStandardScale, type CalibrationResult } from "./math/calibration";
-import { bboxOf, centroid, distance, pointInPolygon, simplifyByDistance } from "./math/geometry";
+import { bboxOf, centroid, distance, pathLength, pointInPolygon, polygonArea, simplifyByDistance } from "./math/geometry";
 import { lassoPick } from "./math/lasso";
 import { tileWorldBounds, type TilePyramid } from "./math/tiles";
 import { clampZoom, fitBBox, panBy, visibleWorldRect, zoomAround, zoomLimits } from "./math/view";
@@ -38,9 +38,15 @@ import { Minimap } from "./Minimap";
 import { markerAtlas, markerIconKey, markerIconMapping } from "./markers";
 import { defaultLabels } from "./labels";
 import type {
+  AreaResult,
+  CountResult,
   LassoResult,
+  LengthResult,
+  LinkResult,
   MarkerFeature,
   MeasureResult,
+  MoveResult,
+  PointToolEvent,
   OverlayFeature,
   PathFeature,
   PointFeature,
@@ -80,6 +86,25 @@ export interface DrawingViewerProps {
   onMeasure?: (r: MeasureResult) => void;
   /** Called when the user confirms a 2-click calibration. */
   onCalibrate?: (r: CalibrationResult) => void;
+  /* Sprint 4 correction tools */
+  /** add / remove: a click (add snaps onto a nearby symbol within 8 px). */
+  onPointTool?: (e: PointToolEvent) => void;
+  /** move: a symbol dragged to a new place. */
+  onMove?: (r: MoveResult) => void;
+  /** link: dragged from one symbol (switch) to another (point). */
+  onLink?: (r: LinkResult) => void;
+  /** count: Enter saves the numbered clicks. */
+  onCount?: (r: CountResult) => void;
+  /** Live count while counting (e.g. for an aria-live summary). */
+  onCountChange?: (n: number) => void;
+  /** area: polygon closed (double-click / Enter / click on the first vertex). */
+  onArea?: (r: AreaResult) => void;
+  /** length: polyline finished (Enter / double-click). */
+  onLength?: (r: LengthResult) => void;
+  /** Extra snap targets for area / length (e.g. room polygon vertices), paper mm. Symbols always snap. */
+  snapPoints?: readonly Vec2[];
+  /** select tool: a click on the background (no symbol), paper mm — e.g. pick the room under the cursor. */
+  onBackgroundClick?: (mm: [number, number]) => void;
   /** Scale denominator of the sheet (1:n) for measurements; null = unknown. */
   scaleDenominator?: number | null;
   onViewChange?: (info: ViewInfo) => void;
@@ -113,6 +138,10 @@ const TOOL_INK: Rgba = [37, 99, 235, 255];
 const CLICK_SLOP = 4; // px: pointer travel below this is a click
 const LASSO_SAMPLE = 3; // px between freehand samples
 const CLOSE_RADIUS = 10; // px: click near the first vertex closes a click-lasso
+const SNAP_PX = 10; // px: area/length vertices snap to symbols / room corners within this radius
+const ADD_SNAP_PX = 8; // spec: "המערכת מצמידה (snap) לסמל קרוב ברדיוס 8px"
+const HIT_PX = 12; // spec: hit-slop of small markers
+const COUNT_INK: Rgba = [29, 78, 216, 255]; // --manual
 
 const withAlpha = (c: Rgba, a: number): [number, number, number, number] => [c[0], c[1], c[2], a];
 
@@ -122,7 +151,12 @@ type Draft =
   | { tool: "measure"; pts: Mutable2[] }
   | { tool: "calibrate"; pts: Mutable2[]; input: string }
   | { tool: "lasso"; pts: Mutable2[]; mode: "free" | "click" }
+  | { tool: "count" | "area" | "length"; pts: Mutable2[] }
+  | { tool: "move"; id: string; from: Mutable2; pts: Mutable2[] }
+  | { tool: "link"; id: string; from: Mutable2; pts: Mutable2[] }
   | null;
+
+const DRAWING_TOOLS: ReadonlySet<ViewerTool> = new Set(["lasso", "measure", "calibrate", "add", "remove", "move", "link", "count", "area", "length"]);
 
 export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>(function DrawingViewer(props, ref) {
   const {
@@ -141,6 +175,15 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     onLasso,
     onMeasure,
     onCalibrate,
+    onPointTool,
+    onMove,
+    onLink,
+    onCount,
+    onCountChange,
+    onArea,
+    onLength,
+    snapPoints = EMPTY_PTS,
+    onBackgroundClick,
     scaleDenominator = null,
     onViewChange,
     initialViewMm = null,
@@ -288,13 +331,112 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     [onLasso, overlays],
   );
 
+  /* ---------- hit testing / snapping in screen px (no GPU readback) ---------- */
+  const pickables = useMemo(
+    () => overlays.filter((f): f is MarkerFeature | PointFeature => (f.kind === "marker" || f.kind === "point") && !f.passive),
+    [overlays],
+  );
+  const nearest = useCallback(
+    (clientX: number, clientY: number, radiusPx: number, except?: string): (MarkerFeature | PointFeature) | null => {
+      const el = wrapRef.current;
+      if (!el || !view) return null;
+      const r = el.getBoundingClientRect();
+      const sx = clientX - r.left;
+      const sy = clientY - r.top;
+      let best: MarkerFeature | PointFeature | null = null;
+      let bestD = radiusPx;
+      for (const f of pickables) {
+        if (f.id === except) continue;
+        const [x, y] = mmToScreen(f.position, view, box, dpi);
+        const d = Math.hypot(x - sx, y - sy);
+        if (d <= bestD) {
+          best = f;
+          bestD = d;
+        }
+      }
+      return best;
+    },
+    [pickables, view, box, dpi],
+  );
+  const snap = useCallback(
+    (clientX: number, clientY: number, p: Mutable2): Mutable2 => {
+      const el = wrapRef.current;
+      if (!el || !view) return p;
+      const r = el.getBoundingClientRect();
+      const sx = clientX - r.left;
+      const sy = clientY - r.top;
+      let best: Vec2 | null = null;
+      let bestD = SNAP_PX;
+      const consider = (q: Vec2) => {
+        const [x, y] = mmToScreen(q, view, box, dpi);
+        const d = Math.hypot(x - sx, y - sy);
+        if (d <= bestD) {
+          best = q;
+          bestD = d;
+        }
+      };
+      snapPoints.forEach(consider);
+      pickables.forEach((f) => consider(f.position));
+      const b = best as Vec2 | null;
+      return b ? [b[0], b[1]] : p;
+    },
+    [snapPoints, pickables, view, box, dpi],
+  );
+  const real = useCallback((paperMm: number) => (scaleDenominator ? (paperMm * scaleDenominator) / 1000 : null), [scaleDenominator]);
+  const realArea = useCallback((paperMm2: number) => (scaleDenominator ? (paperMm2 * scaleDenominator * scaleDenominator) / 1e6 : null), [scaleDenominator]);
+
+  const dedupe = (pts: Mutable2[]) => pts.filter((p, i) => i === 0 || distance(p, pts[i - 1]!) > 1e-6);
+  const finishArea = (pts: Mutable2[]) => {
+    const poly = dedupe(pts);
+    setDraft(null);
+    if (poly.length < 3) return;
+    const paperMm2 = polygonArea(poly);
+    const paperPerimeterMm = pathLength([...poly, poly[0]!]);
+    onArea?.({
+      polygonMm: poly.map((p) => [p[0], p[1]] as [number, number]),
+      paperMm2,
+      paperPerimeterMm,
+      areaM2: realArea(paperMm2),
+      perimeterM: real(paperPerimeterMm),
+    });
+  };
+  const finishLength = (pts: Mutable2[]) => {
+    const path = dedupe(pts);
+    setDraft(null);
+    if (path.length < 2) return;
+    const paperMm = pathLength(path);
+    onLength?.({ pathMm: path.map((p) => [p[0], p[1]] as [number, number]), paperMm, lengthM: real(paperMm) });
+  };
+  const finishCount = (pts: Mutable2[]) => {
+    setDraft(null);
+    if (pts.length) onCount?.({ pointsMm: pts.map((p) => [p[0], p[1]] as [number, number]) });
+  };
+  const countN = draft?.tool === "count" ? draft.pts.length : 0;
+  useEffect(() => {
+    onCountChange?.(countN);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countN]);
+
   /* ---------- pointer handling (tools) ---------- */
-  const isDrawingTool = tool === "lasso" || tool === "measure" || tool === "calibrate";
+  const isDrawingTool = DRAWING_TOOLS.has(tool);
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || !isDrawingTool) return;
     if ((e.target as HTMLElement).closest("[data-viewer-ui]")) return;
     down.current = { x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
+    if (tool === "move" || tool === "link") {
+      const hit = nearest(e.clientX, e.clientY, HIT_PX);
+      if (hit) {
+        const from: Mutable2 = [hit.position[0], hit.position[1]];
+        setDraft({ tool, id: hit.id, from, pts: [from] });
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          /* jsdom / synthetic events */
+        }
+      }
+      return;
+    }
     if (tool === "lasso" && !(draft?.tool === "lasso" && draft.mode === "click")) {
       const p = toMm(e.clientX, e.clientY);
       if (p) setDraft({ tool: "lasso", pts: [p], mode: "free" });
@@ -311,6 +453,11 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     const p = toMm(e.clientX, e.clientY);
     const d = down.current;
     if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > CLICK_SLOP) d.moved = true;
+    if ((draft?.tool === "move" || draft?.tool === "link") && d && p) {
+      setDraft({ ...draft, pts: [p] });
+      setCursorMm(p);
+      return;
+    }
     if (tool === "lasso" && d && d.moved && draft?.tool === "lasso" && draft.mode === "free" && p) {
       const last = draft.pts[draft.pts.length - 1];
       const lastS = last ? toScreen(last) : null;
@@ -328,6 +475,17 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     if (!d || !isDrawingTool) return;
     const p = toMm(e.clientX, e.clientY);
     if (!p) return;
+    if (draft?.tool === "move") {
+      setDraft(null);
+      if (d.moved) onMove?.({ id: draft.id, fromMm: [draft.from[0], draft.from[1]], toMm: [p[0], p[1]] });
+      return;
+    }
+    if (draft?.tool === "link") {
+      setDraft(null);
+      const target = nearest(e.clientX, e.clientY, HIT_PX, draft.id);
+      if (target) onLink?.({ fromId: draft.id, toId: target.id });
+      return;
+    }
     if (tool === "lasso") {
       if (draft?.tool === "lasso" && draft.mode === "free" && d.moved) {
         const k2 = view ? 2 ** view.zoom * k : 1; // screen px per mm
@@ -349,6 +507,33 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
       return;
     }
     if (d.moved) return; // a pan, not a click
+    if (tool === "add") {
+      const hit = nearest(e.clientX, e.clientY, ADD_SNAP_PX);
+      onPointTool?.({ tool: "add", mm: hit ? [hit.position[0], hit.position[1]] : [p[0], p[1]], hitId: hit?.id ?? null });
+      return;
+    }
+    if (tool === "remove") {
+      const hit = nearest(e.clientX, e.clientY, HIT_PX);
+      if (hit) onPointTool?.({ tool: "remove", mm: [hit.position[0], hit.position[1]], hitId: hit.id });
+      return;
+    }
+    if (tool === "count") {
+      const prev = draft?.tool === "count" ? draft.pts : [];
+      setDraft({ tool: "count", pts: [...prev, p] });
+      return;
+    }
+    if (tool === "area" || tool === "length") {
+      const prev = draft?.tool === tool ? draft.pts : [];
+      const q = snap(e.clientX, e.clientY, p);
+      const first = prev[0];
+      if (tool === "area" && first && prev.length >= 3) {
+        const fs = toScreen(first);
+        const el = wrapRef.current!.getBoundingClientRect();
+        if (Math.hypot(e.clientX - el.left - fs[0], e.clientY - el.top - fs[1]) <= CLOSE_RADIUS) return finishArea(prev);
+      }
+      setDraft({ tool, pts: [...prev, q] });
+      return;
+    }
     if (tool === "measure") {
       const prev = draft?.tool === "measure" && draft.pts.length === 1 ? draft.pts : [];
       if (prev.length === 0) {
@@ -377,6 +562,9 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
 
   const onDoubleClick = () => {
     if (draft?.tool === "lasso" && draft.mode === "click") finishLasso(draft.pts.slice(0, -1).length >= 3 ? draft.pts.slice(0, -1) : draft.pts);
+    // A double-click also delivered two clicks at the same spot: dedupe() drops the repeated vertex.
+    else if (draft?.tool === "area") finishArea(draft.pts);
+    else if (draft?.tool === "length") finishLength(draft.pts);
   };
 
   /* ---------- keyboard (event.code → works on a Hebrew layout too) ---------- */
@@ -388,6 +576,11 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     switch (e.code) {
       case "Equal":
       case "NumpadAdd":
+        // Shift+= ("+") is the app's add tool, not a zoom.
+        if (e.shiftKey) {
+          handled = false;
+          break;
+        }
         setView((v) => (v ? zoomAround(v, 1, center, box) : v));
         break;
       case "Minus":
@@ -415,8 +608,18 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
         setView((v) => (v ? panBy(v, 0, 80) : v));
         break;
       case "Enter":
+      case "NumpadEnter":
         if (draft?.tool === "lasso" && draft.mode === "click") finishLasso(draft.pts);
+        else if (draft?.tool === "count") finishCount(draft.pts);
+        else if (draft?.tool === "area") finishArea(draft.pts);
+        else if (draft?.tool === "length") finishLength(draft.pts);
         else handled = false;
+        break;
+      case "Backspace":
+        if (draft && (draft.tool === "count" || draft.tool === "area" || draft.tool === "length") && draft.pts.length) {
+          const pts = draft.pts.slice(0, -1);
+          setDraft(pts.length ? { ...draft, pts } : null);
+        } else handled = false;
         break;
       case "Escape":
         if (draft) setDraft(null);
@@ -695,12 +898,39 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
 
     // Tool drafts (rubber band follows the cursor).
     const toolPts: Mutable2[] = [];
-    if (draft) toolPts.push(...draft.pts);
+    if (draft && draft.tool !== "count" && draft.tool !== "move" && draft.tool !== "link") toolPts.push(...draft.pts);
+    const rubberTools =
+      draft &&
+      ((draft.tool === "measure" && draft.pts.length === 1) ||
+        (draft.tool === "calibrate" && draft.pts.length === 1) ||
+        (draft.tool === "lasso" && draft.mode === "click") ||
+        draft.tool === "area" ||
+        draft.tool === "length");
     const rubber =
-      cursorMm && draft && ((draft.tool === "measure" && draft.pts.length === 1) || (draft.tool === "calibrate" && draft.pts.length === 1) || (draft.tool === "lasso" && draft.mode === "click"))
-        ? [...draft.pts, cursorMm]
-        : draft?.pts ?? [];
-    if (draft?.tool === "lasso" && rubber.length >= 2) {
+      draft?.tool === "move" || draft?.tool === "link"
+        ? [draft.from, draft.pts[0] ?? draft.from]
+        : draft?.tool === "count"
+          ? []
+          : cursorMm && rubberTools
+            ? [...draft!.pts, cursorMm]
+            : draft?.pts ?? [];
+    if (draft?.tool === "count" && draft.pts.length)
+      L.push(
+        new ScatterplotLayer({
+          id: "count-draft",
+          data: draft.pts,
+          getPosition: (p: Vec2) => mm(p),
+          radiusUnits: "pixels",
+          getRadius: 9,
+          getFillColor: withAlpha(COUNT_INK, 60),
+          getLineColor: COUNT_INK as [number, number, number, number],
+          lineWidthUnits: "pixels",
+          getLineWidth: 2,
+          stroked: true,
+          pickable: false,
+        }),
+      );
+    if ((draft?.tool === "lasso" || draft?.tool === "area") && rubber.length >= 2) {
       L.push(
         new PolygonLayer({
           id: "lasso",
@@ -716,6 +946,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
         }),
       );
     } else if (rubber.length >= 2) {
+      const dashed = draft?.tool === "link" || draft?.tool === "move";
       L.push(
         new PathLayer({
           id: "tool-line",
@@ -725,8 +956,25 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           widthUnits: "pixels",
           getWidth: 2,
           pickable: false,
+          ...(dashed ? { getDashArray: [6, 4], dashJustified: false, extensions: [DASH_EXT] } : {}),
         }),
       );
+      if (draft?.tool === "move")
+        L.push(
+          new ScatterplotLayer({
+            id: "move-ghost",
+            data: [rubber[1]!],
+            getPosition: (p: Vec2) => mm(p),
+            radiusUnits: "pixels",
+            getRadius: 10,
+            getFillColor: withAlpha(TOOL_INK, 50),
+            getLineColor: TOOL_INK as [number, number, number, number],
+            lineWidthUnits: "pixels",
+            getLineWidth: 2,
+            stroked: true,
+            pickable: false,
+          }),
+        );
     }
     const measured = lastMeasure ? [lastMeasure.a, lastMeasure.b] : [];
     if (measured.length) {
@@ -769,9 +1017,13 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
       if (tool !== "select" && tool !== "pan") return;
       const f = info.object as OverlayFeature | undefined;
       if (f && !f.passive) onSelect?.([f.id], { additive: Boolean(ev?.srcEvent?.shiftKey) });
-      else if (!ev?.srcEvent?.shiftKey) onSelect?.([], { additive: false });
+      else {
+        if (!ev?.srcEvent?.shiftKey) onSelect?.([], { additive: false });
+        const c = info.coordinate as number[] | undefined;
+        if (c && onBackgroundClick) onBackgroundClick([c[0]! / k, c[1]! / k]);
+      }
     },
-    [tool, onSelect],
+    [tool, onSelect, onBackgroundClick, k],
   );
   const handleHover = useCallback(
     (info: PickingInfo) => {
@@ -786,7 +1038,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
 
   const controller = useMemo(
     () => ({
-      dragPan: tool !== "lasso",
+      dragPan: tool !== "lasso" && tool !== "move" && tool !== "link",
       scrollZoom: { speed: 0.01, smooth: false },
       doubleClickZoom: tool === "select" || tool === "pan",
       touchZoom: true,
@@ -808,6 +1060,8 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
         })
         .map((f) => ({ id: f.id, label: f.label!, ltr: f.labelLtr, suffix: f.labelSuffix, dimmed: f.dimmed, at: toScreen(labelPoint(f.polygon)) }))
     : [];
+  const labelPoints = useMemo(() => overlays.filter((f): f is PointFeature => f.kind === "point" && Boolean(f.label)), [overlays]);
+  const pointLabels = view ? labelPoints.map((f) => ({ id: f.id, label: f.label!, at: toScreen(f.position) })) : [];
   const tooltip = renderTooltip && hoverId && hoverAt && !draft ? renderTooltip(hoverId) : null;
 
   const minimapMarkers = useMemo<PointFeature[]>(
@@ -824,8 +1078,38 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
   const calibSuggestion =
     calib && calibCm > 0 && calibPaperMm > 0 ? suggestStandardScale(scaleDenominatorFrom(calibPaperMm, calibCm * 10)) : null;
 
+  const TOOL_HINT: Partial<Record<ViewerTool, string>> = {
+    lasso: labels.lassoHint,
+    measure: labels.measureHint,
+    add: labels.addHint,
+    remove: labels.removeHint,
+    move: labels.moveHint,
+    link: labels.linkHint,
+    count: labels.countHint,
+    area: labels.areaHint,
+    length: labels.lengthHint,
+  };
   const hint =
-    tool === "lasso" ? labels.lassoHint : tool === "measure" ? labels.measureHint : tool === "calibrate" && !calib ? labels.calibrateHint : null;
+    tool === "count" && countN > 0 ? labels.formatCount(countN) : tool === "calibrate" ? (calib ? null : labels.calibrateHint) : (TOOL_HINT[tool] ?? null);
+
+  // Live measurement chip (real units at the sheet scale): area at the centroid, length at the last vertex.
+  const liveChip = (() => {
+    if (!view || !draft) return null;
+    if (draft.tool === "area") {
+      const poly = cursorMm ? [...draft.pts, cursorMm] : draft.pts;
+      if (poly.length < 3) return null;
+      const a2 = polygonArea(poly);
+      const per = pathLength([...poly, poly[0]!]);
+      return { at: toScreen(centroid(poly)), text: labels.formatArea(realArea(a2), real(per), a2) };
+    }
+    if (draft.tool === "length") {
+      const path = cursorMm ? [...draft.pts, cursorMm] : draft.pts;
+      if (path.length < 2) return null;
+      const len = pathLength(path);
+      return { at: toScreen(path[path.length - 1]!), text: labels.formatLength(scaleDenominator ? len * scaleDenominator : null, len) };
+    }
+    return null;
+  })();
 
   if (!webgl) {
     return (
@@ -956,6 +1240,37 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
         />
       ) : null}
 
+      {view
+        ? pointLabels.map((l) => (
+            <span
+              key={l.id}
+              data-point-label
+              style={{ ...chip, position: "absolute", left: l.at[0] + 8, top: l.at[1] - 8, transform: "translate(0, -100%)", pointerEvents: "none", padding: "0 5px" }}
+            >
+              {l.label}
+            </span>
+          ))
+        : null}
+      {draft?.tool === "count" && view
+        ? draft.pts.map((p, i) => {
+            const at = toScreen(p);
+            return (
+              <span
+                key={i}
+                data-count-n={i + 1}
+                style={{ ...chip, position: "absolute", left: at[0], top: at[1], transform: "translate(-50%, -50%)", pointerEvents: "none", padding: "0 4px", borderRadius: 9, color: "rgb(29 78 216)", fontWeight: 700 }}
+              >
+                {i + 1}
+              </span>
+            );
+          })
+        : null}
+      {liveChip ? (
+        <span role="status" dir="rtl" data-tool-chip style={{ ...chip, position: "absolute", left: liveChip.at[0], top: liveChip.at[1] - 14, transform: "translate(-50%, -100%)", pointerEvents: "none" }}>
+          {liveChip.text}
+        </span>
+      ) : null}
+
       {hint ? (
         <div dir="rtl" role="status" data-viewer-ui style={{ ...chip, position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)" }}>
           {hint}
@@ -1081,6 +1396,7 @@ function PopoverAt({ at, box, label, children }: { at: Mutable2; box: Size; labe
   );
 }
 const EMPTY_IDS: readonly string[] = [];
+const EMPTY_PTS: readonly Vec2[] = [];
 
 const chip: CSSProperties = {
   font: "500 12px/1.4 Heebo, system-ui, sans-serif",

@@ -65,6 +65,8 @@ export interface UnderstandingMock {
   getOverlay(row: SheetRow): Promise<OverlayManifest>;
   /** Detections of a sheet with the user's answers applied (Sprint 3: the mock BOQ engine aggregates them). */
   detections(row: SheetRow): Promise<DetectionsArtifact | null>;
+  /** Sprint 4: everything of a sheet (answers applied) — rooms for tiling, crops for the queue. */
+  artifacts(row: SheetRow): Promise<{ detections: DetectionsArtifact | null; rooms: RoomsArtifact | null; thumbs: Record<string, string> }>;
   listLegendEntries(rows: SheetRow[], q: { sheetId?: string; status?: string }): Promise<LegendEntry[]>;
   patchLegendEntry(entryId: string, req: PatchLegendEntryRequest): Promise<{ entry: LegendEntry; mapping: unknown }>;
   resolveUnknownCluster(rows: SheetRow[], clusterId: string, req: ResolveUnknownClusterRequest): Promise<ResolveUnknownClusterResponse>;
@@ -198,6 +200,10 @@ export function createUnderstandingMock(): UnderstandingMock {
     async detections(row) {
       const l = await load(row.sheet.id);
       return patched(row.sheet.id, l.detections);
+    },
+    async artifacts(row) {
+      const l = await load(row.sheet.id);
+      return { detections: patched(row.sheet.id, l.detections), rooms: l.rooms, thumbs: l.thumbs };
     },
     async listLegendEntries(rows, q) {
       await Promise.all(rows.map(seedEntries));

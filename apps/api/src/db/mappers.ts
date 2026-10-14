@@ -187,6 +187,8 @@ function toArtifacts(v: unknown): VersionArtifacts {
     ...(typeof o.detections === 'string' ? { detections: o.detections } : {}),
     ...(typeof o.links === 'string' ? { links: o.links } : {}),
     ...(typeof o.rooms === 'string' ? { rooms: o.rooms } : {}),
+    ...(typeof o.fixtures === 'string' ? { fixtures: o.fixtures } : {}),
+    ...(typeof o.walls === 'string' ? { walls: o.walls } : {}),
   };
 }
 

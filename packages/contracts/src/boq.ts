@@ -126,6 +126,13 @@ export const BoqLineSchema = z.object({
   computedAt: TimestampSchema.nullable().optional(),
   /** boqBuilds/{buildId} that last computed the line. */
   buildId: DocIdSchema.nullable().optional(),
+  // --- Sprint 4 (worker) ---
+  /** Order quantity = effective qty × (1 + wasteFactor), for material lines (tiling); null/absent = same as qty. */
+  orderQty: z.number().finite().nonnegative().nullable().optional(),
+  /** Waste factor used for `orderQty` (0.07 = 7%). */
+  wasteFactor: z.number().finite().min(0).max(0.5).nullable().optional(),
+  /** Manual items (corrections add/count/measure) behind this line. */
+  manualCount: z.number().int().nonnegative().optional(),
 });
 export type BoqLine = z.infer<typeof BoqLineSchema>;
 
@@ -218,6 +225,16 @@ export const BoqBuildSchema = z.object({
   error: ProcessingErrorSchema.nullable(),
   /** Set by the worker on success: orgs/{o}/projects/{p}/boq/{buildId}/evidence.json.gz */
   evidenceRef: z.string().max(1024).nullable().optional(),
+  // --- Sprint 4: debounced automatic rebuilds (see BOQ_REBUILD_DEBOUNCE_MS) ---
+  /** `manual` = POST …/boq/build; `auto` = scheduled by a correction / room-settings change. */
+  trigger: z.enum(['manual', 'auto']).optional(),
+  /**
+   * The worker must not start before this time: on receipt it sleeps until `debounceUntil`, RE-READS the build doc
+   * (further edits push it back) and loops, capped at BOQ_REBUILD_MAX_WAIT_MS after `createdAt`.
+   */
+  debounceUntil: TimestampSchema.nullable().optional(),
+  /** Follow-up build queued while another build was running: start only once that build is terminal. */
+  afterBuildId: DocIdSchema.nullable().optional(),
 });
 export type BoqBuild = z.infer<typeof BoqBuildSchema>;
 
@@ -237,11 +254,15 @@ export const ProjectBoqSummarySchema = z.object({
 });
 export type ProjectBoqSummary = z.infer<typeof ProjectBoqSummarySchema>;
 
-export const STALE_REASONS = ['legend', 'cluster', 'sheet', 'rule', 'mapping', 'library'] as const;
+export const STALE_REASONS = ['legend', 'cluster', 'sheet', 'rule', 'mapping', 'library', 'correction', 'room'] as const;
 export type StaleReason = (typeof STALE_REASONS)[number];
 
 /** A build stuck in queued/running longer than this no longer blocks a new POST build. */
 export const BOQ_BUILD_STUCK_MS = 30 * 60 * 1000;
+/** Sprint 4: automatic rebuild after a correction / room-settings change starts ≥ this long after the LAST change. */
+export const BOQ_REBUILD_DEBOUNCE_MS = 5_000;
+/** Upper bound of the debounce wait (continuous editing still rebuilds at least this often). */
+export const BOQ_REBUILD_MAX_WAIT_MS = 60_000;
 
 export const RequestBoqBuildResponseSchema = z.object({
   build: BoqBuildSchema,
@@ -360,9 +381,32 @@ export const BoqEvidenceItemSchema = z
     detectionId: z.string().min(1).max(128),
     linkGroupId: LinkGroupIdSchema.nullable(),
     floor: FloorSchema.nullable(),
+    // --- Sprint 4 (optional) ---
+    /** `auto` = automatic detection (default when absent); `manual` = created by a correction (add / count / measure). */
+    source: z.enum(['auto', 'manual']).optional(),
+    /** The correction that created (manual) or changed (reclassify / move / accept) this item. */
+    correctionId: DocIdSchema.nullable().optional(),
+    /** Quantity this item contributes when it is not 1 (m² / m' of a room or a measure). */
+    quantity: z.number().finite().nonnegative().nullable().optional(),
+    /** Room behind a tiling / waterproofing / per-room plumbing item. */
+    roomId: z.string().max(128).nullable().optional(),
+    /** Human-verified (accept correction) → the line's level is not lowered by this item. */
+    verified: z.boolean().optional(),
   })
   .strict();
 export type BoqEvidenceItem = z.infer<typeof BoqEvidenceItemSchema>;
+
+/** Sprint 4: a correction the build could not apply to the sheet's current version (queue: "תיקון לא הותאם"). */
+export const UnmatchedCorrectionSchema = z
+  .object({
+    correctionId: DocIdSchema,
+    sheetId: DocIdSchema,
+    /** Version the build tried to apply it to. */
+    versionId: DocIdSchema,
+    reason: z.string().min(1).max(200),
+  })
+  .strict();
+export type UnmatchedCorrection = z.infer<typeof UnmatchedCorrectionSchema>;
 
 export const MAX_EVIDENCE_PER_LINE = 5000;
 
@@ -372,6 +416,14 @@ export const BoqEvidenceArtifactSchema = z
     schema: z.literal(BOQ_EVIDENCE_SCHEMA),
     buildId: DocIdSchema.optional(),
     lines: z.record(DocIdSchema, z.array(BoqEvidenceItemSchema).max(MAX_EVIDENCE_PER_LINE)),
+    /** Sprint 4: which corrections the build applied / could not re-match. */
+    corrections: z
+      .object({
+        applied: z.array(DocIdSchema).max(20_000),
+        unmatched: z.array(UnmatchedCorrectionSchema).max(20_000),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type BoqEvidenceArtifact = z.infer<typeof BoqEvidenceArtifactSchema>;
@@ -460,7 +512,8 @@ export const BoqLineEvidenceResponseSchema = z.object({
    * Per (sheet, floor) counts. Composite (lighting) evidence counts one unit per distinct (sheet, version, linkGroupId);
    * items without a linkGroupId count one each — so the counts sum to the line quantity.
    */
-  bySheet: z.array(z.object({ sheetId: DocIdSchema, versionId: DocIdSchema, floor: z.string().nullable(), count: z.number().int().positive() })),
+  /** Sprint 4: not an integer for measured lines (m², m') — items with a `quantity` contribute it. */
+  bySheet: z.array(z.object({ sheetId: DocIdSchema, versionId: DocIdSchema, floor: z.string().nullable(), count: z.number().nonnegative() })),
   /** Switch groups behind a composite line, with ids from the version's links.json.gz (empty ids when unavailable). */
   linkGroups: z
     .array(

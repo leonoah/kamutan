@@ -25,6 +25,8 @@ export const OVERLAY_RGB = {
   unknown: [109, 40, 217],
   existing: [120, 113, 108],
   demolish: [159, 18, 57],
+  manual: [29, 78, 216],
+  rejected: [120, 113, 108],
   room: [15, 76, 129],
   legend: [15, 76, 129],
 } as const satisfies Record<string, readonly [number, number, number]>;
@@ -63,6 +65,20 @@ export function detectionMarkers(dets: readonly Detection[], visible: LifecycleV
   return dets.map((d) => {
     const k = levelKeyOf(d);
     const lc = d.lifecycle;
+    // Sprint 4: human-verified items are blue (✎ "אושר ידנית"); manual adds are a filled diamond ◈; rejected
+    // items (only drawn when the "נדחו" layer is on) are a grey ✕.
+    if (d.rejected || d.manual)
+      return {
+        id: d.id,
+        kind: "marker",
+        position: [d.centerMm.x, d.centerMm.y],
+        sizeMm: Math.max(4, Math.min(30, Math.max(d.bboxMm.w, d.bboxMm.h))),
+        shape: d.rejected ? "circle" : d.manual === "added" ? "diamond" : "circle",
+        color: rgba(d.rejected ? OVERLAY_RGB.rejected : OVERLAY_RGB.manual, d.rejected ? 200 : 255),
+        dashed: Boolean(d.rejected),
+        strike: Boolean(d.rejected),
+        dimmed: Boolean(d.rejected) || !visible[lifecycleKey(lc)],
+      } satisfies MarkerFeature;
     const color =
       lc === "existing" ? OVERLAY_RGB.existing : lc === "demolish" ? OVERLAY_RGB.demolish : OVERLAY_RGB[k];
     return {

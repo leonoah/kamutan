@@ -309,6 +309,14 @@ export interface Detection {
   supply: "contractor" | "client" | "existing" | null;
   annotations: string[];
   clusterId: string | null;
+  /**
+   * Client-side only (web `applyCorrections`): how a human changed this item — accepted / added / reclassified /
+   * moved / learned ("תוקן בלמידה" ✦), with the correction id; `rejected` items stay visible as grey ✕ only when the
+   * "נדחו" layer is on and never count.
+   */
+  manual?: "accepted" | "added" | "reclassified" | "moved" | "learned" | null;
+  rejected?: boolean;
+  correctionId?: string | null;
 }
 export interface UnknownCluster {
   id: string;
@@ -334,6 +342,29 @@ export interface Room {
   confidence: number;
   level: DbLevel;
   reasons: string[];
+  /* Sprint 4 (Worker-B, optional on older artifacts — the web derives fallbacks, see features/tiling/model.ts) */
+  type?: RoomType;
+  wet?: boolean;
+  walls?: RoomWall[];
+  openings?: RoomOpening[];
+  externalCorners?: number;
+}
+export const ROOM_TYPES = ["bathroom", "wc", "kitchen", "bedroom", "living", "corridor", "balcony", "courtyard", "storage", "stairs", "other"] as const;
+export type RoomType = (typeof ROOM_TYPES)[number];
+export interface RoomWall {
+  id: string;
+  aMm: PointMm;
+  bMm: PointMm;
+  lengthM: number;
+  exterior: boolean;
+}
+export interface RoomOpening {
+  id: string;
+  kind: "door" | "window" | "opening";
+  wallId: string | null;
+  widthM: number;
+  heightM: number | null;
+  centerMm: PointMm | null;
 }
 export interface RoomsArtifact {
   schema: "kamutan.rooms/1";
@@ -480,6 +511,27 @@ export interface BoqLine {
   computedAt: string | null;
   /** Optional: sort order inside the chapter (template order). */
   order?: number;
+  /* Sprint 4 */
+  /**
+   * contracts `manualCount`: manual items (corrections add / count / measure) behind this line. For unit lines it is
+   * the manual part of `qty` (receipt "16 = 14 שזוהו + 2 ידני"); m² / m' lines carry the manual quantities in
+   * `breakdown` rows with `manual: true`.
+   */
+  manualCount?: number;
+  /** Waste factor of the material (tiling, 0.07 = 7%) → `orderQty` = qty × (1 + waste). */
+  wasteFactor?: number | null;
+  orderQty?: number | null;
+  /** Per-room / per-fixture composition of the quantity (tiling formula lines, plumbing points per fixture). */
+  breakdown?: BoqBreakdownRow[];
+}
+export interface BoqBreakdownRow {
+  label: string;
+  qty: number;
+  /** Human-readable formula, e.g. "14.2 מ"א × 2.6 מ' − 3.1 מ"ר פתחים". */
+  formula?: string | null;
+  sheetId?: string | null;
+  roomId?: string | null;
+  manual?: boolean;
 }
 
 export interface ProjectBoqState {
@@ -690,6 +742,180 @@ export interface LibraryImport {
   error: { code: string; message: string } | null;
 }
 
+/* ---------- Sprint 4: corrections, review queue, room settings, find-similar (docs/agents/SPRINT4_BRIEF.md) ----------
+ * TODO(contracts): hand-kept mirror of the brief's shapes; the API agent adds them to @kamutan/contracts concurrently.
+ * Routes are this app's proposal (apps/web/NOTES.md "Sprint 4 — API assumptions").
+ */
+export const CORRECTION_KINDS = ["add", "remove", "reclassify", "move", "link", "unlink", "measure", "count", "accept", "reject"] as const;
+export type CorrectionKind = (typeof CORRECTION_KINDS)[number];
+/** contracts CorrectionUnitSchema: m² (polygon measure), m' (polyline measure), units (count). */
+export type CorrectionUnit = "m2" | "m" | "unit";
+export interface CorrectionGeometry {
+  type: "point" | "polygon" | "polyline";
+  mm: PointMm[];
+}
+/** orgs/{o}/projects/{p}/corrections/{corrId} — written only via the API. */
+export interface Correction {
+  id: string;
+  kind: CorrectionKind;
+  sheetId: string;
+  /** Version at the time of the edit. */
+  versionId: string;
+  /** Stable re-match key (paper mm). */
+  anchorMm: PointMm;
+  radiusMm: number;
+  detectionId: string | null;
+  signature: string | null;
+  class: string | null;
+  itemCode: string | null;
+  linkGroupId: string | null;
+  switchIds?: string[];
+  pointIds?: string[];
+  geometry: CorrectionGeometry | null;
+  quantity: number | null;
+  unit: CorrectionUnit | null;
+  roomId: string | null;
+  floor: string | null;
+  reason: string | null;
+  batchId: string | null;
+  by: string;
+  at: string;
+  revertedAt: string | null;
+  revertedBy?: string | null;
+  /** Set by the server when a newer version could not re-match the correction ("תיקון לא הותאם"). */
+  unmatched?: boolean;
+}
+/**
+ * POST /v1/projects/:pid/corrections (contracts CreateCorrectionRequestSchema, strict). `id` / `batchId` are
+ * client-side only (optimistic cache keys) and are stripped by the HTTP client; the server assigns both.
+ */
+export type CreateCorrectionRequest = Omit<Correction, "id" | "by" | "at" | "revertedAt" | "revertedBy" | "unmatched" | "batchId"> & { id?: string; batchId?: string | null };
+export type CorrectionBatchSource = "cluster" | "lasso" | "similar" | "selection" | "other";
+/** POST /v1/projects/:pid/corrections/batch → one server batch (= one undo step). */
+export interface CreateCorrectionsBatchRequest {
+  /** Client-side provisional id (mock keeps it; the real API returns its own `batch.id`). */
+  batchId: string;
+  corrections: CreateCorrectionRequest[];
+  source?: CorrectionBatchSource;
+  similarSearchId?: string | null;
+}
+export interface CorrectionsResponse {
+  items: Correction[];
+}
+export interface CorrectionsBatchResponse {
+  items: Correction[];
+  /** The server's batch id (revert target). */
+  batchId: string;
+}
+
+export const REVIEW_ITEM_KINDS = ["detection", "cluster", "unknown_cluster", "link_group", "room", "unmatched_correction", "line"] as const;
+export type ReviewItemKind = (typeof REVIEW_ITEM_KINDS)[number];
+export interface ReviewQueueMember {
+  detectionId: string;
+  bboxMm: BBoxMm;
+  score: number;
+  thumbUrl: string | null;
+}
+/** GET /v1/projects/:pid/review-queue — one ranked item. */
+export interface ReviewQueueItem {
+  id: string;
+  kind: ReviewItemKind;
+  sheetId: string;
+  versionId: string;
+  /** Paper-mm bbox to zoom to. */
+  bboxMm: BBoxMm;
+  thumbUrl: string | null;
+  level: DbLevel | "unknown";
+  reasons: string[];
+  /** |qty impact on its BOQ line| × (1 − score) × level weight. */
+  risk: number;
+  /** Suggested action: what `A` does. */
+  suggestedAction: "accept" | "reject" | "reclassify" | "resolve" | "open" | "settings" | "link";
+  /** Class of the item(s) (detection / cluster). */
+  class?: string | null;
+  itemCode?: string | null;
+  lineId?: string | null;
+  detectionIds?: string[];
+  members?: ReviewQueueMember[];
+  clusterId?: string | null;
+  linkGroupId?: string | null;
+  roomId?: string | null;
+  correctionId?: string | null;
+  score?: number | null;
+  /** Free label (line description / room name). */
+  title?: string | null;
+}
+export interface ReviewQueueResponse {
+  items: ReviewQueueItem[];
+  total: number;
+}
+
+/** orgs/{o}/projects/{p}/roomSettings/{sheetId}__{roomId} */
+export interface PartialCladding {
+  wallId: string;
+  fromM: number;
+  toM: number;
+  heightM: number;
+  /** Height above the floor where the strip starts (kitchen backsplash over the counter). */
+  bottomM?: number;
+}
+/** contracts PutRoomSettingsRequestSchema (strict). */
+export interface RoomSettings {
+  claddingHeightM: number;
+  floorTiled: boolean;
+  floorMaterialItemCode: string | null;
+  wallMaterialItemCode: string | null;
+  partialCladding: PartialCladding[];
+  wasteFactor: number;
+  includeInWaterproofing: boolean;
+  /** Openings the user chose NOT to subtract from the cladding ("אפשר לבטל כל אחד"). */
+  keepOpenings?: string[];
+  /** User override of the room type. */
+  type?: RoomType | null;
+}
+export interface RoomSettingsDoc extends RoomSettings {
+  id: string;
+  sheetId: string;
+  roomId: string;
+  by?: string | null;
+  at?: string | null;
+}
+/** GET / PUT /v1/projects/:pid/rooms/:sheetId/:roomId/settings */
+export interface RoomSettingsResponse {
+  settings: RoomSettingsDoc;
+  /** No stored doc: `settings` are the room type's defaults. */
+  isDefault: boolean;
+}
+
+export type SimilarScope = "sheet" | "project";
+/** POST /v1/projects/:pid/similar-searches → job `symbols.find_similar`. */
+export interface FindSimilarRequest {
+  /** `detectionId` is a mock-only hint (stripped by the HTTP client: the contract exemplar is a box + class). */
+  exemplar: { sheetId: string; versionId: string; bboxMm: BBoxMm; class: string | null; detectionId?: string | null };
+  scope: SimilarScope;
+  correctionId?: string | null;
+}
+export interface SimilarCandidate {
+  /** `c_…` */
+  id?: string;
+  sheetId: string;
+  versionId: string;
+  centerMm: PointMm;
+  bboxMm: BBoxMm;
+  score: number;
+  alreadyDetected: string | null;
+  currentClass: string | null;
+}
+export interface SimilarSearch {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  exemplar: FindSimilarRequest["exemplar"];
+  candidates: SimilarCandidate[];
+  /** Signed crop URLs keyed by candidate id (`thumbUrls` of the API view). */
+  thumbs: Record<string, string>;
+  error?: { code: string; message: string } | null;
+}
+
 export interface FinalizeUploadResponse {
   sheetSet: SheetSet;
   sheet: Sheet;
@@ -769,6 +995,20 @@ export interface ApiClient {
   setDefaultBoqTemplate(orgId: string, templateId: string): Promise<BoqTemplate>;
   listBoqRules(orgId: string): Promise<BoqRule[]>;
   patchBoqRule(orgId: string, ruleId: string, req: { enabled: boolean }): Promise<BoqRule>;
+
+  /* Sprint 4 — corrections, queue, room settings, find-similar */
+  listCorrections(projectId: string, q?: { sheetId?: string }): Promise<CorrectionsResponse>;
+  createCorrection(projectId: string, req: CreateCorrectionRequest): Promise<Correction>;
+  createCorrectionsBatch(projectId: string, req: CreateCorrectionsBatchRequest): Promise<CorrectionsBatchResponse>;
+  /** Undo = set `revertedAt` (one correction). */
+  revertCorrection(projectId: string, correctionId: string): Promise<Correction>;
+  /** Undo a whole batch (one step in the history). */
+  revertCorrectionsBatch(projectId: string, batchId: string): Promise<{ reverted: number }>;
+  getReviewQueue(projectId: string, filter?: string): Promise<ReviewQueueResponse>;
+  getRoomSettings(projectId: string, sheetId: string, roomId: string): Promise<RoomSettingsResponse>;
+  putRoomSettings(projectId: string, sheetId: string, roomId: string, req: RoomSettings): Promise<RoomSettingsResponse>;
+  findSimilar(projectId: string, req: FindSimilarRequest): Promise<SimilarSearch>;
+  getSimilarSearch(projectId: string, searchId: string): Promise<SimilarSearch>;
 }
 
 /* ---------- Storage (resumable uploads) ---------- */

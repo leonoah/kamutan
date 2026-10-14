@@ -25,7 +25,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from .data import Project
+from .data import Project, unit_kind
+from .metrics import EvalConfig, line_tolerance
 from .stats import percentile, wilson_lower
 from .worker import read_json_any
 
@@ -61,8 +62,14 @@ def _num(v: Any) -> float:
 
 
 def evaluate_boq_lines(
-    truth: Project, pred_lines: list[dict[str, Any]], scope: tuple[str, ...] = DEFAULT_SCOPE
+    truth: Project,
+    pred_lines: list[dict[str, Any]],
+    scope: tuple[str, ...] = DEFAULT_SCOPE,
+    expected: dict[str, float] | None = None,
 ) -> dict[str, Any]:
+    """``expected``: optional {code: quantity} implied by the drawing truth under stated rules (e.g. tiling
+    quantities from ``tiling/expected_tiling.json``); reported as a second reference column, never gated."""
+    cfg = EvalConfig()
     disputed = truth.open_dispute_codes()
     format_errors: list[str] = []
     pred: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -84,6 +91,10 @@ def evaluate_boq_lines(
         qh = sum(_num(p.get("qty")) for p in pls)
         ae = abs(qh - q)
         levels = sorted({str(p.get("level")) for p in pls})
+        kind = unit_kind(str(tl.get("unit", "")))
+        measured = kind in ("area", "length")
+        tol = line_tolerance(tl, cfg) if measured else 0.0
+        pe_area = ae / q if q else (0.0 if ae < 1e-9 else 1.0)
         row = {
             "code": code,
             "description": tl.get("description"),
@@ -93,6 +104,13 @@ def evaluate_boq_lines(
             "ae": round(ae, 6),
             "pe": round(ae / max(q, 1.0), 6),
             "exact": ae < 1e-9,
+            "measured": measured,
+            "tolerance_pe": tol,
+            "within_tol": (pe_area <= tol + 1e-9) if measured else ae < 1e-9,
+            "expected": (expected or {}).get(code),
+            "pred_vs_expected_pe": (
+                round(abs(qh - expected[code]) / expected[code], 6) if expected and expected.get(code) else None
+            ),
             "proposed": bool(pls),
             "disputed": code in disputed,
             "dispute_id": tl.get("dispute_id"),
@@ -138,6 +156,7 @@ def evaluate_boq_lines(
         return {
             "n_lines": len(rs),
             "exact_match": _rate(sum(r["exact"] for r in rs), len(rs)),
+            "within_tolerance": _rate(sum(r["within_tol"] for r in rs), len(rs)),
             "sum_ae": round(sum(r["ae"] for r in rs), 6),
             "median_pe": percentile(pes, 50),
             "p90_pe": percentile(pes, 90),
@@ -201,12 +220,13 @@ def render_boq_markdown(m: dict[str, Any]) -> str:
         "",
         f"gt_version: {m.get('gt_version')} · model: {m.get('model_version')} · scope: {', '.join(b['scope'])}",
         "",
-        "| set | lines | exact match | ΣAE | median PE | P90 PE | lines AE>0 | not proposed |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| set | lines | exact match | within tol | ΣAE | median PE | P90 PE | lines AE>0 | not proposed |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for name, s in (("gated", g), ("disputed (not gated)", d)):
+        wt = r(s["within_tolerance"]) if "within_tolerance" in s else "-"
         out.append(
-            f"| {name} | {s['n_lines']} | {r(s['exact_match'])} | {s['sum_ae']} | {s['median_pe']} | {s['p90_pe']} | "
+            f"| {name} | {s['n_lines']} | {r(s['exact_match'])} | {wt} | {s['sum_ae']} | {s['median_pe']} | {s['p90_pe']} | "
             f"{s['n_ae_gt_0']} | {', '.join(s['not_proposed']) or '-'} |"
         )
     out += [
@@ -214,12 +234,14 @@ def render_boq_markdown(m: dict[str, Any]) -> str:
         f"Green-line precision: {r(b['green_line_precision'])}",
         f"Per-floor cells exact: {r(b['by_floor_summary'])}",
         "",
-        "| code | truth | pred | AE | PE | exact | level | disputed |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| code | truth | pred | AE | PE | exact / within tol | expected (GT rules) | level | disputed |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for x in b["lines"]:
+        ok = "yes" if x["exact"] else ("within tol" if x.get("within_tol") else "no")
+        exp = "-" if x.get("expected") is None else f"{x['expected']:g}"
         out.append(
-            f"| {x['code']} | {x['truth']:g} | {x['pred']:g} | {x['ae']:g} | {x['pe']:.3f} | {'yes' if x['exact'] else 'no'} | "
+            f"| {x['code']} | {x['truth']:g} | {x['pred']:g} | {x['ae']:g} | {x['pe']:.3f} | {ok} | {exp} | "
             f"{x['level']} | {x['dispute_id'] or ('yes' if x['disputed'] else '')} |"
         )
     if b["extra_lines"]:

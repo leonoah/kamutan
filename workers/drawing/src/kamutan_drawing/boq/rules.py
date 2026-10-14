@@ -29,7 +29,20 @@ from typing import Any
 
 from ..stores.base import SERVER_TIMESTAMP, DocStore
 
-KINDS = ("class_to_item", "composite_lighting", "install_count", "authority")
+KINDS = (
+    "class_to_item",
+    "composite_lighting",
+    "install_count",
+    "authority",
+    # Sprint 4
+    "plumbing_point",
+    "tiling_floor",
+    "tiling_cladding",
+    "tiling_corner",
+    "waterproofing",
+    "one_off_suggestion",
+)
+TILING_KINDS = ("tiling_floor", "tiling_cladding", "tiling_corner", "waterproofing")
 
 # Hebrew reason chips (≤ 64 chars)
 R_NO_ITEM = "אין פריט בספרייה"
@@ -47,6 +60,22 @@ R_LOW = "ביטחון נמוך"
 R_UNKNOWN_SYMBOL = "סמל לא במקרא"
 R_RELABELED = "סוג עודכן לפי כיתוב סמוך"
 R_SHARED = "מופיע בשני גיליונות"
+# Sprint 4: plumbing / tiling / corrections
+R_TEMPLATE = "הצעה – לאשר ידנית"  # contracts ONE_OFF_SUGGESTION_REASON
+R_ROOM_ITEM = "שיוך לפריט לפי שם החדר"
+R_NO_ROOM = "פריט מחוץ לחדר"
+R_DEFAULT_FAUCET = "סוג ברז לפי ברירת מחדל"
+R_NO_BASIN = "כיור לא זוהה ליד הברז"
+R_ROOM_DEFAULTS = "הגדרות חדר לפי ברירת מחדל"
+R_DEFAULT_OPENINGS = "פתחים לא זוהו — הופחתה דלת ברירת מחדל"
+R_NO_CORNERS = "פינות חיצוניות לא זוהו"
+R_ROOM_OPEN = "חדר לא סגור"
+R_ROOM_UNNAMED = "שם חדר לא ודאי"
+R_ACCEPTED = "אושר ידנית"
+R_ADDED = "נוסף ידנית"
+R_RECLASSED = "סווג ידנית"
+R_MEASURED = "נמדד ידנית"
+R_UNMATCHED_CORR = "תיקון לא הותאם"
 
 # Label-keyword refinement (worker rules, applied unless the user confirmed the class): (class, keywords any-of,
 # excluded words, new class). The label is the nearest Hebrew text within LABEL_RADIUS_MM of the symbol, or the
@@ -129,8 +158,179 @@ def _auth(rid: str, family: str, classes: list[str], discipline: str) -> dict[st
             "radiusMm": 150}, "itemCode": None, "itemDescription": None, "unit": None, "priority": 0}  # fmt: skip
 
 
+def _plb(rid: str, match: dict[str, Any], code: str, desc: str, priority: int = 100) -> dict[str, Any]:
+    return {"id": rid, "kind": "plumbing_point", "match": {**match, "perRoom": match.get("perRoom", False)},
+            "itemCode": code, "itemDescription": desc, "unit": "יחידה", "priority": priority}  # fmt: skip
+
+
+def _oneoff(rid: str, match: dict[str, Any], code: str, desc: str) -> dict[str, Any]:
+    return {"id": rid, "kind": "one_off_suggestion", "match": {**match, "quantity": 1}, "itemCode": code,
+            "itemDescription": desc, "unit": "יחידה", "priority": 10, "reasons": [R_TEMPLATE]}  # fmt: skip
+
+
+FIXTURE_CLASSES = (
+    "fixture_wc_concealed",
+    "fixture_wc_monoblock",
+    "fixture_basin",
+    "fixture_shower",
+    "fixture_bath",
+    "fixture_kitchen_sink",
+    "fixture_washing_machine",
+    "faucet_basin",
+    "faucet_wall",
+    "garden_tap",
+)
+PLUMBING_FIXTURES = [c for c in FIXTURE_CLASSES if not c.startswith("faucet") and c != "garden_tap"]
+WET = ["bathroom", "wc"]
+TILING_WASTE = 0.07
+_BASINS = ["fixture_basin", "fixture_kitchen_sink"]
+
+# Mirror of the Sprint-4 part of contracts DEFAULT_BOQ_RULES (packages/contracts/src/library.ts).
+_SPRINT4_RULES: list[dict[str, Any]] = [
+    _plb("r_plumb_ac_drain", {"fixtureClasses": ["ac_unit"]}, "3.01", "ניקוז למזגן"),
+    _plb(
+        "r_plumb_basin_wall_faucet",
+        {"fixtureClasses": _BASINS, "withFaucetClasses": ["faucet_wall"], "faucetRadiusMm": 600},
+        "3.02",
+        "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז קיר",
+        110,
+    ),
+    _plb(
+        "r_plumb_basin_flower_faucet",
+        {"fixtureClasses": _BASINS, "withoutFaucetClasses": ["faucet_wall"], "faucetRadiusMm": 600},
+        "3.03",
+        "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז פרח",
+    ),
+    _plb(
+        "r_plumb_wc_concealed",
+        {"fixtureClasses": ["fixture_wc_concealed"]},
+        "3.04",
+        "נק' מים וניקוז לניאגרה סמויה, לרבות ביטון הניאגרה, ותליית האסלה",
+    ),
+    _plb("r_plumb_washing_machine", {"fixtureClasses": ["fixture_washing_machine"]}, "3.05", "נק' מים וניקוז למכונת כביסה"),
+    _plb("r_plumb_garden_tap", {"fixtureClasses": ["garden_tap"]}, "3.06", "נק' מים קרים עבור תמי 4/ ברז גן"),
+    _plb(
+        "r_plumb_wc_monoblock",
+        {"fixtureClasses": ["fixture_wc_monoblock"]},
+        "3.07",
+        "נק' מים וניקוז עבור ניאגרה מונובלוק. העבודה תכלול התקנת ניאגרה, אסלה ומושב",
+    ),
+    _plb(
+        "r_plumb_shower_basement",
+        {"fixtureClasses": ["fixture_shower"], "floors": ["basement", "-1"], "perRoom": True},
+        "3.13",
+        "נק' מים חמים קרים וניקוז למקלחון מרתף",
+        120,
+    ),
+    _plb(
+        "r_plumb_shower",
+        {"fixtureClasses": ["fixture_shower"], "roomTypes": ["bathroom", "wc", "other"], "perRoom": True},
+        "3.11",
+        "נק' מים חמים קרים וניקוז עבור מקלחון חדר רחצה",
+    ),
+    _plb(
+        "r_plumb_bath", {"fixtureClasses": ["fixture_bath"], "perRoom": True}, "3.12", "נק' מים חמים קרים וניקוז לאמבטיה חדר רחצה"
+    ),
+    _oneoff(
+        "r_oneoff_water_feed",
+        {"classes": PLUMBING_FIXTURES, "textPatterns": ["הזנת מים", "שעון מים"]},
+        "3.08",
+        "הזנת מים חדשה מהשעון הראשי ועד הבית",
+    ),
+    _oneoff(
+        "r_oneoff_manifold",
+        {"classes": PLUMBING_FIXTURES, "textPatterns": ["מרכזיית מים", "מרכזיה"]},
+        "3.09",
+        "אספקה והתקנה של מרכזיית מים עם ברזי שליטה נפרדים",
+    ),
+    _oneoff(
+        "r_oneoff_heater_feed", {"classes": ["water_heater_feed"], "textPatterns": ["דוד"]}, "3.10", "הזנת מים חדשה עבור דוד"
+    ),
+    _oneoff(
+        "r_oneoff_greywater_pump",
+        {"textPatterns": ["משאבה", "דלוחין"], "floors": ["basement", "-1"], "roomTypes": WET},
+        "3.14",
+        "אספקה והתקנה של משאבה לניקוז דלוחין קומת מרתף",
+    ),
+    _oneoff(
+        "r_oneoff_rain_pump",
+        {"roomTypes": ["courtyard"], "textPatterns": ["חצר אנגלית"]},
+        "3.15",
+        "אספקה והתקנה של משאבה לניקוז מי גשם בחצר אנגלית",
+    ),
+    {
+        "id": "r_tile_cladding_wet",
+        "kind": "tiling_cladding",
+        "match": {
+            "roomTypes": WET,
+            "mode": "full",
+            "subtractOpenings": True,
+            "defaultDoorHeightM": 2.1,
+            "defaultWindowSillM": 1.0,
+            "defaultWindowHeadM": 2.1,
+            "capAtCeiling": True,
+            "excludeNiches": True,
+        },
+        "itemCode": "5.01",
+        "itemDescription": "חיפוי קירות חדרי רחצה באריחי קרמיקה",
+        "unit": 'מ"ר',
+        "priority": 100,
+        "wasteFactor": TILING_WASTE,
+    },
+    {
+        "id": "r_tile_floor_wet",
+        "kind": "tiling_floor",
+        # bathrooms + WCs incl. niches; the English courtyard is OUT by default (GT-D-007; sample 5.02 matches without it)
+        "match": {"roomTypes": WET, "wetOnly": False, "includeNiches": True},
+        "itemCode": "5.02",
+        "itemDescription": "ריצוף ריצפות חדרי רחצה וחצר אנגלית באריחי גרניט פורצלן",
+        "unit": 'מ"ר',
+        "priority": 100,
+        "wasteFactor": TILING_WASTE,
+    },
+    {
+        "id": "r_tile_corners",
+        "kind": "tiling_corner",
+        "match": {"roomTypes": WET},
+        "itemCode": "5.03",
+        "itemDescription": "חיתוך גרונג במפגש אריחי קרמיקה בפינות חיצוניות",
+        "unit": 'מ"א',
+        "priority": 100,
+    },
+    {
+        "id": "r_waterproofing_wet",
+        "kind": "waterproofing",
+        "match": {"roomTypes": WET, "wetOnly": True, "requireFixtureClasses": ["fixture_shower", "fixture_bath"]},
+        "itemCode": "5.05",
+        "itemDescription": "איטום ריצפות חדרי הרחצה בשתי שכבות סיכה",
+        "unit": "קומפלט",
+        "priority": 100,
+    },
+    {
+        "id": "r_tile_partial_kitchen",
+        "kind": "tiling_cladding",
+        "match": {"roomTypes": ["kitchen"], "mode": "partial", "subtractOpenings": False},
+        "itemCode": "5.06",
+        "itemDescription": "חיפוי קיר מטבח באריחי גרניט פורצלן",
+        "unit": 'מ"ר',
+        "priority": 100,
+        "wasteFactor": TILING_WASTE,
+    },
+    {
+        "id": "r_tile_partial_other",
+        "kind": "tiling_cladding",
+        "match": {"roomTypes": ["wc", "bathroom", "living", "corridor", "other"], "mode": "partial", "subtractOpenings": False},
+        "itemCode": "5.07",
+        "itemDescription": "חיפוי קיר חלקי באריחי קרמיקה",
+        "unit": 'מ"ר',
+        "priority": 90,
+        "wasteFactor": TILING_WASTE,
+    },
+]
+
+
 # contracts DEFAULT_BOQ_RULES_VERSION: bump with every change of DEFAULT_RULES (outdated default docs are replaced)
-DEFAULT_RULES_VERSION = 2
+DEFAULT_RULES_VERSION = 5
 DEFAULT_DOC_FIELDS: dict[str, Any] = {"enabled": True, "source": "default", "defaultsVersion": DEFAULT_RULES_VERSION}
 
 # Mirror of contracts DEFAULT_BOQ_RULES (tests/test_boq_contracts.py diffs it against boq-defaults.json).
@@ -210,6 +410,22 @@ DEFAULT_RULES: list[dict[str, Any]] = [
     _auth("r_auth_feeds", "feeds", ["heater_feed", "water_heater_feed", "panel", "conduit_cobra"], "electrical"),
     _auth("r_auth_switches", "switches", [*SWITCH_CLASSES, "switch_shutter"], "lighting"),
     _auth("r_auth_luminaires", "luminaires", [*LUMINAIRE_CLASSES, "ceiling_fan"], "lighting"),
+    *_SPRINT4_RULES,
+    *[_none(c) for c in ("faucet_basin", "faucet_wall", "floor_tiling", "wall_cladding")],
+    _auth("r_auth_fixtures", "fixtures", list(FIXTURE_CLASSES), "plumbing"),
+    # v5: AC — the plumbing sheet's drain marks per floor, electrical sockets only where no plumbing sheet; per room
+    {
+        **_auth("r_auth_ac", "ac", ["ac_unit"], "plumbing"),
+        "match": {
+            "family": "ac",
+            "classes": ["ac_unit"],
+            "discipline": "plumbing",
+            "radiusMm": 150,
+            "authorityOrder": ["plumbing", "electrical"],
+            "matchRooms": True,
+            "roomMatchRadiusMm": 1600,
+        },
+    },
 ]
 
 # class_to_item counts new work only
@@ -227,6 +443,7 @@ class Rule:
     priority: int
     source: str
     reasons: tuple[str, ...] = ()
+    waste_factor: float | None = None
 
     @staticmethod
     def from_doc(rid: str, d: dict[str, Any]) -> Rule | None:
@@ -244,6 +461,7 @@ class Rule:
             int(d.get("priority") or 0),
             str(d.get("source") or "custom"),
             tuple(str(r)[:200] for r in (d.get("reasons") or [])[:8]),
+            float(d["wasteFactor"]) if isinstance(d.get("wasteFactor"), int | float) else None,
         )
 
     @property
@@ -321,6 +539,13 @@ def similarity(a: str, b: str) -> float:
     return 2 * len(ga & gb) / (len(ga) + len(gb))
 
 
+def containment(short: str, long: str) -> float:
+    """Share of ``short``'s trigrams found in ``long`` (a rule's short description inside the client's long
+    item text: "איטום ריצפות חדרי הרחצה" in "איטום ריצפות חדרי הרחצה בשתי שכבות סיכה לאחר …")."""
+    ga, gb = _grams(short), _grams(long)
+    return len(ga & gb) / len(ga) if ga else 0.0
+
+
 CODE_MATCH_MIN = 0.45  # same code: the description must still look alike (another org's numbering)
 SIMILAR_MIN = 0.6
 
@@ -368,14 +593,26 @@ class Library:
     def by_code(self, code: str) -> list[Item]:
         return [i for i in self.items if i.code == code]
 
+    def containing(self, keywords: list[str] | tuple[str, ...]) -> list[Item]:
+        """Items whose description contains any of ``keywords`` (normalised; room-specific lines such as
+        "מקלחון חדר רחצה הורים" / "מקלחון מרתף")."""
+        keys = [norm_text(k) for k in keywords if k]
+        return [i for i in self.items if any(k and k in norm_text(i.description) for k in keys)]
+
     def resolve(self, code: str | None, description: str, *, trust_code: bool = False) -> Resolution | None:
         """Map a rule's reference (code + description) to an org item. ``trust_code`` (user-chosen codes from
         legend confirmations / symbol mappings, user rules): an exact code wins whatever the description."""
         if code:
             same = self.by_code(code)
             if same:
-                best = max(same, key=lambda i: (similarity(description, i.description) if description else 0.0, i.id))
-                s = similarity(description, best.description) if description else 0.0
+
+                def code_sim(i: Item) -> float:
+                    if not description:
+                        return 0.0
+                    return max(similarity(description, i.description), containment(description, i.description) - 0.2)
+
+                best = max(same, key=lambda i: (code_sim(i), i.id))
+                s = code_sim(best)
                 if trust_code or not description or s >= CODE_MATCH_MIN:
                     return Resolution(best, "user_code" if trust_code else "code", s)
         if not description:

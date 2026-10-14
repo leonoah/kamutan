@@ -79,13 +79,15 @@ export class UnderstandingService {
     const detectionsPath = a.detections ? storagePaths.detections(orgId, projectId, sheetId, versionId) : null;
     const roomsPath = a.rooms ? storagePaths.rooms(orgId, projectId, sheetId, versionId) : null;
     const linksPath = a.links ? storagePaths.links(orgId, projectId, sheetId, versionId) : null;
+    const fixturesPath = a.fixtures ? storagePaths.fixtures(orgId, projectId, sheetId, versionId) : null;
+    const wallsPath = a.walls ? storagePaths.walls(orgId, projectId, sheetId, versionId) : null;
 
     const ids = await this.thumbIdsOf(storagePaths.versionArtifacts(orgId, projectId, sheetId, versionId), legendPath, detectionsPath);
     const thumbPaths = new Map<string, string>();
     for (const id of ids.legend) thumbPaths.set(id, storagePaths.legendThumb(orgId, projectId, sheetId, versionId, id));
     for (const id of ids.clusters) thumbPaths.set(id, storagePaths.unknownThumb(orgId, projectId, sheetId, versionId, id));
 
-    const all = [legendPath, detectionsPath, roomsPath, linksPath, ...thumbPaths.values()].filter((p): p is string => p !== null);
+    const all = [legendPath, detectionsPath, roomsPath, linksPath, fixturesPath, wallsPath, ...thumbPaths.values()].filter((p): p is string => p !== null);
     const signed = all.length ? await this.signer.signRead(all) : new Map<string, SignedUrl>();
     let expires = Number.POSITIVE_INFINITY;
     const ref = (p: string | null) => {
@@ -103,6 +105,8 @@ export class UnderstandingService {
     const detections = ref(detectionsPath);
     const rooms = ref(roomsPath);
     const links = ref(linksPath);
+    const fixtures = ref(fixturesPath);
+    const walls = ref(wallsPath);
     return {
       sheetId,
       versionId,
@@ -110,6 +114,8 @@ export class UnderstandingService {
       detections,
       rooms,
       links,
+      fixtures,
+      walls,
       thumbs,
       stats: v.stats,
       expiresAt: new Date(Number.isFinite(expires) ? expires : Date.now()).toISOString(),

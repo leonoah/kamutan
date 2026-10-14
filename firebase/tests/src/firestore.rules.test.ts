@@ -30,6 +30,7 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
     const memberReadable = [
       'org', 'member', 'project', 'sheetSet', 'sheet', 'version', 'legendEntry', 'reviewItem', 'correction',
       'boqDraft', 'itemLibrary', 'boqTemplate', 'symbolMapping', 'job', 'boqRule', 'libraryImport', 'boqBuild', 'boqExport',
+      'correctionBatch', 'roomSettings', 'similarSearch',
     ] as const;
 
     it.each(memberReadable)('%s: org A viewer reads A, never B', async (k) => {
@@ -122,52 +123,48 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
   });
 
   // -------------------------------------------------------------------------
-  describe('corrections: create-only by editor/reviewer/admin', () => {
+  describe('Sprint 4: corrections, correctionBatches, roomSettings, similarSearches are API-only', () => {
     const corrPath = (id: string) => `orgs/${A.org}/projects/${A.project}/corrections/${id}`;
-    const valid = (uid: string) => ({
-      authorId: uid,
-      createdAt: FieldValue.serverTimestamp(),
-      targetType: 'detection',
-      targetId: 'det-42',
-      action: 'reclass',
-      sheetId: 'sheet1',
-      versionId: 'v1',
-      payload: { legendEntryId: 'le1' },
-      note: 'שקע כפול',
+    const brief = (uid: string) => ({
+      kind: 'accept', sheetId: 'sheet1', versionId: 'v1', anchorMm: { x: 1, y: 2 }, radiusMm: 3, detectionId: 'd_1', signature: null, class: null, itemCode: null,
+      linkGroupId: null, geometry: null, quantity: null, unit: null, roomId: null, floor: null, reason: null, batchId: null, by: uid, at: FieldValue.serverTimestamp(), revertedAt: null,
     });
+    // the Sprint-0 client shape that used to be allowed
+    const legacy = (uid: string) => ({ authorId: uid, createdAt: FieldValue.serverTimestamp(), targetType: 'detection', targetId: 'det-42', action: 'reclass' });
 
-    it.each(['editor', 'reviewer', 'admin'] as const)('%s can create a valid correction', async (role) => {
+    it.each(['admin', 'editor', 'reviewer', 'viewer'] as const)('%s cannot create corrections (brief or legacy shape)', async (role) => {
       const uid = A.users[role];
-      await assertSucceeds(db(uid).doc(corrPath(`n-${role}`)).set(valid(uid)));
+      await assertFails(db(uid).doc(corrPath(`n-${role}`)).set(brief(uid)));
+      await assertFails(db(uid).doc(corrPath(`l-${role}`)).set(legacy(uid)));
     });
 
-    it('viewer, outsider and other-org editor cannot', async () => {
-      await assertFails(db(A.users.viewer).doc(corrPath('n1')).set(valid(A.users.viewer)));
-      await assertFails(db(OUTSIDER).doc(corrPath('n2')).set(valid(OUTSIDER)));
-      await assertFails(db(B.users.editor).doc(corrPath('n3')).set(valid(B.users.editor)));
+    it.each(['admin', 'editor', 'reviewer'] as const)('%s cannot revert / edit / delete a correction (undo goes through the API)', async (role) => {
+      const uid = A.users[role];
+      await assertFails(db(uid).doc(a.correction).update({ revertedAt: FieldValue.serverTimestamp() }));
+      await assertFails(db(uid).doc(a.correction).update({ kind: 'reject' }));
+      await assertFails(db(uid).doc(a.correction).delete());
     });
 
-    it('author must be the caller and createdAt the server time', async () => {
-      const uid = A.users.editor;
-      await assertFails(db(uid).doc(corrPath('x1')).set({ ...valid(uid), authorId: A.users.reviewer }));
-      await assertFails(db(uid).doc(corrPath('x2')).set({ ...valid(uid), createdAt: Timestamp.fromDate(new Date('2020-01-01')) }));
+    it.each(['correctionBatch', 'roomSettings', 'similarSearch'] as const)('%s: members read; no role writes; other org / outsider read nothing', async (k) => {
+      for (const role of ['admin', 'editor', 'reviewer', 'viewer'] as const) {
+        await assertSucceeds(db(A.users[role]).doc(a[k]).get());
+        await assertFails(db(A.users[role]).doc(a[k]).set({ x: 1 }, { merge: true }));
+        await assertFails(db(A.users[role]).doc(a[k]).delete());
+        await assertFails(db(A.users[role]).doc(`${a[k]}-new`).set({ x: 1 }));
+      }
+      await assertFails(db(B.users.admin).doc(a[k]).get());
+      await assertFails(db(OUTSIDER).doc(a[k]).get());
+      await assertFails(db(null).doc(a[k]).get());
     });
 
-    it('rejects unknown fields, bad enums and oversize values', async () => {
-      const uid = A.users.editor;
-      await assertFails(db(uid).doc(corrPath('y1')).set({ ...valid(uid), extra: 1 }));
-      await assertFails(db(uid).doc(corrPath('y2')).set({ ...valid(uid), action: 'drop_table' }));
-      await assertFails(db(uid).doc(corrPath('y3')).set({ ...valid(uid), targetType: 'boqLine' }));
-      await assertFails(db(uid).doc(corrPath('y4')).set({ ...valid(uid), note: 'x'.repeat(2001) }));
-      await assertFails(db(uid).doc(corrPath('y5')).set({ ...valid(uid), targetId: '' }));
-      const { targetId: _omit, ...missing } = valid(uid);
-      await assertFails(db(uid).doc(corrPath('y6')).set(missing));
+    it('members list corrections of their project (history panel), never another org', async () => {
+      await assertSucceeds(db(A.users.viewer).collection(`orgs/${A.org}/projects/${A.project}/corrections`).where('sheetId', '==', 'sheet1').get());
+      await assertFails(db(A.users.viewer).collection(`orgs/${B.org}/projects/${B.project}/corrections`).get());
+      await assertFails(db(A.users.admin).collectionGroup('corrections').get());
     });
 
-    it('existing corrections are immutable, even for their author', async () => {
-      await assertFails(db(A.users.editor).doc(a.correction).update({ note: 'edit' }));
-      await assertFails(db(A.users.editor).doc(a.correction).delete());
-      await assertFails(db(A.users.admin).doc(a.correction).delete());
+    it('a worker-looking similar result cannot be forged by a client', async () => {
+      await assertFails(db(A.users.reviewer).doc(a.similarSearch).update({ status: 'succeeded', candidates: [{ id: 'c_1' }] }));
     });
   });
 

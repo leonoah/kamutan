@@ -16,6 +16,7 @@ import {
   LinkGroupSchema,
   LinkPointSchema,
   LinksArtifactSchema,
+  UnmatchedCorrectionSchema,
   PatchBoqLineRequestSchema,
   PatchBoqLineResponseSchema,
   ProjectBoqSummarySchema,
@@ -40,10 +41,34 @@ import {
 } from './library.js';
 import { ApiErrorSchema } from './errors.js';
 import { HealthResponseSchema } from './health.js';
-import { BoqBuildJobSchema, IngestSheetVersionJobSchema, IngestTopicJobSchema, JobSchema, LibraryImportJobSchema } from './jobs.js';
+import { BoqBuildJobSchema, FindSimilarJobSchema, IngestSheetVersionJobSchema, IngestTopicJobSchema, JobSchema, LibraryImportJobSchema } from './jobs.js';
 import { CreateOrgRequestSchema, MeResponseSchema, MemberSchema, MyOrgSchema, OrgSchema } from './org.js';
 import { CreateProjectRequestSchema, ProjectPageSchema, ProjectSchema, UpdateProjectRequestSchema } from './project.js';
-import { CorrectionSchema, ReviewItemSchema } from './review.js';
+import { ReviewItemSchema } from './review.js';
+import {
+  CorrectionBatchSchema,
+  CorrectionGeometrySchema,
+  CorrectionPageSchema,
+  CorrectionSchema,
+  CreateCorrectionBatchRequestSchema,
+  CreateCorrectionBatchResponseSchema,
+  CreateCorrectionRequestSchema,
+  CreateCorrectionResponseSchema,
+  CreateSimilarSearchRequestSchema,
+  CreateSimilarSearchResponseSchema,
+  PutRoomSettingsRequestSchema,
+  RebuildOutcomeSchema,
+  ReviewQueueItemSchema,
+  ReviewQueuePageSchema,
+  ReviewQueueQuerySchema,
+  RevertCorrectionBatchResponseSchema,
+  RevertCorrectionResponseSchema,
+  RoomSettingsResponseSchema,
+  RoomSettingsSchema,
+  SimilarCandidateSchema,
+  SimilarSearchSchema,
+  SimilarSearchViewSchema,
+} from './corrections.js';
 import { RoleSchema } from './roles.js';
 import { ShareLinkSchema } from './share.js';
 import {
@@ -78,7 +103,13 @@ import {
   PatchLegendEntryResponseSchema,
   ResolveUnknownClusterRequestSchema,
   ResolveUnknownClusterResponseSchema,
+  FixtureRecordSchema,
+  FixturesArtifactSchema,
+  RoomOpeningSchema,
   RoomSchema,
+  WallsArtifactSchema,
+  RoomTypeSchema,
+  RoomWallSchema,
   RoomsArtifactSchema,
   SymbolMappingSchema,
   UnknownClusterSchema,
@@ -190,4 +221,34 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   ExportBoqRequest: ExportBoqRequestSchema,
   ExportBoqResponse: ExportBoqResponseSchema,
   BoqExport: BoqExportSchema,
+  // Sprint 4 — corrections, room settings, review queue, find_similar, rooms upgrades
+  RoomType: RoomTypeSchema,
+  RoomWall: RoomWallSchema,
+  RoomOpening: RoomOpeningSchema,
+  CorrectionGeometry: CorrectionGeometrySchema,
+  CreateCorrectionRequest: CreateCorrectionRequestSchema,
+  CreateCorrectionResponse: CreateCorrectionResponseSchema,
+  CreateCorrectionBatchRequest: CreateCorrectionBatchRequestSchema,
+  CreateCorrectionBatchResponse: CreateCorrectionBatchResponseSchema,
+  CorrectionBatch: CorrectionBatchSchema,
+  CorrectionPage: CorrectionPageSchema,
+  RevertCorrectionResponse: RevertCorrectionResponseSchema,
+  RevertCorrectionBatchResponse: RevertCorrectionBatchResponseSchema,
+  RebuildOutcome: RebuildOutcomeSchema,
+  UnmatchedCorrection: UnmatchedCorrectionSchema,
+  RoomSettings: RoomSettingsSchema,
+  PutRoomSettingsRequest: PutRoomSettingsRequestSchema,
+  RoomSettingsResponse: RoomSettingsResponseSchema,
+  ReviewQueueItem: ReviewQueueItemSchema,
+  ReviewQueueQuery: ReviewQueueQuerySchema,
+  ReviewQueuePage: ReviewQueuePageSchema,
+  FindSimilarJob: FindSimilarJobSchema,
+  SimilarCandidate: SimilarCandidateSchema,
+  SimilarSearch: SimilarSearchSchema,
+  CreateSimilarSearchRequest: CreateSimilarSearchRequestSchema,
+  CreateSimilarSearchResponse: CreateSimilarSearchResponseSchema,
+  SimilarSearchView: SimilarSearchViewSchema,
+  FixtureRecord: FixtureRecordSchema,
+  FixturesArtifact: FixturesArtifactSchema,
+  WallsArtifact: WallsArtifactSchema,
 });

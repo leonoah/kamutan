@@ -229,6 +229,60 @@ total formulas, ₪ format, extra sheets, formula-injection text, and optionally
 - Caveat: `scripts/build_noah_draft_gt.py` regenerates `disputes.json` from Sprint-0 data and would drop the Sprint-2/3
   hypotheses and GT-D-005/006; do not re-run it against the frozen GT.
 
+## Sprint 4: plumbing fixtures, tiling rooms, chapters 03 + 05
+
+New modules: `plumbing.py` (fixture subset, implied chapter-03 counts), `tiling.py` (room type / wet / openings /
+perimeter / corners metrics vs the wet-room truth, expected tiling quantities under explicit rules). `boq_lines.py`
+gains tolerance-aware scoring for area/length lines (`within_tol`: cladding 3%, flooring 2%, length 2%; count and
+lump-sum lines stay exact) and an optional `--expected` reference column. `worker.rooms_to_features` passes the
+Sprint-4 room fields through (`type`, `wet`, `openings`, `externalCorners`, `walls`).
+
+```bash
+uv run kbench plumbing-implied --truth $GT [--report r.md]                      # chapter 03 implied by the fixture GT
+uv run kbench eval-fixtures --truth $GT --pred-detections $ART --out f.json --report f.md [--center-tol-mm 3]
+uv run kbench eval-tiling-rooms --truth $GT --pred-rooms $ART --out t.json --report t.md
+uv run kbench tiling-expected --truth $GT [--height 2.6] [--clad-niches] [--courtyard none|landing|whole]
+uv run kbench eval-boq --truth $GT --pred-lines boq-lines.json --scope 3. --scope 5. \
+    --expected $GT/tiling/expected_tiling.json --out b.json --report b.md
+```
+
+Taxonomy (`schema/classes.json`): + `fixture_shower`, `fixture_bath`, `fixture_kitchen_sink`,
+`fixture_washing_machine` (plumbing, core), `garden_tap` (plumbing; any cold-water point of the 3.06 kind: garden tap
+or Tami-4), `ac_unit` (**domain `hvac`**: AC positions read from the electrical / plumbing sheets drive 3.01 drains but
+are not sanitary fixtures; keeps the plumbing micro-F1 about fixtures). `sheet_annotations.schema.json` domain enum
+gains `hvac`.
+
+### Fixture metrics (`eval-fixtures`)
+Truth and predictions restricted to the plumbing + hvac classes; the Sprint-2 worker evaluation is reused (centre
+distance per class, default 3 mm; counts per sheet/floor/class; green precision; items-correct). Fixtures have no
+legend glyph: glyph level = class. Fixtures are large (WC/bath 8-32 mm): also report `--center-tol-mm 8`.
+
+### Implied plumbing (`plumbing-implied`)
+Only `authoritative: true` points (plumbing sheets) count; master-sheet copies and the electrical AC sockets are for
+detection metrics only. Rules: see the module docstring (3.01 ac_unit; 3.02 basin with `faucet_wall` within 5 mm or
+`faucet: wall`; 3.03 other basins + kitchen sinks; 3.04/3.07 WC kinds; 3.05 WM; 3.06 garden_tap; 3.11/3.12/3.13
+shower/bath routed by room name / floor). One-offs 3.08-3.10, 3.14-3.15 are not derivable.
+
+### Tiling rooms (`eval-tiling-rooms`)
+Truth rooms per architecture sheet = the wet rooms of `tiling/wet_rooms.json` (refined polygons) + every other frozen
+room polygon (type from its names, `wet = false`). Hungarian IoU matching (>= 0.5). Type accuracy (open-plan rooms
+accept any named space), wet P/R/F1 (truth wet = bathroom | wc; the courtyard is `courtyard`, not wet), and for matched
+wet rooms: area PE, perimeter PE, external-corner AE, openings (Hungarian on centre distance <= 10 mm within kind;
+width within 5 cm).
+
+### Sprint-4 ground truth: `gt-v0.4-draft` (frozen before reading worker Sprint-4 output)
+- `sheets/{8d51ed5a,24ab0ea0,2a308827}.geojson` (plumbing, authoritative): 30 points — 9 ac_unit (drain marks),
+  5 basins, 2 kitchen sinks, 3 concealed WCs, 1 monoblock, 2 showers, 1 bath, 2 WMs, 3 wall faucets, 2 cold-water
+  points (garden tap + Tami-4). Two passes (visual + vector), reconciled (`reconcile_log.md#sprint-4`).
+- `sheets/{08222cb2,6fa88f92}.geojson` + 13 fixtures as drawn on the master sheets (`authoritative: false`).
+- `sheets/{eb8be8a3,c054fd3a}.geojson` + 9 `ac_unit` at the AC sockets (`authoritative: false`).
+- `tiling/wet_rooms.json`: guest WC, 3 bathrooms (incl. laundry niches as sub-polygons), English yard (landing sub-area);
+  inner faces snapped to the vector wall outlines; openings, reflex corners, ceilings from level marks.
+- `tiling/expected_tiling.json`: cladding/corner sweep over height x niche rule, floor candidates, recommended defaults.
+- Disputes: GT-D-003/004 sprint-4 hypotheses (drawings = BOQ); GT-D-007 (5.02 courtyard), GT-D-008 (5.01/5.03
+  height/niche/corner assumptions), both informational (`lines: []`).
+- Builder: `tools/build_plumbing_tiling_gt.py` (run after `build_sheet_gt.py`).
+
 ## Known gaps
 
 - **No `kbench run`.** The pipeline does not exist yet. `eval` scores prediction files written in the annotation schema, and the workers must emit that format.

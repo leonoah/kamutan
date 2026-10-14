@@ -17,6 +17,7 @@ import { JobsModule } from './jobs/jobs.module';
 import { OrgsModule } from './orgs/orgs.module';
 import { ProjectsModule } from './projects/projects.module';
 import { QueueModule } from './queue/queue.module';
+import { ReviewModule } from './review/review.module';
 import { SheetsModule } from './sheets/sheets.module';
 import { UnderstandingModule } from './understanding/understanding.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -41,6 +42,7 @@ export class AppModule {
         SheetsModule,
         UnderstandingModule,
         BoqModule,
+        ReviewModule,
         JobsModule,
       ],
       providers: [

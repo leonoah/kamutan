@@ -48,11 +48,9 @@ export const BOQ_LINE_TRANSITIONS: Readonly<Record<BoqLineStatus, readonly BoqLi
 export const REVIEW_ITEM_STATUSES = ['open', 'resolved', 'dismissed'] as const;
 export type ReviewItemStatus = (typeof REVIEW_ITEM_STATUSES)[number];
 
-export const CORRECTION_TARGET_TYPES = ['detection', 'room', 'link', 'legendEntry', 'reviewItem', 'measurement'] as const;
-export type CorrectionTargetType = (typeof CORRECTION_TARGET_TYPES)[number];
-
-export const CORRECTION_ACTIONS = ['accept', 'reject', 'reclass', 'add', 'move', 'remove', 'setSupply', 'setLifecycle'] as const;
-export type CorrectionAction = (typeof CORRECTION_ACTIONS)[number];
+/** Sprint 4 (brief): correction kinds — mirrors packages/contracts CORRECTION_KINDS. */
+export const CORRECTION_KINDS = ['add', 'remove', 'reclassify', 'move', 'link', 'unlink', 'measure', 'count', 'accept', 'reject'] as const;
+export type CorrectionKind = (typeof CORRECTION_KINDS)[number];
 
 export const FILE_KINDS = ['pdf', 'dwg', 'dxf', 'png'] as const;
 export type FileKind = (typeof FILE_KINDS)[number];
@@ -64,7 +62,7 @@ export const SHEET_VERSION_STATUSES = ['uploaded', 'queued', 'processing', 'read
 export type SheetVersionStatus = (typeof SHEET_VERSION_STATUSES)[number];
 
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const;
-export const JOB_TYPES = ['ingest.sheet_version', 'boq.build', 'library.import'] as const;
+export const JOB_TYPES = ['ingest.sheet_version', 'boq.build', 'library.import', 'symbols.find_similar'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export const LIFECYCLES = ['existing', 'new', 'demolish'] as const;
@@ -287,20 +285,79 @@ export interface ReviewItem {
 export const REVIEW_ITEM_CLIENT_FIELDS = ['status', 'resolution', 'resolvedBy', 'resolvedAt'] as const;
 
 /**
- * orgs/{orgId}/projects/{projectId}/corrections/{correctionId}
- * Client-created by editor/reviewer, immutable afterwards. Overrides automatic
- * output and is never overwritten by a pipeline re-run.
+ * orgs/{orgId}/projects/{projectId}/corrections/{correctionId} — Sprint 4: written ONLY by the API
+ * (POST /v1/projects/:pid/corrections[/batch], role per kind, audited). Immutable except revertedAt/revertedBy (undo).
+ * Applied by `boq.build` after automatic detection; re-matched to newer versions by anchorMm within radiusMm.
  */
 export interface Correction {
-  authorId: string; // == request.auth.uid
-  createdAt: FsTimestamp; // == request.time
-  targetType: CorrectionTargetType;
-  targetId: string;
-  action: CorrectionAction;
-  sheetId?: string;
-  versionId?: string;
-  payload?: Record<string, unknown>; // e.g. { legendEntryId, point: [x, y] }
-  note?: string;
+  kind: CorrectionKind;
+  sheetId: string;
+  versionId: string; // at time of edit
+  anchorMm: { x: number; y: number };
+  radiusMm: number;
+  detectionId: string | null;
+  signature: string | null;
+  class: string | null;
+  itemCode: string | null;
+  linkGroupId: string | null;
+  switchIds?: string[];
+  pointIds?: string[];
+  geometry: { type: 'point' | 'polygon' | 'polyline'; mm: Array<{ x: number; y: number }> } | null;
+  quantity: number | null;
+  unit: 'm2' | 'm' | 'unit' | null;
+  roomId: string | null;
+  floor: string | null;
+  reason: string | null;
+  batchId: string | null;
+  by: string;
+  at: FsTimestamp;
+  revertedAt: FsTimestamp | null;
+  revertedBy?: string | null;
+}
+
+/** orgs/{orgId}/projects/{projectId}/correctionBatches/{batchId} — API only (one per batch POST). */
+export interface CorrectionBatch {
+  count: number;
+  kinds: Partial<Record<CorrectionKind, number>>;
+  sheetIds: string[];
+  source: 'cluster' | 'lasso' | 'similar' | 'selection' | 'other';
+  similarSearchId: string | null;
+  by: string;
+  at: FsTimestamp;
+  revertedAt: FsTimestamp | null;
+  revertedBy?: string | null;
+}
+
+/** orgs/{orgId}/projects/{projectId}/roomSettings/{sheetId}__{roomId} — tiling inputs, API only (editor+). */
+export interface RoomSettings {
+  sheetId: string;
+  roomId: string;
+  claddingHeightM: number;
+  floorTiled: boolean;
+  floorMaterialItemCode: string | null;
+  wallMaterialItemCode: string | null;
+  partialCladding: Array<{ wallId: string; fromM: number; toM: number; heightM: number; bottomM?: number }>;
+  wasteFactor: number;
+  includeInWaterproofing: boolean;
+  keepOpenings?: string[];
+  type?: string | null;
+  by: string;
+  at: FsTimestamp;
+}
+
+/** orgs/{orgId}/projects/{projectId}/similarSearches/{searchId} — API creates (queued); worker fills. */
+export interface SimilarSearch {
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  exemplar: { sheetId: string; versionId: string; bboxMm: { x: number; y: number; w: number; h: number }; class: string | null };
+  scope: 'sheet' | 'project';
+  correctionId: string | null;
+  jobId: string | null;
+  requestedBy: string;
+  createdAt: FsTimestamp;
+  finishedAt: FsTimestamp | null;
+  candidates: Array<{ id: string; sheetId: string; versionId: string; centerMm: { x: number; y: number }; bboxMm: { x: number; y: number; w: number; h: number }; score: number; alreadyDetected: string | null; currentClass: string | null; thumb: string | null }>;
+  thumbs: number;
+  error: { code: string; message: string } | null;
 }
 
 /** orgs/{orgId}/projects/{projectId}/boqLines/{lineId} */
@@ -508,6 +565,10 @@ export const paths = {
   legendEntry: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/legendEntries/${id}`,
   reviewItem: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/reviewItems/${id}`,
   correction: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/corrections/${id}`,
+  /** Sprint 4 Firestore docs (API only). */
+  correctionBatch: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/correctionBatches/${id}`,
+  roomSettings: (o: string, p: string, sheetId: string, roomId: string) => `orgs/${o}/projects/${p}/roomSettings/${sheetId}__${roomId}`,
+  similarSearch: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/similarSearches/${id}`,
   boqLine: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqLines/${id}`,
   shareLink: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/shareLinks/${id}`,
   itemLibrary: (o: string, id: string) => `orgs/${o}/itemLibrary/${id}`,
@@ -548,6 +609,8 @@ export const paths = {
   boqExportFile: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}.xlsx`,
   /** Client create-only upload slot for past BOQs (editor/admin, ≤ 20 MB, spreadsheet types); API verifies magic bytes. */
   libraryImportObject: (o: string, uuid: string, ext: 'xls' | 'xlsx') => `orgs/${o}/imports/${uuid}.${ext}`,
+  /** Sprint 4: find_similar candidate crops (worker writes; API signs; never client-readable). */
+  similarThumb: (o: string, p: string, searchId: string, candidateId: string) => `orgs/${o}/projects/${p}/similar/${searchId}/${candidateId}.webp`,
 } as const;
 
 /** Storage prefixes a client may READ directly. Empty by design: every read is a signed URL (SEC-20). */
@@ -559,5 +622,7 @@ export const COLLECTIONS = [
   'corrections', 'boqLines', 'shareLinks', 'itemLibrary', 'boqTemplates', 'symbolMappings', 'auditLog', 'jobs',
   // Sprint 3
   'boqBuilds', 'exports', 'boqRules', 'libraryImports',
+  // Sprint 4
+  'correctionBatches', 'roomSettings', 'similarSearches',
 ] as const;
 export type CollectionId = (typeof COLLECTIONS)[number];

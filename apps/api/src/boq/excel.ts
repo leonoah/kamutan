@@ -301,7 +301,7 @@ function writeLineRow(
   set('code', sanitizeCell(l.code), { numFmt: '@', alignment: { horizontal: 'center', vertical: 'top' } });
   set('description', sanitizeCell(row.suffix ? `${l.description} – ${row.suffix}` : l.description));
   set('unit', sanitizeCell(l.unit), { alignment: { horizontal: 'center', vertical: 'top' } });
-  set('qty', row.qty, { numFmt: 'General', alignment: { horizontal: 'center', vertical: 'top' } });
+  set('qty', row.qty, { numFmt: qtyFormat(l.unit), alignment: { horizontal: 'center', vertical: 'top' } });
   if (l.qtyOverride !== null && l.qtyOverride !== undefined) {
     const c = ws.getCell(r, qtyCol);
     c.note = sanitizeCell(`כמות שונתה ידנית (מחושב: ${l.qty})${l.qtyOverrideReason ? `: ${l.qtyOverrideReason}` : ''}`);
@@ -339,13 +339,19 @@ function buildFloorSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
     ws.getCell(r, 3).value = sanitizeCell(l.unit);
     const per: Record<string, number> = { ...(l.byFloor ?? {}) };
     if (Object.keys(per).length === 0) per[l.floor ?? NO_FLOOR] = l.qty;
+    const fmt = qtyFormat(l.unit);
     floorCols.forEach((f, j) => {
-      if (per[f] !== undefined) ws.getCell(r, firstFloor + j).value = per[f] as number;
+      if (per[f] !== undefined) {
+        ws.getCell(r, firstFloor + j).value = per[f] as number;
+        ws.getCell(r, firstFloor + j).numFmt = fmt;
+      }
     });
     ws.getCell(r, sumCol).value = floorCols.length
       ? { formula: `SUM(${colLetter(firstFloor)}${r}:${colLetter(sumCol - 1)}${r})`, result: Object.values(per).reduce((a, b) => a + b, 0) }
       : 0;
+    ws.getCell(r, sumCol).numFmt = fmt;
     ws.getCell(r, sumCol + 1).value = effectiveQty(l);
+    ws.getCell(r, sumCol + 1).numFmt = fmt;
     ws.getCell(r, sumCol + 2).value = CONFIDENCE_HE[l.level];
     ws.getCell(r, sumCol + 2).font = { color: { argb: LEVEL_COLOR[l.level] }, bold: true };
   });
@@ -371,6 +377,7 @@ function buildEvidenceSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
       ws.getCell(r, 3).value = sanitizeCell(g.sheet);
       ws.getCell(r, 4).value = g.floor ? sanitizeCell(floorName(input, g.floor)) : '';
       ws.getCell(r, 5).value = g.count;
+      ws.getCell(r, 5).numFmt = qtyFormat(l.unit);
       if (i === 0 && l.reasons?.length) ws.getCell(r, 6).value = sanitizeCell(l.reasons.join('; '));
       if (g.detectionIds?.length) {
         const ids = g.detectionIds.slice(0, 50).join(', ');
@@ -384,4 +391,14 @@ function buildEvidenceSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
       r++;
     });
   }
+}
+
+/** Area / length units (m², m') of the sample and the correction units. */
+const MEASURED_UNIT_RE = /^(מ"ר|מ''ר|מ״ר|מ"א|מ''א|מ״א|מ'|מטר|m2|m²|m|sqm)$/i;
+/**
+ * Sprint 4: area / length quantities are DISPLAYED with 2 decimals; the cell keeps the exact value, so the total
+ * formulas (qty × price, SUM) compute on it. Counts stay "General".
+ */
+export function qtyFormat(unit: string | null | undefined): string {
+  return unit && MEASURED_UNIT_RE.test(unit.trim()) ? '0.00' : 'General';
 }

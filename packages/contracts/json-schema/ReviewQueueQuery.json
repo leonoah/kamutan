@@ -1,0 +1,54 @@
+{
+  "$ref": "#/definitions/ReviewQueueQuery",
+  "definitions": {
+    "ReviewQueueQuery": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "detection",
+            "cluster",
+            "unknown_cluster",
+            "link_group",
+            "room",
+            "unmatched_correction",
+            "line"
+          ]
+        },
+        "sheetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "floor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "yellow",
+            "red"
+          ]
+        },
+        "cursor": {
+          "type": "string",
+          "pattern": "^\\d{1,6}$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "default": 50
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ReviewQueueQuery.json"
+}

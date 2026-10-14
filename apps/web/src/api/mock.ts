@@ -15,6 +15,7 @@ import {
 import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, rowFromDevIndex, sampleTiles, seedNoah, type DevIndexEntry } from "./mockSheets";
 import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
+import { createReviewMock } from "./mockReview";
 
 export interface MockOptions {
   /** Seed projects. Defaults to two demo projects. Pass [] to see the empty state. */
@@ -46,6 +47,8 @@ export interface MockOptions {
   boqTickMs?: number;
   /** Sprint 3 (dev): ignore Worker-BOQ's local lines, always aggregate with the mock engine. */
   boqEngineOnly?: boolean;
+  /** Sprint 4: delay of the mock find-similar job (ms). Default 600 (0 in tests → done at once). */
+  similarMs?: number;
 }
 
 export const DEMO_ORG_ID = "org-demo";
@@ -170,6 +173,16 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     blockExportOnRed: opts.blockExportOnRed ?? false,
     devBase: useDevIndex ? DEV_ARTIFACTS_BASE : null,
     engineOnly: opts.boqEngineOnly ?? false,
+    rooms: async (row) => (await understanding.artifacts(row)).rooms,
+    corrections: (projectId) => review.active(projectId),
+    roomSettings: (projectId) => review.roomSettingsMap(projectId),
+  });
+  const review = createReviewMock({
+    rows: (projectId) => sheets.get(projectId) ?? [],
+    understanding,
+    boq: () => boq,
+    emit: () => emit(),
+    similarMs: opts.similarMs ?? (latency > 0 ? 600 : 0),
   });
   if (opts.boqPrebuilt && sheets.has("p-noah")) queueMicrotask(() => boq.buildBoq("p-noah"));
   const jobs: Job[] = [];
@@ -507,6 +520,27 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       setDefaultBoqTemplate: async (_orgId, templateId) => delay(boq.setDefault(templateId)),
       listBoqRules: async () => delay(boq.rules()),
       patchBoqRule: async (_orgId, ruleId, req) => delay(boq.patchRule(ruleId, req.enabled, [...projects.keys()])),
+
+      /* ---------- Sprint 4: corrections, queue, room settings, find-similar ---------- */
+      listCorrections: async (projectId, q = {}) => delay(await review.listCorrections(projectId, q.sheetId)),
+      createCorrection: async (projectId, req) => {
+        mustGet(projectId);
+        return delay(await review.create(projectId, req));
+      },
+      createCorrectionsBatch: async (projectId, req) => {
+        mustGet(projectId);
+        return delay(await review.createBatch(projectId, req));
+      },
+      revertCorrection: async (projectId, id) => delay(await review.revert(projectId, id)),
+      revertCorrectionsBatch: async (projectId, batchId) => delay(await review.revertBatch(projectId, batchId)),
+      getReviewQueue: async (projectId, filter) => {
+        mustGet(projectId);
+        return delay(await review.reviewQueue(projectId, filter));
+      },
+      getRoomSettings: async (projectId, sheetId, roomId) => delay(await review.getRoomSettings(projectId, sheetId, roomId)),
+      putRoomSettings: async (projectId, sheetId, roomId, req) => delay(await review.putRoomSettings(projectId, sheetId, roomId, req)),
+      findSimilar: async (projectId, req) => delay(await review.findSimilar(projectId, req)),
+      getSimilarSearch: async (projectId, id) => delay(await review.getSimilar(projectId, id)),
     },
 
     uploads: {

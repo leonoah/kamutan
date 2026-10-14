@@ -145,6 +145,10 @@ service firebase.storage {
       match /boq/{rest=**} {
         allow read, write: if false;               // worker writes evidence.json.gz; API reads server-side
       }
+      // ------------------------------------------------------------ Sprint 4: find_similar candidate crops
+      match /similar/{rest=**} {
+        allow read, write: if false;               // worker writes; API signs read URLs (never client-readable)
+      }
     }
 
     // Sprint-0 artifact prefix — kept explicit so nobody re-opens it by accident.

@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { PubSub } from '@google-cloud/pubsub';
-import { DEFAULT_BOQ_RULES, fsPaths, itemIdFor, JOB_TYPES, storagePaths } from '@kamutan/contracts';
+import { CreateCorrectionRequestSchema, DEFAULT_BOQ_RULES, fsPaths, itemIdFor, JOB_TYPES, storagePaths } from '@kamutan/contracts';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
@@ -16,6 +16,7 @@ import { AccessService } from '../../src/access/access.service';
 import { auditHash } from '../../src/db/audit-chain';
 import { FirestoreRepository } from '../../src/db/firestore.repository';
 import { FirestoreBoqRepository } from '../../src/db/boq-firestore.repository';
+import { FirestoreReviewRepository } from '../../src/db/review-firestore.repository';
 import { RepoConflictError } from '../../src/db/repository';
 import { JobsService } from '../../src/jobs/jobs.service';
 import { InMemoryIngestQueue, PubSubIngestQueue } from '../../src/queue/ingest-queue';
@@ -333,6 +334,54 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
       const counts = { lines: 1, green: 0, yellow: 1, red: 0, draft: 1, reviewed: 0, approved: 0, overridden: 0 };
       await boq.createExport(orgA, pid, { id: 'e1', templateId: 'tpl_default', split: 'summed', markDraft: false, storagePath: storagePaths.boqExportFile(orgA, pid, 'e1'), buildId: null, counts, sha256: 'a'.repeat(64), sizeBytes: 10, createdBy: uid('aEditor'), createdAt: now.toISOString() });
       expect((await db.doc(fsPaths.boqExport(orgA, pid, 'e1')).get()).get('createdAt')).toBeInstanceOf(Timestamp);
+    });
+  });
+
+  describe('Sprint 4: review repository (corrections, batch, revert, room settings, similar, debounced builds)', () => {
+    let rev: FirestoreReviewRepository;
+    let pid: string;
+    const corr = (detectionId: string) => CreateCorrectionRequestSchema.parse({ kind: 'accept', sheetId: 's-p0', versionId: 'v1', anchorMm: { x: 1, y: 2 }, detectionId });
+    beforeAll(async () => {
+      rev = new FirestoreReviewRepository(repo);
+      pid = (await repo.createProject(orgA, { name: 'Review' }, uid('aEditor'))).id;
+    });
+
+    it('corrections: single + 500-item batch in one transaction, list by sheet/batch, revert (409 twice), batch revert', async () => {
+      const one = await rev.createCorrections(orgA, pid, [corr('d_1')], null, uid('aEditor'));
+      expect(one.corrections[0]).toMatchObject({ kind: 'accept', by: uid('aEditor'), revertedAt: null, batchId: null });
+      expect((await db.doc(fsPaths.correction(orgA, pid, one.corrections[0]!.id)).get()).get('at')).toBeInstanceOf(Timestamp);
+      const items = Array.from({ length: 500 }, (_, i) => corr(`d_${i}`));
+      const b = await rev.createCorrections(orgA, pid, items, { source: 'cluster', similarSearchId: null }, uid('aEditor'));
+      expect(b.batch).toMatchObject({ count: 500, kinds: { accept: 500 } });
+      expect(await rev.listCorrections(orgA, pid, { batchId: b.batch!.id })).toHaveLength(500);
+      expect((await rev.listCorrections(orgA, pid, { sheetId: 's-p0' })).length).toBe(501);
+      const r = await rev.revertCorrection(orgA, pid, one.corrections[0]!.id, uid('aEditor'));
+      expect(r?.revertedBy).toBe(uid('aEditor'));
+      await expect(rev.revertCorrection(orgA, pid, one.corrections[0]!.id, uid('aEditor'))).rejects.toBeInstanceOf(RepoConflictError);
+      expect((await rev.revertBatch(orgA, pid, b.batch!.id, uid('aEditor')))?.reverted).toBe(500);
+      expect(await rev.getCorrection(orgB, pid, one.corrections[0]!.id)).toBeNull(); // other org's path
+      const log = await db.collection(`orgs/${orgA}/auditLog`).orderBy('at', 'desc').limit(1).get();
+      expect(log.docs[0]?.data()).toMatchObject({ entity: 'corrections', action: 'revert_batch' });
+    });
+
+    it('room settings put/get/list ids; similar search + job; scheduleAutoBuild create → debounce → off', async () => {
+      const s = { sheetId: 's-p0', roomId: 'r_1', claddingHeightM: 2.6, floorTiled: true, floorMaterialItemCode: null, wallMaterialItemCode: null, partialCladding: [], wasteFactor: 0.07, includeInWaterproofing: true };
+      await rev.putRoomSettings(orgA, pid, s, uid('aEditor'));
+      expect(await rev.getRoomSettings(orgA, pid, 's-p0', 'r_1')).toMatchObject({ claddingHeightM: 2.6, by: uid('aEditor') });
+      expect(await rev.listRoomSettingsIds(orgA, pid)).toEqual(['s-p0__r_1']);
+      const sim = await rev.createSimilarSearch(orgA, pid, { exemplar: { sheetId: 's-p0', versionId: 'v1', bboxMm: { x: 0, y: 0, w: 2, h: 2 }, class: null }, scope: 'sheet', correctionId: null }, uid('aEditor'), JOB_TYPES.findSimilar);
+      expect((await db.doc(fsPaths.job(sim.jobId)).get()).data()).toMatchObject({ type: 'symbols.find_similar', searchId: sim.search.id, orgId: orgA });
+      expect((await rev.getSimilarSearch(orgA, pid, sim.search.id))?.status).toBe('queued');
+      const now = Date.now();
+      const a = await rev.scheduleAutoBuild(orgA, pid, { reason: 'correction', actorUid: uid('aEditor'), jobType: JOB_TYPES.boqBuild, nowMs: now, debounceMs: 5000 });
+      expect(a).toMatchObject({ outcome: 'scheduled', publish: true });
+      const b2 = await rev.scheduleAutoBuild(orgA, pid, { reason: 'room', actorUid: uid('aEditor'), jobType: JOB_TYPES.boqBuild, nowMs: now + 1000, debounceMs: 5000 });
+      expect(b2).toMatchObject({ outcome: 'debounced', publish: false, build: { id: a?.build?.id } });
+      expect((await repo.getProject(orgA, pid))?.boq).toMatchObject({ stale: true, staleReason: 'room', pendingBuildId: a?.build?.id });
+      await db.doc(fsPaths.org(orgA)).update({ 'settings.autoRebuild': false });
+      await db.doc(fsPaths.boqBuild(orgA, pid, a?.build?.id as string)).update({ status: 'succeeded' });
+      expect((await rev.scheduleAutoBuild(orgA, pid, { reason: 'room', actorUid: uid('aEditor'), jobType: JOB_TYPES.boqBuild, nowMs: now + 2000, debounceMs: 5000 }))?.outcome).toBe('off');
+      await db.doc(fsPaths.org(orgA)).update({ 'settings.autoRebuild': true });
     });
   });
 

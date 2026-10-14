@@ -172,6 +172,10 @@ export const VersionArtifactsSchema = z.object({
   rooms: z.string().max(1024).optional(),
   /** Sprint 3: links.json.gz (kamutan.links/1), lighting sheets only */
   links: z.string().max(1024).optional(),
+  /** Sprint 4: fixtures.json.gz (kamutan.fixtures/1, plumbing fixtures / faucets / AC with extended fields) */
+  fixtures: z.string().max(1024).optional(),
+  /** Sprint 4: walls.json.gz (kamutan.walls/1, reference wall polygons of construction / architecture sheets) */
+  walls: z.string().max(1024).optional(),
 });
 export type VersionArtifacts = z.infer<typeof VersionArtifactsSchema>;
 

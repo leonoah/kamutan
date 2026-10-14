@@ -1,4 +1,4 @@
-# firebase/ — Firestore & Storage security rules, indexes, model (Sprint 0 + 1 + 2 + 3, ADR 0008)
+# firebase/ — Firestore & Storage security rules, indexes, model (Sprint 0 + 1 + 2 + 3 + 4, ADR 0008)
 
 Replaces the former `supabase/` directory (Postgres + RLS; still in git history on `main`).
 
@@ -24,7 +24,7 @@ Client writes (everything else is `allow write: if false` → API / worker with 
 
 | Path | Who | Rule |
 | --- | --- | --- |
-| `projects/*/corrections/{id}` | editor, reviewer, admin | create only; `authorId == auth.uid`; `createdAt == request.time`; whitelisted keys; enums for `targetType`/`action`; string sizes (ids ≤128, note ≤2000); `payload` map ≤20 keys; no update/delete |
+| ~~`projects/*/corrections/{id}`~~ | — | **Sprint 4: removed.** Corrections are API-only (`allow write: if false`); see below |
 | `projects/*/reviewItems/{id}` | editor, reviewer, admin | update only; `diff().affectedKeys().hasOnly(['status','resolution','resolvedBy','resolvedAt'])`; resolving/dismissing requires `resolvedBy == uid` and `resolvedAt == request.time`; re-open requires both null; resolution ≤2000 |
 | ~~`projects/*/boqLines/{id}`~~ | — | **Sprint 3: removed.** boqLines are API-only (`allow write: if false`); see below |
 
@@ -87,6 +87,24 @@ Ported semantics from the Postgres design: approval stamping and lock-after-appr
 (client create/update/delete denied; hash chain is computed server-side), share links hash-only and API-only,
 tenant immutability (tenant = path, documents cannot move between orgs), memberships admin-managed (via API).
 
+### Sprint 4 — corrections, room settings, find-similar
+
+**Decision: corrections are API-only.** The Sprint-0 rule let editor/reviewer create corrections from the client. The
+brief makes them the source of truth of human edits with a role per kind (accept/reject reviewer+, others editor+),
+page/version checks, the audit hash chain and a debounced BOQ rebuild — none expressible in rules — so the client
+create was removed. The only client write left in Firestore is `reviewItems` (status/resolution).
+
+| Path | Client read | Client write | Tests |
+| --- | --- | --- | --- |
+| `orgs/*/projects/*/corrections/{id}` (brief shape, undo = `revertedAt`) | every member | **none** (API `POST …/corrections[/batch]`, `…/revert`) | `firestore.rules.test.ts` Sprint 4 block: create (brief + legacy shape) ×4 roles, revert/edit/delete ×3, list own project only, collection group denied; lint |
+| `.../correctionBatches/{id}`, `.../roomSettings/{sheetId}__{roomId}`, `.../similarSearches/{id}` | every member | **none** (API; worker fills similar results) | same: get ×4 roles ok, set/merge/delete/create ×4 denied, other org / outsider / anon read denied, forged result denied; lint |
+| Storage `.../projects/*/similar/**` (candidate crops) | **none** (API-signed URLs) | **none** | `storage.rules.test.ts` serverObjects; lint: lands in exactly one deny-all match |
+
+`COLLECTIONS` + `correctionBatches`, `roomSettings`, `similarSearches`; `JOB_TYPES` + `symbols.find_similar`;
+`model.ts` `Correction` = brief shape (Sprint-0 `CORRECTION_TARGET_TYPES/ACTIONS` replaced by `CORRECTION_KINDS`),
++ `CorrectionBatch`, `RoomSettings`, `SimilarSearch`, `paths.correctionBatch/roomSettings/similarSearch/similarThumb`.
+No new composite index: the API queries corrections with one equality filter and sorts in memory.
+
 ## Running
 
 ```bash
@@ -107,6 +125,9 @@ balanced braces, default deny, no `if true`, the exact set of client-writable ma
 storage write surface, index coverage.
 
 ## Known gaps / not verified
+
+- Sprint 4 rules (four new read-only matches, `similar/**` deny, corrections create removed) are statically checked
+  here; the emulator suites run first in CI (same blocker as before). Unused rules helper `str()` kept for future use.
 
 - Sprint 3 rules (imports slot with `[.]` in the name regex, the new collections, boqLines lock) are only statically
   checked here; the emulator suites run first in CI (same blocker as Sprints 1–2).

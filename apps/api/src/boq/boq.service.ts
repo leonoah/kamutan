@@ -372,7 +372,7 @@ export interface EvidenceSheetGroup {
   sheetId: string;
   versionId: string;
   floor: string | null;
-  /** Units: distinct (sheet, version, linkGroupId) for composite evidence, else one per item → sums to the line qty. */
+  /** Units: distinct (sheet, version, linkGroupId) for composite evidence, else one per item (or its `quantity`) → sums to the line qty. */
   count: number;
   detectionIds: string[];
   linkGroupIds: string[];
@@ -396,7 +396,8 @@ export function groupEvidence(items: readonly BoqEvidenceItem[]): EvidenceSheetG
       groups.set(k, g);
     }
     g.detectionIds.push(it.detectionId);
-    if (!it.linkGroupId) g.count++;
+    // Sprint 4: measured items (rooms m², measures) contribute their `quantity`, everything else one unit.
+    if (!it.linkGroupId) g.count = Math.round((g.count + (typeof it.quantity === 'number' ? it.quantity : 1)) * 1e6) / 1e6;
     else if (!g.linkGroupIds.includes(it.linkGroupId)) {
       g.linkGroupIds.push(it.linkGroupId);
       g.count++;

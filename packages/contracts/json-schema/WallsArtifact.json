@@ -1,0 +1,202 @@
+{
+  "$ref": "#/definitions/WallsArtifact",
+  "definitions": {
+    "WallsArtifact": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "kamutan.walls/1"
+        },
+        "drawings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "floor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scaleDenominator": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sheetId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "regionId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "polygonsMm": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "exterior": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 20000
+                    },
+                    "holes": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 20000
+                      },
+                      "maxItems": 1000
+                    }
+                  },
+                  "required": [
+                    "exterior",
+                    "holes"
+                  ],
+                  "additionalProperties": true
+                },
+                "maxItems": 5000
+              },
+              "closuresMm": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "exterior": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "x": {
+                            "type": "number"
+                          },
+                          "y": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "x",
+                          "y"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 20000
+                    },
+                    "holes": {
+                      "type": "array",
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "number"
+                            },
+                            "y": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 20000
+                      },
+                      "maxItems": 1000
+                    }
+                  },
+                  "required": [
+                    "exterior",
+                    "holes"
+                  ],
+                  "additionalProperties": true
+                },
+                "maxItems": 5000
+              }
+            },
+            "required": [
+              "floor",
+              "scaleDenominator",
+              "sheetId",
+              "regionId",
+              "polygonsMm"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "schema",
+        "drawings"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/WallsArtifact.json"
+}

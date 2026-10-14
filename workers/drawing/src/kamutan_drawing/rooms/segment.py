@@ -26,7 +26,10 @@ from shapely.geometry.base import BaseGeometry
 
 from ..ingest.pdf_vector import VectorSheet
 from ..types_sprint2 import Region, Room, level_for
+from .geometry import envelope_of, room_geometry
 from .names import NameMatch, match_room_name
+from .reference import ReferenceWalls, align_reference
+from .types import is_laundry, room_type, type_from_name
 from .walls import WallSet, extract_walls
 
 DEFAULT_SCALE = 50
@@ -44,6 +47,7 @@ R_SCALE = 'קנ"מ לא ודאי'
 R_NAME_UNSURE = "שם חדר לא ודאי"
 R_NAMES_MERGED = "כמה שמות בחלל אחד"
 R_NO_WALLS = "לא זוהו קירות"
+R_BORROWED = "קירות הושלמו מגיליון אדריכלות"
 
 
 @dataclass
@@ -134,8 +138,14 @@ def segment(
     *,
     exclude_paths: set[int] | None = None,
     debug: dict[str, Any] | None = None,
+    reference_walls: Sequence[ReferenceWalls] | None = None,
 ) -> list[Room]:
     """Rooms of one vector sheet (brief signature; see module docstring).
+
+    Sprint 4: every room also gets ``type`` (by name; :func:`apply_fixtures` completes it from fixtures), ``wet``,
+    ``walls``, ``openings``, ``external_corners`` (:mod:`.geometry`). ``reference_walls``: walls of an
+    architecture / construction sheet (:mod:`.reference`); the ones of the region's floor are aligned onto this
+    sheet and fill missing thin partitions (rooms built on borrowed walls carry ``קירות הושלמו מגיליון אדריכלות``).
 
     ``text``: OCR ``TextLine`` / read ``TextSpan`` / :class:`~..types_sprint2.SimpleText` items (``bbox`` x0,y0,x1,y1
     page mm + ``text``; optional ``conf``). ``region_polygons``: :class:`Region` or contracts region dicts; empty =
@@ -175,12 +185,22 @@ def segment(
             continue
         bx = box(x0, y0, x1, y1)
         ws = extract_walls(prims, (x0, y0, x1, y1), scale_den=den, exclude_paths=ex)
+        if reference_walls and not ws.walls.is_empty:
+            ref = _reference_for(reference_walls, reg, den, ws.walls)
+            if ref is not None:
+                ws2 = extract_walls(
+                    prims, (x0, y0, x1, y1), scale_den=den, exclude_paths=ex, reference=ref[0], reference_closures=ref[1]
+                )
+                if ws2.borrowed is not None:
+                    ws = ws2
         if debug is not None:
             debug.setdefault("regions", []).append({"region": reg, "walls": ws, "faces": []})
         if ws.walls.is_empty:
             continue
         faces, _ = _faces(ws, bx, mm_per_m)
         reg_area = bx.area
+        env = envelope_of(shapely.union_all([ws.walls, *ws.bridges]) if ws.bridges else ws.walls, mm_per_m)
+        borrowed_zone = ws.borrowed.buffer(0.5) if ws.borrowed is not None else None
         kept: list[tuple[_Face, float]] = []
         for f in faces:
             a_m2 = f.poly.area / (mm_per_m**2)
@@ -223,7 +243,12 @@ def segment(
                 conf = min(conf, 0.8)
             if ws.source == "parallel":
                 conf = min(conf, 0.75)
+            if borrowed_zone is not None and f.poly.exterior.intersects(borrowed_zone):
+                reasons.append(R_BORROWED)
+                conf = min(conf, 0.8)
             per_m = f.poly.exterior.length / mm_per_m
+            geo = room_geometry(f.poly, ws.openings, env, mm_per_m, id_prefix=f"{len(rooms) + 1}_")
+            rtype = type_from_name(name)
             room = Room(
                 id=f"r_{len(rooms) + 1}",
                 name=name,
@@ -236,11 +261,51 @@ def segment(
                 level=level_for(conf, reasons),
                 reasons=reasons,
                 region_id=reg.id,
+                type=rtype or "other",
+                wet=rtype in ("bathroom", "wc") or (rtype == "other" and is_laundry(name)),
+                type_source="name" if rtype else "none",
+                walls=geo["walls"],
+                openings=geo["openings"],
+                external_corners=int(geo["externalCorners"]),
+                external_corners_mm=list(geo["externalCornersMm"]),
             )
             rooms.append(room)
             if debug is not None:
                 debug["regions"][-1]["faces"].append((f.poly, room))
     return rooms
+
+
+def _reference_for(
+    refs: Sequence[ReferenceWalls], reg: Region, den: int, own: BaseGeometry
+) -> tuple[BaseGeometry, BaseGeometry | None] | None:
+    """(walls, closures) of the best aligned reference drawing of the region's floor (same scale), moved into this
+    sheet's frame; the first drawing of the list wins ties (callers list construction sheets first)."""
+    best: tuple[float, BaseGeometry, BaseGeometry | None] | None = None
+    for r in refs:
+        if r.scale_denominator != den or (reg.floor and r.floor and r.floor != reg.floor):
+            continue
+        al = align_reference(r, own)
+        if al is not None and (best is None or al.iou > best[0] + 0.02):
+            best = (al.iou, al.apply(r.walls), al.apply(r.closures) if r.closures is not None else None)
+    return (best[1], best[2]) if best else None
+
+
+def apply_fixtures(rooms: Sequence[Room], fixtures: Sequence[Any]) -> None:
+    """Complete room ``type`` / ``wet`` from the fixtures inside (``fixtures.detect`` results or Detection dicts with
+    ``class`` + ``roomId``). In place."""
+    by_room: dict[str, list[str]] = {}
+    for f in fixtures:
+        if isinstance(f, dict):
+            rid, cls = f.get("roomId"), str(f.get("class", ""))
+        else:
+            rid, cls = getattr(f, "room_id", None), str(getattr(f, "cls", ""))
+        if rid:
+            by_room.setdefault(str(rid), []).append(cls)
+    for r in rooms:
+        t, wet, notes = room_type(r.name, by_room.get(r.id, []), r.area_m2)
+        if t != r.type and notes:
+            r.type_source = "fixtures"
+        r.type, r.wet = t, wet
 
 
 def assign_room(rooms: Sequence[Room], x: float, y: float) -> Room | None:
@@ -258,9 +323,10 @@ def assign_room(rooms: Sequence[Room], x: float, y: float) -> Room | None:
     return best[1] if best else None
 
 
-def rooms_json(rooms: Sequence[Room]) -> dict[str, Any]:
-    """``kamutan.rooms/1`` document."""
-    return {"schema": "kamutan.rooms/1", "rooms": [r.to_json() for r in rooms]}
+def rooms_json(rooms: Sequence[Room], *, extended: bool = False, extras: bool = False) -> dict[str, Any]:
+    """``kamutan.rooms/1`` document (``extended`` adds the Sprint-4 contract tiling fields, ``extras`` the debug-only
+    ones, see ``Room.to_json``)."""
+    return {"schema": "kamutan.rooms/1", "rooms": [r.to_json(extended=extended, extras=extras) for r in rooms]}
 
 
-__all__ = ["assign_room", "rooms_json", "segment"]
+__all__ = ["apply_fixtures", "assign_room", "rooms_json", "segment"]

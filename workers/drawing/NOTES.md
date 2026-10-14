@@ -565,3 +565,453 @@ did not change during the build** (an API change meanwhile keeps it stale).
   (no duplicates found: those are heater/vent switches); the basement alignment is voted from 3 switches.
 * Lines are project-wide (`floor: null`) with `byFloor`; no per-room breakdown yet (rooms artifact not used).
 * Only electrical / lighting sheets are built (plumbing in a later sprint).
+
+## Sprint 4 — learn from correction, correction re-match, fixtures integration (Worker-A)
+
+Brief: `docs/agents/SPRINT4_BRIEF.md`; contracts `packages/contracts/src/corrections.ts` (`FindSimilarJob`,
+`SimilarSearch`, `SimilarCandidate`, `Correction`).
+
+### `symbols.find_similar` job
+```
+POST /pubsub/ingest {type: "symbols.find_similar"} ─► service/similar.py run_find_similar      (orchestrator)
+   jobs/{jobId} + similarSearches/{searchId} (API-created, queued) must exist; succeeded → redelivery no-op
+   targets: scope sheet → the exemplar's version; project → + the current ready version of every other sheet
+   copies primitives / text / legend / detections (paths must lie under the version prefix) into a workdir
+ └─ sandbox task find_similar ─► symbols/similar.py run → find_similar                            (parsing)
+   upload crops orgs/{o}/projects/{p}/similar/{searchId}/{c_n}.webp; fill the SimilarSearch contract fields
+   (status, candidates [{id c_n, sheetId, versionId, centerMm, bboxMm, score, alreadyDetected, currentClass,
+   thumb}], thumbs = number of crops, finishedAt, error); search stats → jobs/{jobId}.result
+```
+* **Template** = the exemplar's strokes built *exactly* like a legend template (`template.build_template` on a
+  synthetic `LegendEntry`): segments with both ends inside the box (+0.25 mm) whose path is symbol-sized, and
+  of the connected stroke groups only those with ≥ 60 % of their length inside (a loose box on a switch bank
+  does not take the neighbour's lever). Rotations / mirror / anchors / forward+reverse chamfer / fill / NMS =
+  `symbols.match` unchanged.
+* **Scale**: searched at ratio 1 and, when both sheets have a scale and they differ, at exemplar/target scale.
+* **Scene** per target: strokes in an exemplar colour (±90 RGB), minus legend tables (`legend.json.gz`) and the
+  title block (`read_title_block` on `text.json.gz`). Candidates with quality ≥ 0.5, the exemplar itself
+  dropped, score desc (deterministic ties), ≤ `maxCandidates`.
+* **alreadyDetected / currentClass**: detection within 3 mm of the candidate centre — exemplar class family first,
+  symbols before derived fixture records (`d_fx_*`, an AC snapped onto its socket), then nearest.
+* An empty exemplar box (no strokes) is a succeeded search with 0 candidates (`result.reason = empty_exemplar`).
+* **Measured** (Noah, 15 A3 sheets, `scope: project`, exemplar socket_double `d_1` on eb8be8a3): **2.9 s** end to
+  end (sandbox start + 15 sheet loads 1.1 s + search 1.4 s + 43 crops); 43 candidates (28 ≥ 0.85, 42 ≥ 0.7): every
+  socket glyph on eb8be8a3 + c054fd3a (single/double/triple are one drawing — `currentClass` tells them apart),
+  42 already detected, 1 not detected (c054fd3a (93.5, 256.8), score 0.61). Scope `sheet`: 10 candidates in 1.0 s.
+  Other exemplars: switch_single 3.5 s (41: 1bbe4113 21, b2046277 12, c054fd3a 7 …), luminaire_ceiling 2.5 s.
+
+### `symbols.rematch` (pure; for Worker-BOQ's `boq.build` and the API queue)
+`rematch(corrections, new_detections, *, sheet_id=None, version_id=None, default_radius_mm=3.0) -> [Rematched]`
+(input order; `.to_json()` → `{correctionId, status, detectionId, distanceMm}`). Statuses: `matched`,
+`unmatched` (→ "תיקון לא הותאם"), `already_detected` (an `add` the detector now finds), `added`, `manual`
+(measure/count), `reverted`, `other_sheet`, `other_target` (link/unlink, group/room targets). Rule: anchorMm
+within radiusMm of the detection centre + same `class_family` of the reference class (`fromClass` if present,
+else `class`; none for reclassify) — signature equality breaks ties; one new detection per edited item
+(corrections sharing an old `detectionId` travel together); same version → `detectionId` kept.
+`rematch_ids(ids, old_dets, new_dets)` re-maps the switchIds/pointIds of link corrections.
+
+### Fixtures integration (understand)
+`fixtures.detect(vs, spans, rooms, discipline, regions=, scale_denominator=, detections=)` (Worker-B, feature-
+checked import) runs after rooms on architecture / master / construction / plumbing / electrical (AC) sheets.
+Its records become `Detection`s (ids `d_fx_*`), go through the same floor rule (`קומה לא ודאית`) and lifecycle
+(plumbing default new) and are written into `detections.json.gz`; the Sprint-2 plumbing text anchors are dropped
+where the stage ran. Extended records (source / attachedTo / label / leaderMm) → `fixtures.json.gz`
+(`fixturesFile`; the orchestrator uploads it next to `detections.json.gz` — **not** in `SheetVersion.artifacts`,
+which is strict: request `artifacts.fixtures` from the API agent). `fixtureStats {total, byClass}` in the task
+result. Rooms get `type`/`wet` from `rooms.types.room_type` with the fixtures inside when the Room objects carry
+those fields. Detections now also carry `signature` (legend entry / unknown-cluster stroke signature).
+
+### Results (`ingest_local.py --force`, 15/15 succeeded, 295 s total on a shared 2-vCPU box)
+| sheet | discipline | detections by class (incl. fixtures) | s/sheet |
+| --- | --- | --- | --- |
+| 08222cb2 | master | basin 1, kitchen sink 1, wc_concealed 1 | 20.9 |
+| 1470f005 | construction | basin 1, kitchen sink 1, wc_concealed 1 | 15.2 |
+| 1bbe4113 | lighting | fan 6, ceiling 15, outdoor 1, pendant 1, wall 1, switch_2way 5, switch_single 14 | 32.3 |
+| 24ab0ea0 | plumbing | ac 2, basin 2, shower 1, washing machine 1, wc_monoblock 1 | 14.5 |
+| 2a308827 | plumbing | ac 5, faucet_wall 3, basin 3, bath 1, shower 1, washing machine 1, wc_concealed 2 | 12.0 |
+| 6fa88f92 | master | basin 3, bath 1, kitchen sink 1, wc_concealed 3 | 26.5 |
+| 8099ab2c | construction | basin 3, bath 1, wc_concealed 2 | 8.9 |
+| 8d51ed5a | plumbing | ac 1, basin 1, kitchen sink 1, wc_concealed 1, garden_tap 2 | 16.2 |
+| ad257a1c | construction | kitchen sink 1, wc_concealed 1 | 12.7 |
+| b2046277 | lighting | ceiling 9, outdoor 10, pendant 1, strip 3, wall 3, switch_2way 3, switch_single 10 | 30.0 |
+| c054fd3a | electrical | ac 6, doorbell 1, heater 4, intercom 1, panel 1, socket double 11 / power 5 / single 17 / triple 4, switch 5, tv 8 | 45.0 |
+| eb8be8a3 | electrical | ac 2, socket 3phase 3 / double 4 / power 2 / power_double 1 / single 5 / triple 2, speaker 3 | 27.4 |
+| 70a5c3e0 / af849ec4 / f14c7573 | demolition | — | 8–9 |
+kbench (same GT files): Sprint-2/3 classes unchanged — semantic micro-F1 on those classes 0.818 (TP 135 / FP 24 /
+FN 36) before and after, every per-class row identical; `eval-links` identical (exact R 28/30, P 28/29, green
+12/12). New classes (GT added by Data/QA): ac_unit F1 0.82, basin 0.95, wc_concealed 0.92, bath / faucet_wall /
+washing machine / garden_tap 1.0, kitchen sink 0.86, wc_monoblock 0.67, shower 0 (Worker-B). Overall semantic
+micro-F1 0.823; the glyph-level number drops (0.869 → 0.757) only because fixtures have no legend glyph in the
+truth (text-only items are excluded there, the predictions are not) — a kbench reporting artefact.
+
+### Tests / commands
+`tests/test_similar.py` (13: orientations, alreadyDetected preference, loose box on a switch bank, empty box,
+scale ratio between 1:50 / 1:100 sheets, WebP crops, job sheet/project scope through the real sandbox, errors,
+push routing, contracts mirror of FindSimilarJob / SimilarSearch / SimilarCandidate), `tests/test_rematch.py` (9),
+`tests/test_understand_fixtures.py` (4). Files touched outside my dirs (additive): `sandbox/tasks.py` (task
+`find_similar`), `service/pipeline.py` (upload `fixturesFile`).
+
+### Gaps
+* find_similar searches stroke drawings only (no raster sheets); text inside the box is part of the template
+  (a box including "2X" finds only "2X" sockets — by design, but undocumented in the UI).
+* Single / double / triple sockets are one glyph: candidates of the other members appear with their
+  `currentClass`; the web slider + class column must make that visible.
+* `fixtures.json.gz` is not referenced from the version doc until the contracts allow `artifacts.fixtures`.
+* Room `type`/`wet`/walls/openings come from Worker-B's rooms upgrade (not yet in `rooms.json.gz` at this run).
+* mypy: 12 errors remain in Worker-B's `fixtures/` (in progress); none in Worker-A files.
+
+## Sprint 4 — plumbing, tiling, corrections in `boq.build` (Worker-BOQ)
+
+Brief: `docs/agents/SPRINT4_BRIEF.md`. Contracts (API agent): `library.ts` rule kinds `plumbing_point`,
+`tiling_floor`, `tiling_cladding`, `tiling_corner`, `waterproofing`, `one_off_suggestion` (+ `wasteFactor`),
+`corrections.ts` (`Correction`, `RoomSettings`, `defaultRoomSettings`), `boq.ts` (line `orderQty` / `wasteFactor` /
+`manualCount`, evidence `source` / `correctionId` / `quantity` / `roomId` / `verified`, evidence-file
+`corrections {applied, unmatched}`, build `debounceUntil` / `afterBuildId`). Mirrors: `boq/rules.py` `DEFAULT_RULES`
+(defaults v3, diffed against `boq-defaults.json`), `tiling.default_settings` (= `defaultRoomSettings`);
+`tests/test_boq_contracts.py` validates lines / evidence / build / corrections / roomSettings / rooms against the
+generated JSON schemas.
+
+### Modules (`boq/`, all pure except `build.py`)
+* `spaces.py` — `Room` from `rooms.json.gz` (Sprint-4 fields optional; missing `type` inferred from the name:
+  רחצה→bathroom, שירותים/ש.אורחים→wc, מטבח, חצר אנגלית→courtyard, …). **Canonical rooms** per floor = the rooms of
+  the best room-source sheet (construction > architecture > architecture_master > plumbing > electrical > lighting;
+  demolition never). `roomSettings/{sheetId}__{roomId}` saved on any sheet's copy of a room is mapped onto the
+  canonical room (same floor, area ± 15 %, name/type similarity; own doc wins, else latest `at`).
+* `plumbing.py` — `plumbing_point`: per fixture the first rule by priority (fixtureClasses, floors, roomTypes /
+  roomNamePatterns of its room — no room → passes with `פריט מחוץ לחדר`, faucet within `faucetRadiusMm` real mm on the
+  same sheet and not in another room); `perRoom` → one unit per (rule, room). Basin counted by a `withoutFaucet…`
+  rule with no faucet nearby → `סוג ברז לפי ברירת מחדל`. A covered class no rule matches → red "לא משויך".
+  `one_off_suggestion`: ANY trigger (always / classes / textPatterns in sheet OCR text / roomTypes of canonical
+  rooms), all restricted to `floors`; qty = `quantity`, always yellow `הצעה – לאשר ידנית`, evidence = first cue.
+* `tiling.py` — per room and measure the first rule whose `roomTypes` include the (settings-overridden) type, else
+  the measure's first rule + `שיוך לפריט לפי כלל ברירת מחדל`. Floor area (floorTiled; `wetOnly` = wet room or an
+  explicit user doc); full cladding = perimeter × h − doors w × min(h_door ?? 2.1, h) − windows w × max(0, min(h,
+  sill + (h_win ?? 1.2)) − sill), sill 1.0 m, `keepOpenings` skipped; no openings in the artifact → one 0.8 m default
+  door + `פתחים לא זוהו — הופחתה דלת ברירת מחדל`; partial = Σ (toM − fromM) × heightM; corner trim =
+  externalCorners × h (unknown → qty 0 + `פינות חיצוניות לא זוהו`); waterproofing 1 קומפלט per room. Items: the room's
+  `floorMaterialItemCode` / `wallMaterialItemCode` override the rule's. `orderQty = qty × (1 + waste)` on rules with
+  a `wasteFactor` (the room doc's wins). Level: room not closed / unnamed → yellow; no user-confirmed doc (`by`) →
+  `הגדרות חדר לפי ברירת מחדל` (≤ yellow) ⇒ green only when every room is closed, named and confirmed.
+* `corrections.py` — `parse_corrections` (skips `revertedAt`, invalid docs; order `at`, id) and
+  `apply_corrections(sheets, corrections, old_detections)` applied after floor confirmation, before prepare:
+  accept → green `אושר ידנית` (evidence `verified`), reject / remove → dropped (also from link groups), reclassify →
+  class / itemCode win over legend entries / mappings / label rules, green `סווג ידנית`; move → new centre + room;
+  add → manual detection `m_{corrId}` (`source: manual`, green `נוסף ידנית`); link / unlink → human groups (kind from
+  counts, green; unlink with only `linkGroupId` dissolves the group); accept / reject / remove of a `linkGroupId`
+  (group green / dissolved) or a `roomId` (room green / excluded from tiling); measure → polygon m² / polyline m'
+  (paper mm × sheet scale, or `quantity`), count with `itemCode` → one manual evidence item per click, count with only
+  a `class` → one manual detection per click (then the normal rules). **Re-matching** uses Worker-A's
+  `symbols.rematch.rematch` / `rematch_ids` (anchor within `radiusMm` paper + class family, the old version's
+  detections from `versions/{v}/detections.json.gz` supply the family / id positions); an `add` whose item the detector
+  now finds accepts that detection instead (no double count). Not applicable → `unmatched` `{correctionId, sheetId,
+  versionId (the build's current version), reason}`: `לא נמצא פריט במיקום התיקון`, `הגיליון לא נכלל בבנייה`,
+  `קבוצת הקישור לא נמצאה`, `תיקון חסר נתונים`.
+* `dedup.py` — fixtures + AC (`DROP_FAMILIES`, worker constant until contracts carry `unmatchedSecondary`): on a
+  floor with an authoritative sheet every secondary copy is dropped (text-anchored fixtures are too few to vote an
+  alignment). A floor without an authoritative sheet: the secondary sheet with most items of the family is the
+  authority for the others (fixtures on both the construction and the architecture plan count once).
+* `build.py` — now loads every ready sheet: electrical / lighting / plumbing (all detections), construction /
+  architecture(_master) (fixture classes only + rooms), others (rooms, corrections only); texts when a suggestion
+  rule has `textPatterns`; `corrections`, `roomSettings`. Writes evidence `corrections {applied, unmatched}`, build doc
+  `unmatchedCorrections` (review queue) and `stats.corrections {total, reverted, invalid, applied, unmatched,
+  rematched, manual}`. **Debounce**: before `running`, sleeps until `debounceUntil` (re-reading the build doc,
+  capped at `createdAt` + 60 s); an `afterBuildId` not yet terminal is polled ≤ 60 s, then the message is handed
+  back (retryable, nothing written).
+
+### Local run (`scripts/boq_local.py`)
+Writes `SAMPLE_ROOM_SETTINGS` (user inputs: bathrooms 2.6 m — basement 2.2 m to its ceiling per Data/QA's
+`gt/noah/tiling`, guest WC 0.8 × 1.5 m partial wall + not waterproofed, kitchen backsplash 2.5 × 0.8 m) and
+`sample_corrections()` (SYNTHETIC: accept a basin, add an AC, count 11 stair treads → 5.04, draw the English
+courtyard floor 2.08 m² → 5.02, an accept made on version v0 re-matched onto the shower, a remove that matches
+nothing). `--no-corrections`, `--room-settings F`, `--corrections F`, `--chapters 3. 5. 4. 9.01`. 0.12–0.4 s/build.
+kbench `eval-boq` (gated lines; artifacts of 14.10 23:36 with Worker-B's fixtures, floors unconfirmed):
+
+| scope | no corrections | with the synthetic corrections |
+| --- | --- | --- |
+| 03 (11 gated; 3.02/3.03/3.04/3.07 disputed but exact) | EM 10/11, ΣAE 4 (3.01 13 vs 9) | EM 10/11, ΣAE 5 (3.01 14) |
+| 05 (8) | EM 3/8 (5.05, 5.06, 5.07), ΣAE 35.6 | EM 5/8 (+5.02 18.10, 5.04 11), ΣAE 22.6 |
+| 04 + 9.01 (22) | EM 12/22, ΣAE 19 | same |
+
+Chapter 04 + 9.01: **identical** (qty, level, byFloor, evidenceCount, reasons) to the Sprint-3 code (`git archive
+HEAD`) run on the same artifacts. 5.01 62.96 vs 57 (no openings / niches in the rooms artifact → one default door per
+bathroom; Data/QA's per-room expectation is 57.63 with the real openings), 5.03 0 (no `externalCorners` yet), 5.08 —
+(no default rule in the contracts), 3.01 13: c054fd3a / 1bbe4113 are still "basement + ground" (truth basement +
+first) — with the owner's floor confirmation the first-floor plumbing AC copies are de-duplicated against c054fd3a
+(→ 2 + 2 + 4 = 8, the 9th AC is not on the electrical sheets).
+
+### Tests
+`tests/test_boq_s4.py` (14: room types / canonical rooms, plumbing faucet / room / floor rules, fixture de-dup +
+fallback authority, suggestions, tiling formula incl. openings / keepOpenings / partial / corners / waste / confirmed
+→ green / settings mapped from another sheet / type fallback, corrections accept / reject / reclassify / move / add /
+re-match / unmatched / link / unlink / measure / count / rooms, build job end-to-end incl. evidence + build doc,
+debounce + afterBuildId with a fake clock), `tests/test_boq_contracts.py` (+2 schema tests).
+
+### Gaps
+* 5.01 / 5.03 need Worker-B's `openings` / `externalCorners` on the construction plans (canonical rooms); laundry
+  niches are not separate sub-areas. Kitchen sinks count as 3.03 (contracts default rule includes them).
+* Room-specific library lines are mapped by the default rules' `floors` (3.13 basement shower) — no general
+  name-similarity assignment (contracts have no `roomKeywords`); `roomNamePatterns` is the configurable path.
+* `unmatchedSecondary` is a worker constant (`DROP_FAMILIES`); a lone wall faucet (no basin) is never counted.
+* Corrections on sheets not loaded by the build (no current ready version) are unmatched; the old-version detections
+  are read from Storage per (sheet, version) once per build.
+
+## Sprint 4 — fixtures/rooms (Worker-B)
+
+Brief: `docs/agents/SPRINT4_BRIEF.md`. Pure modules (no I/O except the `debug.py` tools). New package
+`kamutan_drawing.fixtures`; `rooms/` gains tiling geometry, types, wall borrowing and sheet alignment.
+
+### API (exact signatures — Worker-A integrates in `pipeline/understand.py`, Worker-BOQ consumes)
+```python
+from kamutan_drawing.fixtures import detect, fixtures_json, dedupe_floor, SheetFixtures, anchors_from_rooms
+detect(prims: VectorSheet, text: Sequence[TextLike], rooms: Sequence[Room | dict], discipline: str | None, *,
+       regions: Sequence[Region | dict] | None = None, scale_denominator: int | None = None,
+       detections: Sequence[Detection | dict] | None = None, debug: dict | None = None) -> list[FixtureDetection]
+FixtureDetection.to_json(*, extended=False) -> contracts Detection dict (id "d_fx_<n>", lifecycle "unknown")
+    extended=True adds source ("shape"|"text"|"shape+text"), attachedTo (faucet → fixture id), label, leaderMm,
+    and after dedupe_floor sheetId + duplicates ["sheetId/detId"]
+fixtures_json(dets) -> {"schema": "kamutan.fixtures/1", "fixtures": [extended dicts]}
+dedupe_floor(sheets: Sequence[SheetFixtures]) -> list[FixtureDetection]          # one floor, project level
+SheetFixtures(sheet_id, discipline, floor, fixtures, scale_denominator=50, page_size=(w, h),
+              anchors=anchors_from_rooms(rooms_of_that_floor), room_polygons=[r.polygon_mm ...])
+
+from kamutan_drawing.rooms import segment, apply_fixtures, reference_walls, reference_walls_json, reference_walls_from_json
+segment(prims, text, region_polygons, scale_denominator, *, exclude_paths=None, debug=None,
+        reference_walls: Sequence[ReferenceWalls] | None = None) -> list[Room]     # Sprint-2 signature + 1 kwarg
+apply_fixtures(rooms, fixtures) -> None        # type / wet from fixtures inside (FixtureDetection or Detection dicts)
+rooms.types.room_type(name, fixture_classes, area_m2) -> (type, wet, notes)   # what apply_fixtures uses
+Room.to_json(*, extended=False)   # extended adds type, wet, walls, openings, externalCorners, externalCornersMm,
+rooms_json(rooms, *, extended=False)  #   typeSource — keep False until the contracts' Room carries them
+reference_walls(prims, regions, scale_denominator, *, sheet_id=None, exclude_paths=None) -> list[ReferenceWalls]
+reference_walls_json(refs) -> {"schema": "kamutan.walls/1", drawings: [{floor, scaleDenominator, sheetId,
+                               regionId, polygonsMm, closuresMm}]};  reference_walls_from_json(doc) -> refs
+rooms.align.align(a, b) / align_polygons(polys_a, polys_b) -> Alignment(dx, dy, iou) | None   # a → b translation
+```
+Call order on a sheet: `rooms = segment(...)` → `fx = detect(vs, spans, rooms, discipline, regions=…,
+scale_denominator=…, detections=symbol_dets)` → `apply_fixtures(rooms, fx)`; append `f.to_json()` to the
+detections (drop Worker-A's Sprint-2 plumbing text anchors where `detect` ran — done in understand). Wall borrowing
+needs the architecture walls of the same floor: the service would store `reference_walls_json(...)` of each
+construction / master version (`walls.json.gz`) and pass `reference_walls_from_json(...)` (construction first) to
+the MEP sheets' `segment` — **not wired yet** (service / understand owners).
+
+### Fixtures (`fixtures/`)
+* `shapes.py` — the furniture pen (thin solid grey r=g=b 90–235; *text paths are not excluded*: fixture blocks are
+  exploded into tiny arc paths that the SHX heuristic flags) → connected components (0.08 mm) with *children*
+  (rings inside) → features in metres (oriented box L×W, curved share, hull fill, X diagonals, round child) →
+  rules: WC (0.45–0.85 × 0.28–0.52, D/oval bowl; tank box ≥ 0.62 m → monoblock else concealed, always
+  `סוג אסלה לפי צורה`), basin (oval 0.28–0.75, hull fill 0.7–0.86, or a 0.3–0.6 m circle), bath (1.35–2.05 ×
+  0.5–0.98 box with a rounded tub), shower tray (0.7–1.5 square with an X), washing machine (0.5–0.78 square with
+  a drum; also drum circle + square sides when the square is merged into a niche outline), kitchen sink (box
+  0.4–1.25 × 0.38–0.66 with a drain ring). No fixture inside another (WC seat ≠ basin).
+* `labels.py` — text lines → note blocks (stacked ≤ 0.7 line height and aligned, or pieces of one row) → kind by
+  ordered keyword rules (normalised Hebrew, 1 fuzzy pass for long words; whole-token "מ.א"/"מ.כ"); markers veto a
+  block ("ברז לניאגרה", "פירוק…", "משאבה", "חדר כביסה", "ומייבש").
+* `leaders.py` — dark thin straight strokes (glyph strokes inside ≤ 5 mm text boxes dropped), endpoint graph
+  (0.25 mm); seeds = segments ≥ 1.5 mm touching the block (underlines); BFS end-to-end (≤ 24 pieces); terminals =
+  free ends ≥ 2 mm outside the block and not on another note. "V" leaders give two terminals.
+* `detect.py` — discipline gates (arch/master/construction: shapes + "מסתור ניאגרה"-like notes; plumbing: all;
+  electrical: AC only; demolition/lighting: nothing). A label picks the compatible shape its leader ends on
+  (box + 0.3 m) or passes over; else the nearest compatible shape in its room ≤ 2.5 m / anywhere ≤ 1.5 m
+  (`קו הפניה לא נמצא` / `קו הפניה לא ודאי`); else a text-only item at the leader end (`זוהה מכיתוב בלבד`).
+  Faucet notes → one faucet per served basin/sink (`attachedTo`), the note also confirms the basin. Shower notes
+  / mixers → one shower per room unless the room has a bath (then annotations on the bath). Shapes in named dry
+  rooms (bedroom, living, corridor, storage, stairs, balcony) are dropped unless a label confirms them; kitchen
+  sinks only in kitchen/living/unnamed rooms. AC: drain / socket notes are units, "מזגן עילי" joins the nearest
+  unit ≤ 1.5 m; electrical AC snaps to the nearest socket detection ≤ 15 mm (`מזגן לפי שקע H=240`).
+  Scores: shape+leader 0.9, shape+nearest 0.8, shape only 0.6–0.72 (`זוהה מצורה בלבד`), text only 0.55–0.62.
+* `dedupe.py` — authority plumbing > master > construction > electrical; alignment by room outlines (FFT,
+  IoU ≥ 0.3) else family votes (+ room-name anchors) else identity on equal pages else `יישור גיליונות נכשל`;
+  match radius 0.5 m (AC 1.6 m, tap 1.0 m); a text-only item confirmed by a drawn copy → `shape+text`; for sinks
+  the drawing's class (basin / kitchen sink) wins, for WCs the label's type.
+* Classes `fixture_shower`, `fixture_bath`, `fixture_kitchen_sink`, `fixture_washing_machine`, `garden_tap`,
+  `ac_unit` are **not yet in** `benchmark/schema/classes.json` / contracts `DetectionClass` (Data / API agents);
+  `tests/test_fixtures.py` validates against `Detection.json` with them added.
+
+### Rooms (`rooms/`)
+* `walls.py` — `WallSet.openings: [Opening(kind door|window, a, b, width_mm, via)]`; door sweeps 60–180°; when the
+  arc's closed end is not on a wall (door in a slanted wall, pivot / double door) the opening is closed from the
+  hinge to the nearest wall *corner* 0.6–2 radii away within ±60° of an arc end, through free space (fixes the
+  ground-floor pivot entrance: open plan 70.2 m² "not closed" → 68.4–68.6 m² closed). `reference=` /
+  `reference_closures=`: borrowed walls / door-window closures (`WallSet.borrowed`).
+* `geometry.py` — walls (polygon simplified 0.5 mm, collinear < 10° merged, edges < 5 cm folded), `exterior` (space
+  0.6/1.0/1.5 m behind the face outside the envelope), openings on the room boundary (≥ 50 % within 0.4 m; door =
+  leaf radius or hinge→jamb, window = glazing length, `heightM` null), `perimeterM` = inner face incl. openings,
+  **`externalCorners` = reflex vertices of the simplified room polygon (turn ≥ 30°, both edges ≥ 10 cm) — wall
+  ends / pillars / shafts protruding into the room and window-recess reveals; corners ≤ 30 cm from a door's
+  closing line are excluded (door frames)**, with their points in `externalCornersMm`.
+* `types.py` — name → type (merged names: wettest; "סלון" in an open plan → living), fixtures complete it
+  (shower/bath → bathroom, WC → wc ≤ 4 m² else bathroom, kitchen sink in an unnamed room → kitchen); `wet` =
+  bathroom | wc | laundry room; a named dry room holding a wet fixture stays dry.
+* `reference.py` + `align.py` — MEP sheets borrow the architecture walls of the same floor: FFT correlation of wall
+  masks (1 px/mm, refined at 4 px/mm), accepted at IoU ≥ 0.45; pieces the sheet lacks (wall-like) and closures it
+  could not bridge are added; rooms touching them get `קירות הושלמו מגיליון אדריכלות` (≤ 0.8, yellow).
+  c054fd3a basement: bedroom+living 41.9 m² → bedroom 14.9 + living/kitchen 25.5 (same as the master sheet);
+  master suite on c054fd3a closed (window closure borrowed).
+
+### Results (Noah, local artifacts; floors of the two-plan sheets set to the owner convention r1 = first)
+Fixtures after `dedupe_floor` (`/home/claude/kamutan-data/debug/fixtures_*.png`):
+| floor (sheets) | fixtures | per room |
+| --- | --- | --- |
+| ground (08222cb2, 1470f005, 8d51ed5a, eb8be8a3) | WC concealed 1, basin 1, kitchen sink 1, garden tap 2 (ברז גן + תמי 4), AC 2 | שירותים: WC + basin · living: kitchen sink, garden tap (תמי 4) · outside: garden tap, AC ×2 |
+| basement (24ab0ea0, 6fa88f92 r0, ad257a1c, c054fd3a r0) | WC monoblock 1, basin 1, shower 1, kitchen sink 1, washer 1, AC 2 | bathroom: WC-m + basin + shower · living/kitchen: kitchen sink, AC · niche: washer, AC |
+| first (2a308827, 6fa88f92 r1, 8099ab2c, c054fd3a r1) | WC concealed 2, basin 3, bath 1, shower 1, faucet_wall 3, washer 1, AC 5 | general bath: WC + 2 basins + 2 wall faucets (one "V" leader) + bath · master bath: WC + basin + wall faucet + shower · bedrooms/TV room/corridor: AC ×5 · niche: washer |
+Implied plumbing points vs `boq_truth.json`: 3.04 concealed WC 3/3, 3.07 monoblock 1/1, 3.02 basin + wall faucet
+3/3, 3.03 basins/sinks without wall faucet 4/4, 3.05 washers 2/2, 3.06 garden taps 2/2, 3.01 AC 9/9, showers 2
+(3.11 master, 3.13 basement) + bath 1 (3.12). Single sheets: 2a308827 16 items, 24ab0ea0 7, 8d51ed5a 6, c054fd3a
+6 AC (+1 merged "מזגן עילי"), eb8be8a3 2 AC; master/construction sheets 2–8 shape items (yellow), demolition /
+lighting 0.
+
+Wet rooms (`rooms_v4_*.png`, master sheets):
+| floor | room | area m² | inner perimeter m | openings | external corners | walls (ext.) |
+| --- | --- | --- | --- | --- | --- | --- |
+| ground | שירותים (wc) | 2.21 | 6.03 | door 0.67, window 0.58 | 0 | 7 (2) |
+| basement | חדר רחצה | 3.72 | 8.49 | door 0.62 | 1 | 7 (1) |
+| first | ח.רחצה כללי | 5.04 | 9.64 | door 0.62, windows 1.20 / 1.40 (one is the laundry niche's) | 2 | 8 (1) |
+| first | ח.רחצה הורים | 4.86 | 8.97 | door 0.62, window 1.00 | 1 | 8 (4) |
+Same rooms on the MEP sheets within ±0.3 m² (master bath 4.7–5.0 depending on the window closure). 5.03 truth
+15.6 m' (= 6 corners × 2.6 m if all three bathrooms) vs 4 corners here (2+1+1); not tuned.
+
+### Commands / tests
+```bash
+uv run python -m kamutan_drawing.fixtures.debug [fileId…]      # fixtures_*.png + per-room table
+uv run python -m kamutan_drawing.rooms.debug --v4 [fileId…]    # rooms_v4_*.png (borrowed walls magenta) + wet table
+KAMUTAN_DATA_DIR=/home/claude/kamutan-data/sample-noah uv run pytest -q tests/test_fixtures.py tests/test_rooms_v4.py
+```
+`tests/test_fixtures.py` (39: label kinds/blocks, synthetic reportlab plan with WC/basins/bath/kitchen sink/washer +
+leaders incl. a "V", monoblock label, shape-only on arch, shower from mixer, discipline gates, AC snapping / merging,
+dry-room filter, text-only at leader end, Detection contract, determinism, dedupe (translation, failure, room
+alignment), 4 sample tests), `tests/test_rooms_v4.py` (23: walls/openings/perimeter/exterior, pillar corners,
+slanted door → jamb, borrowed partition + JSON round trip + other floor ignored, alignment, room types,
+apply_fixtures, 3 sample tests). Full suite `--ignore=tests/fuzz`: 425 passed (290 s). ruff / ruff format / mypy
+(CI: `uv sync --locked --all-groups --all-extras`; `uv run --with mypy==2.4.0 mypy src`) clean. Runtime (A3, this box):
+rooms incl. geometry 0.2–0.6 s, fixtures 0.2–0.65 s, rooms with a reference sheet 0.15–1.2 s.
+
+### Gaps
+* Shapes are tuned on one office's blocks (grey furniture pen, these WC/basin/bath drawings); another office's
+  blocks need the rules widened (sizes are in metres, so scale is handled). Showers are mostly text-driven (the
+  sample draws no trays); a shower on an architecture sheet without a tray is not found.
+* WC type from the shape alone is a guess (the sample's monoblock and concealed blocks are the same drawing) —
+  the plumbing note decides; always yellow without it.
+* OCR misses some notes (ground "ניקוז למזגן" in the bay: AC 1 instead of 2 on 8d51ed5a — the electrical sheet
+  supplies it after dedupe). Some leaders are not followed (labels whose leader starts inside a long merged block
+  or crosses other notes) → nearest-in-room fallback (yellow).
+* `dedupe_floor` needs correct floors: on the two-plan sheets (6fa88f92 / c054fd3a / 1bbe4113) the second plan is
+  classified `ground` until the owner confirms `first` (Sprint-3 floor confirmation).
+* Wall borrowing is not wired into the service (reference JSON per version + passing it to MEP sheets). Openings
+  borrowed as closures have no kind / width. Master sheets also show demolished walls — use construction sheets as
+  the reference when both exist.
+* `externalCorners` counts reflex corners only (no window-reveal depth threshold beyond 10 cm edges); a room that
+  leaks ("חדר לא סגור") gets corners from the leak. Door/window heights are always null (not in plan).
+* New classes + room fields need the contracts (Detection class enum, Room optional fields); until then
+  `to_json()` stays on the Sprint-2 schema and the extended data is only in `fixtures.json.gz` / `extended=True`.
+
+## Sprint 4 — integration (Worker INTEGRATOR)
+
+Builds on Worker-A / Worker-B / Worker-BOQ's Sprint-4 work (sections above). Everything below is in
+`workers/drawing`; contracts / API asks are listed at the end.
+
+### Rooms artifact + wall borrowing + floor inference
+* `rooms.json.gz` now carries the contracts' optional Room fields (`type`, `wet`, `walls`, `openings`,
+  `externalCorners`): understand writes `Room.to_json(extended=True)`, which is now *contract-only* (validated against
+  `RoomsArtifact.json` in `tests/test_rooms_v4.py`); the debug-only `externalCornersMm` / `typeSource` moved behind
+  `extras=True` (`rooms_json(rooms, extras=True)`). Openings without a wall id are dropped; walls ≤ 512, openings ≤ 256.
+  Room types / wet come from Worker-B's `apply_fixtures` (also when the fixtures stage did not run).
+* **Walls** (`kamutan.walls/1`, Worker-B's `rooms.reference_walls_json`): understand writes `walls.json.gz` on
+  construction / architecture / master sheets (`wallsFile` in the task result); the service uploads it under the
+  version prefix (found by name — not in `SheetVersion.artifacts`).
+* **Borrowing**: before the `understand` task the service copies the `walls.json.gz` of the project's *other current*
+  versions into the workdir (`_reference_walls_files`: construction first, then architecture, then master; a master
+  sheet borrows from construction / architecture only; construction sheets borrow from nobody; ≤ 8 sheets, ≤ 20 MB
+  each) and passes them as `referenceWalls`; `rooms.segment(..., reference_walls=…)` uses the ones of the region's floor.
+  `scripts/ingest_local.py` processes construction → architecture → master → the rest so the references exist.
+* **Floor inference** (`rooms.reference.infer_region_floors`): a region whose walls align with another floor's
+  reference drawing at IoU ≥ 0.45 and ≥ 0.25 better than with its own (title-block) floor takes that floor — the
+  stacked two-plan sheets titled "basement + ground" whose second plan is the first floor (c054fd3a / 6fa88f92 /
+  1bbe4113: ground-plan IoU 0.17 vs first 0.98). Applied before detect (detections, rooms, fixtures get the floor),
+  returned as `regionFloors`; the service writes it into the version's `regions[].floor` and the sheet's `floors`
+  (never on `confirmed` sheets; the `קומה לא ודאית` chip stays until the owner confirms).
+
+### Fixtures (error patterns of `gt/noah/eval_sprint4.md`)
+* **Showers at the shower zone** (`fixtures.detect._shower_zones`): faces of (thin grey strokes in the room + the room
+  outline) sized 0.7–2.0 × 0.6–1.5 m, ≥ 85 % rectangular, touching the room outline, holding no other fixture — the
+  one nearest the shower note / mixer (≤ 2.5 m) gives the centre (`מקלחת במרכז תא המקלחת`, `shape+text`); none →
+  stays on the note with `תא מקלחת לא זוהה — לפי הכיתוב`. On plans (no notes) a bathroom without bath / shower whose
+  corner holds a squarish enclosure gets a shape-only shower (yellow).
+* **Text-only items on their note** (`_snap_text_items`): AC drain notes snap to the `+` point mark
+  (`shapes.cross_marks`: two dark single-segment strokes 2.5–8 mm crossing at their middles — flagged as SHX text,
+  so text paths are included) at the leader end (≤ 6 mm) or, when the leader was confused, the free one nearest the
+  note (≤ 12 mm). Sink notes ("נק' מים+ביוב") snap to the nearest sink-sized box outline (`shapes.sink_boxes`) in the
+  same room (≤ 1.5 m); class by context: kitchen / living room or a "מטבח" name ≤ 3 m → kitchen sink, bathroom / wc →
+  basin.
+* **Lifecycle**: fixtures on plans default to `new` (`unknown` / `demolish` → `new`: on renovation plans the old
+  fixture drawn in the demolition pen is replaced at the same spot); `existing` is kept.
+
+### BOQ
+* **AC authority by floor** (`boq/dedup.py`, `AUTHORITY_ORDER = {"ac": ("plumbing", "electrical")}`,
+  `ROOM_FAMILIES = {"ac"}`; overridable per rule with `match.authorityOrder` / `match.matchRooms` /
+  `match.roomMatchRadiusMm`): the plumbing sheet's drain marks are the plan of record; electrical AC sockets only fill
+  floors without a plumbing sheet. Secondary items are placed by the translation of the two sheets' room outlines
+  (`rooms.align.align_polygons`, IoU ≥ 0.4; item votes / identity as fallback) and matched one-to-one — same room of the
+  authoritative sheet first (items ≤ 0.8 m outside a room belong to it), else ≤ 1.6 m; unmatched copies are kept
+  (`פריט מגיליון משני`, yellow) — e.g. the ground-floor unit whose drain note OCR missed. No placement → all dropped.
+  Fixtures keep `DROP_FAMILIES = {"fixtures"}` (plumbing sheet wins, master / construction copies dropped).
+* **Tiling defaults** (Data/QA's back-solved conventions; a user's `roomSettings` doc always wins):
+  default cladding = min(2.6 m, ceiling) with the ceiling read from a level mark ("-2.55 H=220", one line or stacked)
+  inside / ≤ 0.5 m from the room (`spaces.level_marks` / `ceiling_heights`; plan sheets now always load their text);
+  windows sill 1.0 m, head capped at 2.1 m (`TilingParams.window_head_m`); doors 2.1 m; corner trim = externalCorners
+  × height (Worker-B's corners now in the artifact); waterproofing by default only for rooms with a shower or bath
+  (fixtures of any sheet mapped onto the canonical room by `match_room`; a floor without fixture information keeps
+  the type default).
+
+### Results (Noah)
+`ingest_local.py --force`: 15/15 in 256 s, max 40 s/sheet (c054fd3a) on a 2-vCPU box shared with other agents;
+`boq_local.py` 0.2–0.4 s/build. kbench on the same GT (`gt-v0.4.1-draft`):
+
+| metric | before (Sprint-4 dev run) | after |
+| --- | --- | --- |
+| kbench eval, Sprint-2/3 classes | per-class rows of Worker-A's run | **identical** (every row) |
+| semantic micro-F1, all classes | 0.823 | 0.847 |
+| eval-links exact R / P / green | 28/30, 28/29, 12/12 | 28/30, 28/29, 12/12 |
+| eval-fixtures micro-F1 (3 mm) | 0.840 (P .875 R .808) | **0.941** (P .960 R .923) |
+| fixture_shower / kitchen_sink / ac_unit F1 | 0 / 0.857 / 0.824 | 1.0 / 1.0 / 0.882 |
+| fixtures items correct before review | 0.491 (floor 10, lifecycle 11) | 0.906 (class 1, unmatched 1) |
+| rooms: type acc / wet F1 / openings R | 0 / 0 / 0 (fields missing) | 1.0 / 1.0 / 0.857 |
+| eval-boq 03 gated, no corrections | EM 10/11, ΣAE 4 (3.01 13) | **EM 11/11, ΣAE 0** |
+| eval-boq 03, demo corrections | EM 10/11, ΣAE 5 (3.01 14) | EM 10/11, ΣAE 1 (3.01 10 = the synthetic "add an AC") |
+| eval-boq 05, no corrections | EM 3/8, ΣAE 35.6 (5.03 0) | EM 3/8, ΣAE 22.9 (5.03 12.6) |
+| eval-boq 05, demo corrections | EM 5/8, ΣAE 22.6 | EM 5/8, ΣAE 9.8 |
+| eval-boq 04 + 9.01 | EM 12/22, ΣAE 19 | EM 12/22, ΣAE 19 |
+
+### Tests
+`tests/test_integration_s4.py` (floor inference, `+` marks, AC room-aware authority + electrical-only floor, level
+marks, ceiling cap / window head / waterproofing by fixtures, service reference-walls order + `regionFloors`
+cleaning); `test_rooms_v4.py` validates the extended rooms document against `RoomsArtifact.json`;
+`test_boq_s4.py` updated (a bath holding only a WC is no longer waterproofed by default).
+
+### Gaps
+* 5.01 62.8 vs 57 (Data's rule 57.63) / 5.02 16.0 vs 18.1 / 5.03 12.6 vs 15.6–17: geometry, not defaults — the laundry
+  niches are cut off the bathroom polygons (basement 3.73 vs 4.64 m², first bath 5.04 vs 5.88) and their mouths are
+  counted as clad wall; the master bath is "not closed" (window not found); corners 1/2/2 vs 3/3/1. "Niche walls not
+  clad" / "floor incl. niches" need niche sub-areas from Worker-B's rooms.
+* Level marks are not OCR'd on this sample (SHX), so the ceiling cap does not fire here (the demo settings set the
+  basement bath to 2.2 m).
+* Wall borrowing / floor inference read the references available *when a sheet is processed*: a construction plan
+  uploaded after the MEP sheets does not update them until they are reprocessed.
+* WC type on plans without a note is a shape guess (6fa88f92 basement monoblock read as concealed).
+
+### Final sync (rules v5, artifacts)
+* `SheetVersion.artifacts.fixtures` / `.walls` are written (`FIXTURES_IN_ARTIFACTS = True`); all 15 local version docs
+  validate against `SheetVersion.json`; `tests/test_integration_s4.py` runs a confirmed construction plan through the
+  real pipeline + sandbox and validates the version doc, `WallsArtifact`, `FixturesArtifact`, `RoomsArtifact`.
+* Contracts (edited by the integrator, `DEFAULT_BOQ_RULES_VERSION` 5): `AuthorityMatchSchema` + `authorityOrder`,
+  `matchRooms`, `roomMatchRadiusMm`; `r_auth_ac` = plumbing first (electrical fills floors without a plumbing sheet),
+  room-aware, 1.6 m. Floor tiling stays bathrooms + WCs (+ niches): courtyard OUT by default (GT-D-007).
+  `boq/rules.py` mirrors v5 (diff test green). `tiling.py` implements the v4/v5 match fields: `defaultWindowSillM` /
+  `defaultWindowHeadM`, `capAtCeiling` (also caps explicit heights, per contracts), `excludeNiches` (niche rooms not
+  clad, no corners), `includeNiches` (niche rooms floor-tiled with the bathrooms), `requireFixtureClasses`
+  (waterproofing default only with shower / bath; explicit settings win); `default_settings` = contracts
+  `defaultRoomSettings(type, wet, {ceilingHeightM, niche, hasShowerOrBath})` (unknown fixtures → bathroom yes, wc no).
+  A room of another type reaches a measure's first rule only through an explicit settings doc.
+* Rooms emit `ceilingHeightM` from level marks inside them (none OCR'd on Noah); `niche` is read by the BOQ but not
+  emitted — niche sub-rooms are not segmented yet (Worker-B gap; 5.01 / 5.02 remain geometry-limited).
+* Re-run (ingest 15/15 in 254 s, max 39 s/sheet): every kbench number identical to the table above (03 11/11 exact,
+  05 3/8 ΣAE 22.9 / 5/8 ΣAE 9.8 with demo corrections, 04+9.01 12/22).

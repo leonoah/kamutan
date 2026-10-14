@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Layers } from "lucide-react";
-import type { LassoResult, OverlayFeature, ViewerTool } from "@kamutan/viewer";
+import { ChevronDown, Layers, Redo2, Undo2 } from "lucide-react";
+import type { CalibrationResult, LassoResult, OverlayFeature, ViewerTool } from "@kamutan/viewer";
+import type { SheetViewerProps } from "@/features/viewer/lazy";
 import type { SheetRow } from "@/api/types";
 import {
   DropdownMenu,
@@ -25,7 +26,14 @@ export interface LayerVisibility {
   symbols: boolean;
   rooms: boolean;
   legend: boolean;
+  /** Sprint 4: rejected items as grey ✕ ("נדחו"). */
+  rejected: boolean;
 }
+
+/** Tool rail of the review workspace (spec order: selection tools, then the correction tools). */
+export const REVIEW_TOOLS: ViewerTool[] = ["select", "lasso", "add", "remove", "move", "link", "area", "length", "count", "calibrate"];
+
+type ToolCallbacks = Pick<SheetViewerProps, "onPointTool" | "onMove" | "onLink" | "onCount" | "onArea" | "onLength" | "onBackgroundClick" | "snapPoints" | "scaleDenominator" | "overlayExtra">;
 
 export interface ReviewDrawingProps {
   projectId: string;
@@ -46,6 +54,18 @@ export interface ReviewDrawingProps {
   onLifecycles: (v: LifecycleVisibility) => void;
   layers: LayerVisibility;
   onLayers: (v: LayerVisibility) => void;
+  /* Sprint 4 */
+  tool: ViewerTool;
+  onToolChange: (t: ViewerTool) => void;
+  tools?: ViewerTool[];
+  callbacks?: ToolCallbacks;
+  onCalibrate?: (r: CalibrationResult) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  /** Chip next to the layers (e.g. "הוספה: שקע כפול"). */
+  toolNote?: ReactNode;
   /**
    * Per-sheet badge in the picker: open items ("3 לבדיקה", spec "מונה פריטים פתוחים לכל גיליון"), or — while a BOQ
    * line is selected — how many of its evidence items are on that sheet.
@@ -57,9 +77,8 @@ export interface ReviewDrawingProps {
  * Center pane of S10: sheet selector + layer toggles + the tiled viewer with the Sprint-2 overlay
  * (detections ●▲◆◇, rooms, legend boxes) and the קיים / חדש / להריסה toggle.
  */
-export function ReviewDrawing(p: ReviewDrawingProps) {
+export const ReviewDrawing = memo(function ReviewDrawing(p: ReviewDrawingProps) {
   const { t } = useTranslation();
-  const [tool, setTool] = useState<ViewerTool>("select");
   const { row } = p;
 
   return (
@@ -100,10 +119,35 @@ export function ReviewDrawing(p: ReviewDrawingProps) {
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        <fieldset className="ms-auto flex items-center gap-2.5 text-meta">
+        {p.toolNote}
+        <div className="ms-auto flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={p.onUndo}
+            disabled={!p.canUndo}
+            aria-label={`${t("shortcuts.undo")} (Z)`}
+            title={`${t("shortcuts.undo")} · Z`}
+            aria-keyshortcuts="Z Control+Z Meta+Z"
+            className="flex size-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            <Undo2 className="size-4" aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={p.onRedo}
+            disabled={!p.canRedo}
+            aria-label={`${t("shortcuts.redo")} (Shift+Z)`}
+            title={`${t("shortcuts.redo")} · Shift+Z`}
+            aria-keyshortcuts="Shift+Z Control+Shift+Z Meta+Shift+Z"
+            className="flex size-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            <Redo2 className="size-4" aria-hidden />
+          </button>
+        </div>
+        <fieldset className="flex items-center gap-2.5 text-meta">
           <legend className="sr-only">{t("understanding.layers")}</legend>
           <Layers className="size-3.5 text-muted-foreground" aria-hidden />
-          {(["symbols", "rooms", "legend"] as const).map((k) => (
+          {(["symbols", "rooms", "legend", "rejected"] as const).map((k) => (
             <label key={k} className="inline-flex cursor-pointer items-center gap-1 text-foreground">
               <input
                 type="checkbox"
@@ -111,7 +155,7 @@ export function ReviewDrawing(p: ReviewDrawingProps) {
                 onChange={(e) => p.onLayers({ ...p.layers, [k]: e.target.checked })}
                 className="size-3.5 accent-[rgb(var(--primary))]"
               />
-              {t(`understanding.layer${k[0]!.toUpperCase()}${k.slice(1)}`)}
+              {k === "rejected" ? t("tools.rejectedLayer") : t(`understanding.layer${k[0]!.toUpperCase()}${k.slice(1)}`)}
             </label>
           ))}
         </fieldset>
@@ -122,8 +166,12 @@ export function ReviewDrawing(p: ReviewDrawingProps) {
             key={row.sheet.id}
             projectId={p.projectId}
             row={row}
-            tool={tool}
-            onToolChange={setTool}
+            tool={p.tool}
+            onToolChange={p.onToolChange}
+            tools={p.tools ?? REVIEW_TOOLS}
+            toolKeys={false}
+            onCalibrate={p.onCalibrate}
+            {...p.callbacks}
             overlays={p.overlays}
             selectedIds={p.selectedIds}
             focusIds={p.focusIds}
@@ -143,7 +191,7 @@ export function ReviewDrawing(p: ReviewDrawingProps) {
       </div>
     </>
   );
-}
+});
 
 /**
  * קיים / חדש / להריסה (spec §שכבות קיים / חדש / להריסה): default "חדש" on; a layer that is off is dimmed to

@@ -10,43 +10,19 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9_-]+$"
         },
-        "authorId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[A-Za-z0-9_-]+$"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "targetType": {
+        "kind": {
           "type": "string",
           "enum": [
-            "detection",
-            "room",
-            "link",
-            "legendEntry",
-            "reviewItem",
-            "measurement"
-          ]
-        },
-        "targetId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "action": {
-          "type": "string",
-          "enum": [
-            "accept",
-            "reject",
-            "reclass",
             "add",
-            "move",
             "remove",
-            "setSupply",
-            "setLifecycle"
+            "reclassify",
+            "move",
+            "link",
+            "unlink",
+            "measure",
+            "count",
+            "accept",
+            "reject"
           ]
         },
         "sheetId": {
@@ -61,22 +37,336 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9_-]+$"
         },
-        "payload": {
+        "anchorMm": {
           "type": "object",
-          "additionalProperties": {}
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": false
         },
-        "note": {
+        "radiusMm": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 50
+        },
+        "detectionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signature": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,128}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "class": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "socket_single",
+                "socket_double",
+                "socket_triple",
+                "socket_power",
+                "socket_power_double",
+                "socket_3phase",
+                "socket_box_6",
+                "socket_prep",
+                "data_point",
+                "tv_point",
+                "phone_point",
+                "speaker",
+                "intercom",
+                "doorbell",
+                "heater_feed",
+                "panel",
+                "breaker",
+                "switch_single",
+                "switch_2way",
+                "switch_fan",
+                "luminaire_ceiling",
+                "luminaire_wall",
+                "luminaire_pendant",
+                "luminaire_strip",
+                "luminaire_outdoor",
+                "ceiling_fan",
+                "fixture_wc_concealed",
+                "fixture_wc_monoblock",
+                "fixture_basin",
+                "faucet_basin",
+                "faucet_wall",
+                "fixture_shower",
+                "fixture_bath",
+                "fixture_kitchen_sink",
+                "fixture_washing_machine",
+                "garden_tap",
+                "ac_unit",
+                "room",
+                "floor_tiling",
+                "wall_cladding",
+                "region",
+                "note_point",
+                "bezek_point",
+                "waterproof_marker",
+                "switch_cross",
+                "switch_shutter",
+                "conduit_cobra",
+                "water_heater_feed",
+                "legend_entry",
+                "legend_box"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "itemCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[0-9A-Za-z.\\-/]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linkGroupId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^lk_[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "switchIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "maxItems": 16
+        },
+        "pointIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "maxItems": 64
+        },
+        "geometry": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "point",
+                    "polygon",
+                    "polyline"
+                  ]
+                },
+                "mm": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "x": {
+                        "type": "number"
+                      },
+                      "y": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "minItems": 1,
+                  "maxItems": 2000
+                }
+              },
+              "required": [
+                "type",
+                "mm"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "m2",
+                "m",
+                "unit"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "roomId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^r_[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "floor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "batchId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "by": {
           "type": "string",
-          "maxLength": 2000
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revertedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revertedBy": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "id",
-        "authorId",
-        "createdAt",
-        "targetType",
-        "targetId",
-        "action"
+        "kind",
+        "sheetId",
+        "versionId",
+        "anchorMm",
+        "radiusMm",
+        "detectionId",
+        "signature",
+        "class",
+        "itemCode",
+        "linkGroupId",
+        "geometry",
+        "quantity",
+        "unit",
+        "roomId",
+        "floor",
+        "reason",
+        "batchId",
+        "by",
+        "at",
+        "revertedAt"
       ],
       "additionalProperties": false
     }

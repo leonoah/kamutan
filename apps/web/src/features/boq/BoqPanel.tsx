@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, Hammer, RefreshCw } from "lucide-react";
 import type { BoqBuild, BoqChapter, BoqLine, ProjectBoqState } from "@/api/types";
@@ -43,6 +43,9 @@ export interface BoqPanelProps {
   flashLineId: string | null;
   split: boolean;
   onSplit: (v: boolean) => void;
+  /** "כמות להזמנה" column (qty × (1 + waste) for tiling materials). */
+  showOrder?: boolean;
+  onShowOrder?: (v: boolean) => void;
   statusFilter: StatusFilter;
   onStatusFilter: (s: StatusFilter) => void;
   filtered: boolean;
@@ -56,7 +59,7 @@ const stripe = { green: "bg-transparent", yellow: "bg-conf-mid", red: "bg-conf-l
  * code, description + reason chips, unit, [per-floor columns], qty with a hover "receipt", status) and the Sprint-2
  * "ספירה לפי סוג" as a secondary tab. Build / stale / empty states live here too.
  */
-export function BoqPanel(p: BoqPanelProps) {
+export const BoqPanel = memo(function BoqPanel(p: BoqPanelProps) {
   const { t } = useTranslation();
   const tabs: { id: PanelTab; label: string }[] = [
     { id: "boq", label: t("boq.tabBoq") },
@@ -110,7 +113,7 @@ export function BoqPanel(p: BoqPanelProps) {
       )}
     </section>
   );
-}
+});
 
 function BuildStatus(p: BoqPanelProps & { building: boolean }) {
   const { t } = useTranslation();
@@ -196,7 +199,9 @@ function BoqTable(p: BoqPanelProps) {
   }, [p.selectedLineId]);
 
   const statuses: StatusFilter[] = ["all", "draft", "reviewed", "approved"];
-  const cols = 6 + floors.length;
+  const hasOrder = useMemo(() => p.lines.some((l) => l.orderQty != null), [p.lines]);
+  const order = Boolean(p.showOrder) && hasOrder;
+  const cols = 6 + floors.length + (order ? 1 : 0);
 
   return (
     <TooltipProvider delayDuration={250}>
@@ -229,6 +234,17 @@ function BoqTable(p: BoqPanelProps) {
             ))}
           </select>
         </label>
+        {hasOrder && p.onShowOrder ? (
+          <label className="inline-flex items-center gap-1 text-foreground" title={t("boq.orderQtyToggle")}>
+            <input
+              type="checkbox"
+              checked={Boolean(p.showOrder)}
+              onChange={(e) => p.onShowOrder?.(e.target.checked)}
+              className="size-3.5 accent-[rgb(var(--primary))]"
+            />
+            {t("boq.orderQty")}
+          </label>
+        ) : null}
         <span className="ms-auto text-muted-foreground">
           {p.lines.length === p.totalLines ? t("boq.lines", { count: p.totalLines }) : `${p.lines.length} / ${t("boq.lines", { count: p.totalLines })}`}
         </span>
@@ -259,6 +275,7 @@ function BoqTable(p: BoqPanelProps) {
                 <col key={f} className="w-11" />
               ))}
               <col className="w-[4.25rem]" />
+              {order ? <col className="w-[4.25rem]" /> : null}
               <col className={floors.length ? "w-10" : "w-[4.5rem]"} />
             </colgroup>
             <thead>
@@ -281,6 +298,11 @@ function BoqTable(p: BoqPanelProps) {
                 <th scope="col" className="sticky top-0 z-20 h-8 border-b border-border bg-surface px-1 text-end font-medium">
                   {floors.length ? t("boq.columns.total") : t("boq.columns.qty")}
                 </th>
+                {order ? (
+                  <th scope="col" className="sticky top-0 z-20 h-8 border-b border-border bg-surface px-1 text-end font-medium">
+                    {t("boq.orderQtyShort")}
+                  </th>
+                ) : null}
                 <th scope="col" className="sticky top-0 z-20 h-8 border-b border-border bg-surface pe-3 ps-1 text-start font-medium">
                   {floors.length ? <span className="sr-only">{t("boq.columns.status")}</span> : t("boq.columns.status")}
                 </th>
@@ -337,6 +359,7 @@ function BoqTable(p: BoqPanelProps) {
                       key={l.id}
                       line={l}
                       floors={floors}
+                      order={order}
                       selected={p.selectedLineId === l.id}
                       flash={flash === l.id}
                       onSelect={() => p.onSelectLine(p.selectedLineId === l.id ? null : l.id)}
@@ -361,6 +384,7 @@ function BoqTable(p: BoqPanelProps) {
 function LineRow({
   line: l,
   floors,
+  order,
   selected,
   flash,
   onSelect,
@@ -371,6 +395,7 @@ function LineRow({
   receiptExtra?: ((line: BoqLine) => ReactNode) | undefined;
   line: BoqLine;
   floors: string[];
+  order: boolean;
   selected: boolean;
   flash: boolean;
   onSelect: () => void;
@@ -437,6 +462,11 @@ function LineRow({
       <td className={cn(cell, "pt-1.5 text-end")}>
         <QtyWithReceipt line={l} onShow={onSelect} extra={receiptExtra} />
       </td>
+      {order ? (
+        <td className={cn(cell, "pt-2 text-end tabular text-muted-foreground")} data-order-qty>
+          {l.orderQty != null ? fmtQty(l.orderQty) : "·"}
+        </td>
+      ) : null}
       <td className={cn(cell, "pe-3 pt-1.5")}>
         <StatusPill status={l.status} compact={floors.length > 0} />
       </td>
@@ -508,6 +538,28 @@ export function Receipt({ line: l, receipt: r, extra }: { line: BoqLine; receipt
             </Fragment>
           ))}
         </dl>
+      ) : null}
+      {l.breakdown?.length ? (
+        <dl className="grid max-w-72 grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-meta" data-receipt-breakdown>
+          <dt className="col-span-2 text-muted-foreground">{t("boq.receiptBreakdown")}</dt>
+          {l.breakdown.slice(0, 12).map((b, i) => (
+            <Fragment key={i}>
+              <dt className={cn("min-w-0 truncate text-foreground", b.manual && "text-manual")} title={b.formula ?? undefined}>
+                {b.manual ? "✎ " : null}
+                {b.label}
+                {b.formula ? (
+                  <span className="block text-[11px] text-muted-foreground">
+                    <Ltr>{b.formula}</Ltr>
+                  </span>
+                ) : null}
+              </dt>
+              <dd className="text-end tabular text-foreground">{fmtQty(b.qty)}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      ) : null}
+      {l.orderQty != null && l.wasteFactor != null ? (
+        <p className="text-meta text-muted-foreground">{t("boq.receiptOrder", { pct: Math.round(l.wasteFactor * 100), qty: fmtQty(l.orderQty) })}</p>
       ) : null}
       {r.overridden && r.note ? <p className="text-meta text-manual">{t("boq.receiptOverride", { note: r.note })}</p> : null}
       {(l.reasons ?? []).length ? (

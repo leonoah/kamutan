@@ -121,7 +121,7 @@ describe("understanding model", () => {
     expect(className("weird_new")).toBe("weird_new");
     expect(isSymbolClass("room")).toBe(false);
     expect(isSymbolClass("switch_2way")).toBe(true);
-    expect(Object.keys(CLASS_INFO)).toHaveLength(35);
+    expect(Object.keys(CLASS_INFO)).toHaveLength(41); // Sprint 4: + 5 plumbing fixtures + ac_unit (hvac)
   });
 });
 

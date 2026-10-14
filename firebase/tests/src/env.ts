@@ -73,6 +73,10 @@ export function docPaths(f: OrgFx) {
     libraryImport: `orgs/${f.org}/libraryImports/0b0f6a4e-2d1c-4b8a-9f3e-123456789abc`,
     boqBuild: `${p}/boqBuilds/b1`,
     boqExport: `${p}/exports/e1`,
+    // Sprint 4
+    correctionBatch: `${p}/correctionBatches/cb1`,
+    roomSettings: `${p}/roomSettings/sheet1__r_1`,
+    similarSearch: `${p}/similarSearches/ss1`,
   };
 }
 
@@ -111,7 +115,13 @@ export async function seed(env: RulesTestEnvironment): Promise<void> {
         itemCode: null, signature: 'f'.repeat(40), thumbPath: `${d.project}/sheets/sheet1/versions/v1/legend/le1.webp`, status: 'suggested', updatedAt: ts(),
       });
       await db.doc(d.reviewItem).set({ level: 'yellow', reasons: ['LOW_OCR'], clusterId: null, status: 'open', riskScore: 0.6, resolution: null, resolvedBy: null, resolvedAt: null });
-      await db.doc(d.correction).set({ authorId: f.users.editor, createdAt: ts(), targetType: 'detection', targetId: 'det-1', action: 'reject' });
+      await db.doc(d.correction).set({
+        kind: 'reject', sheetId: 'sheet1', versionId: 'v1', anchorMm: { x: 1, y: 2 }, radiusMm: 3, detectionId: 'd_1', signature: null, class: null, itemCode: null,
+        linkGroupId: null, geometry: null, quantity: null, unit: null, roomId: null, floor: null, reason: null, batchId: null, by: f.users.reviewer, at: ts(), revertedAt: null,
+      });
+      await db.doc(d.correctionBatch).set({ count: 1, kinds: { reject: 1 }, sheetIds: ['sheet1'], source: 'cluster', similarSearchId: null, by: f.users.reviewer, at: ts(), revertedAt: null });
+      await db.doc(d.roomSettings).set({ sheetId: 'sheet1', roomId: 'r_1', claddingHeightM: 2.6, floorTiled: true, floorMaterialItemCode: null, wallMaterialItemCode: null, partialCladding: [], wasteFactor: 0.07, includeInWaterproofing: true, by: f.users.editor, at: ts() });
+      await db.doc(d.similarSearch).set({ status: 'succeeded', exemplar: { sheetId: 'sheet1', versionId: 'v1', bboxMm: { x: 0, y: 0, w: 2, h: 2 }, class: null }, scope: 'sheet', correctionId: null, jobId: null, requestedBy: f.users.reviewer, createdAt: ts(), finishedAt: ts(), candidates: [], thumbs: 0, error: null });
       await db.doc(d.boqDraft).set({ ...boqBase, status: 'draft' });
       await db.doc(d.boqReviewed).set({ ...boqBase, status: 'reviewed', reviewedBy: f.users.reviewer, reviewedAt: ts() });
       await db.doc(d.boqApproved).set({ ...boqBase, status: 'approved', reviewedBy: f.users.reviewer, reviewedAt: ts(), approvedBy: f.users.reviewer, approvedAt: ts() });

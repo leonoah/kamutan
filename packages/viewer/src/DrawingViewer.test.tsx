@@ -365,4 +365,112 @@ describe("DrawingViewer overlay layers (Sprint 2)", () => {
     act(() => onInter({ isDragging: false, isPanning: false, isZooming: false }));
     expect(layer("markers")!.props.pickable).toBe(true);
   });
+
+  /* ---------------- Sprint 4 correction tools ---------------- */
+  const syms: OverlayFeature[] = [
+    { id: "sw", kind: "marker", position: [100, 100], shape: "triangle" },
+    { id: "lum", kind: "marker", position: [160, 100], shape: "circle" },
+    { id: "room", kind: "polygon", polygon: [[50, 50], [250, 50], [250, 150]], passive: true },
+  ];
+
+  it("add: a click snaps onto a symbol within 8 px (spec) or adds at the click; remove needs a hit", () => {
+    const onPointTool = vi.fn();
+    const { click } = setup({ tool: "add", overlays: syms, onPointTool });
+    expect(screen.getByRole("status")).toHaveTextContent("להוספת פריט ידני");
+    click([100.3, 100.2]);
+    expect(onPointTool).toHaveBeenLastCalledWith({ tool: "add", mm: [100, 100], hitId: "sw" });
+    click([300, 200]);
+    const far = onPointTool.mock.lastCall![0];
+    expect(far.hitId).toBeNull();
+    expect(far.mm[0]).toBeCloseTo(300, 0);
+  });
+
+  it("remove: clicking a symbol reports it; empty paper does nothing", () => {
+    const onPointTool = vi.fn();
+    const { click } = setup({ tool: "remove", overlays: syms, onPointTool });
+    click([160.2, 100]);
+    expect(onPointTool).toHaveBeenCalledWith({ tool: "remove", mm: [160, 100], hitId: "lum" });
+    click([400, 250]);
+    expect(onPointTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("move: drag a symbol to a new place; link: drag from a switch onto a point", () => {
+    const onMove = vi.fn();
+    const r1 = setup({ tool: "move", overlays: syms, onMove });
+    fireEvent.pointerDown(r1.app, { ...r1.at([100, 100]), button: 0, pointerId: 1 });
+    fireEvent.pointerMove(r1.app, { ...r1.at([120, 110]), pointerId: 1 });
+    fireEvent.pointerUp(r1.app, { ...r1.at([120, 110]), button: 0, pointerId: 1 });
+    expect(onMove).toHaveBeenCalledTimes(1);
+    expect(onMove.mock.calls[0]![0].id).toBe("sw");
+    expect(onMove.mock.calls[0]![0].toMm[0]).toBeCloseTo(120, 0);
+    expect(deckProps.current!.controller).toMatchObject({ dragPan: false });
+    r1.unmount();
+
+    const onLink = vi.fn();
+    const r2 = setup({ tool: "link", overlays: syms, onLink });
+    fireEvent.pointerDown(r2.app, { ...r2.at([100, 100]), button: 0, pointerId: 1 });
+    fireEvent.pointerMove(r2.app, { ...r2.at([130, 100]), pointerId: 1 });
+    expect((deckProps.current!.layers as { id: string }[]).some((l) => l.id === "tool-line")).toBe(true); // rubber band
+    fireEvent.pointerUp(r2.app, { ...r2.at([160, 100]), button: 0, pointerId: 1 });
+    expect(onLink).toHaveBeenCalledWith({ fromId: "sw", toId: "lum" });
+  });
+
+  it("count: numbered clicks with a running count, Backspace undoes the last, Enter saves", () => {
+    const onCount = vi.fn();
+    const onCountChange = vi.fn();
+    const { click, app, container } = setup({ tool: "count", overlays: syms, onCount, onCountChange });
+    click([60, 60]);
+    click([70, 60]);
+    click([80, 60]);
+    expect([...container.querySelectorAll("[data-count-n]")].map((e) => e.textContent)).toEqual(["1", "2", "3"]);
+    expect(screen.getByRole("status")).toHaveTextContent(/^\u20683\u2069 נספרו · Enter לשמירה$/);
+    fireEvent.keyDown(app, { code: "Backspace" });
+    expect(onCountChange).toHaveBeenLastCalledWith(2);
+    fireEvent.keyDown(app, { code: "Enter", key: "Enter" });
+    expect(onCount).toHaveBeenCalledTimes(1);
+    expect(onCount.mock.calls[0]![0].pointsMm).toHaveLength(2);
+  });
+
+  it("area: vertices snap to room corners / symbols; live m² + perimeter chip; Enter closes", () => {
+    const onArea = vi.fn();
+    const { click, app, container } = setup({ tool: "area", overlays: syms, onArea, scaleDenominator: 50, snapPoints: [[50, 50], [250, 50], [250, 150], [50, 150]] });
+    click([50.4, 50.3]); // snaps to the corner
+    click([250, 50]);
+    click([250, 150]);
+    click([50, 150]);
+    expect(container.querySelector("[data-tool-chip]")).toHaveTextContent(/מ״ר · היקף/);
+    fireEvent.keyDown(app, { code: "Enter" });
+    const r = onArea.mock.calls[0]![0];
+    expect(r.polygonMm[0]).toEqual([50, 50]);
+    expect(r.paperMm2).toBeCloseTo(200 * 100, -1);
+    expect(r.areaM2).toBeCloseTo(50, 0); // 10 m × 5 m at 1:50
+    expect(r.perimeterM).toBeCloseTo(30, 0);
+  });
+
+  it("length: polyline, Enter finishes → length in m' at the sheet scale (unknown scale → null)", () => {
+    const onLength = vi.fn();
+    const { click, app } = setup({ tool: "length", onLength, scaleDenominator: 50 });
+    click([100, 100]);
+    click([140, 100]);
+    click([140, 130]);
+    fireEvent.keyDown(app, { code: "Enter" });
+    expect(onLength.mock.calls[0]![0].paperMm).toBeCloseTo(70, 0);
+    expect(onLength.mock.calls[0]![0].lengthM).toBeCloseTo(3.5, 1);
+  });
+
+  it("Shift+= is the app's '+' (add tool), not a zoom; background clicks report paper mm; point labels render", () => {
+    const onBackgroundClick = vi.fn();
+    const { app, views, container } = setup({
+      overlays: [{ id: "c1", kind: "point", position: [10, 10], label: "3", passive: true }],
+      onBackgroundClick,
+    });
+    const z = views.at(-1)!.zoom;
+    fireEvent.keyDown(app, { code: "Equal", key: "+", shiftKey: true });
+    expect(views.at(-1)!.zoom).toBe(z);
+    const onClick = deckProps.current!.onClick as (i: unknown, e: unknown) => void;
+    onClick({ object: undefined, coordinate: [pxPerMm(300) * 20, pxPerMm(300) * 30] }, { srcEvent: {} });
+    expect(onBackgroundClick.mock.calls[0]![0][0]).toBeCloseTo(20);
+    expect(onBackgroundClick.mock.calls[0]![0][1]).toBeCloseTo(30);
+    expect(container.querySelector("[data-point-label]")).toHaveTextContent("3");
+  });
 });

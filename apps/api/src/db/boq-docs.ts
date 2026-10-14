@@ -85,6 +85,10 @@ export function toBoqLine(id: string, d: Doc): BoqLine {
     sourceVersions,
     computedAt: anyIso(d.computedAt),
     buildId: str(d.buildId),
+    // Sprint 4 (worker): order quantity / waste for material lines, number of manual items.
+    ...(typeof d.orderQty === 'number' && Number.isFinite(d.orderQty) && d.orderQty >= 0 ? { orderQty: d.orderQty } : {}),
+    ...(typeof d.wasteFactor === 'number' && d.wasteFactor >= 0 && d.wasteFactor <= 0.5 ? { wasteFactor: d.wasteFactor } : {}),
+    ...(typeof d.manualCount === 'number' && Number.isInteger(d.manualCount) && d.manualCount >= 0 ? { manualCount: d.manualCount } : {}),
   };
 }
 
@@ -106,6 +110,9 @@ export function toBoqBuild(id: string, d: Doc): BoqBuild {
     stats: d.stats && typeof d.stats === 'object' ? (isoDeep(d.stats) as BoqBuild['stats']) : null,
     error: err(d.error),
     evidenceRef: str(d.evidenceRef),
+    ...(d.trigger === 'manual' || d.trigger === 'auto' ? { trigger: d.trigger } : {}),
+    ...(d.debounceUntil !== undefined ? { debounceUntil: anyIso(d.debounceUntil) } : {}),
+    ...(d.afterBuildId !== undefined ? { afterBuildId: str(d.afterBuildId) } : {}),
   };
 }
 

@@ -23,6 +23,8 @@ export const OrgSettingsSchema = z
     llmMonthlyBudgetUsd: z.number().min(0).optional(),
     /** Sprint 3: VAT of the export's "כולל מע\"מ" total (0.18 = 18%). */
     vatRate: z.number().min(0).max(1).optional(),
+    /** Sprint 4: corrections / room settings schedule a debounced BOQ rebuild (default true). */
+    autoRebuild: z.boolean().optional(),
   })
   .strict();
 export type OrgSettings = z.infer<typeof OrgSettingsSchema>;
@@ -34,6 +36,7 @@ export const DEFAULT_ORG_SETTINGS: Readonly<OrgSettings> = Object.freeze({
   trainingOptIn: false,
   llmMonthlyBudgetUsd: 30,
   vatRate: 0.18,
+  autoRebuild: true,
 });
 
 /** orgs/{orgId} (DTO: doc fields + id; timestamps as ISO strings). */
