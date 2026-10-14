@@ -407,3 +407,7 @@ real props (React dev calls components without props to print warning stacks).
   when present, else crops are cut from tiles.
 - Move tool keeps the class; no multi-select drag. Lifecycle keys 1/2/3 and "\\" (hide queue) are not wired.
 - Speed measured on software GL; a real-GPU run should be faster.
+
+### Sprint 4 follow-up (after the integration round)
+- Detection markers stay sized in paper mm, but their screen size is clamped to 12–28 px (`MARKER_MIN_PX` / `MARKER_MAX_PX`, deck.gl `sizeMinPixels` / `sizeMaxPixels`). The selection / focus halo is clamped to 8–18 px so its ring still surrounds a clamped icon. Before this, zooming to 199% blew markers up over the drawing.
+- Mock `authoritativeRooms`: the duplicate-room check now only compares rooms across sheets. Two similar rooms on one sheet (first-floor bathrooms r_5 5.04 m² and r_10 4.86 m²) are separate rooms.

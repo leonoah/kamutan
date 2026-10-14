@@ -237,6 +237,21 @@ describe("DrawingViewer overlay layers (Sprint 2)", () => {
     expect(m.props.pickable).toBe(true);
   });
 
+  it("clamps marker screen size (12–28 px) so markers never cover the drawing at high zoom; the selection halo stays around them", () => {
+    setup({ overlays: makeMarkers(4), selectedIds: ["d_1"] });
+    const m = layer("markers")!;
+    expect(m.props.sizeMinPixels).toBe(12);
+    expect(m.props.sizeMaxPixels).toBe(28);
+    const halo = layer("marker-halo")!;
+    expect((halo.props.data as { id: string }[]).map((f) => f.id)).toEqual(["d_1"]);
+    expect(halo.props.radiusMinPixels).toBeGreaterThanOrEqual(12 / 2);
+    // the halo ring (radius) is larger than half the largest icon, so the emphasis stays visible when clamped
+    expect(halo.props.radiusMaxPixels).toBeGreaterThan(28 / 2);
+    expect(halo.props.radiusMaxPixels).toBeLessThanOrEqual(20);
+    const lw = halo.props.getLineWidth as (f: unknown) => number;
+    expect(lw(halo.props.data[0])).toBe(3);
+  });
+
   it("2,000 markers: layers build fast, and selection/focus changes reuse the same geometry data", () => {
     const overlays = makeMarkers(2000);
     const t0 = performance.now();

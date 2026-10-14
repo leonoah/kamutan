@@ -94,6 +94,12 @@ describe("mock Worker-BOQ (Sprint 4)", () => {
       { row: elec, detections: [], rooms: [room("r_9", "חדר רחצה", 5.1, 9.1)] }, // same floor, lower authority → ignored
     ];
     expect(authoritativeRooms(sheets).map((x) => x.room.id)).toEqual(["r_1", "r_2"]);
+    // two similar bathrooms on ONE sheet are two rooms; the same room on another master sheet is a duplicate
+    const twoBaths = [
+      { row: arch, detections: [], rooms: [room("r_5", "חדר רחצה", 5.04, 9.6), room("r_10", "חדר רחצה", 4.86, 9.2)] },
+      { row: row("ar2", "architecture_master"), detections: [], rooms: [room("r_1", "חדר רחצה", 5.0, 9.6)] },
+    ];
+    expect(authoritativeRooms(twoBaths).map((x) => x.room.id)).toEqual(["r_5", "r_10"]);
     const lines = computeTiling(sheets, new Map(), LIB, AT);
     const by = Object.fromEntries(lines.map((l) => [l.code, l]));
     expect(by["5.01"]!.qty).toBeCloseTo(9 * 2.6);

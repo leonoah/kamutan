@@ -142,6 +142,12 @@ const SNAP_PX = 10; // px: area/length vertices snap to symbols / room corners w
 const ADD_SNAP_PX = 8; // spec: "המערכת מצמידה (snap) לסמל קרוב ברדיוס 8px"
 const HIT_PX = 12; // spec: hit-slop of small markers
 const COUNT_INK: Rgba = [29, 78, 216, 255]; // --manual
+/** Detection markers are sized in paper mm but clamped on screen (icon box, incl. the 1.25 frame margin). */
+export const MARKER_MIN_PX = 12;
+export const MARKER_MAX_PX = 28;
+/** Selection / focus halo radius: the same 0.78 / 1.25 ratio to the icon box, so the ring always surrounds the icon. */
+export const MARKER_HALO_MIN_PX = Math.round(MARKER_MIN_PX * (0.78 / 1.25)) + 1; // 8
+export const MARKER_HALO_MAX_PX = Math.round(MARKER_MAX_PX * (0.78 / 1.25)) + 1; // 18
 
 const withAlpha = (c: Rgba, a: number): [number, number, number, number] => [c[0], c[1], c[2], a];
 
@@ -866,7 +872,9 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
             getPosition: (f) => mm(f.position),
             radiusUnits: "common",
             getRadius: (f) => ((f.sizeMm ?? 6) * k) * 0.78,
-            radiusMinPixels: 8,
+            // Clamped like the icons (+ a ring margin) so the emphasis always surrounds the marker.
+            radiusMinPixels: MARKER_HALO_MIN_PX,
+            radiusMaxPixels: MARKER_HALO_MAX_PX,
             stroked: true,
             filled: true,
             lineWidthUnits: "pixels",
@@ -888,7 +896,9 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           getPosition: (f) => mm(f.position),
           sizeUnits: "common",
           getSize: (f) => (f.sizeMm ?? 6) * k * 1.25,
-          sizeMinPixels: 13,
+          // Paper-mm size, clamped on screen: readable when zoomed out, never covering the drawing when zoomed in.
+          sizeMinPixels: MARKER_MIN_PX,
+          sizeMaxPixels: MARKER_MAX_PX,
           getColor: (f) => withAlpha(color(f, DEFAULT_POINT), markerAlpha(f)),
           alphaCutoff: 0.02,
           updateTriggers: { getColor: [...trig, focusIds] },

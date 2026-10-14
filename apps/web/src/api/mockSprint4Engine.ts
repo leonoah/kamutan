@@ -146,7 +146,14 @@ export function authoritativeRooms(sheets: readonly S4Sheet[]): { row: SheetRow;
       const cur = byFloor.get(f);
       if (!cur || rank < cur.rank) byFloor.set(f, { rank, items: [{ row: s.row, room }] });
       else if (rank === cur.rank) {
-        const dup = cur.items.some((x) => x.room.name === room.name && Math.abs(x.room.areaM2 - room.areaM2) <= 0.05 * Math.max(1, room.areaM2));
+        // The same room drawn on ANOTHER sheet of equal authority; rooms on one sheet are always distinct
+        // (two first-floor bathrooms of 5.04 / 4.86 m² are two rooms).
+        const dup = cur.items.some(
+          (x) =>
+            x.row.sheet.id !== s.row.sheet.id &&
+            x.room.name === room.name &&
+            Math.abs(x.room.areaM2 - room.areaM2) <= 0.05 * Math.max(1, room.areaM2),
+        );
         if (!dup) cur.items.push({ row: s.row, room });
       }
     }
