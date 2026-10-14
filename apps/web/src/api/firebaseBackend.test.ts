@@ -150,6 +150,27 @@ describe("Firestore realtime", () => {
     offs.forEach((o) => expect(o).toHaveBeenCalled());
   });
 
+  it("Sprint 3: boqState reads the project doc's `boq` field; boqBuild listens on boqBuilds/{id}", () => {
+    const listeners = new Map<string, (s: unknown) => void>();
+    fs.onSnapshot.mockImplementation((ref: { path: string }, next: (s: unknown) => void) => {
+      listeners.set(ref.path, next);
+      return vi.fn();
+    });
+    const onState = vi.fn();
+    const onBuild = vi.fn();
+    const rt = createFirestoreRealtime(db);
+    rt.boqState("o1", "p1", onState, vi.fn());
+    rt.boqBuild("o1", "p1", "b1", onBuild, vi.fn());
+    listeners.get("orgs/o1/projects/p1")!({ id: "p1", exists: () => true, data: () => ({ boq: { latestBuildId: "b1", builtAt: ts("2026-10-14T08:00:00Z"), stale: true } }) });
+    expect(onState).toHaveBeenLastCalledWith({ latestBuildId: "b1", builtAt: "2026-10-14T08:00:00.000Z", stale: true });
+    listeners.get("orgs/o1/projects/p1")!({ id: "p1", exists: () => true, data: () => ({ name: "x" }) });
+    expect(onState).toHaveBeenLastCalledWith(null);
+    listeners.get("orgs/o1/projects/p1/boqBuilds/b1")!({ id: "b1", exists: () => true, data: () => ({ status: "running", startedAt: ts("2026-10-14T08:00:00Z"), progress: 40 }) });
+    expect(onBuild).toHaveBeenLastCalledWith({ id: "b1", status: "running", progress: 40, startedAt: "2026-10-14T08:00:00.000Z", finishedAt: null });
+    listeners.get("orgs/o1/projects/p1/boqBuilds/b1")!({ id: "b1", exists: () => false, data: () => ({}) });
+    expect(onBuild).toHaveBeenLastCalledWith(null);
+  });
+
   it("toIso handles Timestamp, string and missing values", () => {
     expect(toIso(ts("2026-01-02T03:04:05Z"))).toBe("2026-01-02T03:04:05.000Z");
     expect(toIso("2026-01-01T00:00:00Z")).toBe("2026-01-01T00:00:00Z");

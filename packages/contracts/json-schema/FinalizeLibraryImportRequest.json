@@ -1,0 +1,22 @@
+{
+  "$ref": "#/definitions/FinalizeLibraryImportRequest",
+  "definitions": {
+    "FinalizeLibraryImportRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "orgId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/FinalizeLibraryImportRequest.json"
+}

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  BOQ_LINE_CLIENT_FIELDS, BOQ_LINE_TRANSITIONS, CLIENT_READABLE_STORAGE_PREFIXES, COLLECTIONS, INGEST_STAGES, JOB_TYPES,
+  BOQ_LINE_API_FIELDS, BOQ_LINE_TRANSITIONS, CLIENT_READABLE_STORAGE_PREFIXES, COLLECTIONS, INGEST_STAGES, JOB_TYPES,
   REVIEW_ITEM_CLIENT_FIELDS, paths,
 } from '../../model';
 import { FIREBASE_DIR, FIRESTORE_RULES, STORAGE_RULES } from './env';
@@ -17,14 +17,14 @@ const fs = parseRules(FIRESTORE_RULES);
 const st = parseRules(STORAGE_RULES);
 const DOCS = '/databases/{database}/documents';
 const QUARANTINE = '/b/{bucket}/o/orgs/{orgId}/quarantine/{fileId}';
+const IMPORTS = '/b/{bucket}/o/orgs/{orgId}/imports/{fileName}';
 const LEGACY_UPLOAD = '/b/{bucket}/o/orgs/{orgId}/uploads/{rest=**}';
 const PROJ = '/b/{bucket}/o/orgs/{orgId}/projects/{projectId}';
 
-/** The ONLY places a client may write (ADR 0008 §authz-2). */
+/** The ONLY places a client may write (ADR 0008 §authz-2). Sprint 3: boqLines moved to the API (no client write). */
 const CLIENT_WRITABLE: Record<string, string[]> = {
   [`${DOCS}/orgs/{orgId}/projects/{projectId}/corrections/{correctionId}`]: ['create'],
   [`${DOCS}/orgs/{orgId}/projects/{projectId}/reviewItems/{itemId}`]: ['update'],
-  [`${DOCS}/orgs/{orgId}/projects/{projectId}/boqLines/{lineId}`]: ['update'],
 };
 
 /** `/a/{x}/b/{rest=**}` -> /^\/a\/[^/]+\/b\/.+$/ */
@@ -66,11 +66,11 @@ describe('firestore.rules (static)', () => {
     expect(stripComments(FIRESTORE_RULES)).not.toMatch(/if\s+true\b/);
     for (const a of fs.allows) {
       if (isDenyAll(a.condition)) continue;
-      expect(a.condition, `line ${a.line}`).toMatch(/signedIn\(\)|isMember|roleIn|isAdmin|canEditShare|canCorrect|canApprove/);
+      expect(a.condition, `line ${a.line}`).toMatch(/signedIn\(\)|isMember|roleIn|isAdmin|canEditShare|canCorrect/);
     }
   });
 
-  it('client writes exist ONLY on corrections(create), reviewItems(update), boqLines(update)', () => {
+  it('client writes exist ONLY on corrections(create), reviewItems(update)', () => {
     const found: Record<string, string[]> = {};
     for (const a of fs.allows) {
       const writes = a.methods.filter((m) => WRITE_METHODS.has(m));
@@ -116,13 +116,13 @@ describe('firestore.rules (static)', () => {
     }
   });
 
-  it('model client-writable field lists match the rules', () => {
+  it('model client-writable field lists match the rules (boqLines: API-only since Sprint 3)', () => {
     const boq = blockOf(FIRESTORE_RULES, 'boqLines');
-    for (const f of BOQ_LINE_CLIENT_FIELDS) expect(boq, f).toContain(`'${f}'`);
-    for (const [from, tos] of Object.entries(BOQ_LINE_TRANSITIONS)) {
-      for (const to of tos) expect(boq).toContain(`from == '${from}' && to == '${to}'`);
-    }
-    expect((boq.match(/from == '/g) ?? []).length).toBe(Object.values(BOQ_LINE_TRANSITIONS).flat().length);
+    expect(boq).toContain('allow read: if isMember(orgId);');
+    expect(boq).toContain('allow write: if false;');
+    expect(boq).not.toMatch(/allow (update|create)/);
+    expect(BOQ_LINE_API_FIELDS).toEqual(expect.arrayContaining(['status', 'note', 'qtyOverride', 'qtyOverrideReason']));
+    expect(Object.values(BOQ_LINE_TRANSITIONS).flat()).toHaveLength(4);
     const ri = blockOf(FIRESTORE_RULES, 'reviewItems');
     expect(ri).toContain(`hasOnly([${REVIEW_ITEM_CLIENT_FIELDS.map((f) => `'${f}'`).join(', ')}])`);
     const corr = blockOf(FIRESTORE_RULES, 'corrections');
@@ -142,8 +142,17 @@ describe('storage.rules (static)', () => {
     expect(stripComments(STORAGE_RULES)).not.toMatch(/if\s+true\b/);
   });
 
-  it('only `create` on the quarantine slot is client-writable, with role + id + size + type checks', () => {
-    const writes = st.allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)) && !isDenyAll(a.condition));
+  it('only `create` on the quarantine + import slots is client-writable, with role + id + size + type checks', () => {
+    const all = st.allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)) && !isDenyAll(a.condition));
+    expect(all.map((a) => a.path).sort()).toEqual([IMPORTS, QUARANTINE].sort());
+    const imp = all.find((a) => a.path === IMPORTS);
+    expect(imp?.methods).toEqual(['create']);
+    for (const frag of ['signedIn()', 'canUpload(orgId)', 'opaqueId(orgId)', 'isImportName(fileName)', 'validImport()']) expect(imp?.condition).toContain(frag);
+    const vi = stripComments(STORAGE_RULES).slice(stripComments(STORAGE_RULES).indexOf('function validImport()'));
+    const viBody = vi.slice(0, vi.indexOf('}'));
+    for (const frag of ['resource == null', 'request.resource.size > 0', '20 * 1024 * 1024', 'ms-excel', 'spreadsheetml']) expect(viBody, frag).toContain(frag);
+    for (const bad of ['html', 'svg', 'javascript', 'text/', 'application/zip']) expect(viBody).not.toContain(bad);
+    const writes = all.filter((a) => a.path === QUARANTINE);
     expect(writes).toHaveLength(1);
     expect(writes[0].path).toBe(QUARANTINE);
     expect(writes[0].methods).toEqual(['create']);
@@ -180,13 +189,16 @@ describe('storage.rules (static)', () => {
       `${PROJ}/sheets/{sheetId}/versions/{versionId}/{rest=**}`,
       `${PROJ}/derived/{rest=**}`,
       '/b/{bucket}/o/orgs/{orgId}/derived/{rest=**}',
+      IMPORTS,
+      `${PROJ}/exports/{rest=**}`,
+      `${PROJ}/boq/{rest=**}`,
     ]) {
       expect(st.matchPaths, p).toContain(p);
       const allows = st.allows.filter((a) => a.path === p);
       expect(allows.some((a) => a.methods.includes('read') && isDenyAll(a.condition)), `${p} read`).toBe(true);
       const writes = allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)));
       expect(writes.length, `${p} write policy`).toBeGreaterThan(0);
-      if (p !== QUARANTINE) for (const w of writes) expect(isDenyAll(w.condition), p).toBe(true);
+      if (p !== QUARANTINE && p !== IMPORTS) for (const w of writes) expect(isDenyAll(w.condition), p).toBe(true);
     }
   });
 
@@ -304,6 +316,36 @@ describe('Sprint 2 — legend entries, symbol mappings, understanding artifacts,
     }
     expect(paths.symbolMapping('o', 'sig')).toBe('orgs/o/symbolMappings/sig');
     expect(paths.legendEntry('o', 'p', 'le_1')).toBe('orgs/o/projects/p/legendEntries/le_1');
+  });
+});
+
+describe('Sprint 3 — BOQ, library, rules, imports, exports (static)', () => {
+  const ORG = `${DOCS}/orgs/{orgId}`;
+  const PRJ = `${ORG}/projects/{projectId}`;
+  const DOCS3 = [`${ORG}/boqRules/{ruleId}`, `${ORG}/libraryImports/{importId}`, `${ORG}/itemLibrary/{itemId}`, `${ORG}/boqTemplates/{templateId}`, `${PRJ}/boqBuilds/{buildId}`, `${PRJ}/exports/{exportId}`, `${PRJ}/boqLines/{lineId}`];
+
+  it.each(DOCS3)('%s: members read, every client write denied', (p) => {
+    const allows = fs.allows.filter((a) => a.path === p);
+    expect(allows.find((a) => a.methods.includes('read'))?.condition).toBe('isMember(orgId)');
+    const writes = allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)));
+    expect(writes.length).toBeGreaterThan(0);
+    for (const w of writes) expect(isDenyAll(w.condition), `${p} line ${w.line}`).toBe(true);
+  });
+
+  it('job types include boq.build and library.import', () => {
+    expect(JOB_TYPES).toEqual(['ingest.sheet_version', 'boq.build', 'library.import']);
+  });
+
+  it('import slot name check mirrors LIBRARY_IMPORT_PATH_RE; export/evidence/links objects land in deny-all matches', () => {
+    expect(stripComments(STORAGE_RULES)).toContain("name.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.](xls|xlsx)$')");
+    for (const obj of [paths.boqExportFile('o', 'p', 'e1'), paths.boqEvidence('o', 'p', 'b1'), paths.linksArtifact('o', 'p', 's', 'v')]) {
+      const target = `/b/{bucket}/o/${obj}`;
+      const hits = st.matchPaths.filter((m) => m !== '/b/{bucket}/o/{allPaths=**}' && matchPathToRegExp(m).test(target));
+      expect(hits, obj).toHaveLength(1);
+      for (const a of st.allows.filter((x) => x.path === hits[0])) expect(isDenyAll(a.condition), obj).toBe(true);
+    }
+    const imp = `/b/{bucket}/o/${paths.libraryImportObject('o', '0b6f1c2e-6a7d-4f53-9b1e-2f0c8d3a4e51', 'xlsx')}`;
+    expect(st.matchPaths.filter((m) => m !== '/b/{bucket}/o/{allPaths=**}' && matchPathToRegExp(m).test(imp))).toEqual([IMPORTS]);
   });
 });
 

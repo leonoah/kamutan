@@ -21,6 +21,8 @@ export const OrgSettingsSchema = z
     greenThreshold: z.number().min(0).max(1),
     trainingOptIn: z.boolean().optional(),
     llmMonthlyBudgetUsd: z.number().min(0).optional(),
+    /** Sprint 3: VAT of the export's "כולל מע\"מ" total (0.18 = 18%). */
+    vatRate: z.number().min(0).max(1).optional(),
   })
   .strict();
 export type OrgSettings = z.infer<typeof OrgSettingsSchema>;
@@ -31,6 +33,7 @@ export const DEFAULT_ORG_SETTINGS: Readonly<OrgSettings> = Object.freeze({
   greenThreshold: 0.98,
   trainingOptIn: false,
   llmMonthlyBudgetUsd: 30,
+  vatRate: 0.18,
 });
 
 /** orgs/{orgId} (DTO: doc fields + id; timestamps as ISO strings). */

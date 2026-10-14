@@ -5,6 +5,7 @@ import type {
   LegendArtifact,
   LegendEntry,
   LegendEntryPage,
+  LinksArtifact,
   OverlayManifest,
   PatchLegendEntryRequest,
   ResolveUnknownClusterRequest,
@@ -24,6 +25,8 @@ export interface OverlayData {
   legend: LegendArtifact | null;
   detections: DetectionsArtifact | null;
   rooms: RoomsArtifact | null;
+  /** Sprint 3: switch↔luminaire link graph (null when the worker produced none). */
+  links: LinksArtifact | null;
 }
 
 export const overlayKey = (projectId: string, sheetId: string, versionId: string) => ["overlay", projectId, sheetId, versionId] as const;
@@ -41,13 +44,14 @@ export function useOverlay(projectId: string, row: SheetRow | null | undefined) 
     queryFn: async ({ signal }): Promise<OverlayData> => {
       const manifest = await api.getOverlay(projectId, sheetId, versionId);
       const soft = <T,>(p: Promise<T>) => p.catch(() => null);
-      const [legend, detections, rooms] = await Promise.all([
+      const [legend, detections, rooms, links] = await Promise.all([
         manifest.legend ? soft(fetchArtifact<LegendArtifact>(manifest.legend.url, "kamutan.legend/1", signal)) : null,
         // Detections are the point of the overlay: a failure here is an error, not "no data".
         manifest.detections ? fetchArtifact<DetectionsArtifact>(manifest.detections.url, "kamutan.detections/1", signal) : null,
         manifest.rooms ? soft(fetchArtifact<RoomsArtifact>(manifest.rooms.url, "kamutan.rooms/1", signal)) : null,
+        manifest.links ? soft(fetchArtifact<LinksArtifact>(manifest.links.url, "kamutan.links/1", signal)) : null,
       ]);
-      return { manifest, legend, detections, rooms };
+      return { manifest, legend, detections, rooms, links };
     },
   });
 }

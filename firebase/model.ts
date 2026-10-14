@@ -35,7 +35,10 @@ export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
 export const BOQ_LINE_STATUSES = ['draft', 'reviewed', 'approved'] as const;
 export type BoqLineStatus = (typeof BOQ_LINE_STATUSES)[number];
 
-/** Allowed client-side status transitions on boqLines (reviewer/admin only). */
+/**
+ * Allowed boqLine status transitions. Sprint 3: enforced by the API (`PATCH /v1/projects/:pid/boq/lines/:id`,
+ * reviewer+, audited) — boqLines are NOT client-writable anymore (firestore.rules: write false).
+ */
 export const BOQ_LINE_TRANSITIONS: Readonly<Record<BoqLineStatus, readonly BoqLineStatus[]>> = {
   draft: ['reviewed'],
   reviewed: ['approved', 'draft'],
@@ -61,7 +64,7 @@ export const SHEET_VERSION_STATUSES = ['uploaded', 'queued', 'processing', 'read
 export type SheetVersionStatus = (typeof SHEET_VERSION_STATUSES)[number];
 
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const;
-export const JOB_TYPES = ['ingest.sheet_version'] as const;
+export const JOB_TYPES = ['ingest.sheet_version', 'boq.build', 'library.import'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export const LIFECYCLES = ['existing', 'new', 'demolish'] as const;
@@ -86,6 +89,8 @@ export interface Org {
     greenThreshold: number;
     trainingOptIn?: boolean;
     llmMonthlyBudgetUsd?: number;
+    /** Sprint 3: VAT of the export grand total (default 0.18). */
+    vatRate?: number;
   };
   createdAt: FsTimestamp;
 }
@@ -115,6 +120,15 @@ export interface Project {
   templateId?: string | null;
   floors: FloorMeta[];
   stats?: { sheets: number; reviewOpen: number; boqLines: number; red: number; yellow: number; green: number };
+  /** Sprint 3: worker writes latestBuildId/builtAt/stale=false; API writes pendingBuildId and stale=true (+reason). */
+  boq?: {
+    latestBuildId: string | null;
+    builtAt: FsTimestamp | null;
+    stale: boolean;
+    pendingBuildId?: string | null;
+    staleReason?: string | null;
+    staleAt?: FsTimestamp | null;
+  };
   status: 'active' | 'archived';
   createdBy: string;
   createdAt: FsTimestamp;
@@ -312,10 +326,89 @@ export interface BoqLine {
   approvedBy?: string | null;
   approvedAt?: FsTimestamp | null;
   note?: string | null;
+  // --- Sprint 3 ---
+  /** API (PATCH, editor+, reason required). Effective qty = qtyOverride ?? qty. Never overwritten by a rebuild. */
+  qtyOverrideReason?: string | null;
+  qtyOverrideBy?: string | null;
+  qtyOverrideAt?: FsTimestamp | null;
+  /** Worker (boq.build). */
+  byFloor?: Record<string, number>;
+  evidenceCount?: number;
+  ruleId?: string | null;
+  sourceVersions?: Array<{ sheetId: string; versionId: string }>;
+  computedAt?: FsTimestamp | null;
+  buildId?: string | null;
 }
 
-/** Field names a client may change on a boqLine (status transitions only). */
+/**
+ * @deprecated Sprint 3: boqLines are not client-writable (firestore.rules `allow write: if false`); these fields are
+ * changed by the API PATCH only. Kept for compatibility.
+ */
 export const BOQ_LINE_CLIENT_FIELDS = ['status', 'reviewedBy', 'reviewedAt', 'approvedBy', 'approvedAt', 'note'] as const;
+/** Sprint 3: fields the API PATCH may change (role-checked + audited). Mirrors packages/contracts BOQ_LINE_API_FIELDS. */
+export const BOQ_LINE_API_FIELDS = [
+  'status', 'reviewedBy', 'reviewedAt', 'approvedBy', 'approvedAt', 'note', 'qtyOverride', 'qtyOverrideReason', 'qtyOverrideBy', 'qtyOverrideAt', 'updatedAt',
+] as const;
+
+/** orgs/{orgId}/projects/{projectId}/boqBuilds/{buildId} — API creates `queued`, worker runs it. No client write. */
+export interface BoqBuild {
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  jobId: string | null;
+  requestedBy: string | null;
+  createdAt: FsTimestamp;
+  startedAt: FsTimestamp | null;
+  finishedAt: FsTimestamp | null;
+  stats: Record<string, number> | null;
+  error: { code: string; message: string } | null;
+  evidenceRef?: string | null;
+}
+
+/** orgs/{orgId}/projects/{projectId}/exports/{exportId} — API-written export record (file: Storage, signed URL only). */
+export interface BoqExport {
+  templateId: string | null;
+  split: 'summed' | 'byFloor';
+  markDraft: boolean;
+  storagePath: string; // orgs/{o}/projects/{p}/exports/{exportId}.xlsx
+  buildId: string | null;
+  counts: Record<string, number>;
+  sha256: string;
+  sizeBytes: number;
+  createdBy: string;
+  createdAt: FsTimestamp;
+}
+
+/** orgs/{orgId}/boqRules/{ruleId} — seeded defaults + admin edits via API. No client write. */
+export interface BoqRule {
+  kind: 'class_to_item' | 'composite_lighting' | 'install_count' | 'authority';
+  match: Record<string, unknown>;
+  itemCode: string | null; // TEXT
+  itemDescription?: string | null;
+  unit?: string | null;
+  priority: number;
+  enabled: boolean;
+  reasons?: string[];
+  source: 'default' | 'custom';
+  updatedAt: FsTimestamp | null;
+  updatedBy?: string | null;
+}
+
+/** orgs/{orgId}/libraryImports/{importId} — API creates/finalizes; worker may write status/stats/error. No client write. */
+export interface LibraryImport {
+  orgId: string;
+  projectId: string | null;
+  sourceKind: 'xls' | 'xlsx';
+  storagePath: string; // orgs/{orgId}/imports/{importId}.{xls|xlsx}
+  originalName: string;
+  sizeBytes: number;
+  status: 'awaiting_upload' | 'queued' | 'running' | 'succeeded' | 'failed' | 'rejected';
+  jobId: string | null;
+  createdBy: string;
+  createdAt: FsTimestamp;
+  expiresAt: FsTimestamp;
+  finalizedAt: FsTimestamp | null;
+  stats: Record<string, number> | null;
+  error: { code: string; message: string } | null;
+}
 
 /** orgs/{orgId}/projects/{projectId}/shareLinks/{linkId} — API-only; token stored as SHA-256 hex only. */
 export interface ShareLink {
@@ -328,22 +421,33 @@ export interface ShareLink {
   createdAt: FsTimestamp;
 }
 
-/** orgs/{orgId}/itemLibrary/{itemId} — server-written. */
+/** orgs/{orgId}/itemLibrary/{itemId} — API (manual) / worker (library.import). itemId = itemIdFor(code, description). */
 export interface ItemLibraryEntry {
   code: string; // TEXT
-  chapter: string;
+  chapter: string; // "04"
+  chapterTitle: string;
   description: string;
   unit: string;
-  tags?: string[];
-  sourceFile?: string;
+  tags: string[];
+  source: 'import' | 'manual';
+  sourceRef?: string | null;
+  active: boolean;
+  updatedAt: FsTimestamp | null;
+  updatedBy?: string | null;
 }
 
-/** orgs/{orgId}/boqTemplates/{id} — server-written. */
+/** orgs/{orgId}/boqTemplates/{id} — API (seed `tpl_default`, admin PATCH) / worker (import). */
 export interface BoqTemplate {
   name: string;
-  chapters: Array<{ code: string; title: string; note?: string }>;
-  columns: Array<{ key: string; title: string }>;
-  xlsxTemplatePath?: string;
+  chapters: Array<{ code: string; title: string; notes: string[]; codePrefixes?: string[] }>;
+  columns: Array<{ key: 'code' | 'description' | 'unit' | 'qty' | 'unitPrice' | 'total'; title: string; width?: number }>;
+  titleRows: string[];
+  default: boolean;
+  source: 'default' | 'import' | 'manual';
+  sourceRef?: string | null;
+  vatRate: number;
+  updatedAt: FsTimestamp | null;
+  updatedBy?: string | null;
 }
 
 /**
@@ -408,6 +512,11 @@ export const paths = {
   shareLink: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/shareLinks/${id}`,
   itemLibrary: (o: string, id: string) => `orgs/${o}/itemLibrary/${id}`,
   boqTemplate: (o: string, id: string) => `orgs/${o}/boqTemplates/${id}`,
+  /** Sprint 3 Firestore docs. */
+  boqRule: (o: string, id: string) => `orgs/${o}/boqRules/${id}`,
+  libraryImport: (o: string, id: string) => `orgs/${o}/libraryImports/${id}`,
+  boqBuild: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqBuilds/${id}`,
+  boqExport: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/exports/${id}`,
   symbolMapping: (o: string, id: string) => `orgs/${o}/symbolMappings/${id}`,
   auditEvent: (o: string, id: string) => `orgs/${o}/auditLog/${id}`,
   job: (id: string) => `jobs/${id}`,
@@ -433,6 +542,12 @@ export const paths = {
   unknownThumb: (o: string, p: string, s: string, v: string, clusterId: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/unknown/${clusterId}.webp`,
   /** Sprint 2 per-org LLM gateway cache (SEC-23) — worker only, never client-readable. */
   llmCache: (o: string, key: string) => `orgs/${o}/llm-cache/${key}`,
+  /** Sprint 3 Storage objects — none client-readable. */
+  linksArtifact: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/links.json.gz`,
+  boqEvidence: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/evidence.json.gz`,
+  boqExportFile: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}.xlsx`,
+  /** Client create-only upload slot for past BOQs (editor/admin, ≤ 20 MB, spreadsheet types); API verifies magic bytes. */
+  libraryImportObject: (o: string, uuid: string, ext: 'xls' | 'xlsx') => `orgs/${o}/imports/${uuid}.${ext}`,
 } as const;
 
 /** Storage prefixes a client may READ directly. Empty by design: every read is a signed URL (SEC-20). */
@@ -442,5 +557,7 @@ export const CLIENT_READABLE_STORAGE_PREFIXES: readonly string[] = [];
 export const COLLECTIONS = [
   'orgs', 'members', 'projects', 'sheetSets', 'sheets', 'versions', 'legendEntries', 'reviewItems',
   'corrections', 'boqLines', 'shareLinks', 'itemLibrary', 'boqTemplates', 'symbolMappings', 'auditLog', 'jobs',
+  // Sprint 3
+  'boqBuilds', 'exports', 'boqRules', 'libraryImports',
 ] as const;
 export type CollectionId = (typeof COLLECTIONS)[number];

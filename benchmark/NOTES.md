@@ -175,6 +175,60 @@ Schema and taxonomy changes:
   `water_heater_feed`, `legend_entry`, `legend_box`, `unknown`. These are the legend rows of the Noah electrical and
   lighting sheets that had no class.
 
+## Sprint 3: link groups, BOQ lines, Excel fidelity
+
+New modules: `links.py` (link-group truth + worker adapter + metrics + implied composite counts), `boq_lines.py`
+(worker `boq-lines.json` vs `boq_truth.json`), `excel_check.py` (xlsx export vs the sample `.xls` layout).
+New schema: `schema/links.schema.json` (`kamutan.links-truth/1`); `disputes.schema.json` gains optional `link_groups`
+and allows `lines: []` (a dispute that only concerns link groups or a rule question excludes no BOQ line).
+
+```bash
+uv run kbench eval-links --truth $GT --pred-links $KAMUTAN_DATA_DIR/artifacts --out l.json --report l.md
+uv run kbench eval-boq --truth $GT --pred-lines $KAMUTAN_DATA_DIR/artifacts/boq-lines.json --out b.json --report b.md
+uv run kbench links-implied --truth $GT [--skip-existing-points|--skip-existing-switches|--alt]
+uv run kbench excel-check --sample boq_sample.xls --export export.xlsx [--lines boq-lines.json] --report x.md
+```
+
+### Link-group truth (`gt/<p>/links/<sheet>.json`)
+- One group = the switches that control the same set of light points (a connected component of the dashed-arc
+  graph). Ids are the point-GT feature ids. Every switch is in exactly one group; every luminaire in one group or in
+  `unlinked_luminaires` (existing points without an arc). `kbench validate` lints this.
+- `kind`: single | two_way | shared | sensor | add_to_existing. Cross-sheet copies carry `cross_sheet_duplicate_of`.
+  Ambiguous groups carry `dispute_id` (+ `alt_readings`) and are excluded from gating.
+
+### Link metrics (`eval-links`)
+- Predicted detections (the `detections.json.gz` next to `links.json.gz`) are mapped to truth ids by Hungarian
+  centre-distance matching (3 mm) per family (switches; luminaires + fans), class-agnostic inside the family.
+- group exact match (recall over truth groups, precision over predicted groups): same switch set AND same luminaire set;
+- switch -> point assignment accuracy (per truth switch); luminaire -> switch accuracy;
+- composite-kind accuracy (truth group vs the predicted group with the largest id overlap) + kind confusion;
+- green-group precision (exact-match rate of green groups; LK-06 "never a wrong green").
+
+### BOQ-line metrics (`eval-boq`)
+- Scope: chapter 4 + `9.01` (configurable `--scope`). Per line AE, PE = AE / max(Q, 1), exact; Q̂ = sum of `qty` over
+  predicted lines with the same TEXT code (`qtyOverride` ignored: "before review"); not proposed = 0.
+- Gated = in-scope lines not disputed; disputed lines are reported, never gated. Extra codes reported separately.
+- Per floor where the truth has a `breakdown` (Noah chapter 4 has none, so this is empty on Noah).
+- Green-line precision: green lines on gated or extra codes, correct = exact on a gated truth line.
+
+### Implied composite counts (`links-implied`)
+Default rules: single -> 4.09, two_way -> 4.10, shared 2/3 points -> 4.11/4.16, add_to_existing -> 4.12 (2-way) /
+4.14 (fan switch), sensor -> 4.15, a fan switch anywhere -> one 4.14; cross-sheet duplicates skipped; 9.01 = all
+luminaire positions (linked + unlinked) − ceiling fans − cross-sheet duplicates.
+
+### Excel fidelity (`excel-check`)
+Checklist X01–X18 (see the module docstring): sheet name, RTL, title rows, header order (extra columns only at the
+edges), chapter headers + notes, codes as TEXT with trailing zeros, natural order, units, empty prices, line/chapter/grand
+total formulas, ₪ format, extra sheets, formula-injection text, and optionally quantities vs `boq-lines.json`.
+
+### Sprint-3 ground truth: `gt-v0.3-draft` (frozen in `GT_FREEZE.json`, before reading any worker link/BOQ output)
+- `links/{b2046277,1bbe4113}.json`: 31 groups (13 + 18), 9 unlinked existing points; two passes (visual + vector
+  dash chaining), reconciled in `reconcile_log.md#sprint-3`; `tools/build_links_gt.py` rebuilds them.
+- Disputes GT-D-005 (master fan-switch arc ends at the type-23 spot; link group excluded) and GT-D-006 (4.09 implied
+  17 vs BOQ 16; informational, no line excluded); GT-D-002 hypothesis updated (9.01 = 49 − 5 fans − 1 duplicate).
+- Caveat: `scripts/build_noah_draft_gt.py` regenerates `disputes.json` from Sprint-0 data and would drop the Sprint-2/3
+  hypotheses and GT-D-005/006; do not re-run it against the frozen GT.
+
 ## Known gaps
 
 - **No `kbench run`.** The pipeline does not exist yet. `eval` scores prediction files written in the annotation schema, and the workers must emit that format.

@@ -9,6 +9,8 @@ export * from './geometry.js';
 export * from './tiles.js';
 export * from './review.js';
 export * from './boq.js';
+export * from './library.js';
+export { sha256Hex } from './sha256.js';
 export * from './share.js';
 export * from './firestore.js';
 export * from './uploads.js';

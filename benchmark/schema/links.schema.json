@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kamutan.local/schema/links.schema.json",
+  "title": "Kamutan switch-luminaire link groups (ground truth, one file per lighting sheet)",
+  "description": "gt/<project>/links/<sheet_id>.json. Ids are the point-GT feature ids of the same sheet (sheets/<sheet_id>.geojson). A group = the switches that control the same set of light points (one connected component of the dashed-arc graph). A point = one or more luminaires wired as one light point. Every switch of the sheet is in exactly one group; every luminaire is in exactly one group or in unlinked_luminaires. Predictions use the worker contract kamutan.links/1 (packages/contracts/src/boq.ts), whose ids are detection ids.",
+  "type": "object",
+  "required": ["schema_version", "format", "project_id", "sheet_id", "kind", "gt_version", "status", "points", "groups", "unlinked_luminaires"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "format": {"const": "kamutan.links-truth/1"},
+    "project_id": {"type": "string"},
+    "sheet_id": {"type": "string"},
+    "kind": {"const": "truth"},
+    "gt_version": {"type": "string"},
+    "point_gt_version": {"type": "string"},
+    "annotator": {"type": "string"},
+    "status": {"enum": ["draft", "draft-verified", "verified", "adjudicated"]},
+    "method": {"type": "string"},
+    "point_rule": {"type": "string"},
+    "points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "luminaireIds"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^pt:"},
+          "luminaireIds": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "floor": {"type": ["string", "null"]},
+          "lifecycle": {"enum": ["existing", "new", "demolish", null]}
+        }
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "switchIds", "pointIds", "luminaireIds"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"enum": ["single", "two_way", "shared", "sensor", "add_to_existing"]},
+          "switchIds": {"type": "array", "items": {"type": "string"}},
+          "pointIds": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "luminaireIds": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "floor": {"type": ["string", "array", "null"]},
+          "switch_lifecycles": {"type": "array", "items": {"type": ["string", "null"]}},
+          "point_lifecycles": {"type": "array", "items": {"type": ["string", "null"]}},
+          "has_fan_switch": {"type": "boolean"},
+          "has_fan_point": {"type": "boolean"},
+          "cross_sheet_duplicate_of": {
+            "type": ["object", "null"],
+            "required": ["sheet_id", "group_id"],
+            "properties": {"sheet_id": {"type": "string"}, "group_id": {"type": "string"}},
+            "description": "The same physical group drawn on another sheet; counted once (on the referenced sheet)."
+          },
+          "confidence": {"enum": ["H", "M", "L"]},
+          "dispute_id": {"type": "string", "pattern": "^GT-D-[0-9]{3}$", "description": "Group excluded from gating metrics until the dispute is resolved."},
+          "alt_readings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["label", "groups"],
+              "properties": {
+                "label": {"type": "string"},
+                "groups": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["switchIds", "luminaireIds", "kind"],
+                    "properties": {
+                      "switchIds": {"type": "array", "items": {"type": "string"}},
+                      "luminaireIds": {"type": "array", "items": {"type": "string"}},
+                      "kind": {"enum": ["single", "two_way", "shared", "sensor", "add_to_existing"]}
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "notes": {"type": "string"}
+        },
+        "allOf": [
+          {"if": {"properties": {"kind": {"const": "sensor"}}}, "then": {"properties": {"switchIds": {"maxItems": 0}}}, "else": {"properties": {"switchIds": {"minItems": 1}}}}
+        ]
+      }
+    },
+    "unlinked_luminaires": {
+      "type": "array",
+      "items": {"type": "object", "required": ["id", "reason"], "properties": {"id": {"type": "string"}, "reason": {"type": "string"}}}
+    }
+  }
+}

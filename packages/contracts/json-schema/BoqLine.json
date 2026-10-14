@@ -12,6 +12,7 @@
         },
         "chapter": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 32
         },
         "code": {
@@ -28,9 +29,48 @@
           "type": "number"
         },
         "qtyOverride": {
-          "type": [
-            "number",
-            "null"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qtyOverrideReason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qtyOverrideBy": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "qtyOverrideAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "unit": {
@@ -41,7 +81,7 @@
           "anyOf": [
             {
               "type": "string",
-              "maxLength": 16
+              "maxLength": 32
             },
             {
               "type": "null"
@@ -76,8 +116,10 @@
           "type": "array",
           "items": {
             "type": "string",
-            "maxLength": 64
-          }
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "maxItems": 32
         },
         "evidenceRef": {
           "anyOf": [
@@ -154,6 +196,84 @@
             {
               "type": "string",
               "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "byFloor": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "evidenceCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruleId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceVersions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sheetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "versionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            },
+            "required": [
+              "sheetId",
+              "versionId"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        },
+        "computedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buildId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
             },
             {
               "type": "null"

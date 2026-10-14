@@ -6,6 +6,10 @@
     kbench compare --current metrics.json --baseline baseline.json [--thresholds t.json] [--out gate.json] [--report gate.md]
     kbench parse-boq-xls XLS --project ID --out boq_truth.json
     kbench manifest DATA_DIR --project ID --out manifest.json
+    kbench eval-links --truth GT_DIR --pred-links ARTIFACTS_DIR --out links.json [--report links.md] [--center-tol-mm 3]
+    kbench eval-boq --truth GT_DIR --pred-lines boq-lines.json --out boq.json [--report boq.md] [--scope 4. --scope 9.01]
+    kbench excel-check --sample boq_sample.xls --export export.xlsx [--lines boq-lines.json] [--report r.md]
+    kbench links-implied --truth GT_DIR [--out implied.json] [--skip-existing-points] [--skip-existing-switches] [--alt]
 
 Exit codes: 0 ok · 1 regression / validation errors · 2 usage / not comparable.
 """
@@ -158,6 +162,86 @@ def cmd_manifest(a: argparse.Namespace) -> int:
     return 0
 
 
+def _meta(a: argparse.Namespace) -> dict:
+    return {"kbench_version": __version__, "gt_version": a.gt_version, "model_version": a.model_version, "code_sha": a.code_sha}
+
+
+def cmd_eval_links(a: argparse.Namespace) -> int:
+    from .links import evaluate_links, load_pred_links, load_truth_links, render_links_markdown
+
+    truth = load_project(a.truth)
+    docs = load_truth_links(a.truth)
+    if not docs:
+        print(f"error: no links/*.json under {a.truth}", file=sys.stderr)
+        return 2
+    sheet_map = json.loads(Path(a.sheet_map).read_text(encoding="utf-8")) if a.sheet_map else None
+    pred = load_pred_links(a.pred_links, set(docs), sheet_map)
+    m = _meta(a) | evaluate_links(docs, truth, pred, a.center_tol_mm)
+    _write_json(a.out, m)
+    if a.report:
+        Path(a.report).write_text(render_links_markdown(m), encoding="utf-8")
+    p = m["links"]["pooled"]
+    print(
+        f"groups exact R={p['group_exact_recall']['p']} P={p['group_exact_precision']['p']} "
+        f"switch_acc={p['switch_assignment']['p']} kind_acc={p['kind_accuracy']['p']} green_P={p['green_precision']['p']} "
+        f"missing={m['links']['missing_pred_sheets']}"
+    )
+    return 0
+
+
+def cmd_eval_boq(a: argparse.Namespace) -> int:
+    from .boq_lines import DEFAULT_SCOPE, evaluate_boq_lines, load_pred_lines, render_boq_markdown
+
+    truth = load_project(a.truth)
+    import hashlib
+
+    m = _meta(a) | evaluate_boq_lines(truth, load_pred_lines(a.pred_lines), tuple(a.scope or DEFAULT_SCOPE))
+    m["source"] = {"pred_lines": str(a.pred_lines), "sha256": hashlib.sha256(Path(a.pred_lines).read_bytes()).hexdigest()}
+    _write_json(a.out, m)
+    if a.report:
+        Path(a.report).write_text(render_boq_markdown(m), encoding="utf-8")
+    g = m["boq_lines"]["gated"]
+    print(
+        f"gated lines={g['n_lines']} EM={g['exact_match']['p']} sumAE={g['sum_ae']} medPE={g['median_pe']} "
+        f"green_P={m['boq_lines']['green_line_precision']['p']} extra={len(m['boq_lines']['extra_lines'])}"
+    )
+    return 0
+
+
+def cmd_links_implied(a: argparse.Namespace) -> int:
+    from .links import CompositeRules, implied_composite_counts, load_truth_links
+
+    truth = load_project(a.truth)
+    rules = CompositeRules(
+        skip_all_existing_points=a.skip_existing_points,
+        skip_all_existing_switches=a.skip_existing_switches,
+        use_alt_readings=a.alt,
+    )
+    res = implied_composite_counts(load_truth_links(a.truth), truth, rules)
+    boq = {ln["code"]: ln.get("quantity") for ln in truth.boq_lines()}
+    res["vs_boq"] = {c: {"implied": n, "boq": boq.get(c)} for c, n in res["counts"].items()}
+    if a.out:
+        _write_json(a.out, res)
+    for c, v in res["vs_boq"].items():
+        print(f"{c}: implied {v['implied']} boq {v['boq']}")
+    return 0
+
+
+def cmd_excel_check(a: argparse.Namespace) -> int:
+    from .boq_lines import load_pred_lines
+    from .excel_check import check_export, render_checklist, sample_spec_from_xls
+
+    spec = sample_spec_from_xls(a.sample)
+    items = check_export(a.export, spec, load_pred_lines(a.lines) if a.lines else None)
+    md = render_checklist(items)
+    if a.out:
+        _write_json(a.out, {"spec": spec, "checks": items})
+    if a.report:
+        Path(a.report).write_text(md, encoding="utf-8")
+    print(md)
+    return 1 if any(it["status"] == "fail" for it in items) else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="kbench", description="Kamutan accuracy benchmark")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -212,6 +296,46 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--sheet-meta", help="JSON {sheet_id: {discipline, floors, ...}}")
     s.add_argument("--split", default="dev")
     s.set_defaults(fn=cmd_manifest)
+
+    def meta_args(s: argparse.ArgumentParser) -> None:
+        s.add_argument("--gt-version")
+        s.add_argument("--model-version")
+        s.add_argument("--code-sha")
+
+    s = sub.add_parser("eval-links", help="score worker link groups (kamutan.links/1) against links/<sheet>.json truth")
+    s.add_argument("--truth", required=True)
+    s.add_argument("--pred-links", required=True, help="DIR/**/sheets/<s>/versions/<v>/links.json.gz (+ detections.json.gz)")
+    s.add_argument("--sheet-map")
+    s.add_argument("--center-tol-mm", type=float, default=3.0)
+    s.add_argument("--out", required=True)
+    s.add_argument("--report")
+    meta_args(s)
+    s.set_defaults(fn=cmd_eval_links)
+
+    s = sub.add_parser("eval-boq", help="score the worker's boq-lines.json against boq_truth.json")
+    s.add_argument("--truth", required=True)
+    s.add_argument("--pred-lines", required=True)
+    s.add_argument("--scope", action="append", help="code prefix ('4.') or exact code ('9.01'); default 4. + 9.01")
+    s.add_argument("--out", required=True)
+    s.add_argument("--report")
+    meta_args(s)
+    s.set_defaults(fn=cmd_eval_boq)
+
+    s = sub.add_parser("links-implied", help="composite BOQ counts implied by the link-group truth")
+    s.add_argument("--truth", required=True)
+    s.add_argument("--out")
+    s.add_argument("--skip-existing-points", action="store_true")
+    s.add_argument("--skip-existing-switches", action="store_true")
+    s.add_argument("--alt", action="store_true", help="use alt readings of disputed groups")
+    s.set_defaults(fn=cmd_links_implied)
+
+    s = sub.add_parser("excel-check", help="xlsx export vs the sample BOQ format (checklist)")
+    s.add_argument("--sample", required=True, help="client's sample .xls (sheet כמויות)")
+    s.add_argument("--export", required=True, help="exported .xlsx")
+    s.add_argument("--lines", help="boq-lines.json: also check quantities")
+    s.add_argument("--out")
+    s.add_argument("--report")
+    s.set_defaults(fn=cmd_excel_check)
     return p
 
 

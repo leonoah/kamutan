@@ -127,6 +127,11 @@ class LocalDocStore:
             doc = deep_merge(old, new) if (merge and old is not None) else new
             _atomic_write(p, json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=True).encode())
 
+    def delete(self, path: str) -> None:
+        """Delete one document (Sprint 3: obsolete draft BOQ lines). Missing → no-op."""
+        with _locked(self.root):
+            self._p(path).unlink(missing_ok=True)
+
     def list_docs(self, collection: str, limit: int = 2000) -> list[tuple[str, dict[str, Any]]]:
         """(doc id, doc) of the direct children of ``collection``."""
         d = self.root / DOCS_DIR / check_path(collection)

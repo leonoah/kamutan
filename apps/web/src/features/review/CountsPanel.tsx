@@ -12,7 +12,7 @@ import { className } from "@/features/understanding/taxonomy";
 const stripe = { green: "bg-transparent", yellow: "bg-conf-mid", red: "bg-conf-low", unknown: "bg-conf-unknown" } as const;
 
 /**
- * Right pane until the BOQ table lands (Sprint 3): "ספירה לפי סוג" — detections of the current sheet grouped by
+ * "ספירה לפי סוג" — the secondary tab of the BOQ panel (Sprint 3): — detections of the current sheet grouped by
  * class, counts by confidence level (● ▲ ◆ ◇). A row is a toggle: selecting it focuses that class on the drawing
  * (everything else dims) and clicking a marker selects its row (bidirectional, spec §הדגשה דו-כיוונית).
  */
@@ -51,16 +51,15 @@ export function CountsPanel({
   }, [selectedClass]);
 
   return (
-    <section id="boq-panel" tabIndex={-1} aria-label={t("understanding.countsTitle")} className="flex min-h-0 flex-col bg-surface">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-4">
-        <h2 className="text-panel text-foreground">{t("understanding.countsTitle")}</h2>
-        <span className="text-meta text-muted-foreground">
-          {t("understanding.total")}: <Ltr>{String(totals.total)}</Ltr>
-        </span>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col bg-surface">
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="sticky top-0 z-10 border-b border-border bg-surface-sunken px-4 py-2.5">
-          <p className="text-meta text-muted-foreground">{t("understanding.countsNote")}</p>
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-meta text-muted-foreground">{t("understanding.countsNote")}</p>
+            <span className="shrink-0 text-meta text-muted-foreground">
+              {t("understanding.total")}: <Ltr>{String(totals.total)}</Ltr>
+            </span>
+          </div>
           <SectionProgress high={totals.green} mid={totals.yellow} low={totals.red + totals.unknown} className="mt-2" />
         </div>
         {error ? (
@@ -147,6 +146,6 @@ export function CountsPanel({
           </table>
         )}
       </div>
-    </section>
+    </div>
   );
 }

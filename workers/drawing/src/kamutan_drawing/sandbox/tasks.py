@@ -61,6 +61,29 @@ def understand(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     return run(args, progress)
 
 
+def boq_parse(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
+    """Sprint 3 (Worker-BOQ): parse a past BOQ workbook (.xls / .xlsx) → ``kamutan.boq-import/1``."""
+    from ..library_import.parse import parse_workbook
+    from ..library_import.readers import read_workbook, sniff
+
+    path = _inside(str(args["path"]))
+    kind = str(args["kind"])
+    with open(path, "rb") as f:
+        head = f.read(8)
+    if sniff(head) != kind:
+        raise IngestError(E.FILE_TYPE_MISMATCH, f"file content is not {kind.upper()}")
+    progress("parse", 10)
+    try:
+        sheets = read_workbook(path, kind)
+    except Exception as e:  # noqa: BLE001 - xlrd.XLRDError, zipfile.BadZipFile, KeyError, ValueError, XML errors …
+        raise IngestError(E.FILE_UNREADABLE, f"workbook unreadable ({type(e).__name__})") from None
+    progress("parse", 60)
+    try:
+        return parse_workbook(sheets)
+    except ValueError as e:
+        raise IngestError(E.UNSUPPORTED_FORMAT, str(e)[:200]) from None
+
+
 def _parse(family: str, args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     """Magic-byte check + probe + one page (vectors, render, text layer, classify, regions).
 
@@ -212,6 +235,7 @@ TASKS: dict[str, Callable[[dict[str, Any], Progress], Any]] = {
     "probe": probe,
     "page": page,
     "understand": understand,
+    "boq_parse": boq_parse,
     "parse_pdf": parse_pdf,
     "parse_dxf": parse_dxf,
     "parse_raster": parse_raster,

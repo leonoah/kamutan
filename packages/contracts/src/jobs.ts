@@ -1,13 +1,23 @@
 import { z } from 'zod';
 import { Sha256HexSchema, TimestampSchema } from './common.js';
-import { PROJECT_UPLOAD_PATH_RE, SOURCE_PATH_RE } from './firestore.js';
+import { LIBRARY_IMPORT_PATH_RE, PROJECT_UPLOAD_PATH_RE, SOURCE_PATH_RE } from './firestore.js';
 import { DocIdSchema } from './org.js';
 import { FileKindSchema, ProcessingErrorSchema } from './sheets.js';
 
 /** Pub/Sub topics (ADR 0008). */
 export const TOPICS = Object.freeze({ ingest: 'ingest' } as const);
 
-export const JOB_TYPES = Object.freeze({ ingestSheetVersion: 'ingest.sheet_version' } as const);
+export const JOB_TYPES = Object.freeze({
+  ingestSheetVersion: 'ingest.sheet_version',
+  /** Sprint 3: aggregate all current, ready sheet versions of a project into boqLines. */
+  boqBuild: 'boq.build',
+  /** Sprint 3: parse a past BOQ (xls/xlsx) into the org item library (+ a template). */
+  libraryImport: 'library.import',
+} as const);
+export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
+
+/** Past-BOQ file kinds accepted by `library.import` (magic bytes checked by the API). */
+export const LIBRARY_IMPORT_KINDS = ['xls', 'xlsx'] as const;
 
 export const INGEST_JOB_SCHEMA_VERSION = 3 as const;
 
@@ -80,6 +90,60 @@ export const IngestSheetVersionJobV2Schema = z
   });
 export type IngestSheetVersionJobV2 = z.infer<typeof IngestSheetVersionJobV2Schema>;
 
+export const BOQ_BUILD_JOB_SCHEMA_VERSION = 1 as const;
+export const LIBRARY_IMPORT_JOB_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Topic `ingest`, type `boq.build` (Sprint 3). The worker loads jobs/{jobId} (orgId must match) and
+ * orgs/{orgId}/projects/{projectId}/boqBuilds/{buildId}, aggregates every current `ready` sheet version, writes
+ * boqLines (never overwriting BOQ_LINE_PRESERVED_FIELDS), evidence.json.gz, the build doc and project `boq`
+ * (`latestBuildId`, `builtAt`, `stale: false`, `pendingBuildId: null`).
+ */
+export const BoqBuildJobSchema = z
+  .object({
+    schemaVersion: z.literal(BOQ_BUILD_JOB_SCHEMA_VERSION),
+    type: z.literal(JOB_TYPES.boqBuild),
+    jobId: DocIdSchema,
+    orgId: DocIdSchema,
+    projectId: DocIdSchema,
+    buildId: DocIdSchema,
+    traceparent: TraceparentSchema.nullable(),
+  })
+  .strict();
+export type BoqBuildJob = z.infer<typeof BoqBuildJobSchema>;
+
+/**
+ * Topic `ingest`, type `library.import` (Sprint 3). `storagePath` = orgs/{orgId}/imports/{importId}.{sourceKind}
+ * (verified by the API: size + magic bytes). The worker upserts orgs/{orgId}/itemLibrary/{itemIdFor(code, desc)}
+ * (source `import`, sourceRef = importId), creates a template from the file's structure when the org has none, and
+ * may write status/stats/error on orgs/{orgId}/libraryImports/{importId}.
+ */
+export const LibraryImportJobSchema = z
+  .object({
+    schemaVersion: z.literal(LIBRARY_IMPORT_JOB_SCHEMA_VERSION),
+    type: z.literal(JOB_TYPES.libraryImport),
+    jobId: DocIdSchema,
+    orgId: DocIdSchema,
+    projectId: DocIdSchema.nullable(),
+    importId: z.string().uuid(),
+    storagePath: z.string().regex(LIBRARY_IMPORT_PATH_RE, 'invalid import path'),
+    sourceKind: z.enum(LIBRARY_IMPORT_KINDS),
+    traceparent: TraceparentSchema.nullable(),
+  })
+  .strict()
+  .refine((j) => j.storagePath === `orgs/${j.orgId}/imports/${j.importId}.${j.sourceKind}`, {
+    message: 'storagePath must be the import object of the job org/importId/sourceKind',
+    path: ['storagePath'],
+  });
+export type LibraryImportJob = z.infer<typeof LibraryImportJobSchema>;
+
+/**
+ * Every message on topic `ingest` (discriminate on `type`; attribute `type` carries it too). Python: validate with
+ * json-schema/IngestTopicJob.json (anyOf) and dispatch on `type`.
+ */
+export const IngestTopicJobSchema = z.union([IngestSheetVersionJobSchema, BoqBuildJobSchema, LibraryImportJobSchema]);
+export type IngestTopicJob = z.infer<typeof IngestTopicJobSchema>;
+
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const;
 export const JobStatusSchema = z.enum(JOB_STATUSES);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
@@ -98,8 +162,14 @@ export type JobProgress = z.infer<typeof JobProgressSchema>;
 export const JobSchema = z.object({
   id: DocIdSchema,
   orgId: DocIdSchema,
-  projectId: DocIdSchema,
-  sheetSetId: DocIdSchema,
+  /** null for org-level jobs (`library.import` without a project). */
+  projectId: DocIdSchema.nullable(),
+  /** Ingest jobs only (null/absent for `boq.build` / `library.import`). */
+  sheetSetId: DocIdSchema.nullable().optional(),
+  /** `boq.build`: boqBuilds/{buildId}. */
+  buildId: DocIdSchema.optional(),
+  /** `library.import`: libraryImports/{importId}. */
+  importId: z.string().uuid().optional(),
   /** null for an initial ingest (all pages); the sheet for a reprocess. */
   sheetId: DocIdSchema.nullable().optional(),
   versionId: DocIdSchema.optional(),

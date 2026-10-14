@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   DocIdSchema,
   INGEST_JOB_SCHEMA_VERSION,
@@ -21,6 +21,7 @@ import {
 import { AccessService } from '../access/access.service';
 import type { AuthContext } from '../auth/auth-context';
 import { ApiException, notFound } from '../common/api-exception';
+import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { RepoConflictError, REPOSITORY, type Repository } from '../db/repository';
 import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
 import { validateRegions } from './region-validation';
@@ -38,6 +39,7 @@ export class SheetsService {
     @Inject(REPOSITORY) private readonly repo: Repository,
     @Inject(INGEST_QUEUE) private readonly queue: IngestQueue,
     @Inject(URL_SIGNER) private readonly signer: UrlSigner,
+    @Optional() @Inject(BOQ_REPOSITORY) private readonly boq?: BoqRepository,
   ) {}
 
   async list(user: AuthContext, projectId: string, q: ListSheetsQuery): Promise<SheetPage> {
@@ -76,6 +78,8 @@ export class SheetsService {
       ),
     );
     if (!updated) throw notFound('sheet');
+    // Sprint 3: confirmed floors are authoritative for the BOQ → stale until rebuilt (never fails the request).
+    await this.boq?.markStale(orgId, projectId, 'sheet').catch((err: unknown) => this.logger.warn({ err: (err as Error).message, projectId }, 'markStale failed'));
     return updated;
   }
 

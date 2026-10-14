@@ -63,6 +63,8 @@ export interface UnderstandingMock {
   /** Use the worker's real artifacts for this sheet (dev-index entry). */
   useReal(row: SheetRow, paths: { legend?: string; detections?: string; rooms?: string }): void;
   getOverlay(row: SheetRow): Promise<OverlayManifest>;
+  /** Detections of a sheet with the user's answers applied (Sprint 3: the mock BOQ engine aggregates them). */
+  detections(row: SheetRow): Promise<DetectionsArtifact | null>;
   listLegendEntries(rows: SheetRow[], q: { sheetId?: string; status?: string }): Promise<LegendEntry[]>;
   patchLegendEntry(entryId: string, req: PatchLegendEntryRequest): Promise<{ entry: LegendEntry; mapping: unknown }>;
   resolveUnknownCluster(rows: SheetRow[], clusterId: string, req: ResolveUnknownClusterRequest): Promise<ResolveUnknownClusterResponse>;
@@ -192,6 +194,10 @@ export function createUnderstandingMock(): UnderstandingMock {
         stats: { ...(row.version?.stats ?? {}), ...statsOf(det, l.legend, l.rooms) },
         expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       };
+    },
+    async detections(row) {
+      const l = await load(row.sheet.id);
+      return patched(row.sheet.id, l.detections);
     },
     async listLegendEntries(rows, q) {
       await Promise.all(rows.map(seedEntries));

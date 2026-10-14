@@ -14,11 +14,13 @@ dependencies = [
     "jsonschema>=4.26.0",
     "msgpack>=1.2.3",
     "numpy>=2.5.4",
+    "openpyxl>=3.1.5",
     "pillow>=12.3.0",
     "pydantic>=2.14.1",
     "pypdfium2>=5.14.0",
     "scipy>=1.18.1",
     "shapely>=2.2.0",
+    "xlrd>=2.0.2",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +48,7 @@ dev = [
     "ruff>=0.17.0",
     "scipy-stubs>=1.18.1.1",
     "types-jsonschema>=4.26.0.20261006",
+    "types-openpyxl>=3.1.5.20260827",
     "types-shapely>=2.1.0.20260728",
 ]
 
@@ -76,4 +79,9 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 # pypdfium2 ships no type information (no py.typed / stubs); scipy is covered by scipy-stubs.
 module = ["pypdfium2", "pypdfium2.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# xlrd ships no type information (Sprint 3 library import; used only inside the sandbox).
+module = ["xlrd", "xlrd.*"]
 ignore_missing_imports = true

@@ -29,7 +29,7 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
   describe('tenant isolation', () => {
     const memberReadable = [
       'org', 'member', 'project', 'sheetSet', 'sheet', 'version', 'legendEntry', 'reviewItem', 'correction',
-      'boqDraft', 'itemLibrary', 'boqTemplate', 'symbolMapping', 'job',
+      'boqDraft', 'itemLibrary', 'boqTemplate', 'symbolMapping', 'job', 'boqRule', 'libraryImport', 'boqBuild', 'boqExport',
     ] as const;
 
     it.each(memberReadable)('%s: org A viewer reads A, never B', async (k) => {
@@ -77,7 +77,7 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
   describe('server-only collections: client writes denied (even admin)', () => {
     const serverOnly = [
       'org', 'member', 'project', 'sheetSet', 'sheet', 'version', 'legendEntry', 'shareLink',
-      'itemLibrary', 'boqTemplate', 'symbolMapping', 'auditEvent', 'job',
+      'itemLibrary', 'boqTemplate', 'symbolMapping', 'auditEvent', 'job', 'boqRule', 'libraryImport', 'boqBuild', 'boqExport',
     ] as const;
 
     it.each(serverOnly)('%s: admin cannot create/update/delete', async (k) => {
@@ -209,15 +209,25 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
   });
 
   // -------------------------------------------------------------------------
-  describe('boqLines: reviewer/admin status transitions', () => {
+  describe('boqLines: API-only since Sprint 3 (no client write for any role)', () => {
     const review = (uid: string) => ({ status: 'reviewed', reviewedBy: uid, reviewedAt: FieldValue.serverTimestamp() });
     const approve = (uid: string) => ({ status: 'approved', approvedBy: uid, approvedAt: FieldValue.serverTimestamp() });
+    const roles = () => [A.users.admin, A.users.editor, A.users.reviewer, A.users.viewer];
 
-    it('viewer and editor cannot change BOQ lines at all', async () => {
-      for (const uid of [A.users.viewer, A.users.editor]) {
+    it('members read lines; outsiders and other orgs do not', async () => {
+      for (const uid of roles()) await assertSucceeds(db(uid).doc(a.boqDraft).get());
+      await assertFails(db(A.users.admin).doc(b.boqDraft).get());
+      await assertFails(db(OUTSIDER).doc(a.boqDraft).get());
+    });
+
+    it('former client transitions are denied for every role (status goes through PATCH /boq/lines/:id)', async () => {
+      for (const uid of roles()) {
         await assertFails(db(uid).doc(a.boqDraft).update(review(uid)));
         await assertFails(db(uid).doc(a.boqReviewed).update(approve(uid)));
-        await assertFails(db(uid).doc(a.boqDraft).update({ qty: 99 }));
+        await assertFails(db(uid).doc(a.boqApproved).update({ status: 'reviewed', approvedBy: null, approvedAt: null }));
+        await assertFails(db(uid).doc(a.boqReviewed).update({ status: 'draft', reviewedBy: null, reviewedAt: null }));
+        await assertFails(db(uid).doc(a.boqDraft).update({ note: 'x' }));
+        await assertFails(db(uid).doc(a.boqDraft).update({ qtyOverride: 3, qtyOverrideReason: 'x' }));
       }
     });
 
@@ -226,53 +236,23 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
         .add({ code: '1.1', qty: 1, unit: 'm', level: 'green', status: 'draft' }));
       await assertFails(db(A.users.admin).doc(a.boqDraft).delete());
     });
+  });
 
-    it('reviewer: draft -> reviewed -> approved, stamped with own uid + server time', async () => {
-      const uid = A.users.reviewer;
-      await assertSucceeds(db(uid).doc(a.boqDraft).update(review(uid)));
-      await assertSucceeds(db(uid).doc(a.boqDraft).update(approve(uid)));
+  describe('Sprint 3 collections: members read, nobody writes', () => {
+    it.each(['boqRule', 'libraryImport', 'boqBuild', 'boqExport'] as const)('%s', async (k) => {
+      for (const uid of [A.users.admin, A.users.editor, A.users.reviewer, A.users.viewer]) {
+        await assertSucceeds(db(uid).doc(a[k]).get());
+        await assertFails(db(uid).doc(a[k]).set({ x: 1 }, { merge: true }));
+        await assertFails(db(uid).doc(`${a[k]}x`).set({ x: 1 }));
+        await assertFails(db(uid).doc(a[k]).delete());
+      }
+      await assertFails(db(A.users.admin).doc(b[k]).get());
+      await assertFails(db(OUTSIDER).doc(a[k]).get());
+      await assertFails(db(null).doc(a[k]).get());
     });
 
-    it('admin can approve too', async () => {
-      await assertSucceeds(db(A.users.admin).doc(a.boqReviewed).update(approve(A.users.admin)));
-    });
-
-    it('cannot skip draft -> approved', async () => {
-      await assertFails(db(A.users.reviewer).doc(a.boqDraft).update(approve(A.users.reviewer)));
-    });
-
-    it('approval stamp must be the caller and request.time', async () => {
-      const uid = A.users.reviewer;
-      await assertFails(db(uid).doc(a.boqReviewed).update({ ...approve(uid), approvedBy: A.users.admin }));
-      await assertFails(db(uid).doc(a.boqReviewed).update({ ...approve(uid), approvedAt: Timestamp.fromDate(new Date('2020-01-01')) }));
-      await assertFails(db(uid).doc(a.boqReviewed).update({ status: 'approved' }));
-    });
-
-    it('status changes cannot smuggle content changes', async () => {
-      const uid = A.users.reviewer;
-      await assertFails(db(uid).doc(a.boqReviewed).update({ ...approve(uid), qty: 1000 }));
-      await assertFails(db(uid).doc(a.boqDraft).update({ ...review(uid), code: '4.1' }));
-      await assertFails(db(uid).doc(a.boqDraft).update({ qty: 3 }));
-    });
-
-    it('approved lines are immutable except un-approve (approved -> reviewed, stamp cleared)', async () => {
-      const uid = A.users.reviewer;
-      await assertFails(db(uid).doc(a.boqApproved).update({ qty: 5 }));
-      await assertFails(db(uid).doc(a.boqApproved).update({ note: 'הערה' }));
-      await assertFails(db(uid).doc(a.boqApproved).update({ approvedBy: uid, approvedAt: FieldValue.serverTimestamp() }));
-      await assertFails(db(uid).doc(a.boqApproved).update({ status: 'draft' }));
-      await assertFails(db(uid).doc(a.boqApproved).update({ status: 'reviewed' })); // stamp must be cleared
-      await assertSucceeds(db(uid).doc(a.boqApproved).update({ status: 'reviewed', approvedBy: null, approvedAt: null, note: 'לבדוק שוב' }));
-    });
-
-    it('reviewed -> draft clears the review stamp', async () => {
-      const uid = A.users.reviewer;
-      await assertFails(db(uid).doc(a.boqReviewed).update({ status: 'draft' }));
-      await assertSucceeds(db(uid).doc(a.boqReviewed).update({ status: 'draft', reviewedBy: null, reviewedAt: null }));
-    });
-
-    it('org A reviewer cannot approve org B lines', async () => {
-      await assertFails(db(A.users.reviewer).doc(b.boqReviewed).update(approve(A.users.reviewer)));
+    it('project boq summary on the project doc is not client-writable (stale flag cannot be forged)', async () => {
+      await assertFails(db(A.users.admin).doc(a.project).update({ 'boq.stale': false }));
     });
   });
 });

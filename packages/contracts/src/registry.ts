@@ -1,9 +1,46 @@
 import type { ZodTypeAny } from 'zod';
 import { IdTokenClaimsSchema } from './auth.js';
-import { BoqLineSchema } from './boq.js';
+import {
+  BoqBuildSchema,
+  BoqEvidenceArtifactSchema,
+  BoqEvidenceItemSchema,
+  BoqExportSchema,
+  BoqLineEvidenceResponseSchema,
+  BoqLineSchema,
+  BoqSheetEvidenceResponseSchema,
+  BoqViewSchema,
+  ExportBoqRequestSchema,
+  ExportBoqResponseSchema,
+  GetBoqQuerySchema,
+  LinkArcSchema,
+  LinkGroupSchema,
+  LinkPointSchema,
+  LinksArtifactSchema,
+  PatchBoqLineRequestSchema,
+  PatchBoqLineResponseSchema,
+  ProjectBoqSummarySchema,
+  RequestBoqBuildResponseSchema,
+} from './boq.js';
+import {
+  BoqRuleListSchema,
+  BoqRuleSchema,
+  BoqTemplateListSchema,
+  BoqTemplateSchema,
+  CreateLibraryImportRequestSchema,
+  CreateLibraryImportResponseSchema,
+  CreateLibraryItemRequestSchema,
+  FinalizeLibraryImportRequestSchema,
+  ItemLibraryItemSchema,
+  LibraryImportSchema,
+  LibraryImportViewSchema,
+  LibraryItemPageSchema,
+  PatchBoqRuleRequestSchema,
+  PatchBoqTemplateRequestSchema,
+  PatchLibraryItemRequestSchema,
+} from './library.js';
 import { ApiErrorSchema } from './errors.js';
 import { HealthResponseSchema } from './health.js';
-import { IngestSheetVersionJobSchema, JobSchema } from './jobs.js';
+import { BoqBuildJobSchema, IngestSheetVersionJobSchema, IngestTopicJobSchema, JobSchema, LibraryImportJobSchema } from './jobs.js';
 import { CreateOrgRequestSchema, MeResponseSchema, MemberSchema, MyOrgSchema, OrgSchema } from './org.js';
 import { CreateProjectRequestSchema, ProjectPageSchema, ProjectSchema, UpdateProjectRequestSchema } from './project.js';
 import { CorrectionSchema, ReviewItemSchema } from './review.js';
@@ -12,6 +49,7 @@ import { ShareLinkSchema } from './share.js';
 import {
   ConfirmSheetRequestSchema,
   DetectionStatsSchema,
+  LinkStatsSchema,
   FileKindSchema,
   PutRegionsRequestSchema,
   PutRegionsResponseSchema,
@@ -97,6 +135,7 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   // Sprint 2 — understanding (worker artifacts, Firestore docs, API DTOs)
   VersionStage: VersionStageSchema,
   DetectionStats: DetectionStatsSchema,
+  LinkStats: LinkStatsSchema,
   SymbolClass: SymbolClassSchema,
   DetectionClass: DetectionClassSchema,
   BBoxMm: BBoxMmSchema,
@@ -114,4 +153,41 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   PatchLegendEntryResponse: PatchLegendEntryResponseSchema,
   ResolveUnknownClusterRequest: ResolveUnknownClusterRequestSchema,
   ResolveUnknownClusterResponse: ResolveUnknownClusterResponseSchema,
+  // Sprint 3 — BOQ, library, templates, rules, jobs union, links/evidence artifacts
+  IngestTopicJob: IngestTopicJobSchema,
+  BoqBuildJob: BoqBuildJobSchema,
+  LibraryImportJob: LibraryImportJobSchema,
+  ItemLibraryItem: ItemLibraryItemSchema,
+  LibraryItemPage: LibraryItemPageSchema,
+  CreateLibraryItemRequest: CreateLibraryItemRequestSchema,
+  PatchLibraryItemRequest: PatchLibraryItemRequestSchema,
+  BoqTemplate: BoqTemplateSchema,
+  BoqTemplateList: BoqTemplateListSchema,
+  PatchBoqTemplateRequest: PatchBoqTemplateRequestSchema,
+  BoqRule: BoqRuleSchema,
+  BoqRuleList: BoqRuleListSchema,
+  PatchBoqRuleRequest: PatchBoqRuleRequestSchema,
+  LibraryImport: LibraryImportSchema,
+  LibraryImportView: LibraryImportViewSchema,
+  CreateLibraryImportRequest: CreateLibraryImportRequestSchema,
+  CreateLibraryImportResponse: CreateLibraryImportResponseSchema,
+  FinalizeLibraryImportRequest: FinalizeLibraryImportRequestSchema,
+  BoqBuild: BoqBuildSchema,
+  ProjectBoqSummary: ProjectBoqSummarySchema,
+  RequestBoqBuildResponse: RequestBoqBuildResponseSchema,
+  GetBoqQuery: GetBoqQuerySchema,
+  BoqView: BoqViewSchema,
+  PatchBoqLineRequest: PatchBoqLineRequestSchema,
+  PatchBoqLineResponse: PatchBoqLineResponseSchema,
+  BoqEvidenceItem: BoqEvidenceItemSchema,
+  BoqEvidenceArtifact: BoqEvidenceArtifactSchema,
+  BoqLineEvidenceResponse: BoqLineEvidenceResponseSchema,
+  LinkGroup: LinkGroupSchema,
+  LinkPoint: LinkPointSchema,
+  LinkArc: LinkArcSchema,
+  BoqSheetEvidenceResponse: BoqSheetEvidenceResponseSchema,
+  LinksArtifact: LinksArtifactSchema,
+  ExportBoqRequest: ExportBoqRequestSchema,
+  ExportBoqResponse: ExportBoqResponseSchema,
+  BoqExport: BoqExportSchema,
 });

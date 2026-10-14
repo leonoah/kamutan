@@ -30,6 +30,11 @@ function serverObjects(f: OrgFx): string[] {
     `orgs/${f.org}/projects/${f.project}/uploads/set1/plan.pdf`,
     `orgs/${f.org}/projects/${f.project}/derived/v1/tiles/0_0.png`,
     paths.derived(f.org, 'v1/tiles/0/0/0.webp'),
+    // Sprint 3
+    paths.linksArtifact(f.org, f.project, 'set1-p0', 'v1'),
+    paths.boqEvidence(f.org, f.project, 'b1'),
+    paths.boqExportFile(f.org, f.project, 'e1'),
+    paths.libraryImportObject(f.org, '1a2b3c4d-0000-4000-8000-000000000001', 'xlsx'),
   ];
 }
 
@@ -112,6 +117,56 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR || !HAS_STORAGE_EMULATOR)('storage.rules
     });
   });
 
+  // ---------------------------------------------------------------- Sprint 3: past-BOQ import slot (create only)
+  describe('imports orgs/{orgId}/imports/{uuid}.{xls|xlsx}', () => {
+    const XLSX_CT = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const XLS_CT = 'application/vnd.ms-excel';
+    const ZIP = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]);
+    const imp = (o: string, id: string, ext: 'xls' | 'xlsx') => paths.libraryImportObject(o, id, ext);
+    const U1 = '0b6f1c2e-6a7d-4f53-9b1e-2f0c8d3a4e51';
+    const U2 = '7d4c2b1a-0e9f-4a8b-8c7d-6e5f4a3b2c1d';
+
+    it('editor and admin create xls/xlsx (spreadsheet or octet-stream type)', async () => {
+      await assertSucceeds(put(A.users.editor, imp(A.org, U1, 'xlsx'), ZIP, { contentType: XLSX_CT }));
+      await assertSucceeds(put(A.users.admin, imp(A.org, U2, 'xls'), ZIP, { contentType: XLS_CT }));
+      await assertSucceeds(put(A.users.editor, imp(A.org, 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'xls'), ZIP, { contentType: 'application/octet-stream' }));
+    });
+
+    it('viewer, reviewer, other org, outsider and anonymous cannot create', async () => {
+      for (const uid of [A.users.viewer, A.users.reviewer, B.users.admin, OUTSIDER]) {
+        await assertFails(put(uid, imp(A.org, U1, 'xlsx'), ZIP, { contentType: XLSX_CT }));
+      }
+      await assertFails(put(null, imp(A.org, U1, 'xlsx'), ZIP, { contentType: XLSX_CT }));
+    });
+
+    it('name must be UUID + .xls/.xlsx; types other than spreadsheets rejected; size 0 < n <= 20 MB', async () => {
+      const ed = A.users.editor;
+      for (const bad of ['boq.xlsx', `${U1}.pdf`, `${U1}.XLSX`, U1, `${U1.toUpperCase()}.xls`, `${U1}.xlsx.html`]) {
+        await assertFails(put(ed, `orgs/${A.org}/imports/${bad}`, ZIP, { contentType: XLSX_CT }));
+      }
+      await assertFails(put(ed, `orgs/${A.org}/imports/${U1}.xlsx/x`, ZIP, { contentType: XLSX_CT }));
+      for (const ct of ['text/html', 'image/svg+xml', 'application/pdf', 'application/zip', 'text/csv']) {
+        await assertFails(put(ed, imp(A.org, U1, 'xlsx'), ZIP, { contentType: ct }));
+      }
+      await assertFails(put(ed, imp(A.org, U1, 'xlsx'), new Uint8Array(0), { contentType: XLSX_CT }));
+      await assertFails(put(ed, imp(A.org, U2, 'xlsx'), new Uint8Array(20 * 1024 * 1024 + 1), { contentType: XLSX_CT }));
+    }, 120_000);
+
+    it('no overwrite, read, list or delete — for every role, including the uploader', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.storage().ref(imp(A.org, U1, 'xlsx')).put(ZIP, { contentType: XLSX_CT });
+      });
+      await assertFails(put(A.users.editor, imp(A.org, U1, 'xlsx'), ZIP, { contentType: XLSX_CT }));
+      for (const role of ROLES) {
+        const ref = st(A.users[role]).ref(imp(A.org, U1, 'xlsx'));
+        await assertFails(ref.getMetadata());
+        await assertFails(ref.getDownloadURL());
+        await assertFails(ref.delete());
+      }
+      await assertFails(st(A.users.admin).ref(`orgs/${A.org}/imports`).listAll());
+    });
+  });
+
   // ---------------------------------------------------------------- legacy Sprint-0 slot: closed
   it.each(ROLES)('legacy orgs/{orgId}/uploads/{uid}/{fileId} is closed for A %s (no create, read, delete)', async (role) => {
     const uid = A.users[role];
@@ -160,6 +215,9 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR || !HAS_STORAGE_EMULATOR)('storage.rules
     await assertFails(put(A.users.admin, `orgs/${A.org}/f`));
     await assertFails(put(A.users.admin, `orgs/${A.org}/projects/${A.project}/uploads/set1/f`));
     await assertFails(put(A.users.admin, `orgs/${A.org}/projects/${A.project}/f`));
+    await assertFails(put(A.users.admin, `orgs/${A.org}/projects/${A.project}/exports/e2.xlsx`));
+    await assertFails(put(A.users.admin, `orgs/${A.org}/projects/${A.project}/boq/b2/evidence.json.gz`));
+    await assertFails(st(A.users.admin).ref(`orgs/${A.org}/projects/${A.project}/exports`).listAll());
     await assertFails(st(A.users.admin).ref(`orgs/${A.org}`).listAll());
   });
 });

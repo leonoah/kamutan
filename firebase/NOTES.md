@@ -1,4 +1,4 @@
-# firebase/ — Firestore & Storage security rules, indexes, model (Sprint 0 + 1 + 2, ADR 0008)
+# firebase/ — Firestore & Storage security rules, indexes, model (Sprint 0 + 1 + 2 + 3, ADR 0008)
 
 Replaces the former `supabase/` directory (Postgres + RLS; still in git history on `main`).
 
@@ -26,7 +26,7 @@ Client writes (everything else is `allow write: if false` → API / worker with 
 | --- | --- | --- |
 | `projects/*/corrections/{id}` | editor, reviewer, admin | create only; `authorId == auth.uid`; `createdAt == request.time`; whitelisted keys; enums for `targetType`/`action`; string sizes (ids ≤128, note ≤2000); `payload` map ≤20 keys; no update/delete |
 | `projects/*/reviewItems/{id}` | editor, reviewer, admin | update only; `diff().affectedKeys().hasOnly(['status','resolution','resolvedBy','resolvedAt'])`; resolving/dismissing requires `resolvedBy == uid` and `resolvedAt == request.time`; re-open requires both null; resolution ≤2000 |
-| `projects/*/boqLines/{id}` | reviewer, admin | update only, status transitions: draft→reviewed (stamp `reviewedBy/At`), reviewed→approved (stamp `approvedBy == uid`, `approvedAt == request.time`), reviewed→draft and approved→reviewed (clear the stamp). Only `status`, the stamp fields and `note` may change; no skipping draft→approved; approved lines are otherwise immutable |
+| ~~`projects/*/boqLines/{id}`~~ | — | **Sprint 3: removed.** boqLines are API-only (`allow write: if false`); see below |
 
 ### Sprint 1 — ingest collections and storage
 
@@ -54,6 +54,27 @@ exactly one deny-all match (versions/** or llm-cache/**); `INGEST_STAGES` = brie
 `LegendEntry` interfaces carry the brief fields (Sprint-0 `keyType/acceptCount` shape removed).
 Index: `legendEntries (status, sheetId)` for the API list with both filters.
 CI: `understanding.rules.test.ts` is in the "no skipped emulator tests" loop of `.github/workflows/ci.yml`.
+
+### Sprint 3 — BOQ, library, imports, exports
+
+**Decision: boqLines are API-only.** The Sprint-0 rule let reviewers move `status` from the client. Sprint 3 adds
+`qtyOverride` (editor+, reason required), per-field roles, the "approved = locked" rule and an audit event on every
+status change (SEC-35 / FR-26). Keeping a second write path in rules would duplicate the state machine and skip the
+audit hash chain, so the client write was removed: `PATCH /v1/projects/:pid/boq/lines/:id` is the only path
+(`BOQ_LINE_TRANSITIONS` enforced in the API transaction). `model.ts` keeps `BOQ_LINE_CLIENT_FIELDS` as deprecated and
+adds `BOQ_LINE_API_FIELDS`.
+
+| Path | Client read | Client write | Tests |
+| --- | --- | --- | --- |
+| `orgs/*/projects/*/boqLines/{lineId}` | every member | **none** (API PATCH; worker computes) | `firestore.rules.test.ts` "API-only" block: every former transition denied for all 4 roles, note / qtyOverride denied, no create/delete; lint: block = read member + write false |
+| `orgs/*/projects/*/boqBuilds/{buildId}`, `.../exports/{exportId}` | every member | **none** | Sprint 3 collections block (×4 roles get/set/merge/delete, cross-org, outsider, anon) |
+| `orgs/*/boqRules/{ruleId}`, `orgs/*/libraryImports/{importId}` (+ existing `itemLibrary`, `boqTemplates`) | every member | **none** | same + lint |
+| project doc `boq` map | every member (project read) | **none** (project is API/worker-written) | "stale flag cannot be forged" |
+| Storage `orgs/{orgId}/imports/{uuid}.{xls\|xlsx}` | **none** | **create only**: editor/admin, UUID + `.xls`/`.xlsx` name (`isImportName`, mirrors `LIBRARY_IMPORT_PATH_RE`), 0 < size ≤ 20 MB, content type `application/vnd.ms-excel` / `…spreadsheetml.sheet` / `application/octet-stream`; no overwrite/delete/list | `storage.rules.test.ts` imports block; lint: exactly two client-writable storage matches (quarantine + imports) |
+| Storage `.../projects/*/exports/**` (xlsx), `.../projects/*/boq/**` (evidence.json.gz), `.../versions/*/links.json.gz` | **none** (exports: 2-minute signed URL from the API) | **none** | storage `serverObjects` (read/write/delete ×4 roles, cross-org) + lint deny-all coverage |
+
+`JOB_TYPES` = `ingest.sheet_version`, `boq.build`, `library.import`. `COLLECTIONS` + `boqBuilds`, `exports`, `boqRules`,
+`libraryImports`. `canApprove()` removed from firestore.rules (no user left).
 
 **Decision: deny + signed URLs for artifacts.** Tiles / thumbnails / primitives / OCR text are served only via
 short-lived V4 signed URLs from the API (`tiles-manifest`). Reasons: one authorization point that also serves
@@ -86,6 +107,12 @@ balanced braces, default deny, no `if true`, the exact set of client-writable ma
 storage write surface, index coverage.
 
 ## Known gaps / not verified
+
+- Sprint 3 rules (imports slot with `[.]` in the name regex, the new collections, boqLines lock) are only statically
+  checked here; the emulator suites run first in CI (same blocker as Sprints 1–2).
+- The imports slot is shared by all editors of an org (UUID names, unguessable; finalize also requires the import doc's
+  `createdBy == uid`). Abandoned import objects are not swept (same as quarantine).
+- No composite index needed for Sprint 3 queries (equality filters + doc-id order; `boqLines` full-collection read).
 
 - **Sprint 1 rules have not been compiled either** (same emulator block). New syntax used: `isUuid()` / `opaqueId()`
   with `String.matches`, recursive `{rest=**}` under a nested `match`. The CI `db` job now fails if any of the

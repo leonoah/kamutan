@@ -76,6 +76,26 @@
             }
           ]
         },
+        "links": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "thumbs": {
           "type": "object",
           "additionalProperties": {
@@ -158,6 +178,77 @@
                 "legendEntries": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "links": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "green": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "yellow": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "red": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "arcs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "danglingEnds": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "inferredSwitches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unlinkedSwitches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unlinkedLuminaires": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "byKind": {
+                      "type": "object",
+                      "properties": {
+                        "single": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "two_way": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "sensor": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "add_to_existing": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "groups"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

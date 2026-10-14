@@ -11,9 +11,16 @@ remembered symbol mappings / linked legend entries). Stages (progress ``legend``
    pixel fallback (:mod:`kamutan_drawing.symbols.raster`, capped at yellow);
 3. **rooms** — Worker-B's ``rooms.segment`` on architecture / master sheets and any sheet with
    room names; detections get ``roomId`` / ``floor`` by point-in-polygon (regions as fallback);
-   ``lifecycle.classify`` sets existing / new / demolish.
+   ``lifecycle.classify`` sets existing / new / demolish;
+4. **links** (Sprint 3, lighting sheets) — switch ↔ luminaire groups from the dashed wiring arcs
+   (:mod:`kamutan_drawing.links`) → ``links.json.gz`` (``kamutan.links/1``) + ``linkStats``.
+
+Floors confirmed by the user (``floorsConfirmed``, the sheet doc's ``confirmed``) are authoritative:
+the regions' floors are used and no ``קומה לא ודאית`` chip is added. :func:`apply_confirmed_floors`
+applies the same effect to stored artifacts without re-parsing (``boq.build``).
 
 Outputs (files under ``outDir``): ``legend.json.gz``, ``detections.json.gz``, ``rooms.json.gz``,
+``links.json.gz`` (lighting sheets only),
 ``legend/{entryId}.webp``, ``unknown/{clusterId}.webp``; the return value lists them plus the
 legend entries for Firestore and the stats. Every output is deterministic for the same input
 (idempotent re-runs).
@@ -35,6 +42,8 @@ import numpy as np
 
 from ..ingest.pdf_vector import VectorSheet
 from ..legend.parse import LegendEntry, LegendResult, parse_legends
+from ..links import LINK_DISCIPLINES, link_sheet
+from ..links.floors import apply_confirmed_floors
 from ..ocr.dictionary import TextSpan
 from ..symbols.detect import Detection, DetectResult, detect_symbols, score_detection
 from ..symbols.geometry import BBox, bbox_dict, stroke_signatures
@@ -50,6 +59,7 @@ ROOMS_SCHEMA = "kamutan.rooms/1"
 DETECT_DISCIPLINES = {"electrical", "lighting", "plumbing"}
 ROOM_DISCIPLINES = {"architecture", "architecture_master", "construction", "demolition"}
 STAGE_PCT = {"legend": 88, "detect": 91, "rooms": 96}
+LINKS_FILE = "links.json.gz"
 THUMB_PX = 256
 MAX_DETECTIONS = 50_000
 
@@ -187,8 +197,13 @@ def understand(
     detect: bool = True,
     rooms: bool = True,
     raster_image: Any = None,
+    floors_confirmed: bool = False,
+    links: bool = True,
 ) -> dict[str, Any]:
-    """Run legend → detect → rooms on one sheet. Writes the artifacts into ``out_dir`` when given."""
+    """Run legend → detect → rooms → links on one sheet. Writes the artifacts into ``out_dir`` when given.
+
+    ``floors_confirmed``: the user confirmed the sheet's floors / regions — they are used as is and
+    no "קומה לא ודאית" reason is added."""
     from ..classify.sheet import classify_page
 
     mappings = mappings or {}
@@ -269,7 +284,8 @@ def understand(
             log.warning("rooms.segment failed", exc_info=True)
             room_objs = []
     _assign_rooms(det.detections, room_objs, regions)
-    _flag_uncertain_floors(det.detections, room_objs, regions, spans, title_block)
+    if not floors_confirmed:
+        _flag_uncertain_floors(det.detections, room_objs, regions, spans, title_block)
     if HAVE_LIFECYCLE and det.detections:
         try:
             plan_spans = spans
@@ -330,10 +346,33 @@ def understand(
                 cj["thumb"] = None
     leg_json = legend_json(legend, sheet_id, thumbs, applied)
     det_doc = {"schema": DETECTIONS_SCHEMA, "detections": dets_json, "unknownClusters": clusters_json}
+    # ---------------------------------------------------------------- links (lighting sheets)
+    links_doc: dict[str, Any] | None = None
+    link_stats: dict[str, Any] | None = None
+    if links and run_detect and not raster and discipline in LINK_DISCIPLINES:
+        prog("rooms", 98)  # no own progress stage in the contracts (VersionStage); still "rooms"
+        exclude = [lg.bbox for lg in legend.legends] + ([title_block] if title_block else [])
+        try:
+            links_doc, link_stats = link_sheet(
+                vs, spans, dets_json, leg_json, text_paths=text_paths, exclude=exclude, scale_den=scale_den
+            )
+        except Exception:  # links are best effort; the other artifacts must still be written
+            log.warning("links failed", exc_info=True)
+            links_doc = link_stats = None
+    lap("links")
     if out_dir is not None:
-        for name, obj in (("legend.json.gz", leg_json), ("detections.json.gz", det_doc), ("rooms.json.gz", rooms_json)):
+        outs: list[tuple[str, Any]] = [
+            ("legend.json.gz", leg_json),
+            ("detections.json.gz", det_doc),
+            ("rooms.json.gz", rooms_json),
+        ]
+        for name, obj in outs:
             (out_dir / name).write_bytes(gz_json(obj))
             files.append({"path": name, "contentType": "application/gzip"})
+        if links_doc is not None:
+            # reported under its own key (not ``files``): an orchestrator that does not know the
+            # links artifact yet keeps working; one that does uploads ``linksFile`` → artifacts.links
+            (out_dir / LINKS_FILE).write_bytes(gz_json(links_doc))
     lap("write")
     return {
         "legend": leg_json,
@@ -345,6 +384,8 @@ def understand(
         "timings": timings,
         "detectStats": det.stats,
         "detected": run_detect,
+        **({"linkStats": link_stats} if link_stats is not None else {}),
+        **({"linksFile": LINKS_FILE} if links_doc is not None and out_dir is not None else {}),
     }
 
 
@@ -449,7 +490,8 @@ def _assign_rooms(dets: list[Detection], rooms: list[Any], regions: list[dict[st
 def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     """Sandbox task ``understand``. ``args``: kind, path (source, relative), index, pageDir (the page
     task's outDir, relative), outDir (relative), sheet, discipline, scaleDenominator, regions,
-    mappings {signature: {class, itemCode, label, status, entryId}}, detect, rooms."""
+    mappings {signature: {class, itemCode, label, status, entryId}}, detect, rooms, links,
+    floorsConfirmed (the sheet doc is ``confirmed``: regions' floors are authoritative)."""
     from ..classify.sheet import span_from_line
     from ..types_sprint2 import vector_sheet_from_primitives
 
@@ -495,6 +537,8 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             detect=bool(args.get("detect", True)),
             rooms=bool(args.get("rooms", True)),
             raster_image=raster_image,
+            floors_confirmed=bool(args.get("floorsConfirmed", False)),
+            links=bool(args.get("links", True)),
         )
     finally:
         close()
@@ -502,4 +546,13 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     return res
 
 
-__all__ = ["DETECT_DISCIPLINES", "Detection", "detection_stats", "run", "score_detection", "understand"]
+__all__ = [
+    "DETECT_DISCIPLINES",
+    "LINKS_FILE",
+    "Detection",
+    "apply_confirmed_floors",
+    "detection_stats",
+    "run",
+    "score_detection",
+    "understand",
+]

@@ -284,6 +284,8 @@ export const OverlayManifestSchema = z.object({
   legend: SignedUrlRefSchema.nullable(),
   detections: SignedUrlRefSchema.nullable(),
   rooms: SignedUrlRefSchema.nullable(),
+  /** Sprint 3: links.json.gz (kamutan.links/1, switch↔luminaire arcs); null when the version has none. Always set by the API. */
+  links: SignedUrlRefSchema.nullable().optional(),
   /** Crop URLs keyed by legend entry id (`le_…`) or unknown cluster id (`u_…`). */
   thumbs: z.record(z.string().regex(/^(le|u)_[A-Za-z0-9_-]+$/), z.string().url()),
   stats: VersionStatsSchema.nullable(),

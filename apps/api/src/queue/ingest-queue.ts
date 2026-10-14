@@ -1,11 +1,14 @@
 import { PubSub, type Topic } from '@google-cloud/pubsub';
-import { IngestSheetVersionJobSchema, JOB_TYPES, type IngestSheetVersionJob } from '@kamutan/contracts';
+import { IngestTopicJobSchema, type IngestTopicJob } from '@kamutan/contracts';
 
 export const INGEST_QUEUE = Symbol('INGEST_QUEUE');
 
-/** Port for scheduling ingest work. Payload is validated against the contract before publishing. */
+/**
+ * Port for scheduling work on topic `ingest` (ingest.sheet_version, boq.build, library.import — Sprint 3).
+ * Payload is validated against the contract union before publishing.
+ */
 export interface IngestQueue {
-  publish(payload: IngestSheetVersionJob): Promise<{ messageId: string }>;
+  publish(payload: IngestTopicJob): Promise<{ messageId: string }>;
   ping(): Promise<void>;
   close(): Promise<void>;
 }
@@ -14,12 +17,12 @@ export interface PublishedMessage {
   messageId: string;
   topic: string;
   attributes: Record<string, string>;
-  data: IngestSheetVersionJob;
+  data: IngestTopicJob;
 }
 
 /** Attributes let the push subscription / worker route and dedupe without parsing data. */
-export function attributesFor(p: IngestSheetVersionJob): Record<string, string> {
-  return { type: JOB_TYPES.ingestSheetVersion, jobId: p.jobId, orgId: p.orgId, schemaVersion: String(p.schemaVersion) };
+export function attributesFor(p: IngestTopicJob): Record<string, string> {
+  return { type: p.type, jobId: p.jobId, orgId: p.orgId, schemaVersion: String(p.schemaVersion) };
 }
 
 /** Process-local queue for tests and offline dev. Nothing consumes it. */
@@ -28,8 +31,8 @@ export class InMemoryIngestQueue implements IngestQueue {
 
   constructor(private readonly topic = 'ingest') {}
 
-  async publish(payload: IngestSheetVersionJob): Promise<{ messageId: string }> {
-    const data = IngestSheetVersionJobSchema.parse(payload);
+  async publish(payload: IngestTopicJob): Promise<{ messageId: string }> {
+    const data = IngestTopicJobSchema.parse(payload);
     const messageId = String(this.messages.length + 1);
     this.messages.push({ messageId, topic: this.topic, attributes: attributesFor(data), data });
     return { messageId };
@@ -53,8 +56,8 @@ export class PubSubIngestQueue implements IngestQueue {
     this.topic = this.client.topic(topicName, { batching: { maxMessages: 1, maxMilliseconds: 0 } });
   }
 
-  async publish(payload: IngestSheetVersionJob): Promise<{ messageId: string }> {
-    const data = IngestSheetVersionJobSchema.parse(payload);
+  async publish(payload: IngestTopicJob): Promise<{ messageId: string }> {
+    const data = IngestTopicJobSchema.parse(payload);
     const messageId = await this.topic.publishMessage({ json: data, attributes: attributesFor(data) });
     return { messageId };
   }

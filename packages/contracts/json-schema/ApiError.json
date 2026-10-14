@@ -23,6 +23,7 @@
                 "upload_missing",
                 "rate_limited",
                 "not_ready",
+                "export_blocked",
                 "internal_error",
                 "service_unavailable"
               ]

@@ -49,6 +49,11 @@
                   "llmMonthlyBudgetUsd": {
                     "type": "number",
                     "minimum": 0
+                  },
+                  "vatRate": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
                   }
                 },
                 "required": [

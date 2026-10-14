@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { LogOut, Monitor, Moon, Sun, ChevronDown } from "lucide-react";
 import {
@@ -88,6 +88,25 @@ export function TopBar({ children, className }: { children?: ReactNode; classNam
         <Link to="/projects" className="rounded" aria-label={t("app.name")}>
           <Logo />
         </Link>
+        <nav aria-label={t("app.mainNav")} className="flex items-center gap-1">
+          {[
+            { to: "/projects", label: t("projects.title") },
+            { to: "/library", label: t("library.nav") },
+          ].map((l) => (
+            <NavLink
+              key={l.to}
+              to={l.to}
+              className={({ isActive }) =>
+                cn(
+                  "rounded px-2.5 py-1.5 text-dense font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                  isActive && "bg-primary/[0.08] text-foreground",
+                )
+              }
+            >
+              {l.label}
+            </NavLink>
+          ))}
+        </nav>
         <div className="flex min-w-0 flex-1 items-center gap-3">{children}</div>
         {env.useMocks ? (
           <span className="hidden rounded-sm border border-dashed border-input px-2 py-0.5 text-meta text-muted-foreground md:inline">

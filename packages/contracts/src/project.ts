@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TimestampSchema, pageOf } from './common.js';
+import { ProjectBoqSummarySchema } from './boq.js';
 import { DocIdSchema, UidSchema } from './org.js';
 
 export const PROJECT_STATUSES = ['active', 'archived'] as const;
@@ -36,6 +37,8 @@ export const ProjectSchema = z.object({
   templateId: z.string().nullable().optional(),
   floors: z.array(FloorMetaSchema),
   stats: ProjectStatsSchema.optional(),
+  /** Sprint 3: BOQ build state (latest build, stale flag). Absent before the first build request. */
+  boq: ProjectBoqSummarySchema.optional(),
   status: ProjectStatusSchema,
   createdBy: UidSchema,
   createdAt: TimestampSchema,

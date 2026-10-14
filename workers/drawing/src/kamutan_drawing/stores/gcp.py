@@ -116,6 +116,10 @@ class FirestoreDocStore:
     def set(self, path: str, data: dict[str, Any], *, merge: bool = True) -> None:
         self._db.document(check_path(path)).set(self._convert(data), merge=merge)
 
+    def delete(self, path: str) -> None:
+        """Delete one document (Sprint 3: obsolete draft BOQ lines). Missing → no-op."""
+        self._db.document(check_path(path)).delete()
+
     def list_docs(self, collection: str, limit: int = 2000) -> list[tuple[str, dict[str, Any]]]:
         """(doc id, doc) of the direct children of ``collection``."""
         out: list[tuple[str, dict[str, Any]]] = []

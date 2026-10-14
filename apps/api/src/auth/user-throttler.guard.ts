@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 
 export const RATE_LIMIT_TIER = 'kamutan:rateLimitTier';
-export type RateLimitTier = 'strict' | 'tiles';
+export type RateLimitTier = 'strict' | 'tiles' | 'export';
 /** Per-route limit tier (per user, per route, per THROTTLE_TTL_MS window). */
 export const RateLimit = (tier: RateLimitTier) => SetMetadata(RATE_LIMIT_TIER, tier);
 /** Applies the stricter UPLOAD_THROTTLE_LIMIT to a route (uploads, reprocess, later exports/share links/LLM). */
@@ -40,6 +40,7 @@ export class UserThrottlerGuard extends ThrottlerGuard {
     ]);
     if (tier === 'strict') return super.handleRequest({ ...props, limit: this.cfg.UPLOAD_THROTTLE_LIMIT });
     if (tier === 'tiles') return super.handleRequest({ ...props, limit: this.cfg.TILES_THROTTLE_LIMIT });
+    if (tier === 'export') return super.handleRequest({ ...props, limit: this.cfg.EXPORT_THROTTLE_LIMIT });
     return super.handleRequest(props);
   }
 

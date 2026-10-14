@@ -10,6 +10,8 @@ export interface MyOrg {
   id: string;
   name: string;
   role: Role;
+  /** Sprint 3 (optional in the /me DTO): org policy, e.g. block export while "לבדיקה" lines remain. */
+  settings?: { blockExportOnRed?: boolean };
 }
 export interface MeResponse {
   uid: string;
@@ -35,6 +37,8 @@ export interface Project {
   templateId?: string | null;
   floors: { code: string; name: string; sortOrder: number }[];
   stats?: ProjectStats;
+  /** Sprint 3: project doc `boq` (latest build pointer + stale flag). */
+  boq?: ProjectBoqState | null;
   status: "active" | "archived";
   createdBy: string;
   createdAt: string; // ISO
@@ -165,6 +169,8 @@ export interface SheetVersion {
     legend?: string;
     detections?: string;
     rooms?: string;
+    /** Sprint 3: `.../versions/{v}/links.json.gz` (kamutan.links/1). */
+    links?: string;
   };
   regions?: SheetRegion[];
   stats?: VersionStats;
@@ -341,6 +347,8 @@ export interface OverlayManifest {
   legend: { url: string } | null;
   detections: { url: string } | null;
   rooms: { url: string } | null;
+  /** Sprint 3: switch↔luminaire link graph of the version (kamutan.links/1), when the worker produced one. */
+  links?: { url: string } | null;
   /** Crop URLs keyed by legend entry id (`le_…`) or unknown cluster id (`u_…`). */
   thumbs: Record<string, string>;
   stats: VersionStats | null;
@@ -419,6 +427,269 @@ export interface ResolveUnknownClusterResponse {
   reprocess: ReprocessOutcome[];
 }
 
+
+/* ---------- Sprint 3: BOQ, library, templates, rules (docs/agents/SPRINT3_BRIEF.md, contracts boq.ts) ----------
+ * TODO(contracts): hand-kept mirror; the API agent defines the final shapes concurrently. Endpoint paths that the
+ * brief does not spell out (org-scoped library/templates/rules, build status, import status) are this app's
+ * proposal — see apps/web/NOTES.md "Sprint 3 — API assumptions".
+ */
+export type BoqLineStatus = "draft" | "reviewed" | "approved";
+/** contracts BOQ_LINE_TRANSITIONS (reviewer/admin). Editors may only move draft ↔ reviewed (web policy). */
+export const BOQ_LINE_TRANSITIONS: Readonly<Record<BoqLineStatus, readonly BoqLineStatus[]>> = {
+  draft: ["reviewed"],
+  reviewed: ["approved", "draft"],
+  approved: ["reviewed"],
+};
+
+/** orgs/{o}/projects/{p}/boqLines/{lineId} (contracts BoqLineSchema + Sprint 3 fields). */
+export interface BoqLine {
+  id: string;
+  /** Chapter code, e.g. "04". */
+  chapter: string;
+  chapterTitle?: string | null;
+  /** TEXT ("4.10" !== "4.1"). */
+  code: string;
+  description: string;
+  /** Computed quantity (from evidence). */
+  qty: number;
+  /** Manual override (never overwritten by a rebuild); the line then counts `qtyOverride`. */
+  qtyOverride?: number | null;
+  /** Mandatory reason of the override (contracts `qtyOverrideReason`). */
+  qtyOverrideReason?: string | null;
+  qtyOverrideBy?: string | null;
+  qtyOverrideAt?: string | null;
+  buildId?: string | null;
+  unit: string;
+  floor?: string | null;
+  level: DbLevel;
+  reasons?: string[];
+  evidenceRef?: string | null;
+  locked?: boolean;
+  status: BoqLineStatus;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  /** Free note; required reason of a qty override. */
+  note?: string | null;
+  /** Per-floor breakdown of `qty` (floor code → qty). */
+  byFloor: Record<string, number>;
+  evidenceCount: number;
+  ruleId: string | null;
+  sourceVersions: { sheetId: string; versionId: string }[];
+  computedAt: string | null;
+  /** Optional: sort order inside the chapter (template order). */
+  order?: number;
+}
+
+export interface ProjectBoqState {
+  latestBuildId: string | null;
+  builtAt: string | null;
+  stale: boolean;
+}
+
+export type BoqBuildStatus = "queued" | "running" | "succeeded" | "failed";
+/** orgs/{o}/projects/{p}/boqBuilds/{buildId} */
+export interface BoqBuild {
+  id: string;
+  status: BoqBuildStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** Optional progress 0..100 (worker may report it). */
+  progress?: number;
+  stats?: { lines?: number; evidence?: number; sheets?: number; groups?: number } | null;
+  error?: { code: string; message: string } | null;
+}
+
+/** GET /v1/projects/:pid/boq/lines */
+export interface BoqLinesResponse {
+  items: BoqLine[];
+  boq: ProjectBoqState | null;
+  /** Template chapters (title + notes) for the chapter headers; optional (else the default template's). */
+  chapters?: BoqChapter[];
+  /** Org setting (contracts BoqSummary.blockExportOnRed). */
+  blockExportOnRed?: boolean;
+}
+/** PATCH /v1/projects/:pid/boq/lines/:lineId */
+export interface PatchBoqLineRequest {
+  status?: BoqLineStatus;
+  qtyOverride?: number | null;
+  /** Required with a numeric qtyOverride (contracts PatchBoqLineRequest.reason). */
+  reason?: string;
+  note?: string | null;
+}
+/** POST /v1/projects/:pid/boq/build */
+export interface BuildBoqResponse {
+  buildId: string;
+  jobId: string | null;
+}
+
+/** One evidence item of a line (kamutan.boq-evidence/1). */
+export interface BoqEvidenceItem {
+  sheetId: string;
+  versionId: string;
+  detectionId: string;
+  linkGroupId: string | null;
+  floor: string | null;
+}
+/** GET /v1/projects/:pid/boq/lines/:lineId/evidence */
+export interface BoqLineEvidence {
+  lineId: string;
+  items: BoqEvidenceItem[];
+}
+export interface BoqEvidenceArtifact {
+  schema: "kamutan.boq-evidence/1";
+  lines: Record<string, Omit<BoqEvidenceItem, never>[]>;
+}
+
+export type LinkGroupKind = "single" | "two_way" | "shared" | "sensor" | "add_to_existing";
+/** kamutan.links/1 group: switches that control the same luminaire points. */
+export interface LinkGroup {
+  id: string;
+  switchIds: string[];
+  /** Point ids (a point may be several luminaires wired together). */
+  pointIds: string[];
+  luminaireIds: string[];
+  kind: LinkGroupKind;
+  confidence: number;
+  level: DbLevel;
+  reasons: string[];
+  /** Optional: the arc polylines as traced on the sheet (paper mm), `completed` = gap closed by the system. */
+  arcs?: { pathMm: PointMm[]; completed?: boolean }[];
+  /** Worker-A: ids into the artifact's top-level `arcs`. */
+  arcIds?: string[];
+  floor?: string | null;
+  /** Optional: point id → luminaire detection ids. */
+  points?: { id: string; luminaireIds: string[] }[];
+}
+export interface LinkArc {
+  id: string;
+  polylineMm: PointMm[];
+  /** The switch end was inferred / the arc is ambiguous → drawn dotted. */
+  inferredSwitch?: boolean;
+  ambiguous?: boolean;
+}
+export interface LinksArtifact {
+  schema: "kamutan.links/1";
+  groups: LinkGroup[];
+  /** Worker-A: traced arcs referenced by `groups[].arcIds`. */
+  arcs?: LinkArc[];
+  points?: { id: string; luminaireIds: string[]; centerMm?: PointMm }[];
+}
+
+/** GET /v1/projects/:pid/boq/evidence?sheetId=&versionId= — marker → line lookup for one sheet version. */
+export interface BoqSheetEvidence {
+  sheetId: string;
+  versionId: string;
+  buildId: string | null;
+  detections: Record<string, string[]>;
+  linkGroups: Record<string, string[]>;
+}
+
+/** POST /v1/projects/:pid/boq/export */
+export interface ExportBoqRequest {
+  templateId: string | null;
+  split: "summed" | "byFloor";
+  /** Add "טיוטה – כולל פריטים שלא אומתו" to the file title. */
+  draftNote: boolean;
+}
+export interface ExportBoqResponse {
+  url: string;
+  filename: string;
+  expiresAt: string;
+}
+
+/** orgs/{o}/itemLibrary/{itemId} */
+export interface LibraryItem {
+  id: string;
+  code: string;
+  chapter: string;
+  chapterTitle: string | null;
+  description: string;
+  unit: string;
+  tags: string[];
+  source: "import" | "manual";
+  sourceRef?: string | null;
+  active: boolean;
+  updatedAt: string | null;
+}
+export interface LibraryItemPage {
+  items: LibraryItem[];
+  nextCursor: string | null;
+}
+export interface ListLibraryQuery {
+  q?: string;
+  chapter?: string;
+  cursor?: string;
+  limit?: number;
+}
+/** code + description are the item's identity (contracts): only unit / chapterTitle / tags / active change. */
+export type PatchLibraryItemRequest = Partial<Pick<LibraryItem, "unit" | "tags" | "active">> & { chapterTitle?: string };
+
+export interface BoqChapter {
+  code: string;
+  title: string;
+  notes: string[];
+}
+/** orgs/{o}/boqTemplates/{templateId} */
+export interface BoqTemplate {
+  id: string;
+  name: string;
+  chapters: BoqChapter[];
+  /** Contracts: `{key, title}` objects; older docs/mocks: plain titles. */
+  columns: (string | { key: string; title: string })[];
+  titleRows: string[];
+  default: boolean;
+  updatedAt?: string | null;
+}
+
+export type BoqRuleKind = "class_to_item" | "composite_lighting" | "install_count" | "authority";
+/** orgs/{o}/boqRules/{ruleId} */
+export interface BoqRule {
+  id: string;
+  kind: BoqRuleKind;
+  match: Record<string, unknown>;
+  itemCode: string | null;
+  /** Contracts: Hebrew item description hint. */
+  itemDescription?: string | null;
+  priority: number;
+  enabled: boolean;
+  /** Optional human description (Hebrew; mock only — the UI otherwise derives one from `match`). */
+  description?: string | null;
+  updatedAt: string | null;
+}
+
+/** POST /v1/orgs/:orgId/library/imports → an upload slot (same quarantine flow as drawing uploads). */
+export interface CreateLibraryImportRequest {
+  filename: string;
+  sizeBytes: number;
+}
+export interface CreateLibraryImportResponse {
+  importId: string;
+  /** orgs/{o}/imports/{uuid}.{ext} */
+  storagePath: string;
+  uploadToken: string;
+  contentType: string;
+}
+export type LibraryImportStatus = "awaiting_upload" | "uploaded" | "queued" | "running" | "succeeded" | "failed" | "rejected";
+export interface LibraryImportResult {
+  itemsAdded: number;
+  itemsUpdated: number;
+  chapters: number;
+  templateCreated: { id: string; name: string } | null;
+  /** Codes whose description differs between files / rows (need a human decision). */
+  ambiguousCodes: { code: string; descriptions: string[] }[];
+}
+export interface LibraryImport {
+  id: string;
+  filename: string;
+  status: LibraryImportStatus;
+  progress: number;
+  jobId: string | null;
+  result: LibraryImportResult | null;
+  error: { code: string; message: string } | null;
+}
+
 export interface FinalizeUploadResponse {
   sheetSet: SheetSet;
   sheet: Sheet;
@@ -479,6 +750,25 @@ export interface ApiClient {
   patchLegendEntry(projectId: string, entryId: string, req: PatchLegendEntryRequest): Promise<PatchLegendEntryResponse>;
   /** Sprint 2: answer "מה זה?" once for a whole unknown-symbol cluster. */
   resolveUnknownCluster(projectId: string, clusterId: string, req: ResolveUnknownClusterRequest): Promise<ResolveUnknownClusterResponse>;
+
+  /* Sprint 3 — BOQ */
+  buildBoq(projectId: string): Promise<BuildBoqResponse>;
+  getBoqBuild(projectId: string, buildId: string): Promise<BoqBuild>;
+  listBoqLines(projectId: string): Promise<BoqLinesResponse>;
+  patchBoqLine(projectId: string, lineId: string, req: PatchBoqLineRequest): Promise<BoqLine>;
+  getBoqLineEvidence(projectId: string, lineId: string): Promise<BoqLineEvidence>;
+  getBoqSheetEvidence(projectId: string, sheetId: string, versionId: string): Promise<BoqSheetEvidence>;
+  exportBoq(projectId: string, req: ExportBoqRequest): Promise<ExportBoqResponse>;
+  /* Sprint 3 — org library, templates, rules */
+  listLibraryItems(orgId: string, q?: ListLibraryQuery): Promise<LibraryItemPage>;
+  patchLibraryItem(orgId: string, itemId: string, req: PatchLibraryItemRequest): Promise<LibraryItem>;
+  createLibraryImport(orgId: string, req: CreateLibraryImportRequest): Promise<CreateLibraryImportResponse>;
+  startLibraryImport(orgId: string, importId: string, uploadToken: string): Promise<LibraryImport>;
+  getLibraryImport(orgId: string, importId: string): Promise<LibraryImport>;
+  listBoqTemplates(orgId: string): Promise<BoqTemplate[]>;
+  setDefaultBoqTemplate(orgId: string, templateId: string): Promise<BoqTemplate>;
+  listBoqRules(orgId: string): Promise<BoqRule[]>;
+  patchBoqRule(orgId: string, ruleId: string, req: { enabled: boolean }): Promise<BoqRule>;
 }
 
 /* ---------- Storage (resumable uploads) ---------- */
@@ -525,6 +815,10 @@ export interface RealtimeSource {
     onData: (rows: SheetRow[]) => void,
     onError: OnError,
   ): Unsubscribe;
+  /** Sprint 3: the project doc's `boq` field (latest build + stale flag). */
+  boqState(orgId: string, projectId: string, onData: (s: ProjectBoqState | null) => void, onError: OnError): Unsubscribe;
+  /** Sprint 3: one build doc (status / progress). */
+  boqBuild(orgId: string, projectId: string, buildId: string, onData: (b: BoqBuild | null) => void, onError: OnError): Unsubscribe;
 }
 
 export interface Backend {

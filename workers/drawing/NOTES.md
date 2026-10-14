@@ -364,3 +364,204 @@ micro-F1 0.751 → **0.818** (glyph 0.803 → 0.869); green 48 @ 81 % (LB95 68 %
   (`READ_QUALIFIER_STROKES`): it chose the wrong sub-type more often than the plain fallback (tv 1/4 vs 4/8).
 Still open: data/phone points (0/6, all predicted tv, yellow), socket_box_6 "פרט A" callouts (text only), speakers
 next to text (2/3), luminaire type vs glyph semantics (strip/pendant), burden on two-floor sheets (floor question).
+
+## Sprint 3 — switch ↔ luminaire link graph + floor confirmation (Worker-A)
+
+Brief: `docs/agents/SPRINT3_BRIEF.md`. Package `kamutan_drawing.links` (pure; no I/O except `debug.py`).
+
+### Flow (inside the `understand` sandbox task, after rooms/lifecycle; lighting sheets only)
+```
+links/arcs.py   extract_chains(vs)        dashed chains: exploded dashes (one tiny path per dash, the AutoCAD PDF export)
+                                          chained end-to-end per pen + paths with a real dash array
+links/graph.py  build_links(chains, dets) attach ends → split pass-throughs → circuits → points → kind/confidence
+links/__init__  link_sheet(...) / link_from_artifacts(...)   (stored-artifact entry: debug, ingest_local fallback)
+links/floors.py apply_confirmed_floors(artifacts, sheet_doc, regions=None)   (re-exported by pipeline/understand.py)
+links/debug.py  uv run python -m kamutan_drawing.links.debug [fileId…] → /home/claude/kamutan-data/debug/links_*.png
+```
+* **Chaining**: dash candidates = open stroked paths ≤ 3.2 mm. An end continues into another dash's end when both
+  point at each other (≤ 40°) within the pen's own adaptive gap (2.5 × median best gap, 0.8–4 mm); greedy by cost,
+  each end once; a runner-up within 0.25 cost = ambiguous join (`קשתות חוצות`). Chains need ≥ 3 dashes, ≥ 3 mm and
+  a regular dash length (≥ 70 % within ±35 % of the median — rejects text strokes that line up). SHX "text paths" are
+  NOT excluded: the text heuristic flags switch stems and the last dash at a switch.
+* **Attachment** (per chain end): *ink* first — the connected symbol-sized strokes (paths ≤ 12 mm) within 1.0 mm of
+  the end (arcs end inside the 0.5 mm switch ring / on the luminaire crosshair) form a glyph; the detection box that
+  holds ≥ 50 % of it wins (switch banks at 2 mm pitch are separated by glyph, not by detection centre, which is
+  ~1 mm off). Two boxes hold it equally → nearer centre if > 0.6 mm clearer, else ambiguous (`קישור מפסק לא ודאי`).
+  No ink → distance to box ≤ 0.35·size + 0.8 mm (arcs that stop short). Nothing → dangling (`קשת לא מסתיימת
+  בסמל`) unless it lands ≤ 1 mm on another wire (branch). A chain through a luminaire centre (≤ 0.8 mm) is split.
+* **Wiring filter**: pens with ≥ 30 % of the both-ends-attached chains (red on Noah); other chains count only when
+  attached at both ends and clearly curved (≥ 5 dashes). Half-attached chains need the wiring pen.
+* **Inferred switches**: arc ends on one switch box but on glyphs > 1 mm apart = a bank switch the detector missed;
+  the far glyph becomes an inferred switch (`inferredSwitches` on the group, `מפסק לא זוהה (לפי קשת)`).
+* **Groups** = connected components {detections, arcs}. Points = luminaires joined by an arc and closer than
+  `point_merge_m` (0.3 m real at the plan scale; default keeps the 40 cm spots apart = 3 points, matches 4.16).
+  Kinds: no switch → `sensor` (fixture type row with גלאי/חיישן in the types table's notes column, or such a note
+  next to the luminaire) else not grouped; all points existing ("נק' קיימת" nearest the luminaire, or lifecycle
+  existing) or the only switch has a "להוסיף …" note → `add_to_existing`; 1 switch → `single`/`shared`; ≥ 2 →
+  `two_way`. `fan` comes from the switch side only (switch_fan, or a "מאוורר" note — two-line notes are merged into
+  one block — nearest the switch): "להוסיף מחלף" on a light+fan point is 4.12, "מפסק למאוורר" is 4.14.
+  Switches marked "קיים" do not count as added. Unlinked new luminaires → `unlinkedLuminaireIds` (no group).
+* **Confidence** 0.92 × 0.65^ambiguous ends × 0.5^dangling ends × 0.8 crossing × 0.75 inferred × rule penalties
+  (`מחלף ללא מחלף שני בגיליון` 0.8, `יותר משני מפסקים לנקודה` 0.75, `נקודה קיימת ונקודה חדשה באותו מפסק` 0.7,
+  `סוג מפסק לא תואם לקבוצה` 0.85). Level = brief rule; every chip is a warning → **green only when every arc end is
+  attached unambiguously** and no rule fired. Member detections' `קומה לא ודאית` is carried to the group.
+* Rules are `LinkParams` fields (configurable; the org rule set can feed them later).
+
+### Artifact `links.json.gz` (`kamutan.links/1`) + version doc
+`{schema, groups: [{id "lk_<n>", kind, switchIds, pointIds, luminaireIds, confidence, level, reasons, floor, fan,
+inferredSwitches, arcIds}], points: [{id "pt_<n>", luminaireIds, centerMm, lifecycle}], arcs: [{id "a_<n>",
+polylineMm (Douglas–Peucker 0.1 mm), ends [detId|null ×2], ambiguous, inferredSwitch}], unlinkedLuminaireIds}`.
+The contracts' `LinksArtifactSchema` is `.strict()` with the 8 brief fields — the extra fields were requested from
+the API agent as optional additions (else they move to a sibling file). The task returns `linksFile:
+"links.json.gz"` (deliberately NOT in `files`: the current `service/_understand` raises on unknown names) and
+`linkStats {groups, green, yellow, red, byKind, arcs, danglingEnds, inferredSwitches, unlinkedSwitches,
+unlinkedLuminaires}`. **Service wiring (Worker-BOQ owns `service/`) is pending**: upload `linksFile` → `artifacts.links`,
+`stats.links = linkStats`, pass `floorsConfirmed`. Until then `scripts/ingest_local.py` computes the links from the
+stored artifacts (same code) so `dev-index.json` has `links` / `artifacts.links` / `stats.links`.
+
+### Floor confirmation
+`understand(..., floors_confirmed=True)` (task arg `floorsConfirmed`) uses the regions' floors and adds no
+`קומה לא ודאית`. `apply_confirmed_floors({"detections", "rooms", "links"}, sheet_doc, regions)` (deep copies; no-op
+unless `sheet_doc.confirmed`): floor of the confirmed region containing the item (a single confirmed floor covers the
+sheet), the chip removed; detections/rooms whose only reason was the chip go back to green (the floor rule only ever
+demoted green → yellow and a non-green item always has a reason); groups take their members' majority floor and are
+re-levelled from confidence + remaining reasons. For `boq.build` on stored artifacts — no re-parsing.
+
+### Results (Noah, `ingest_local.py --force`, 15/15 succeeded; links stage 1.8–2.5 s/sheet)
+| sheet | arcs | groups by kind | levels g/y/r | notes |
+| --- | --- | --- | --- | --- |
+| b2046277 ground | 19 | single 7, shared 4 (2× 2 pts, 2× 3 pts), two_way 1, sensor 1 | 12/1/0 | yellow = 2-way to the existing "100" point (its "נק' קיימת" note is unread) |
+| 1bbe4113 basement+ground | 24 | single 10, shared 3, two_way 1, add_to_existing 4 (1 fan) | 0/16/2 | all carry `קומה לא ודאית` until the floors are confirmed; red = parents' suite (ambiguous stacked switches) and the corridor spot (arc to an undetected switch); 1 inferred switch (bathroom bank) |
+Implied composite counts (default mapping) vs `boq_truth.json`: 4.09 17/16, 4.10 2/2, 4.11 5/5, 4.12 3/3, 4.14 1/1,
+4.15 1/1, 4.16 2/2 (4.09 +1 = GT-D-006: the GT also implies 17).
+`kbench eval-links` (gt-v0.3-draft, frozen; run for numbers only, nothing tuned on it): group exact recall 28/30
+(0.93), precision 28/29 (0.97), switch assignment 30/32, luminaire assignment 37/39, kind accuracy 29/30, **green
+precision 12/12**. Errors: the parents' suite (disputed GT-D-005 area) and the inferred bank switch (no switch id).
+Tests: `tests/test_links.py` (18, synthetic reportlab arcs: exploded + real dashes, irregular strokes, single/shared/
+pass-through, two-way + short end, lone 2-way, dangling, ambiguous, crossing, inferred bank switch, existing/fan/sensor
+rules, fixture-table sensor, floor chip, `apply_confirmed_floors`, understand integration, bends).
+
+### Gaps
+* Unread "נק' קיימת"/"קיים" notes (cold glyph store) leave existing points/switches as new: one 4.12 counted as 4.09
+  on b2046277; the suite's existing 2-way switch counts as added (red `יותר משני מפסקים לנקודה`).
+* Cross-sheet two-way pairs ("מחלף שני במרתף") are not joined across sheets; a lone 2-way gets `מחלף ללא מחלף שני בגיליון`.
+* Inferred switches have no detection id (BOQ evidence points to the arc); dangling ends do not create a switch.
+* Electrical sheets are not linked (authority: lighting); DXF dashed lines are handled as chains but untested on real DXF.
+* `ruff format .` was run once at the worker root while other agents were editing; it reformatted 2 files (mine
+  plus possibly one in `boq/`) — formatting only.
+
+## Sprint 3 — BOQ build + library import (Worker-BOQ)
+
+Goal: *a full electrical + lighting BOQ (chapter 04 + 9.01) traceable to the drawing items*. Interfaces:
+`docs/agents/SPRINT3_BRIEF.md` + contracts `boq.ts` / `library.ts` / `jobs.ts` (mirrored in `boq/contracts.py`;
+`tests/test_boq_contracts.py` diffs the job models, LinkGroup, the default rules (`json-schema/defaults/boq-defaults.json`)
+and validates every written doc / artifact against the generated JSON schemas).
+
+### Job routing (`service/app.py`)
+`POST /pubsub/ingest` dispatches on the payload `type`: `boq.build` → `boq.build.run_boq_build`, `library.import` →
+`library_import.importer.run_library_import`, anything else → `process_sheet_version` exactly as before (ingest
+unchanged). Same response semantics (204 / 200 rejected / 500 retry, 5 attempts).
+
+### `library.import` (`library_import/`)
+* `readers.py` (sandbox only): `.xls` via xlrd (`formatting_info` → number format), `.xlsx` via openpyxl
+  (`read_only`, `data_only`: cached formula values, never evaluated) → bounded grid (32 sheets × 5000 rows × 40 cols)
+  with each numeric cell's displayed decimals. New sandbox task `boq_parse` (`sandbox/tasks.py`, additive): magic
+  check, read, parse; any library exception → `file_unreadable`.
+* `parse.py`: picks the sheet with a BOQ header (`סעיף | תאור | יחידה | כמות …`, most item rows wins; other sheets —
+  cover, contract, change orders, raw CAD counts — listed as ignored); title rows (only "כתב כמויות…" and
+  "שם הפרויקט: {projectName}" reach the template — names/addresses are dropped); chapter rows `פרק NN – …`; notes
+  ("הערות:" + numbered/plain rows, numbering kept as written); items; per-chapter and grand totals recognised.
+  **TEXT codes**: number format first (`0.00` → 4.1 is "4.10"), else the numbering scheme (max decimals in the file)
+  + sequence context (4.09, 4.1, 4.11 → "4.10"); flags `trailing_zero_restored`, `ambiguous_code` ("4.00" — could be
+  the chapter number; a restoration no neighbour supports), `gap_before:4.13`, `chapter_code_mismatch:8` (9.01 under
+  "פרק 08"). Descriptions are normalised exactly like contracts `normalizeDescription`. On the sample: 77/77 lines,
+  codes, quantities, units and the `ambiguous_code` flag identical to `gt/noah/boq_truth.json`.
+* `importer.py` (orchestrator): job doc ownership, redelivery = no-op (same `importId`), ≤ 20 MB, magic vs
+  `sourceKind`; items → `itemLibrary/{itemIdFor(code, description)}` (contracts algorithm, tested against TS
+  vectors) → idempotent across files; `manual` items never overwritten; `active`/`tags` only on create;
+  `importFlags` (extra field) keeps the parser flags. `boqTemplates/tpl_default` (`source: import`, chapters with the
+  header text as `title` + notes + `codePrefixes`, columns, titleRows, `vatRate` 0.18) only when the org has none.
+  `libraryImports/{importId}` gets status / stats / error when the API created it.
+
+### Rules (`boq/rules.py`)
+Rule docs = contracts `BoqRule`; `DEFAULT_RULES` mirrors `DEFAULT_BOQ_RULES` (diff test). Seeding is
+create-if-missing per rule id (new defaults appear, admin edits survive). `Library.resolve(code, description)`: same
+code with a similar description (char-trigram Dice ≥ 0.45) → that item; else the most similar description (≥ 0.6)
+→ that item + reason `שיוך לפריט לפי כלל ברירת מחדל`; custom rules / user-chosen codes (confirmed legend entry or
+symbol mapping `itemCode`) trust the code. No item → line under the pseudo-chapter **"לא משויך"** (code `X-…`), red,
+`אין פריט בספרייה` (`אין כלל שיוך לסוג זה` when no rule covers the class). Any rule reason caps the line at yellow.
+Worker constants (no field in the strict match schemas): class_to_item counts new work only (lifecycle
+`existing`/`demolish` skipped, `stats.excludedByLifecycle`). Markers / page furniture: the default `r_none_*` rules
+(class_to_item, `itemCode: null`). **Label rules** (`LABEL_RECLASS`): a `heater_feed` whose nearest Hebrew label
+(≤ 10 mm) says "דוד" (not "קיים"/"תנור") is a `water_heater_feed` (→ 4.23), chip `סוג עודכן לפי כיתוב סמוך`; never
+applied to a user-confirmed class. **Shared elements** (`SHARED_KINDS`): the same `two_way` group (same switch/point
+counts and fixture-type annotations, luminaires outside named rooms or in a stair room) on two lighting sheets of
+adjacent floors is counted once (the copy's switches and luminaires are dropped, also from 9.01), chip
+`מופיע בשני גיליונות`, yellow.
+
+### Aggregation (`boq/aggregate.py`, pure) and de-dup (`boq/dedup.py`)
+1. **prepare**: confirmed legend entry → its class / itemCode; `ignored` entry or `symbolMappings.ignored` → dropped;
+   mapping class / itemCode otherwise. **Confirmed sheets**: Worker-A's `links.floors.apply_confirmed_floors` on the
+   detections + link groups, with `effective_regions` (a confirmation that changed the floors without new regions
+   relabels region floors in drawing order: "מרתף+קרקע" → basement + first) → floor chip removed.
+2. **de-dup** per `authority` rule and floor: secondary sheets (other discipline) are aligned onto each
+   authoritative sheet by translation voting (2 mm bins; accepted when ≥ 3 and ≥ half the items find a partner),
+   else identity when both pages have the same size/rotation; matched items (≤ `radiusMm` real → paper mm via
+   scale) are dropped, unmatched kept with `פריט מגיליון משני`; no alignment → kept with `יישור גיליונות נכשל — ייתכן כפל`.
+3. **composite lighting**: per `links.json.gz` group (unknown fields ignored): features `groupKind`, points
+   (`pointIds`, else luminaires clustered by `pointMergeMm`), switch count/classes (a group controlling only
+   ceiling fans and no 2-way switch counts as a fan-switch group); first matching rule → 1 unit; groups entirely
+   existing are skipped; no rule → "לא משויך". Group level/reasons join the line. **No links artifact** on a lighting
+   sheet → fallback: 1 group per new single switch, 2-way switches paired by proximity, fan switches as
+   add_to_existing, every line red `חושב ללא גרף קישורים`.
+4. **install count** (9.01) per rule flags; **class → item** for everything else (switch / luminaire / fan classes
+   are consumed by 3–4).
+5. **lines**: id `ln_{code}` (`ln_x_…` unmatched), qty, `byFloor` (`unknown` + chip when a detection has no floor),
+   level = min of evidence (+ caps), reasons = rule reasons then evidence reasons by frequency (≤ 32), evidence
+   `{sheetId, versionId, detectionId, linkGroupId|null, floor}`, `sourceVersions`, `ruleId` (`legend_{entryId}` /
+   `mapping_{signature}` for user codes). Everything sorted → deterministic (tested).
+
+### `boq.build` (`boq/build.py`)
+Job doc + `boqBuilds/{buildId}` must exist (org/project checked); succeeded build = redelivery no-op. Inputs: every
+`sheets/*` with discipline electrical/lighting, current version `ready`, `detections.json.gz` (+ `links.json.gz` from
+`artifacts.links` or next to it; paths must be under the version prefix). Writes `boq/{buildId}/evidence.json.gz`,
+upserts `boqLines` (full-doc replace so `byFloor` never keeps stale floors; `BOQ_LINE_PRESERVED_FIELDS` copied from
+the current doc — read-modify-write, a PATCH landing in between can be lost: TODO transaction in the GCP store).
+**Approved line whose qty changed**: status kept, chip `הכמות השתנתה מאז האישור`, level red; baseline
+`approvedQty`/`approvedQtyAt` (extra fields) = the qty at the first rebuild after that approval; cleared when
+`approvedAt` changes (re-approval) or the qty returns. Obsolete worker lines: deleted when draft without
+override/note/lock (new `delete` on the three doc stores), else kept at qty 0, red `הסעיף לא נמצא בבנייה האחרונה`.
+Lines without `computedAt` (manual) are never touched. Build doc `running → succeeded|failed` + `stats {lines, green,
+yellow, red, sheets, evidence, duplicatesRemoved, unmapped, unlinkedSwitches, fallbackSheets, durationMs}` +
+`evidenceRef`; project `boq {latestBuildId, builtAt, pendingBuildId: null}` and `stale: false` **only if `boq.staleAt`
+did not change during the build** (an API change meanwhile keeps it stale).
+
+### Local run
+`uv run python scripts/boq_local.py [--build-id ID] [--json OUT]`: imports `boq_sample.xls` into `org-demo`
+(sandboxed), builds over `/home/claude/kamutan-data/artifacts`, writes `orgs/org-demo/projects/p-noah/boq/boq-lines.json`
+(+ root `boq-lines.json`, `boqLines`/`boqEvidence` pointers in `dev-index.json` for the web mock) and prints chapter
+04 + 9.01 vs `boq_truth.json`. 0.1 s per build. Result (links from Worker-A, contracts default rules), 14/29 exact:
+4.01, 4.04, 4.07, **4.09–4.12, 4.14–4.16** (all composite lines), 4.18, 4.21, 4.22, 4.24 exact; 4.00 22/23, 4.02 6/5,
+4.03 7/8, 4.05 8/11, 4.17 4/3, 9.01 39/43; not produced: 4.06 (text-only callouts), 4.08, 4.19, 4.20/4.27
+(conduits not detected), 4.23, 4.25, 4.26, 4.28 (second panel / text-only items).
+
+### Integration round (Sprint 3)
+* Ingest: `_understand` passes `floorsConfirmed` (sheet `confirmed`) and, when the task reports `linksFile`, uploads
+  `links.json.gz` (name checked) → `artifacts.links`, `stats.links` = sanitised `linkStats` (`tests/test_service_links.py`).
+* Mirrors resynced with the regenerated contracts: 9.01 default `excludeLifecycle [demolish], excludeSupply []`,
+  `r_none_*` rules, optional LinkGroup fields `floor/fan/inferredSwitches/arcIds`; import stats + job result carry
+  `ambiguousCodes` and `templateName`. Seeding is create-if-missing: an org seeded before a default changed keeps
+  the old doc (the API owns updating default rule docs).
+* Composite evidence = switches + luminaires of each counted group, each item with its `linkGroupId` (fallback groups
+  get synthetic `lk_fb{n}`): **the UI/export must count distinct `linkGroupId`s, not items**, for composite lines.
+* kbench `eval-boq` (gt-v0.3-draft), chapter 04 + 9.01: gated exact 11/22 → **12/22**, ΣAE 20 → 19; disputed exact
+  3/7 → 4/7, ΣAE 7 → 3. Changes: 4.17 4 → 3 ✓, 4.23 — → 1 ✓, 9.01 39 → 43 ✓, 4.10 2 → 1 (the stair group is no longer
+  counted twice; the master existing+new 2-way is read by the link graph as a fan group — the old 2 was two errors
+  cancelling).
+
+### Gaps
+* Two-floor sheets are still classified basement + ground (truth: basement + first) until the owner confirms them;
+  byFloor shows "ground" for first-floor items. The ground-floor switch de-dup of c054fd3a falls back to identity
+  (no duplicates found: those are heater/vent switches); the basement alignment is voted from 3 switches.
+* Lines are project-wide (`floor: null`) with `byFloor`; no per-room breakdown yet (rooms artifact not used).
+* Only electrical / lighting sheets are built (plumbing in a later sprint).

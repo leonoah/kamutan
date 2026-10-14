@@ -68,6 +68,11 @@ export interface PathFeature extends FeatureBase {
   kind: "path";
   path: readonly Vec2[];
   widthPx?: number;
+  /**
+   * Line style: "dashed" (e.g. a switch↔luminaire arc as drawn on the sheet) or "dotted" (a segment the system
+   * completed itself — spec §סעיפים מורכבים: "קווים שהמערכת השלימה מוצגים בקו נקודות"). Default solid.
+   */
+  dash?: "dashed" | "dotted";
 }
 
 export type OverlayFeature = PointFeature | MarkerFeature | PolygonFeature | PathFeature;

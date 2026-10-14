@@ -14,6 +14,8 @@ export const API_ERROR_CODES = [
   'upload_missing',
   'rate_limited',
   'not_ready',
+  /** Sprint 3: org setting blockExportOnRed and red lines exist. */
+  'export_blocked',
   'internal_error',
   'service_unavailable',
 ] as const;

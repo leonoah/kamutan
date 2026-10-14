@@ -35,7 +35,7 @@ describe("Review workspace: real viewer in the drawing pane", { timeout: 20_000 
     );
     expect(within(drawing).getByTestId("viewer-scale")).toHaveTextContent("1:50");
     // the 3-pane layout is still there
-    expect(screen.getByRole("region", { name: "ספירה לפי סוג" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "כתב כמויות" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "תור בדיקה" })).toBeInTheDocument();
   });
 
