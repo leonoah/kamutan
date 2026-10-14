@@ -9,7 +9,7 @@ export const UploadTokenClaimsSchema = z
     uid: UuidSchema, // upload id
     org: UuidSchema,
     prj: UuidSchema,
-    usr: UuidSchema,
+    usr: z.string().min(1).max(128), // JWT sub (Firebase uid or UUID)
     path: StoragePathSchema,
     name: z.string().min(1).max(255),
     kind: FileKindSchema,
