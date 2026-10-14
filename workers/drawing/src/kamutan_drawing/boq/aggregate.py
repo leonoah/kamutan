@@ -674,7 +674,7 @@ def _lines(contribs: list[Contribution]) -> list[Line]:
             chapter, chapter_title, unit, item_id = UNMATCHED_CHAPTER, UNMATCHED_CHAPTER, "יחידה", None
         lid = f"ln_{_slug(code)}" if first.resolution is not None else f"ln_{_slug(code.lower())}"
         if lid in used_ids:
-            lid = f"{lid}_{hashlib.sha1(key.encode()).hexdigest()[:8]}"  # pragma: no cover
+            lid = f"{lid}_{hashlib.sha256(key.encode()).hexdigest()[:8]}"  # pragma: no cover
         used_ids.add(lid)
         by_floor: dict[str, float] = defaultdict(float)
         for c in cs:
