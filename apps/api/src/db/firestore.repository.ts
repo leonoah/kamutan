@@ -254,6 +254,13 @@ class FirestoreTx implements RepositoryTx {
     return { sheetSet, sheetVersion: sheetVersion as SheetVersion };
   }
 
+  async listSheetSets(projectId: string): Promise<SheetSet[]> {
+    const sets = (await this.getQuery(this.col(COLLECTIONS.sheetSets).where('projectId', '==', projectId))) as SheetSet[];
+    const visible: SheetSet[] = [];
+    for (const s of sets) if (await this.role(s.orgId)) visible.push(s);
+    return visible.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   async createSheetSetWithVersion(input: NewSheetSetUpload): Promise<SheetSetWithVersion> {
     await this.requireWrite(input.orgId, 'sheet_sets');
     if (!input.storagePath.startsWith(`${input.orgId}/`)) throw new Error('storage_path outside org prefix');

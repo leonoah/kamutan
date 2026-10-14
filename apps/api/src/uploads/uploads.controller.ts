@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   CreateUploadRequestSchema,
@@ -9,6 +9,8 @@ import {
   type CreateUploadResponse,
   type FinalizeUploadRequest,
   type FinalizeUploadResponse,
+  SheetSetSchema,
+  type SheetSet,
 } from '@kamutan/contracts';
 import type { Request } from 'express';
 import type { AuthContext, OrgAccess } from '../auth/auth-context';
@@ -17,13 +19,29 @@ import { StrictRateLimit } from '../auth/user-throttler.guard';
 import { traceparentFrom } from '../common/trace';
 import { ApiErrors, ApiZodBody, ApiZodResponse } from '../common/zod-openapi';
 import { zodPipe } from '../common/zod-validation.pipe';
+import { REPOSITORY, type Repository } from '../db/repository';
+import { z } from 'zod';
 import { UploadsService } from './uploads.service';
 
 @ApiTags('uploads')
 @ApiBearerAuth()
 @Controller({ path: 'projects/:projectId', version: '1' })
 export class UploadsController {
-  constructor(private readonly uploads: UploadsService) {}
+  constructor(
+    private readonly uploads: UploadsService,
+    @Inject(REPOSITORY) private readonly repo: Repository,
+  ) {}
+
+  @Get('sheet-sets')
+  @RequireRole('viewer', { from: 'project-param', key: 'projectId' })
+  @ApiZodResponse(200, z.object({ items: z.array(SheetSetSchema) }))
+  @ApiErrors(401, 404)
+  async list(
+    @Param('projectId', new ParseUUIDPipe()) projectId: string,
+    @CurrentUser() user: AuthContext,
+  ): Promise<{ items: SheetSet[] }> {
+    return { items: await this.repo.run(user, (tx) => tx.listSheetSets(projectId)) };
+  }
 
   @Post('uploads')
   @StrictRateLimit()

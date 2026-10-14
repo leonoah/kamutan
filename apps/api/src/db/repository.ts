@@ -78,6 +78,8 @@ export interface RepositoryTx {
   lockProjectFile(projectId: string, sha256: string): Promise<void>;
   /** An existing upload of the same bytes in the project (dedupe), if any. */
   findSheetSetBySha(projectId: string, sha256: string): Promise<SheetSetWithVersion | null>;
+  /** Sheet sets of a project, newest first (RLS/role-scoped). */
+  listSheetSets(projectId: string): Promise<SheetSet[]>;
   /** Creates sheet_set + placeholder sheet + sheet_version v1 (status `uploaded`). */
   createSheetSetWithVersion(input: NewSheetSetUpload): Promise<SheetSetWithVersion>;
   setSheetVersionStatus(sheetVersionId: string, status: SheetVersionStatus): Promise<void>;

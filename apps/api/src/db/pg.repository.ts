@@ -235,6 +235,14 @@ class PgRepositoryTx implements RepositoryTx {
     return r ? { sheetSet: mapSheetSet(r), sheetVersion: mapSheetVersion(r) } : null;
   }
 
+  async listSheetSets(projectId: string): Promise<SheetSet[]> {
+    const rows = await this.rows(
+      `select ${SHEET_SET_COLS} from public.sheet_sets ss where ss.project_id = $1 order by ss.created_at desc, ss.id`,
+      [projectId],
+    );
+    return rows.map(mapSheetSet);
+  }
+
   async createSheetSetWithVersion(input: NewSheetSetUpload): Promise<SheetSetWithVersion> {
     const ss = await this.one(
       `insert into public.sheet_sets as ss (org_id, project_id, name, uploaded_by, source_file_path, source_sha256, file_kind)

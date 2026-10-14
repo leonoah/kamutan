@@ -208,6 +208,12 @@ class InMemoryTx implements RepositoryTx {
     return { sheetSet: ss, sheetVersion };
   }
 
+  async listSheetSets(projectId: string): Promise<SheetSet[]> {
+    return [...this.s.sheetSets.values()]
+      .filter((x) => x.projectId === projectId && this.role(x.orgId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   async createSheetSetWithVersion(input: NewSheetSetUpload): Promise<SheetSetWithVersion> {
     this.canWrite(input.orgId, 'sheet_sets');
     if (!input.storagePath.startsWith(`${input.orgId}/`)) throw new Error('storage_path outside org prefix');

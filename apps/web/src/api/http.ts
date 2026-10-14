@@ -32,12 +32,29 @@ export function createHttpClient(getToken: TokenGetter, baseUrl = env.apiUrl): A
     return (await res.json()) as T;
   }
 
+  /** The API scopes projects to an org: use the user's first org, creating a personal one on first use. */
+  async function resolveOrgId(): Promise<string> {
+    const { items } = await request<{ items: { id: string; role: string }[] }>("/orgs");
+    const usable = items.find((o) => o.role === "editor" || o.role === "admin") ?? items[0];
+    if (usable) return usable.id;
+    const slug = `org-${crypto.randomUUID().slice(0, 8)}`;
+    return (await request<{ id: string }>("/orgs", { method: "POST", body: JSON.stringify({ name: slug, slug }) })).id;
+  }
+
   return {
     listProjects: async () => (await request<{ items: Project[] }>("/projects")).items,
     getProject: (id) => request<Project>(`/projects/${encodeURIComponent(id)}`),
-    createProject: (input) => request<Project>("/projects", { method: "POST", body: JSON.stringify(input) }),
+    createProject: async ({ name, address }) =>
+      request<Project>("/projects", {
+        method: "POST",
+        body: JSON.stringify({ orgId: await resolveOrgId(), name, address }),
+      }),
     listSheetSets: async (projectId) =>
-      (await request<{ items: SheetSet[] }>(`/projects/${encodeURIComponent(projectId)}/sheet-sets`)).items,
+      (
+        await request<{ items: { id: string; projectId: string; name: string; createdAt: string }[] }>(
+          `/projects/${encodeURIComponent(projectId)}/sheet-sets`,
+        )
+      ).items.map((s) => ({ id: s.id, projectId: s.projectId, name: s.name, fileCount: 1, createdAt: s.createdAt })),
     createUpload: (projectId, req) =>
       request<UploadTarget>(`/projects/${encodeURIComponent(projectId)}/uploads`, {
         method: "POST",
