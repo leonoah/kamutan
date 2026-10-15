@@ -1,5 +1,9 @@
 # infra — NOTES (DevOps + Security, Sprint 0)
 
+> **עדכון (ADR 0008, 11.10.2026):** הפלטפורמה עברה ל-Firebase + Cloud Run. החלקים על Railway, Supabase ו-Vercel
+> בקובץ הזה (ובצ'קליסט למטה) היסטוריים בלבד. הפריסה והזהויות: `infra/IAM.md`, ‏`.github/workflows/deploy.yml`
+> ו-`.github/workflows/_deploy-env.yml`.
+
 ## מה נבנה
 
 | קובץ | תוכן |
