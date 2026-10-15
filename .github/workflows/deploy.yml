@@ -1,19 +1,18 @@
-# Kamutan deploy — STUB (Sprint 0). Platform: Firebase + Cloud Run (ADR-0008).
+# Kamutan deploy. Platform: Firebase + Cloud Run (ADR-0008).
 #
 # Flow (04_architecture "CI/CD", as amended by ADR-0008):
-#   CI green on main (workflow_run) -> staging     [environment: staging,    manual approval]
-#   tag v*                          -> staging -> production [environment: production, manual approval]
+#   CI green on main (workflow_run) -> staging                  [environment: staging,    manual approval]
+#   tag v*                          -> staging -> production    [environment: production, manual approval]
 #   manual run                      -> chosen environment
 #
-# What gets deployed:
+# The per-environment work lives in _deploy-env.yml (one implementation for both environments):
+#   - `gcloud run services update kamutan-worker` (image infra/docker/worker-drawing.Dockerfile, by digest)
 #   - `firebase deploy --only firestore:rules,firestore:indexes,storage,functions:api,hosting`
-#   - `gcloud run deploy kamutan-worker` (image infra/docker/worker-drawing.Dockerfile, by digest)
 #
 # Rules (SEC-48, SEC-49, SEC-53):
 # - No secrets inline and no service-account key files. Auth to Google Cloud uses Workload Identity
-#   Federation (OIDC, `id-token: write` only on deploy jobs) configured through *Environment*
-#   variables GCP_WORKLOAD_IDENTITY_PROVIDER + GCP_DEPLOY_SERVICE_ACCOUNT, which are only released
-#   after a required reviewer (human owner) approves the job.
+#   Federation (OIDC, `id-token: write` only on the deploy jobs) configured through *Environment*
+#   variables, which are only released after a required reviewer (human owner) approves the job.
 # - Every step that needs cloud access skips with a notice while that configuration is absent.
 # - Actions are pinned to full commit SHAs (tag in a trailing comment).
 
@@ -43,114 +42,75 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-images:
-    name: Build + push worker image (Artifact Registry)
+  meta:
+    name: Resolve commit
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
+    timeout-minutes: 5
     # workflow_run fires for every CI completion on main; only deploy green, push-triggered runs.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     outputs:
-      tag: ${{ steps.meta.outputs.tag }}
       sha: ${{ steps.meta.outputs.sha }}
     steps:
       # Safe: workflow_run is restricted above to *push* events on main that passed CI, so
-      # head_sha is a commit already on main (never untrusted fork code). No secrets in this job.
-      # nosemgrep
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      # head_sha is a commit already on main (never untrusted fork code). No checkout, no secrets here.
       - id: meta
         env:
           SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then echo "::error::Unexpected commit id."; exit 1; fi
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "tag=sha-${SHA::12}" >> "$GITHUB_OUTPUT"
-      - name: Build and push (placeholder)
-        env:
-          TAG: ${{ steps.meta.outputs.tag }}
-        run: |
-          echo "TODO(sprint-1): google-github-actions/auth (WIF) + docker/build-push-action for"
-          echo "  europe-west1-docker.pkg.dev/kamutan-fba67/kamutan/worker-drawing:${TAG}"
-          echo "  (infra/docker/worker-drawing.Dockerfile) + SBOM (syft, SEC-46) + Trivy gate (SEC-45);"
-          echo "  deploy by digest, never :latest."
 
   staging:
-    name: Deploy → staging
-    needs: build-images
+    name: Staging
+    needs: meta
     if: >-
       github.event_name == 'workflow_run' || github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    environment:
-      name: staging
+    uses: ./.github/workflows/_deploy-env.yml
+    with:
+      environment: staging
+      sha: ${{ needs.meta.outputs.sha }}
     permissions:
       contents: read
       id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.build-images.outputs.sha }}
-      - name: Firebase deploy (staging)
-        env:
-          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          DEPLOY_SA: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-        run: |
-          if [ -z "$WIF_PROVIDER" ] || [ -z "$DEPLOY_SA" ]; then
-            echo "::notice::GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_DEPLOY_SERVICE_ACCOUNT not configured for 'staging' — skipping."; exit 0; fi
-          echo "TODO(sprint-1): WIF auth, then npx firebase-tools@<pinned> deploy --project <staging> --non-interactive"
-      - name: Cloud Run worker (staging)
-        env:
-          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          TAG: ${{ needs.build-images.outputs.tag }}
-        run: |
-          if [ -z "$WIF_PROVIDER" ]; then echo "::notice::GCP not configured for 'staging' — skipping."; exit 0; fi
-          echo "TODO(sprint-1): gcloud run deploy kamutan-worker --region europe-west1 --no-allow-unauthenticated --image <digest of ${TAG}>"
 
-  production:
-    name: Deploy → production
-    needs: [build-images, staging]
+  guard-production:
+    name: Guard — production only from main
+    needs: meta
     if: >-
-      always() && needs.build-images.result == 'success' &&
-      (needs.staging.result == 'success' || needs.staging.result == 'skipped') &&
-      (startsWith(github.ref, 'refs/tags/v') ||
-       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'))
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    environment:
-      name: production
-    permissions:
-      contents: read
-      id-token: write
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Guard — production deploys only from a tag or main
+          fetch-depth: 0
+      - name: Commit must be on main
         env:
           EVENT_NAME: ${{ github.event_name }}
           GIT_REF: ${{ github.ref }}
+          SHA: ${{ needs.meta.outputs.sha }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$GIT_REF" != "refs/heads/main" ]; then
             echo "::error::Manual production deploys must run from main."; exit 1; fi
-      - name: Firebase deploy (production)
-        env:
-          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          DEPLOY_SA: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-        run: |
-          if [ -z "$WIF_PROVIDER" ] || [ -z "$DEPLOY_SA" ]; then
-            echo "::notice::GCP not configured for 'production' — skipping."; exit 0; fi
-          echo "TODO(sprint-5): Firestore export (backup) first, then firebase deploy --project kamutan-fba67."
-      - name: Cloud Run worker (production)
-        env:
-          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          TAG: ${{ needs.build-images.outputs.tag }}
-        run: |
-          if [ -z "$WIF_PROVIDER" ]; then echo "::notice::GCP not configured for 'production' — skipping."; exit 0; fi
-          echo "TODO(sprint-5): promote image digest ${TAG} to kamutan-worker (production)."
+          # A v* tag pushed from a side branch must not reach production.
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::Commit $SHA is not on main — refusing to deploy it to production."; exit 1; fi
+
+  production:
+    name: Production
+    needs: [meta, staging, guard-production]
+    if: >-
+      always() && needs.meta.result == 'success' && needs.guard-production.result == 'success' &&
+      (needs.staging.result == 'success' || needs.staging.result == 'skipped')
+    uses: ./.github/workflows/_deploy-env.yml
+    with:
+      environment: production
+      sha: ${{ needs.meta.outputs.sha }}
+    permissions:
+      contents: read
+      id-token: write

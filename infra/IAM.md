@@ -225,6 +225,20 @@ GitHub side (Environment **variables**, not secrets — already referenced by `d
 `GCP_DEPLOY_SERVICE_ACCOUNT = kamutan-deploy@kamutan-fba67.iam.gserviceaccount.com`, on both `staging` and
 `production` Environments with required reviewer `@leonoah`. Deploy jobs keep `id-token: write` only.
 
+The implementation lives in `.github/workflows/_deploy-env.yml` (called by `deploy.yml` for both environments).
+Besides the two variables above it reads these **Environment variables** (all non-secret):
+
+| Variable | Needed | Meaning |
+| --- | --- | --- |
+| `GCP_PROJECT_ID` | yes | Firebase/GCP project of that environment (staging and production are separate projects, SEC-25). |
+| `GCP_REGION` | no | Default `europe-west1`. |
+| `GCP_STORAGE_BUCKET` | no | Default `<project>.firebasestorage.app`. |
+| `VITE_FIREBASE_API_KEY`, `_AUTH_DOMAIN`, `_PROJECT_ID`, `_STORAGE_BUCKET`, `_MESSAGING_SENDER_ID`, `_APP_ID`, `_MEASUREMENT_ID` | for every project except the one in `apps/web/.env.firebase` | Public web config of that environment's project. The job fails if the web config's project differs from `GCP_PROJECT_ID`, so a staging deploy can never ship a bundle that talks to production. |
+| `GCP_FIRESTORE_BACKUP_BUCKET` | no (production) | Bucket for the pre-deploy `gcloud firestore export`. Also grant `roles/datastore.importExportAdmin` on the project and `roles/storage.objectAdmin` on that bucket to `$DEPLOY_SA`; without the variable production deploys with a warning and no backup. |
+
+The deploy job only **updates** `kamutan-worker` (`gcloud run services update --image …@sha256:…`); it fails with a clear
+message when the service does not exist yet, so CI can never create an unauthenticated service.
+
 Caveats: the first `firebase deploy` from CI may report one more missing permission (firebase-tools checks
 vary by version); add exactly that permission, never `roles/editor` / `roles/firebase.admin`. The very first
 `gcloud run deploy kamutan-worker` (service does not exist yet) needs `run.services.create` at project level —

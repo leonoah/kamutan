@@ -1,0 +1,248 @@
+# Kamutan — deploy ONE environment (ADR-0008). Called by deploy.yml; not triggered directly.
+#
+# Order (worker first, so the consumer is ready before the API starts publishing new job payloads):
+#   1. [production only, optional] Firestore export (backup)
+#   2. Build the drawing-worker image, Trivy gate (SEC-45), push to Artifact Registry, update Cloud Run by digest (SEC-46)
+#   3. `firebase deploy` of firestore rules/indexes, storage rules, function `api`, hosting
+#
+# Security (SEC-48, SEC-49, SEC-53):
+# - Google Cloud auth = Workload Identity Federation (OIDC). No key files, no secrets: everything comes from
+#   *Environment variables*, which GitHub only releases after the environment's required reviewer approves.
+# - Every cloud step skips with a notice while the environment is not configured yet.
+# - The Cloud Run service is only UPDATED here (`services update`), never created: the first creation is a manual
+#   Owner step with the hardened flags from infra/IAM.md §1. CI can therefore never create an open service.
+# - Actions are pinned to full commit SHAs (tag in a trailing comment).
+#
+# Environment variables (Settings → Environments → <env> → Variables):
+#   GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_DEPLOY_SERVICE_ACCOUNT   (infra/IAM.md §4)
+#   GCP_PROJECT_ID           Firebase/GCP project of this environment (staging and production = separate projects, SEC-25)
+#   GCP_REGION               optional, default europe-west1
+#   GCP_STORAGE_BUCKET       optional, default <project>.firebasestorage.app
+#   VITE_FIREBASE_*          the PUBLIC web config of this environment's project. Optional only for the project that
+#                            apps/web/.env.firebase already describes; a mismatch with GCP_PROJECT_ID fails the job.
+#   GCP_FIRESTORE_BACKUP_BUCKET  optional, production: gs bucket for the pre-deploy Firestore export
+#                            (needs roles/datastore.importExportAdmin + bucket write for the deploy SA).
+
+name: Deploy environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub Environment to deploy (staging or production)
+        required: true
+        type: string
+      sha:
+        description: Commit to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  FIREBASE_TOOLS_VERSION: "15.34.0"
+
+jobs:
+  deploy:
+    name: Deploy → ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.sha }}
+
+      - name: Resolve configuration
+        id: cfg
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          DEPLOY_SA: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION_VAR: ${{ vars.GCP_REGION }}
+          BUCKET_VAR: ${{ vars.GCP_STORAGE_BUCKET }}
+          WEB_PROJECT_VAR: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$WIF_PROVIDER" ] || [ -z "$DEPLOY_SA" ] || [ -z "$PROJECT" ]; then
+            echo "::notice::GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_DEPLOY_SERVICE_ACCOUNT / GCP_PROJECT_ID not configured for this environment — skipping."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          REGION="${REGION_VAR:-europe-west1}"
+          BUCKET="${BUCKET_VAR:-${PROJECT}.firebasestorage.app}"
+          if ! [[ "$PROJECT" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then echo "::error::GCP_PROJECT_ID is not a valid project id."; exit 1; fi
+          if ! [[ "$REGION" =~ ^[a-z]+-[a-z]+[0-9]+$ ]]; then echo "::error::GCP_REGION is not a valid region."; exit 1; fi
+          if ! [[ "$BUCKET" =~ ^[a-z0-9][a-z0-9._-]{2,221}$ ]]; then echo "::error::GCP_STORAGE_BUCKET is not a valid bucket name."; exit 1; fi
+          # The web bundle must talk to THIS environment's project. apps/web/.env.firebase describes one project;
+          # without a matching VITE_FIREBASE_* override, deploying elsewhere would ship a bundle that points at it.
+          WEB_PROJECT="$WEB_PROJECT_VAR"
+          if [ -z "$WEB_PROJECT" ]; then
+            WEB_PROJECT="$(sed -n 's/^VITE_FIREBASE_PROJECT_ID=//p' apps/web/.env.firebase | head -n1)"
+          fi
+          if [ "$WEB_PROJECT" != "$PROJECT" ]; then
+            echo "::error::The web config targets '$WEB_PROJECT' but this environment deploys to '$PROJECT'. Set the VITE_FIREBASE_* Environment variables for '$PROJECT'."
+            exit 1
+          fi
+          {
+            echo "ready=true"
+            echo "project=$PROJECT"
+            echo "region=$REGION"
+            echo "bucket=$BUCKET"
+            echo "registry=${REGION}-docker.pkg.dev/${PROJECT}/kamutan"
+            echo "tag=sha-${DEPLOY_SHA::12}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Public web config for the build
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
+        run: |
+          set -euo pipefail
+          # Only export variables that are set: vite's `process.env[k] === undefined` fallback to
+          # apps/web/.env.firebase would otherwise be defeated by empty strings.
+          for k in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_STORAGE_BUCKET \
+                   VITE_FIREBASE_MESSAGING_SENDER_ID VITE_FIREBASE_APP_ID VITE_FIREBASE_MEASUREMENT_ID; do
+            if [ -n "${!k}" ]; then echo "$k=${!k}" >> "$GITHUB_ENV"; fi
+          done
+          # A deployed bundle must never run on the in-memory mock backend.
+          echo "VITE_USE_MOCKS=false" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: steps.cfg.outputs.ready == 'true'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen lockfile, SEC-44)
+        if: steps.cfg.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - id: auth
+        if: steps.cfg.outputs.ready == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          project_id: ${{ steps.cfg.outputs.project }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        if: steps.cfg.outputs.ready == 'true'
+
+      # ---- 1. Backup (production, optional) ---------------------------------------------------------------
+      - name: Firestore export before deploy
+        if: steps.cfg.outputs.ready == 'true' && inputs.environment == 'production'
+        env:
+          PROJECT: ${{ steps.cfg.outputs.project }}
+          BACKUP_BUCKET: ${{ vars.GCP_FIRESTORE_BACKUP_BUCKET }}
+          TAG: ${{ steps.cfg.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BACKUP_BUCKET" ]; then
+            echo "::warning::GCP_FIRESTORE_BACKUP_BUCKET is not set — production is deploying WITHOUT a pre-deploy Firestore export."
+            exit 0
+          fi
+          gcloud firestore export "gs://${BACKUP_BUCKET}/pre-deploy/${TAG}-$(date -u +%Y%m%dT%H%M%SZ)" --project "$PROJECT"
+
+      # ---- 2. Drawing worker (Cloud Run) --------------------------------------------------------------------
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.cfg.outputs.ready == 'true'
+      - name: Docker auth for Artifact Registry
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          REGION: ${{ steps.cfg.outputs.region }}
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+      - name: Build worker image (local, for the scan)
+        if: steps.cfg.outputs.ready == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: infra/docker/worker-drawing.Dockerfile
+          push: false
+          load: true
+          tags: kamutan/worker-drawing:deploy
+          cache-from: type=gha,scope=worker-drawing
+          cache-to: type=gha,mode=max,scope=worker-drawing
+      - name: Trivy (block on fixable CRITICAL/HIGH, SEC-45)
+        if: steps.cfg.outputs.ready == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: kamutan/worker-drawing:deploy
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Push worker image
+        id: push
+        if: steps.cfg.outputs.ready == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: infra/docker/worker-drawing.Dockerfile
+          push: true
+          # No attestation manifests: keeps the pushed artifact a single plain image for Cloud Run.
+          provenance: false
+          sbom: false
+          tags: ${{ steps.cfg.outputs.registry }}/worker-drawing:${{ steps.cfg.outputs.tag }}
+          cache-from: type=gha,scope=worker-drawing
+      - name: Update Cloud Run worker (by digest)
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          PROJECT: ${{ steps.cfg.outputs.project }}
+          REGION: ${{ steps.cfg.outputs.region }}
+          REGISTRY: ${{ steps.cfg.outputs.registry }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then echo "::error::No image digest from the push step."; exit 1; fi
+          if ! gcloud run services describe kamutan-worker --region "$REGION" --project "$PROJECT" --format='value(metadata.name)' >/dev/null 2>&1; then
+            echo "::error::Cloud Run service kamutan-worker does not exist in $PROJECT. Create it once as Owner with the hardened flags (infra/IAM.md §1-§2), then re-run."
+            exit 1
+          fi
+          gcloud run services update kamutan-worker --region "$REGION" --project "$PROJECT" --image "${REGISTRY}/worker-drawing@${DIGEST}"
+          READY="$(gcloud run services describe kamutan-worker --region "$REGION" --project "$PROJECT" --format='value(status.latestReadyRevisionName)')"
+          CREATED="$(gcloud run services describe kamutan-worker --region "$REGION" --project "$PROJECT" --format='value(status.latestCreatedRevisionName)')"
+          if [ -z "$READY" ] || [ "$READY" != "$CREATED" ]; then
+            echo "::error::kamutan-worker revision $CREATED is not ready (latest ready: ${READY:-none})."
+            exit 1
+          fi
+          echo "worker_revision=$READY" >> "$GITHUB_ENV"
+
+      # ---- 3. Firebase (rules, indexes, function api, hosting) -----------------------------------------------
+      - name: Firebase deploy
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          PROJECT: ${{ steps.cfg.outputs.project }}
+        # predeploy hooks in firebase.json build contracts, api and web (VITE_* from the step above).
+        run: |
+          pnpm dlx "firebase-tools@${FIREBASE_TOOLS_VERSION}" deploy \
+            --project "$PROJECT" --non-interactive \
+            --only firestore:rules,firestore:indexes,storage,functions:api,hosting
+
+      - name: Summary
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          PROJECT: ${{ steps.cfg.outputs.project }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          {
+            echo "### Deployed ${ENVIRONMENT}"
+            echo "- Project: \`${PROJECT}\`"
+            echo "- Commit: \`${DEPLOY_SHA}\`"
+            echo "- Worker image: \`${DIGEST}\` (revision \`${worker_revision:-unknown}\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
