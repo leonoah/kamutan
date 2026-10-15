@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import { BookOpenCheck, ChevronLeft, ChevronRight, Download, Search, Share2 } from "lucide-react";
 import type { LassoResult } from "@kamutan/viewer";
-import type { Detection, SheetRow, UnknownCluster } from "@/api/types";
+import type { BoqLine, Detection, SheetRow, UnknownCluster } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/components/ui/toast";
@@ -13,6 +14,37 @@ import { ConfidenceShape } from "@/components/ConfidenceBadge";
 import { Kbd } from "@/components/Kbd";
 import { Ltr } from "@/components/Ltr";
 import { useProject } from "@/features/projects/queries";
+import { useCurrentOrg } from "@/features/org/useCurrentOrg";
+import { useAuthStore } from "@/stores/authStore";
+import { BoqPanel, type PanelTab } from "@/features/boq/BoqPanel";
+import { OverrideDialog } from "@/features/boq/OverrideDialog";
+import { ExportDialog } from "@/features/boq/ExportDialog";
+import { ReceiptGroups } from "@/features/boq/ReceiptGroups";
+import {
+  canEditQty,
+  evidenceBySheet,
+  filterLines,
+  forwardStatus,
+  groupByChapter,
+  detectionsByLine,
+  groupNo,
+  groupsOf,
+  isCompositeLine,
+  linkGroupFeatures,
+  nextNeedingReview,
+  statsOf,
+  type StatusFilter,
+} from "@/features/boq/model";
+import {
+  useSheetEvidence,
+  useBoqBuild,
+  useBoqLines,
+  useBoqState,
+  useBuildBoq,
+  useLineEvidence,
+  usePatchBoqLine,
+  useTemplates,
+} from "@/features/boq/queries";
 import { useLiveSheets } from "@/features/realtime/hooks";
 import { sheetName } from "@/features/sheets/model";
 import {
@@ -59,6 +91,20 @@ export function ReviewPage() {
   const { projectId = "" } = useParams();
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
+  // URL updates can follow each other within one render (e.g. "עבור לפריטים" sets lvl=red, then the line's sheet
+  // jump sets ?sheet=): always build on the latest params we wrote, not on this render's snapshot.
+  const paramsRef = useRef(params);
+  useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
+  const updateParams = useCallback(
+    (fn: (p: URLSearchParams) => URLSearchParams) => {
+      const next = fn(new URLSearchParams(paramsRef.current));
+      paramsRef.current = next;
+      setParams(next, { replace: true });
+    },
+    [setParams],
+  );
   const project = useProject(projectId);
   const name = project.data?.name ?? "…";
   const notYet = () => toast({ title: t("review.placeholderNote") });
@@ -76,11 +122,71 @@ export function ReviewPage() {
   const row = ready.find((r) => r.sheet.id === wanted) ?? ready[0] ?? null;
   const bbox = row && row.sheet.id === wanted ? parseBBox(params.get("bbox")) : null;
 
+  /* ---------- BOQ (Sprint 3) ---------- */
+  const qc = useQueryClient();
+  const { org } = useCurrentOrg();
+  const role = org?.role ?? null;
+  const orgId = project.data?.orgId ?? org?.id ?? null;
+  const session = useAuthStore((s) => s.session);
+  const tab: PanelTab = params.get("panel") === "counts" ? "counts" : "boq";
+  const setTab = (v: PanelTab) =>
+    updateParams((next) => {
+      if (v === "counts") next.set("panel", "counts");
+      else next.delete("panel");
+      return next;
+    });
+  const boqState = useBoqState(orgId, projectId);
+  const [activeBuildId, setActiveBuildId] = useState<string | null>(null);
+  const build = useBoqBuild(orgId, projectId, activeBuildId);
+  const buildBoq = useBuildBoq(projectId);
+  const linesQ = useBoqLines(projectId, boqState.data?.latestBuildId);
+  const state = boqState.data !== undefined ? boqState.data : (linesQ.data?.boq ?? null);
+  const buildId = state?.latestBuildId ?? null;
+  const allLines = useMemo(() => (buildId ? (linesQ.data?.items ?? []) : []), [linesQ.data, buildId]);
+  const templates = useTemplates(orgId ?? "");
+  const chapters = linesQ.data?.chapters ?? templates.data?.find((x) => x.default)?.chapters ?? [];
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [split, setSplit] = useState(false);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [lineSource, setLineSource] = useState<"row" | "drawing">("row");
+  const [flashLineId, setFlashLineId] = useState<string | null>(null);
+  /** Row → drawing bookkeeping: which line already switched sheet / zoomed (per sheet). */
+  const lineView = useRef<{ switched: string | null; zoomed: string | null }>({ switched: null, zoomed: null });
+  const [hoverLineId, setHoverLineId] = useState<string | null>(null);
+  const [editLine, setEditLine] = useState<BoqLine | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const patchLine = usePatchBoqLine(projectId);
+  const evidence = useLineEvidence(projectId, selectedLineId, buildId);
+  const sheetEvidence = useSheetEvidence(projectId, tab === "boq" ? (row?.sheet.id ?? null) : null, row?.version?.id ?? null, buildId);
+  const detToLines = sheetEvidence.data?.detections;
+  const lineToDets = useMemo(() => detectionsByLine(sheetEvidence.data?.detections ?? {}), [sheetEvidence.data]);
+  const selectedLine = allLines.find((l) => l.id === selectedLineId) ?? null;
+
+  // Build finished → refresh lines, links (overlay) and evidence; toast.
+  const lastBuildStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const st = build.data?.status ?? null;
+    if (st && st !== lastBuildStatus.current && lastBuildStatus.current && (st === "succeeded" || st === "failed")) {
+      void qc.invalidateQueries({ queryKey: ["overlay", projectId] });
+      void qc.invalidateQueries({ queryKey: ["boq-lines", projectId] });
+      if (st === "succeeded") toast({ title: t("boq.buildDone", { count: build.data?.stats?.lines ?? 0 }), tone: "success" });
+    }
+    lastBuildStatus.current = st;
+  }, [build.data, qc, projectId, t]);
+  const onBuild = async () => {
+    try {
+      const res = await buildBoq.mutateAsync();
+      setActiveBuildId(res.buildId);
+    } catch {
+      toast({ title: t("boq.buildFailed"), tone: "error" });
+    }
+  };
+
   /* ---------- overlay + view state ---------- */
   const overlay = useOverlay(projectId, row);
   const resolve = useResolveCluster(projectId);
   const filters = useMemo(() => filtersFromParams(params), [params]);
-  const setFilters = (f: OverlayFilters) => setParams(filtersToParams(f, params), { replace: true });
+  const setFilters = (f: OverlayFilters) => updateParams((p) => filtersToParams(f, p));
   const [lifecycles, setLifecycles] = useState<LifecycleVisibility>(DEFAULT_LIFECYCLES);
   const [layers, setLayers] = useState<LayerVisibility>({ symbols: true, rooms: true, legend: true });
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
@@ -113,7 +219,20 @@ export function ReviewPage() {
     return c;
   }, [dets, filters]);
   const classItems = useMemo(() => (selectedClass ? filtered.filter((d) => d.class === selectedClass) : []), [filtered, selectedClass]);
-  const focusIds = useMemo(() => classItems.map((d) => d.id), [classItems]);
+  const lineEvidence = useMemo(() => (selectedLineId ? (evidence.data?.items ?? []) : []), [selectedLineId, evidence.data]);
+  const evidenceSheets = useMemo(() => evidenceBySheet(lineEvidence), [lineEvidence]);
+  const lineItems = useMemo(() => {
+    if (!row) return [];
+    const ids = new Set(lineEvidence.filter((e) => e.sheetId === row.sheet.id).map((e) => e.detectionId));
+    return dets.filter((d) => ids.has(d.id));
+  }, [lineEvidence, row, dets]);
+  const hoverIds = useMemo(() => {
+    if (!hoverLineId || hoverLineId === selectedLineId || !row) return null;
+    return lineToDets.get(hoverLineId) ?? null;
+  }, [hoverLineId, selectedLineId, lineToDets, row]);
+  /** Items the `[` `]` stepper walks: the selected line's evidence on this sheet, else the selected class. */
+  const stepItems = selectedLineId ? lineItems : classItems;
+  const focusIds = useMemo(() => hoverIds ?? stepItems.map((d) => d.id), [hoverIds, stepItems]);
   const clusters = useMemo(() => data?.detections?.unknownClusters ?? [], [data]);
   const clusterMembers = useMemo(() => {
     const m = new Map<string, Detection[]>();
@@ -157,7 +276,33 @@ export function ReviewPage() {
     return roomPolygons(data.rooms.rooms, { unnamed: t("understanding.unnamedRoom"), areaUnit: t("understanding.area"), dimIds: dim });
   }, [layers.rooms, data, filters.room, rooms, t]);
   const legendFeatures = useMemo(() => (layers.legend ? legendBoxes(data?.legend ?? null) : []), [layers.legend, data]);
-  const features = useMemo(() => overlayFeatures({ rooms: roomFeatures, legend: legendFeatures, markers }), [roomFeatures, legendFeatures, markers]);
+  const linkGroups = useMemo(() => {
+    const groups = data?.links?.groups ?? [];
+    if (!groups.length) return [];
+    if (selectedLineId) {
+      const ids = new Set(lineEvidence.filter((e) => e.sheetId === row?.sheet.id && e.linkGroupId).map((e) => e.linkGroupId));
+      return groups.filter((g) => ids.has(g.id));
+    }
+    if (selectedId) return groups.filter((g) => g.switchIds.includes(selectedId) || g.luminaireIds.includes(selectedId));
+    return [];
+  }, [data, selectedLineId, lineEvidence, row, selectedId]);
+  const groupFeatures = useMemo(() => {
+    if (!linkGroups.length) return [];
+    const arcsById = new Map((data?.links?.arcs ?? []).map((a) => [a.id, a]));
+    const codeOf = (gid: string) => selectedLine?.code ?? allLines.find((l) => l.id === sheetEvidence.data?.linkGroups[gid]?.[0])?.code ?? "";
+    return linkGroupFeatures(linkGroups, byId, (g) => ({
+      short: t("boq.groupShort", { n: groupNo(g.id) }),
+      code: codeOf(g.id),
+      detail:
+        g.switchIds.length === 0
+          ? t("boq.groupDetailSensor", { lum: t("boq.groupLum", { count: g.luminaireIds.length }) })
+          : t("boq.groupDetail", { lum: t("boq.groupLum", { count: g.luminaireIds.length }), sw: t("boq.groupSw", { count: g.switchIds.length }) }),
+    }), arcsById);
+  }, [linkGroups, data, byId, selectedLine, allLines, sheetEvidence.data, t]);
+  const features = useMemo(
+    () => [...overlayFeatures({ rooms: roomFeatures, legend: legendFeatures, markers: [] }), ...groupFeatures, ...markers],
+    [roomFeatures, legendFeatures, markers, groupFeatures],
+  );
 
   /* ---------- selection ---------- */
   const ctxOf = useCallback(
@@ -181,7 +326,51 @@ export function ReviewPage() {
   const onSelect = (ids: string[]) => {
     const d = ids[0] ? byId.get(ids[0]) : undefined;
     selectDetection(d ?? null);
+    // Drawing → row (BOQ tab): select the marker's line(s); a second click on a shared item cycles its lines.
+    if (d && row && tab === "boq") {
+      const lineIds = detToLines?.[d.id] ?? [];
+      if (lineIds.length) {
+        const i = selectedLineId ? lineIds.indexOf(selectedLineId) : -1;
+        const next = i >= 0 && lineIds.length > 1 ? lineIds[(i + 1) % lineIds.length]! : i >= 0 ? selectedLineId! : lineIds[0]!;
+        setLineSource("drawing");
+        setSelectedLineId(next);
+        setFlashLineId(null);
+        queueMicrotask(() => setFlashLineId(next));
+      }
+    }
   };
+  const selectLine = useCallback((id: string | null) => {
+    lineView.current = { switched: null, zoomed: null };
+    setLineSource("row");
+    setSelectedLineId(id);
+    setSelectedId(null);
+    setSelectedClass(null);
+    setLassoIds([]);
+  }, []);
+
+  // Row → drawing: when the line's evidence is not on this sheet, jump to the sheet with most of it (+ toast);
+  // then zoom to the bounds of its items on the sheet. Drawing-originated selections never move the view.
+  useEffect(() => {
+    if (!selectedLineId || lineSource !== "row" || !row || !evidence.data || evidence.data.lineId !== selectedLineId) return;
+    const here = evidenceSheets.get(row.sheet.id) ?? 0;
+    if (here === 0 && evidenceSheets.size) {
+      if (lineView.current.switched === selectedLineId) return;
+      const best = [...evidenceSheets.entries()].sort((a, b) => b[1] - a[1])[0]!;
+      const target = ready.find((r) => r.sheet.id === best[0]);
+      if (target) {
+        lineView.current.switched = selectedLineId;
+        pick(target.sheet.id);
+        toast({ title: t("boq.switchedSheet", { sheet: sheetName(target) }) });
+      }
+      return;
+    }
+    const key = `${selectedLineId}@${row.sheet.id}`;
+    if (lineItems.length && lineView.current.zoomed !== key) {
+      lineView.current.zoomed = key;
+      zoomTo(boundsOf(lineItems, 12));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLineId, lineSource, evidence.data, evidenceSheets, row, lineItems]);
   const onSelectClass = (cls: string | null) => {
     setSelectedClass(cls);
     setSelectedId(null);
@@ -197,16 +386,58 @@ export function ReviewPage() {
     toast({ title: t("viewer.lassoResult", { count: picked.length }), ...(by ? { description: by } : {}) });
   };
 
+  /* ---------- line actions: A (status forward), E (qty override), N (next needing review) ---------- */
+  const visibleLines = useMemo(() => filterLines(allLines, filters, statusFilter), [allLines, filters, statusFilter]);
+  const ordered = useMemo(() => groupByChapter(visibleLines, chapters).flatMap((g) => g.lines), [visibleLines, chapters]);
+  const advance = (l: BoqLine) => {
+    const to = forwardStatus(role, l.status);
+    if (!to) return toast({ title: t("boq.statusNotAllowed"), tone: "error" });
+    const when = new Date().toLocaleString("he-IL", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", "");
+    patchLine.mutate(
+      { id: l.id, req: { status: to } },
+      {
+        onSuccess: () =>
+          toast({
+            title: t("boq.markedStatus", { code: l.code, status: t(`boq.status.${to}`), who: session?.displayName ?? session?.email ?? "", when }),
+            tone: "success",
+          }),
+        onError: () => toast({ title: t("boq.patchError"), tone: "error" }),
+      },
+    );
+  };
+  const goNext = () => {
+    const n = nextNeedingReview(ordered, selectedLineId);
+    if (!n) return toast({ title: t("boq.noneToReview") });
+    selectLine(n.id);
+  };
+  const saveOverride = (qtyOverride: number | null, reason: string | null) => {
+    const l = editLine;
+    if (!l) return;
+    patchLine.mutate(
+      { id: l.id, req: qtyOverride === null ? { qtyOverride: null } : { qtyOverride, reason: reason ?? "" } },
+      {
+        onSuccess: (res) => {
+          setEditLine(null);
+          toast({
+            title: qtyOverride === null ? t("boq.override.cleared", { code: l.code }) : t("boq.override.saved", { code: l.code, qty: res.qtyOverride ?? qtyOverride }),
+            tone: "success",
+          });
+        },
+        onError: () => toast({ title: t("boq.patchError"), tone: "error" }),
+      },
+    );
+  };
+
   // `[` / `]` step through the selected class's items; Esc closes the popover.
   const step = useCallback(
     (dir: 1 | -1) => {
-      if (classItems.length === 0) return;
-      const i = classItems.findIndex((d) => d.id === selectedId);
-      const next = classItems[(i + dir + classItems.length) % classItems.length]!;
+      if (stepItems.length === 0) return;
+      const i = stepItems.findIndex((d) => d.id === selectedId);
+      const next = stepItems[(i + dir + stepItems.length) % stepItems.length]!;
       setSelectedId(next.id);
       zoomTo([next.bboxMm.x - 25, next.bboxMm.y - 18, next.bboxMm.x + next.bboxMm.w + 25, next.bboxMm.y + next.bboxMm.h + 18]);
     },
-    [classItems, selectedId, zoomTo],
+    [stepItems, selectedId, zoomTo],
   );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -215,12 +446,16 @@ export function ReviewPage() {
       if (e.code === "BracketRight") step(1);
       else if (e.code === "BracketLeft") step(-1);
       else if (e.code === "Escape" && selectedId) setSelectedId(null);
+      else if (e.code === "KeyA" && !e.shiftKey && selectedLine) advance(selectedLine);
+      else if (e.code === "KeyE" && !e.shiftKey && selectedLine && canEditQty(role)) setEditLine(selectedLine);
+      else if (e.code === "KeyN" && !e.shiftKey && tab === "boq" && allLines.length) goNext();
       else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step, selectedId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, selectedId, selectedLine, role, tab, allLines]);
 
   const onResolve = async (c: UnknownCluster, cls: string | null, remember: boolean) => {
     if (!row?.version) return;
@@ -248,16 +483,18 @@ export function ReviewPage() {
       }
     : null;
 
-  const pct = verifiedPct(dets);
-  const toReview = dets.filter((d) => levelKeyOf(d) === "red" || levelKeyOf(d) === "unknown").length;
-  const pick = (id: string) => {
-    const next = new URLSearchParams(params);
-    next.set("sheet", id);
-    next.delete("bbox");
-    for (const k of ["dom", "floor", "room"]) next.delete(k);
-    setParams(next, { replace: true });
-  };
-  const selIndex = selectedId ? classItems.findIndex((d) => d.id === selectedId) : -1;
+  const lineStats = statsOf(allLines);
+  const pct = allLines.length ? lineStats.pct : verifiedPct(dets);
+  const toReview = allLines.length ? lineStats.red : dets.filter((d) => levelKeyOf(d) === "red" || levelKeyOf(d) === "unknown").length;
+  const pick = (id: string) =>
+    updateParams((next) => {
+      next.set("sheet", id);
+      next.delete("bbox");
+      for (const k of ["dom", "floor", "room"]) next.delete(k);
+      return next;
+    });
+  const selIndex = selectedId ? stepItems.findIndex((d) => d.id === selectedId) : -1;
+  const lineGroupsCount = groupsOf(lineEvidence).length;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
@@ -295,13 +532,13 @@ export function ReviewPage() {
             <span className="flex-1 text-start">{t("review.search")}</span>
             <Kbd>⌘K</Kbd>
           </button>
-          {dets.length ? (
+          {dets.length || allLines.length ? (
             <div className="hidden w-48 flex-col gap-1 lg:flex">
               <div className="flex items-center justify-between text-meta">
                 <span className="font-medium text-foreground">{t("review.verifiedTotal", { pct })}</span>
                 <button
                   type="button"
-                  onClick={() => setFilters({ ...EMPTY_FILTERS, levels: ["red", "unknown"] })}
+                  onClick={() => setFilters({ ...EMPTY_FILTERS, levels: allLines.length ? ["red"] : ["red", "unknown"] })}
                   className="inline-flex items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground"
                 >
                   <ConfidenceShape level="low" className="size-2.5" />
@@ -321,7 +558,7 @@ export function ReviewPage() {
             <Share2 aria-hidden />
             {t("review.share")}
           </Button>
-          <Button size="sm" onClick={notYet}>
+          <Button size="sm" onClick={() => setExportOpen(true)}>
             <Download aria-hidden />
             {t("review.export")}
           </Button>
@@ -340,16 +577,60 @@ export function ReviewPage() {
 
       {/* Three panes: grid columns follow inline direction → first column is on the right in RTL */}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,30fr)_minmax(0,52fr)_minmax(260px,18fr)]">
-        <CountsPanel
-          counts={counts}
-          selectedClass={selectedClass}
-          onSelectClass={onSelectClass}
-          legendLabel={(id) => (id ? (legendEntries.get(id)?.label ?? null) : null)}
-          legendThumb={(id) => (id ? (thumbs[id] ?? null) : null)}
-          loading={overlay.isLoading && Boolean(row)}
-          error={overlay.isError}
-          filtered={isFiltered(filters)}
-          onClearFilters={() => setFilters(EMPTY_FILTERS)}
+        <BoqPanel
+          tab={tab}
+          onTab={setTab}
+          counts={
+            <CountsPanel
+              counts={counts}
+              selectedClass={selectedClass}
+              onSelectClass={(c) => {
+                setSelectedLineId(null);
+                onSelectClass(c);
+              }}
+              legendLabel={(id) => (id ? (legendEntries.get(id)?.label ?? null) : null)}
+              legendThumb={(id) => (id ? (thumbs[id] ?? null) : null)}
+              loading={overlay.isLoading && Boolean(row)}
+              error={overlay.isError}
+              filtered={isFiltered(filters)}
+              onClearFilters={() => setFilters(EMPTY_FILTERS)}
+            />
+          }
+          state={state}
+          build={build.data ?? null}
+          onBuild={() => void onBuild()}
+          buildPending={buildBoq.isPending || (Boolean(activeBuildId) && build.data === undefined)}
+          canBuild={role !== "viewer"}
+          hasReadySheets={ready.length > 0}
+          lines={visibleLines}
+          totalLines={allLines.length}
+          chapters={chapters}
+          loading={linesQ.isLoading}
+          error={linesQ.isError}
+          selectedLineId={selectedLineId}
+          onSelectLine={selectLine}
+          onHoverLine={setHoverLineId}
+          renderReceiptExtra={(l) => (
+            <ReceiptGroups
+              projectId={projectId}
+              buildId={buildId}
+              lineId={l.id}
+              sheetLabel={(id) => {
+                const r = ready.find((x) => x.sheet.id === id);
+                return r ? sheetName(r) : id;
+              }}
+            />
+          )}
+          flashLineId={flashLineId}
+          split={split}
+          onSplit={setSplit}
+          statusFilter={statusFilter}
+          onStatusFilter={setStatusFilter}
+          filtered={isFiltered(filters) || statusFilter !== "all"}
+          onClearFilters={() => {
+            setFilters(EMPTY_FILTERS);
+            setStatusFilter("all");
+          }}
         />
         <section id="drawing-panel" tabIndex={-1} aria-label={t("review.drawingPanel")} className="flex min-h-0 flex-col border-x border-border">
           <ReviewDrawing
@@ -371,9 +652,13 @@ export function ReviewPage() {
             onLifecycles={setLifecycles}
             layers={layers}
             onLayers={setLayers}
-            openCount={(r) => {
+            sheetBadge={(r) => {
+              if (selectedLineId && evidence.data) {
+                const n = evidenceSheets.get(r.sheet.id) ?? 0;
+                return n ? t(selectedLine && isCompositeLine(selectedLine) ? "boq.sheetGroups" : "boq.sheetEvidence", { count: n }) : null;
+              }
               const s = r.version?.stats?.detections;
-              return s ? s.red + s.unknown : null;
+              return s && s.red + s.unknown ? t("review.toReview", { count: s.red + s.unknown }) : null;
             }}
           />
         </section>
@@ -394,19 +679,31 @@ export function ReviewPage() {
       <footer className="flex h-12 shrink-0 items-center gap-3 border-t border-border bg-surface px-4 text-dense">
         <span className="text-muted-foreground">{t("review.selected")}:</span>
         <span className="min-w-0 truncate font-medium text-foreground" aria-live="polite">
-          {selectedClass
+          {selectedLine ? (
+            <>
+              <Ltr>{selectedLine.code}</Ltr>
+              {" · "}
+              {[
+                lineGroupsCount ? t("boq.groups", { count: lineGroupsCount }) : null,
+                t("boq.items", { count: lineEvidence.length || selectedLine.evidenceCount }),
+                row && lineEvidence.length && lineItems.length !== lineEvidence.length ? t("boq.evidenceOnSheet", { n: lineItems.length }) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </>
+          ) : selectedClass
             ? t("understanding.selectedClass", { name: className(selectedClass, t("understanding.unknownClass")), count: classItems.length })
             : lassoIds.length
               ? t("viewer.lassoResult", { count: lassoIds.length })
               : <span className="font-normal text-muted-foreground">{t("understanding.nothingSelected")}</span>}
         </span>
-        {classItems.length > 0 ? (
+        {stepItems.length > 0 ? (
           <div className="flex items-center gap-1">
             <Button size="icon-sm" variant="ghost" onClick={() => step(-1)} aria-label={t("understanding.prevItem")} aria-keyshortcuts="BracketLeft">
               <ChevronRight className="ltr:rotate-180" aria-hidden />
             </Button>
             <span className="text-meta text-muted-foreground">
-              {t("understanding.itemOf", { i: selIndex >= 0 ? selIndex + 1 : "–", n: classItems.length })}
+              {t("understanding.itemOf", { i: selIndex >= 0 ? selIndex + 1 : "–", n: stepItems.length })}
             </span>
             <Button size="icon-sm" variant="ghost" onClick={() => step(1)} aria-label={t("understanding.nextItem")} aria-keyshortcuts="BracketRight">
               <ChevronLeft className="ltr:rotate-180" aria-hidden />
@@ -416,18 +713,77 @@ export function ReviewPage() {
           </div>
         ) : null}
         <div className="ms-auto flex items-center gap-1.5">
-          {[
-            { k: "A", label: t("review.approve"), primary: true },
-            { k: "R", label: t("review.reject") },
-            { k: "E", label: t("review.edit") },
-          ].map((a) => (
-            <Button key={a.k} size="sm" variant={a.primary ? "primary" : "secondary"} onClick={notYet} aria-keyshortcuts={a.k}>
-              <Kbd className={a.primary ? "border-primary-foreground/40 bg-transparent text-primary-foreground" : undefined}>{a.k}</Kbd>
-              {a.label}
-            </Button>
-          ))}
+          {tab === "boq" && buildId ? (
+            <>
+              {(() => {
+                const to = selectedLine ? forwardStatus(role, selectedLine.status) : null;
+                return (
+                  <Button
+                    size="sm"
+                    disabled={!selectedLine || !to}
+                    onClick={() => selectedLine && advance(selectedLine)}
+                    aria-keyshortcuts="A"
+                  >
+                    <Kbd className="border-primary-foreground/40 bg-transparent text-primary-foreground">A</Kbd>
+                    {to ? t("boq.approveLine", { status: t(`boq.status.${to}`) }) : t("review.approve")}
+                  </Button>
+                );
+              })()}
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!selectedLine || !canEditQty(role)}
+                onClick={() => selectedLine && setEditLine(selectedLine)}
+                aria-keyshortcuts="E"
+              >
+                <Kbd>E</Kbd>
+                {t("boq.editQty")}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={goNext} aria-keyshortcuts="N">
+                <Kbd>N</Kbd>
+                {t("boq.nextLine")}
+              </Button>
+            </>
+          ) : (
+            [
+              { k: "A", label: t("review.approve"), primary: true },
+              { k: "R", label: t("review.reject") },
+              { k: "E", label: t("review.edit") },
+            ].map((a) => (
+              <Button key={a.k} size="sm" variant={a.primary ? "primary" : "secondary"} onClick={notYet} aria-keyshortcuts={a.k}>
+                <Kbd className={a.primary ? "border-primary-foreground/40 bg-transparent text-primary-foreground" : undefined}>{a.k}</Kbd>
+                {a.label}
+              </Button>
+            ))
+          )}
         </div>
       </footer>
+
+      <OverrideDialog
+        line={editLine}
+        open={editLine !== null}
+        onOpenChange={(o) => !o && setEditLine(null)}
+        onSave={saveOverride}
+        saving={patchLine.isPending}
+      />
+      <ExportDialog
+        projectId={projectId}
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        lines={allLines}
+        templates={templates.data ?? []}
+        blockOnRed={Boolean(org?.settings?.blockExportOnRed || linesQ.data?.blockExportOnRed)}
+        built={Boolean(buildId)}
+        onGoToItems={() => {
+          updateParams((p) => {
+            const next = filtersToParams({ ...EMPTY_FILTERS, levels: ["red"] }, p);
+            next.delete("panel");
+            return next;
+          });
+          const first = allLines.find((l) => l.level === "red" && l.status !== "approved");
+          if (first) selectLine(first.id);
+        }}
+      />
     </div>
   );
 }

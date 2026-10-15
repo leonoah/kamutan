@@ -170,6 +170,8 @@ export const VersionArtifactsSchema = z.object({
   detections: z.string().max(1024).optional(),
   /** rooms.json.gz (kamutan.rooms/1) */
   rooms: z.string().max(1024).optional(),
+  /** Sprint 3: links.json.gz (kamutan.links/1), lighting sheets only */
+  links: z.string().max(1024).optional(),
 });
 export type VersionArtifacts = z.infer<typeof VersionArtifactsSchema>;
 
@@ -217,6 +219,26 @@ export const DetectionStatsSchema = z.object({
 });
 export type DetectionStats = z.infer<typeof DetectionStatsSchema>;
 
+/** Sprint 3: switch↔luminaire link stats of a lighting sheet version (Worker-A). Kinds mirror boq.ts LINK_GROUP_KINDS. */
+export const LinkStatsSchema = z
+  .object({
+    groups: count,
+    green: count.optional(),
+    yellow: count.optional(),
+    red: count.optional(),
+    arcs: count.optional(),
+    danglingEnds: count.optional(),
+    inferredSwitches: count.optional(),
+    unlinkedSwitches: count.optional(),
+    unlinkedLuminaires: count.optional(),
+    byKind: z
+      .object({ single: count.optional(), two_way: count.optional(), shared: count.optional(), sensor: count.optional(), add_to_existing: count.optional() })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type LinkStats = z.infer<typeof LinkStatsSchema>;
+
 export const VersionStatsSchema = z.object({
   paths: count,
   segments: count,
@@ -226,6 +248,8 @@ export const VersionStatsSchema = z.object({
   detections: DetectionStatsSchema.optional(),
   rooms: count.optional(),
   legendEntries: count.optional(),
+  /** Sprint 3 (lighting sheets with links.json.gz). */
+  links: LinkStatsSchema.optional(),
 });
 export type VersionStats = z.infer<typeof VersionStatsSchema>;
 

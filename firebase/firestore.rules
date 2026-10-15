@@ -5,10 +5,12 @@ rules_version = '2';
 // Principles
 //  * Tenant = path: every tenant document lives under orgs/{orgId}; membership is
 //    exists(orgs/{orgId}/members/{uid}). A document can never move between orgs.
-//  * Clients READ their org's data; clients WRITE only in three places:
+//  * Clients READ their org's data; clients WRITE only in two places:
 //      1. projects/*/corrections       create-only (editor/reviewer/admin), immutable
 //      2. projects/*/reviewItems       status/resolution fields only (editor/reviewer/admin)
-//      3. projects/*/boqLines          status transitions only (reviewer/admin)
+//    Sprint 3: projects/*/boqLines is NO LONGER client-writable — status / note / qtyOverride go through
+//    PATCH /v1/projects/:pid/boq/lines/:id (role per field, transition check, audit hash chain). One write path
+//    means one place for the state machine, the audit event and the "approved = locked" rule.
 //    Everything else is written by the API / worker with firebase-admin (bypasses rules).
 //  * shareLinks (hash only) readable by admin/editor; auditLog readable by admin only.
 //  * External share viewers never touch Firestore (API only).
@@ -33,7 +35,6 @@ service cloud.firestore {
     function isAdmin(orgId)     { return roleIn(orgId, ['admin']); }
     function canEditShare(orgId){ return roleIn(orgId, ['admin', 'editor']); }
     function canCorrect(orgId)  { return roleIn(orgId, ['admin', 'editor', 'reviewer']); }
-    function canApprove(orgId)  { return roleIn(orgId, ['admin', 'reviewer']); }
 
     function str(v, maxLen) {
       return v is string && v.size() > 0 && v.size() <= maxLen;
@@ -86,6 +87,16 @@ service cloud.firestore {
         allow write: if false;
       }
       match /boqTemplates/{templateId} {
+        allow read: if isMember(orgId);
+        allow write: if false;                     // seed + admin PATCH via API; worker (import)
+      }
+      // Sprint 3: BOQ rules (seeded defaults; admin toggles via API, audited).
+      match /boqRules/{ruleId} {
+        allow read: if isMember(orgId);
+        allow write: if false;
+      }
+      // Sprint 3: past-BOQ imports (API creates/finalizes after the magic-bytes check; worker updates status).
+      match /libraryImports/{importId} {
         allow read: if isMember(orgId);
         allow write: if false;
       }
@@ -183,39 +194,23 @@ service cloud.firestore {
           }
         }
 
-        // -------------------------------------------------------------- boqLines
-        // Server creates/edits content. Clients (reviewer/admin) only move status:
-        //   draft -> reviewed        reviewedBy == uid, reviewedAt == request.time
-        //   reviewed -> approved     approvedBy == uid, approvedAt == request.time
-        //   reviewed -> draft        clears reviewedBy/At
-        //   approved -> reviewed     un-approve: clears approvedBy/At
-        // Approved lines are otherwise immutable. No client create/delete.
+        // -------------------------------------------------------------- boqLines (Sprint 3: API only)
+        // Worker writes computed fields (boq.build); the API PATCH writes status + stamps, note and qtyOverride
+        // (reviewer+ / editor+, BOQ_LINE_TRANSITIONS, approved lines locked, audited). No client write at all.
         match /boqLines/{lineId} {
           allow read: if isMember(orgId);
-          allow create, delete: if false;
-          allow update: if canApprove(orgId) && validNote() && validTransition(resource.data.status, newVal('status'));
+          allow write: if false;
+        }
 
-          function validNote() {
-            return optStr(request.resource.data, 'note', 2000);
-          }
-          function validTransition(from, to) {
-            return (from == 'draft' && to == 'reviewed'
-                    && changed().hasOnly(['status', 'reviewedBy', 'reviewedAt', 'note'])
-                    && newVal('reviewedBy') == request.auth.uid
-                    && newVal('reviewedAt') == request.time)
-              || (from == 'reviewed' && to == 'approved'
-                    && changed().hasOnly(['status', 'approvedBy', 'approvedAt', 'note'])
-                    && newVal('approvedBy') == request.auth.uid
-                    && newVal('approvedAt') == request.time)
-              || (from == 'reviewed' && to == 'draft'
-                    && changed().hasOnly(['status', 'reviewedBy', 'reviewedAt', 'note'])
-                    && newVal('reviewedBy') == null
-                    && newVal('reviewedAt') == null)
-              || (from == 'approved' && to == 'reviewed'
-                    && changed().hasOnly(['status', 'approvedBy', 'approvedAt', 'note'])
-                    && newVal('approvedBy') == null
-                    && newVal('approvedAt') == null);
-          }
+        // Sprint 3: aggregation runs (API creates `queued` + job; worker runs) and Excel export records (API).
+        // The export FILE lives in Storage and is only reachable through a 2-minute signed URL.
+        match /boqBuilds/{buildId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+        match /exports/{exportId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
         }
       }
     }

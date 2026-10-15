@@ -53,14 +53,15 @@ export class InMemoryRepository implements Repository {
   private chain: Promise<unknown> = Promise.resolve();
   private clock = 0;
 
-  private now(): Date {
+  /** @internal shared with InMemoryBoqRepository */
+  now(): Date {
     // Strictly increasing timestamps keep ordering deterministic.
     this.clock = Math.max(this.clock + 1, Date.now());
     return new Date(this.clock);
   }
 
-  /** Serialized, all-or-nothing unit of work (like a Firestore transaction). */
-  private tx<T>(fn: () => T | Promise<T>): Promise<T> {
+  /** Serialized, all-or-nothing unit of work (like a Firestore transaction). @internal */
+  tx<T>(fn: () => T | Promise<T>): Promise<T> {
     const run = this.chain.then(async () => {
       const snapshot = new Map(this.docs);
       try {
@@ -75,8 +76,8 @@ export class InMemoryRepository implements Repository {
     return run;
   }
 
-  /** Direct children docs of a collection path. */
-  private children(collectionPath: string): Array<[string, Doc]> {
+  /** Direct children docs of a collection path. @internal */
+  children(collectionPath: string): Array<[string, Doc]> {
     const prefix = `${collectionPath}/`;
     return [...this.docs.entries()].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/'));
   }
@@ -569,7 +570,8 @@ export class InMemoryRepository implements Repository {
     return this.tx(() => this.appendAuditSync(orgId, event));
   }
 
-  private appendAuditSync(orgId: string, event: AuditInput): void {
+  /** @internal */
+  appendAuditSync(orgId: string, event: AuditInput): void {
     const log = this.children(`orgs/${orgId}/auditLog`).sort(
       ([, a], [, b]) => (a.at as Date).getTime() - (b.at as Date).getTime(),
     );

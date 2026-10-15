@@ -44,7 +44,7 @@ describe('config', () => {
 });
 
 describe('OpenAPI', () => {
-  it('documents the Sprint 0 + 1 + 2 endpoints under /api/v1', async () => {
+  it('documents the Sprint 0 + 1 + 2 + 3 endpoints under /api/v1', async () => {
     const t = await createTestApp(testConfig());
     try {
       const doc = buildOpenApi(t.app);
@@ -70,6 +70,22 @@ describe('OpenAPI', () => {
           '/api/v1/projects/{projectId}/legend-entries',
           '/api/v1/projects/{projectId}/legend-entries/{entryId}',
           '/api/v1/projects/{projectId}/unknown-clusters/{clusterId}/resolve',
+          // Sprint 3
+          '/api/v1/library/items',
+          '/api/v1/library/items/{itemId}',
+          '/api/v1/library/imports',
+          '/api/v1/library/imports/{importId}',
+          '/api/v1/library/imports/{importId}/finalize',
+          '/api/v1/boq-templates',
+          '/api/v1/boq-templates/{templateId}',
+          '/api/v1/boq-rules',
+          '/api/v1/boq-rules/{ruleId}',
+          '/api/v1/projects/{projectId}/boq',
+          '/api/v1/projects/{projectId}/boq/build',
+          '/api/v1/projects/{projectId}/boq/evidence',
+          '/api/v1/projects/{projectId}/boq/export',
+          '/api/v1/projects/{projectId}/boq/lines/{lineId}',
+          '/api/v1/projects/{projectId}/boq/lines/{lineId}/evidence',
         ].sort(),
       );
       const tiles = doc.paths['/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/tiles-manifest']?.get;
@@ -78,6 +94,10 @@ describe('OpenAPI', () => {
       const legend = doc.paths['/api/v1/projects/{projectId}/legend-entries']?.get;
       expect((legend?.parameters ?? []).map((p) => ('name' in p ? p.name : ''))).toEqual(expect.arrayContaining(['status', 'sheetId', 'cursor', 'limit']));
       expect(doc.paths['/api/v1/projects/{projectId}/legend-entries/{entryId}']?.patch).toBeDefined();
+      const boq = doc.paths['/api/v1/projects/{projectId}/boq']?.get;
+      expect((boq?.parameters ?? []).map((p) => ('name' in p ? p.name : ''))).toEqual(expect.arrayContaining(['cursor', 'limit', 'chapter', 'level', 'status']));
+      expect(doc.paths['/api/v1/projects/{projectId}/boq/export']?.post).toBeDefined();
+      expect(doc.paths['/api/v1/boq-rules/{ruleId}']?.patch).toBeDefined();
     } finally {
       await t.app.close();
     }

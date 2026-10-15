@@ -301,6 +301,22 @@ describe("DrawingViewer overlay layers (Sprint 2)", () => {
     expect((poly.props.extensions as unknown[]).length).toBe(1);
   });
 
+  it("switch↔luminaire arcs: dashed / dotted / solid paths (PathStyleExtension), passive arcs not pickable", () => {
+    const overlays: OverlayFeature[] = [
+      { id: "a1", kind: "path", path: [[10, 10], [60, 30]], dash: "dashed", widthPx: 2, color: [178, 107, 0, 235], passive: true },
+      { id: "a2", kind: "path", path: [[60, 30], [90, 30]], dash: "dotted", widthPx: 2, passive: true },
+      { id: "w1", kind: "path", path: [[0, 0], [5, 5]] },
+    ];
+    setup({ overlays });
+    const passive = layer("passive-paths")!;
+    const dash = passive.props.getDashArray as (f: unknown) => number[];
+    expect(passive.props.data.map((f) => dash(f))).toEqual([[7, 4], [1.5, 3]]);
+    expect(passive.props.pickable).toBe(false);
+    expect((passive.props.getColor as (f: unknown) => number[])(passive.props.data[0])).toEqual([178, 107, 0, 235]);
+    const pickable = layer("paths")!;
+    expect((pickable.props.getDashArray as (f: unknown) => number[])(pickable.props.data[0])).toEqual([0, 0]);
+  });
+
   it("hides small room labels below labelMinPx", () => {
     const overlays: OverlayFeature[] = [
       { id: "r_s", kind: "polygon", polygon: [[10, 10], [12, 10], [12, 12], [10, 12]], label: "שירותים", labelMinPx: 80, passive: true },

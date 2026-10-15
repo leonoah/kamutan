@@ -205,3 +205,98 @@ room labels + bdi, dashed, tooltip/popover, lasso on markers, picking off during
 - Performance: measured only on SwiftShader (software GL, 2 shared cores): 2,000 markers 10–20 fps vs 30 fps without
   markers; the profile is dominated by `readPixels` (hover picking), JS per frame is negligible. Needs a real-GPU check.
 - The A/R/E bar and the BOQ table are still placeholders (Sprint 3).
+
+---
+
+# Sprint 3 — BOQ (web + viewer)
+
+Shapes: `docs/agents/SPRINT3_BRIEF.md` + contracts `boq.ts`, mirrored by hand in `src/api/types.ts` (`BoqLine` +
+`byFloor/evidenceCount/ruleId/sourceVersions/computedAt`, `ProjectBoqState`, `BoqBuild`, `BoqLineEvidence`,
+`LinksArtifact/LinkGroup`, `ExportBoqRequest/Response`, `LibraryItem`, `BoqTemplate`, `BoqRule`, `LibraryImport*`).
+
+## API (reconciled with the API agent's contracts `boq.ts` / `library.ts` at the end of the sprint)
+`src/api/http.ts` adapts the contract DTOs to the app DTOs in `types.ts`:
+| call | route | adaptation |
+| --- | --- | --- |
+| build | `POST /projects/:p/boq/build` → `{build, deduplicated, jobId}` | → `{buildId, jobId}` |
+| build progress | Firestore `boqBuilds/{b}` listener | (no GET route; `getBoqBuild` reads `summary.build`) |
+| BOQ state / stale | Firestore project doc `boq` listener | + `summary` of GET …/boq |
+| lines | `GET /projects/:p/boq?limit=500[&cursor]` → `{summary, items, nextCursor}` | cursors followed; `summary.blockExportOnRed` → export dialog; missing worker fields defaulted |
+| patch line | `PATCH …/boq/lines/:id {status? \| qtyOverride + reason \| qtyOverride: null}` → `{line}` | override reason = `qtyOverrideReason` |
+| evidence | `GET …/boq/lines/:id/evidence` | as is |
+| export | `POST …/boq/export {templateId?, split, markDraft}` → `{url, fileName, …}`; 409 `export_blocked` | `draftNote` → `markDraft`, `fileName` → `filename` |
+| library items | `GET /library/items?orgId=&q&chapter&limit`, `PATCH /library/items/:id?orgId=` (`unit`, `tags`, `active`, `chapterTitle` — code+description are the identity) | |
+| import | `POST /library/imports {orgId, filename, sizeBytes}` → `{import, storagePath, contentType}` → Storage upload → `POST …/imports/:id/finalize {orgId}` → poll `GET …/imports/:id?orgId=` | `stats {created, updated, templates}` → summary; `ambiguousCodes` shown only if the API adds it to `stats` |
+| templates | `GET /boq-templates?orgId=`, `PATCH /boq-templates/:id?orgId= {default: true}` | columns `{key, title}` rendered by title |
+| rules | `GET /boq-rules?orgId=`, `PATCH /boq-rules/:id?orgId= {enabled}` | condition text derived in Hebrew from `match` |
+| links | `links: {url}\|null` in `GET …/overlay` (kamutan.links/1 incl. top-level `arcs`, groups `arcIds`) | traced arcs drawn as is (inferred/ambiguous → dotted) |
+| marker → line | `GET /projects/:p/boq/evidence?sheetId=&versionId=` → `{detections, linkGroups}` (per sheet, per build) | replaces the per-line fan-out; inverted for the row-hover preview |
+
+Role policy (web): viewers change nothing; editors move draft ↔ נבדק and override quantities; reviewer/admin get all
+contract transitions (approve / un-approve). Rules toggle + default template: admin only.
+
+## Screens
+- **BOQ panel** (right pane of S10, `features/boq/BoqPanel.tsx`): tabs "כתב כמויות" | "ספירה לפי סוג" (Sprint-2 counts;
+  `?panel=counts`). Chapters = one table, sticky column header + sticky chapter header (title from the default template,
+  "% מאומת" by lines, ●▲◆ split bar, collapsible numbered notes). Row: level (stripe + shape), code `<bdi dir=ltr>`, description
+  + first reason chip "+N", unit, [per-floor columns when "לפי קומה"], qty, status pill (טיוטה/נבדק/אושר; icon-only in
+  split mode). **Receipt** on hover/focus of the qty (Radix Tooltip): "16 = 14 שזוהו + 2 ידני", items + sheets, per floor,
+  override reason, reasons. Overridden qty shows the computed number struck through + "✎ ידני".
+- **Row → drawing**: evidence (`useLineEvidence`) → if none on the current sheet, jump to the sheet holding most of it +
+  toast "עברת לגיליון …"; focus (dim others 30% + blue halo) and zoom to their bounds; `[` `]` step through them; sheet
+  picker badges "N פריטים של השורה". Hover on a row = preview focus without zoom (from the all-evidence index).
+- **Drawing → row**: a marker click selects its line (all-lines evidence index `useAllEvidence`, per-line fan-out, 4
+  concurrent; a second click on an item shared by 2 lines cycles), scrolls the row in and flashes it 1.2 s.
+- **Link groups**: for the selected line (or the selected item's group) the overlay draws switch→luminaire arcs (dashed,
+  2 px, level colour; worker-traced arcs `arcs[].completed` = dotted), an 8% hull and a chip "ק-n" + `4.11` + "· 2 גופים /
+  מפסק אחד". Viewer: `PathFeature.dash: "dashed" | "dotted"` (PathStyleExtension) — the only viewer change.
+- **Keyboard** (event.code): `A` status one step forward (role-checked, toast "השורה 4.10 סומנה 'נבדק' · who, when"), `E`
+  override dialog (number + mandatory reason), `N` next draft non-green line (wraps). Footer buttons mirror them.
+- **Build**: empty state + "בנה כתב כמויות", progress (build doc), "בנו מחדש" in the panel header, failure alert, stale
+  banner "השרטוטים או המיפויים השתנו — בנו מחדש". Build success refreshes lines, links (overlay) and evidence.
+- **Export dialog** (header "ייצוא"): template (default preselected), מסוכם / מפורק לפי קומה, the spec's warning copy with
+  live counts + the draft-note checkbox, [חזרה לבדיקה (מומלץ)] primary / [ייצא בכל זאת]; blocked state ("לא ניתן לייצא עדיין…
+  נותרו N" + [עבור לפריטים] → ◆ filter + first red line). Real mode downloads the signed URL; mock mode shows a toast.
+- **Library** `/library` (top-nav "ספרייה"): items (search, chapter filter, TEXT-sorted codes, edit dialog: description
+  required / unit / active), "ייבוא אקסל" (xls/xlsx ≤ 20 MB → upload % → processing % → summary: added / updated / template
+  created / ambiguous codes), templates (read-only cards, admin "קבע כברירת מחדל"), rules (Hebrew kind + condition, item, priority,
+  admin-only switch; toggling marks BOQs stale).
+
+## Mock mode
+- `src/api/mockBoq.ts` + `mockBoqEngine.ts` (stand-in for Worker-BOQ): authority per discipline, one sheet per
+  (discipline, floor), socket lines by class, composite lighting lines from the link graph (Worker-A's links when present,
+  else a synthetic graph: 2-way pairs ≤ 140 mm same floor, nearest lights ≤ 150 mm, leftovers join a point ≤ 60 mm or
+  become a sensor point), 9.01 install count, per-floor, level = min, reasons = union. Overrides / statuses survive rebuilds.
+  First build seeds one override on 4.01 so the "+2 ידני" receipt is visible.
+- Dev artifacts: the dev index is polled every 15 s (after the understanding artifacts are wired): Worker-BOQ's
+  `boqLines` / `boqEvidence` pointers (`kamutan.boq-lines-dev/1` + `kamutan.boq-evidence/1`) replace the engine;
+  Worker-A's `links` (top-level or `artifacts.links`) replace the synthetic graph. While Worker-A's links are missing,
+  the mock synthesizes links for the sheets Worker-BOQ's composite lines point at and tags that evidence with the group
+  ids (**mock-only**, so the arcs can be demoed).
+- URL flags (first load): `?mockBoq=built` (build at start), `?mockBoq=engine` (ignore Worker-BOQ lines),
+  `?mockBlockExport=1`, `?mockRole=editor|reviewer|viewer`. Import: a file named `*corrupt*` fails in the parser step.
+
+## Tests (Sprint 3 additions; web 169 total, viewer 52)
+`features/boq/model.test.ts` (TEXT code order, receipts, chapters + % by lines, role transitions, N, shared filters,
+evidence indexes, link-group geometry, mock engine aggregation/authority, Worker-BOQ line normaliser),
+`features/boq/boq.test.tsx` (empty → build → chapters/notes/LTR codes/statuses, receipt "+2 ידני", composite line → sheet
+jump + focus + arcs + hull chip + footer + picker badge, marker → line, per-floor + filters + status filter, A/E/N, editor
+can't approve, stale banner + rebuild keeps override, export warning copy + mock toast + axe, blocked export → ◆ filter,
+axe), `features/library/library.test.tsx` (list/search/chapter + axe, edit, import ok/failed + axe, templates default,
+rules admin/editor), `api/http.test.ts` + `firebaseBackend.test.ts` (new endpoints / listeners), viewer dash paths.
+Sprint-2 review tests now open `?panel=counts` (counts is the secondary tab).
+
+## Known gaps
+- Needs the API: optional `stats.ambiguousCodes` / template name on library imports.
+- `api/types.ts` is still a hand mirror; switch to `import type` from `@kamutan/contracts` (now has all Sprint-3 shapes).
+- Not yet: row expansion "▸ פירוק קבוצות" (floor → room → groups), group editing (`G`), `R` on lines, undo/history,
+  "+ סעיף ידני", TanStack Virtual (plain table), room filter on lines (lines carry no room), S12 summary page.
+- Arc geometry: without `arcs` in the link group the UI draws a schematic Bézier switch→luminaire, not the traced arc.
+
+### Sprint 3 follow-up
+- Composite lines count distinct link groups (qty = groups): receipt "N = N קבוצות מפסק↔גוף" + the "ק-n" groups per sheet
+  (fetched when the receipt opens), sheet-switcher badges "N קבוצות של השורה", footer group count. "ק-n" = the group id's number.
+- Mock: Worker-A's real `links.json.gz` (dev-index `links`) is re-read every poll and replaces the synthetic graph (lines'
+  evidence re-attached); the synthetic fallback only runs for sheets without real links.
+- `boq.test.tsx` hardened: lazy route chunks preloaded in `beforeAll`, `userEvent` without delays, waits (not test timeouts)
+  raised to 25 s, axe scoped to the panel / dialog. Passes in `pnpm turbo run test --concurrency=2`.

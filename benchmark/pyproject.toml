@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "jsonschema>=4.26.0",
     "numpy>=2.5.4",
+    "openpyxl>=3.1.5",
     "pillow>=12.3.0",
     "pypdfium2>=5.14.0",
     "scipy>=1.18.1",
@@ -30,6 +31,7 @@ dev = [
     "pytest>=9.1.1",
     "scipy-stubs>=1.18.1.1",
     "types-jsonschema>=4.26.0.20261006",
+    "types-openpyxl>=3.1.5.20260827",
     "types-shapely>=2.1.0.20260728",
 ]
 

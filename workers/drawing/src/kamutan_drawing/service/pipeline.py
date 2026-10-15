@@ -644,6 +644,8 @@ def _understand(
         "mappings": load_mappings(docs, job.orgId, job.projectId),
         "detect": True,
         "rooms": opts.understand_rooms,
+        # Sprint 3: the owner's confirmation makes the regions' floors authoritative (no "קומה לא ודאית")
+        "floorsConfirmed": bool(sheet.get("confirmed")),
     }
     try:
         res = run_task(
@@ -667,13 +669,23 @@ def _understand(
         blobs.write(pre + "legend.json.gz", _gz_json(legend), "application/gzip", cache_control=IMMUTABLE)
     links: dict[str, str] = {str(k): str(v) for k, v in (res.get("legendLinks") or {}).items()}
     _write_legend_entries(job, docs, sid, pre, legend.get("entries") or [], links, args["mappings"])
-    stats = {
+    stats: dict[str, Any] = {
         "detections": _clean_det_stats(res.get("detectionStats") or {}),
         "rooms": max(0, int(res.get("rooms") or 0)),
         "legendEntries": max(0, int(res.get("legendEntries") or 0)),
     }
+    artifacts = {"legend": pre + "legend.json.gz", "detections": pre + "detections.json.gz", "rooms": pre + "rooms.json.gz"}
+    # Sprint 3 (Worker-A): switch↔luminaire link graph, reported under its own key on lighting sheets
+    links_file = res.get("linksFile")
+    if links_file is not None:
+        if links_file != LINKS_FILE:
+            raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid links artifact name")
+        data = Path(safe_output_path(workdir, f"{out_dir}/{LINKS_FILE}")).read_bytes()
+        blobs.write(pre + LINKS_FILE, data, "application/gzip", cache_control=IMMUTABLE)
+        artifacts["links"] = pre + LINKS_FILE
+        stats["links"] = _clean_link_stats(res.get("linkStats") or {})
     return {
-        "artifacts": {"legend": pre + "legend.json.gz", "detections": pre + "detections.json.gz", "rooms": pre + "rooms.json.gz"},
+        "artifacts": artifacts,
         "stats": stats,
         "summary": {
             "legendEntries": stats["legendEntries"],
@@ -754,6 +766,35 @@ def _refine_labels(
             e["suggestedClass"], e["classConfidence"] = cls, min(conf, 0.8)
         changed = True
     return changed
+
+
+LINKS_FILE = "links.json.gz"
+
+
+def _clean_link_stats(d: dict[str, Any]) -> dict[str, Any]:
+    """``linkStats`` from the sandbox (untrusted): non-negative ints, ``byKind`` limited to the contract kinds."""
+
+    def n(v: Any) -> int:
+        return max(0, int(v)) if isinstance(v, int | float) and not isinstance(v, bool) else 0
+
+    out: dict[str, Any] = {
+        k: n(d.get(k))
+        for k in (
+            "groups",
+            "green",
+            "yellow",
+            "red",
+            "arcs",
+            "danglingEnds",
+            "inferredSwitches",
+            "unlinkedSwitches",
+            "unlinkedLuminaires",
+        )
+    }
+    raw = d.get("byKind")
+    by: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    out["byKind"] = {k: n(v) for k, v in by.items() if k in ("single", "two_way", "shared", "sensor", "add_to_existing")}
+    return out
 
 
 def _clean_det_stats(d: dict[str, Any]) -> dict[str, Any]:

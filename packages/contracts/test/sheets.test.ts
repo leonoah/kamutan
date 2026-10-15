@@ -165,3 +165,17 @@ describe('json schema registry', () => {
     }
   });
 });
+
+import { LinkStatsSchema as LS, VersionStatsSchema as VS } from '../src/index.js';
+describe('Sprint 3 link stats', () => {
+  it('VersionStats.links: groups required, the rest optional, strict', () => {
+    const base = { paths: 1, segments: 1, textLines: 1, glyphs: 1 };
+    const links = { groups: 12, green: 5, yellow: 6, red: 1, arcs: 30, danglingEnds: 2, inferredSwitches: 1, unlinkedSwitches: 0, unlinkedLuminaires: 3, byKind: { single: 8, two_way: 1, shared: 3 } };
+    expect(VS.safeParse({ ...base, links }).success).toBe(true);
+    expect(LS.safeParse({ groups: 0 }).success).toBe(true);
+    expect(LS.safeParse({ green: 1 }).success).toBe(false);
+    expect(LS.safeParse({ groups: 1, extra: 1 }).success).toBe(false);
+    expect(LS.safeParse({ groups: 1, byKind: { cross: 1 } }).success).toBe(false);
+    expect(LS.safeParse({ groups: -1 }).success).toBe(false);
+  });
+});

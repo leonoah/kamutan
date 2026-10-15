@@ -15,6 +15,10 @@
   ``detections.json.gz``, ``rooms.json.gz`` + crops per version; their paths are in the index entry
   (top level and under ``artifacts``) and per-sheet legend / detection / room counts are printed and
   saved in ``understanding-report.json``. ``--no-understand`` skips the stage.
+* Sprint 3: lighting sheets get ``links.json.gz`` (``kamutan.links/1``, switch ↔ luminaire groups);
+  its path is in the index entry (``links`` and ``artifacts.links``) and ``stats.links``. While the
+  orchestrator does not upload it yet (service/ owned by Worker-BOQ), it is computed here from the
+  stored artifacts with the same code (``kamutan_drawing.links.link_from_artifacts``).
 
 Already processed sheets (same sha256 + version) are skipped by the pipeline's idempotency;
 ``--force`` re-runs them.
@@ -34,6 +38,8 @@ from pathlib import Path
 from typing import Any
 
 from kamutan_drawing.cli import IngestResult, ingest_file
+from kamutan_drawing.links import LINK_DISCIPLINES, link_from_artifacts
+from kamutan_drawing.pipeline.understand import LINKS_FILE, gz_json
 from kamutan_drawing.service.pipeline import Options, PageOutcome
 
 HERE = Path(__file__).resolve().parent
@@ -101,7 +107,8 @@ def index_entry(file_id: str, res: IngestResult, page: PageOutcome | None) -> di
         "legend": v["artifacts"].get("legend"),
         "detections": v["artifacts"].get("detections"),
         "rooms": v["artifacts"].get("rooms"),
-        "artifacts": {k: v["artifacts"][k] for k in ("legend", "detections", "rooms") if v["artifacts"].get(k)},
+        "links": v["artifacts"].get("links"),
+        "artifacts": {k: v["artifacts"][k] for k in ("legend", "detections", "rooms", "links") if v["artifacts"].get(k)},
         "tileCount": tile_count,
         "status": v.get("status"),
         "title": sheet.get("title"),
@@ -114,8 +121,31 @@ def index_entry(file_id: str, res: IngestResult, page: PageOutcome | None) -> di
         "workerVersion": v.get("workerVersion"),
         "seconds": page.seconds if page else None,
     }
+    if not entry["links"] and sheet.get("discipline") in LINK_DISCIPLINES and entry["detections"]:
+        _local_links(entry, vdir, prefix.rsplit("/tiles", 1)[0] + "/")
     (vdir / "version.json").write_text(json.dumps(entry, ensure_ascii=False, indent=2))
     return entry
+
+
+def _local_links(entry: dict[str, Any], vdir: Path, pre: str) -> None:
+    """Fallback until the orchestrator uploads the understand task's ``links.json.gz``."""
+    try:
+        dets = json.loads(gzip.decompress((vdir / "detections.json.gz").read_bytes()))
+        leg = json.loads(gzip.decompress((vdir / "legend.json.gz").read_bytes()))
+        doc, stats = link_from_artifacts(
+            (vdir / "primitives.msgpack.gz").read_bytes(),
+            (vdir / "text.json.gz").read_bytes(),
+            dets,
+            leg,
+            scale_den=entry.get("scaleDenominator"),
+        )
+    except (OSError, ValueError, KeyError) as e:
+        print(f"   links: failed ({e})", flush=True)
+        return
+    (vdir / LINKS_FILE).write_bytes(gz_json(doc))
+    entry["links"] = pre + LINKS_FILE
+    entry["artifacts"]["links"] = entry["links"]
+    entry["stats"] = {**(entry.get("stats") or {}), "links": stats}
 
 
 def understanding_row(file_id: str, entry: dict[str, Any] | None, page: PageOutcome | None) -> dict[str, Any] | None:
@@ -137,6 +167,7 @@ def understanding_row(file_id: str, entry: dict[str, Any] | None, page: PageOutc
         "labels": labels,
         "detections": stats.get("detections") or {"total": 0, "green": 0, "yellow": 0, "red": 0, "unknown": 0, "byClass": {}},
         "rooms": stats.get("rooms", 0),
+        "links": stats.get("links"),
         "timings": und.get("timings"),
         "seconds": page.seconds if page else None,
     }
@@ -211,6 +242,8 @@ def main() -> int:
                 f"byClass={und['detections']['byClass']} stage={und['timings']}",
                 flush=True,
             )
+            if und.get("links"):
+                print(f"   links={json.dumps(und['links'], ensure_ascii=False)}", flush=True)
         print(
             f"{fid}: {row['status']:9} {row['discipline']!s:20} {row['floors']!s:24} 1:{row['scale']} {row['level']!s:6} "
             f"conf={row['confidence']} regions={row['regions']} tiles={row['tiles']} {row['seconds']}s "

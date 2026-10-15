@@ -126,6 +126,17 @@ describe('Understanding e2e — overlay, legend entries, unknown clusters (fake 
       expect(res.headers['cache-control']).toBe('no-store');
     });
 
+    it('Sprint 3: links URL when the version has artifacts.links, else null', async () => {
+      const m0 = OverlayManifestSchema.parse((await http.get(overlayUrl(sheetId, versionId)).set(auth('viewer')).expect(200)).body);
+      expect(m0.links).toBeNull();
+      const vp = fsPaths.version(orgId, projectId, sheetId, versionId);
+      const v = t.repo.docs.get(vp) as Doc;
+      t.repo.docs.set(vp, { ...v, artifacts: { ...(v.artifacts as Doc), links: 'whatever-the-worker-wrote' } });
+      const m = OverlayManifestSchema.parse((await http.get(overlayUrl(sheetId, versionId)).set(auth('viewer')).expect(200)).body);
+      expect(m.links?.url).toContain(encodeURI(storagePaths.links(orgId, projectId, sheetId, versionId)));
+      t.repo.docs.set(vp, v);
+    });
+
     it('caches crop ids per version (artifacts are immutable)', async () => {
       const before = t.artifacts.reads;
       await http.get(overlayUrl(sheetId, versionId)).set(auth('editor')).expect(200);

@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { PubSub } from '@google-cloud/pubsub';
-import { fsPaths, storagePaths } from '@kamutan/contracts';
+import { DEFAULT_BOQ_RULES, fsPaths, itemIdFor, JOB_TYPES, storagePaths } from '@kamutan/contracts';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
@@ -15,6 +15,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessService } from '../../src/access/access.service';
 import { auditHash } from '../../src/db/audit-chain';
 import { FirestoreRepository } from '../../src/db/firestore.repository';
+import { FirestoreBoqRepository } from '../../src/db/boq-firestore.repository';
+import { RepoConflictError } from '../../src/db/repository';
 import { JobsService } from '../../src/jobs/jobs.service';
 import { InMemoryIngestQueue, PubSubIngestQueue } from '../../src/queue/ingest-queue';
 import { ProjectsService } from '../../src/projects/projects.service';
@@ -264,6 +266,74 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
       prev = hash as string;
     }
     expect(snap.size).toBeGreaterThan(2);
+  });
+
+  describe('Sprint 3: BOQ repository (transactions, audit, dedupe)', () => {
+    let boq: FirestoreBoqRepository;
+    let pid: string;
+    beforeAll(async () => {
+      boq = new FirestoreBoqRepository(repo);
+      pid = (await repo.createProject(orgA, { name: 'BOQ' }, uid('aEditor'))).id;
+    });
+
+    it('seedDefaults is create-if-missing and keeps admin edits', async () => {
+      expect(await boq.seedDefaults(orgA)).toEqual({ templates: 1, rules: DEFAULT_BOQ_RULES.length });
+      await boq.patchRule(orgA, 'r_socket_single', { enabled: false }, uid('aAdmin'));
+      expect(await boq.seedDefaults(orgA)).toEqual({ templates: 0, rules: 0 });
+      expect((await boq.listRules(orgA)).find((r) => r.id === 'r_socket_single')?.enabled).toBe(false);
+      expect((await boq.listTemplates(orgA)).find((t) => t.id === 'tpl_default')?.default).toBe(true);
+    });
+
+    it('requestBuild: build + job + project.boq (dotted fields), dedupe, failBuild clears pending', async () => {
+      const r1 = await boq.requestBuild(orgA, pid, uid('aEditor'), JOB_TYPES.boqBuild);
+      expect(r1?.deduplicated).toBe(false);
+      const r2 = await boq.requestBuild(orgA, pid, uid('aEditor'), JOB_TYPES.boqBuild);
+      expect(r2).toMatchObject({ deduplicated: true, build: { id: r1?.build.id } });
+      const job = (await db.doc(fsPaths.job(r1?.jobId as string)).get()).data();
+      expect(job).toMatchObject({ orgId: orgA, projectId: pid, buildId: r1?.build.id, type: 'boq.build', status: 'queued' });
+      expect((await repo.getProject(orgA, pid))?.boq).toMatchObject({ pendingBuildId: r1?.build.id, stale: true, latestBuildId: null });
+      await boq.failBuild(orgA, pid, r1?.build.id as string, r1?.jobId as string, { code: 'publish_failed', message: 'x' });
+      expect((await repo.getProject(orgA, pid))?.boq?.pendingBuildId).toBeNull();
+      expect((await boq.getBuild(orgA, pid, r1?.build.id as string))?.status).toBe('failed');
+      expect(await boq.requestBuild(orgB, pid, uid('bAdmin'), JOB_TYPES.boqBuild)).toBeNull(); // not B's project
+    });
+
+    it('patchLine: transaction + audit chain; state machine; markStale merges into boq', async () => {
+      await db.doc(fsPaths.boqLine(orgA, pid, 'l1')).set({ chapter: '04', code: '4.10', description: 'x', qty: 2, unit: 'יחידה', level: 'yellow', status: 'draft', byFloor: { 'קומת קרקע': 2 }, computedAt: Timestamp.now() });
+      const l = await boq.patchLine(orgA, pid, 'l1', { status: 'reviewed' }, uid('aEditor'));
+      expect(l).toMatchObject({ status: 'reviewed', reviewedBy: uid('aEditor'), code: '4.10', byFloor: { 'קומת קרקע': 2 } });
+      expect(typeof l?.reviewedAt).toBe('string');
+      await expect(boq.patchLine(orgA, pid, 'l1', { status: 'draft' }, uid('aEditor'))).resolves.toMatchObject({ status: 'draft', reviewedBy: null });
+      await expect(boq.patchLine(orgA, pid, 'l1', { status: 'approved' }, uid('aEditor'))).rejects.toBeInstanceOf(RepoConflictError);
+      expect(await boq.patchLine(orgB, pid, 'l1', { status: 'reviewed' }, uid('bAdmin'))).toBeNull();
+      const log = await db.collection(`orgs/${orgA}/auditLog`).orderBy('at', 'desc').limit(1).get();
+      expect(log.docs[0]?.data()).toMatchObject({ entity: 'boqLines', entityId: 'l1', action: 'update' });
+      await boq.markStale(orgA, pid, 'legend');
+      expect((await repo.getProject(orgA, pid))?.boq).toMatchObject({ stale: true, staleReason: 'legend' });
+      await boq.markStale(orgA, 'missing-project', 'legend'); // no throw
+      expect(await boq.markOrgStale(orgA, 'rule')).toBeGreaterThan(0);
+    });
+
+    it('library item create / conflict / patch; import queue; export record', async () => {
+      const id = itemIdFor('4.10', 'x');
+      await boq.createLibraryItem(orgA, { id, code: '4.10', chapter: '04', chapterTitle: '', description: 'x', unit: 'יחידה', tags: [], source: 'manual', sourceRef: null, active: true }, uid('aEditor'));
+      await expect(boq.createLibraryItem(orgA, { id, code: '4.10', chapter: '04', chapterTitle: '', description: 'x', unit: 'יחידה', tags: [], source: 'manual', sourceRef: null, active: true }, uid('aEditor'))).rejects.toBeInstanceOf(RepoConflictError);
+      expect((await boq.patchLibraryItem(orgA, id, { active: false }, uid('aEditor')))?.active).toBe(false);
+      expect((await boq.listLibraryItems(orgA, { active: false })).map((i) => i.id)).toContain(id);
+      const importId = randomUUID();
+      const now = new Date();
+      await boq.createLibraryImport(orgA, {
+        id: importId, orgId: orgA, projectId: null, sourceKind: 'xlsx', storagePath: storagePaths.libraryImport(orgA, importId, 'xlsx'), originalName: 'a.xlsx', sizeBytes: 10,
+        status: 'awaiting_upload', jobId: null, createdBy: uid('aEditor'), createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + 600_000).toISOString(), finalizedAt: null, stats: null, error: null,
+      });
+      const q = await boq.queueLibraryImport(orgA, importId, uid('aEditor'));
+      expect(q).toMatchObject({ created: true, doc: { status: 'queued' } });
+      expect((await boq.queueLibraryImport(orgA, importId, uid('aEditor')))?.created).toBe(false);
+      expect((await db.doc(fsPaths.job(q?.jobId as string)).get()).data()).toMatchObject({ type: 'library.import', importId, orgId: orgA, projectId: null });
+      const counts = { lines: 1, green: 0, yellow: 1, red: 0, draft: 1, reviewed: 0, approved: 0, overridden: 0 };
+      await boq.createExport(orgA, pid, { id: 'e1', templateId: 'tpl_default', split: 'summed', markDraft: false, storagePath: storagePaths.boqExportFile(orgA, pid, 'e1'), buildId: null, counts, sha256: 'a'.repeat(64), sizeBytes: 10, createdBy: uid('aEditor'), createdAt: now.toISOString() });
+      expect((await db.doc(fsPaths.boqExport(orgA, pid, 'e1')).get()).get('createdAt')).toBeInstanceOf(Timestamp);
+    });
   });
 
   describe.skipIf(!hasStorage)('full finalize with the Storage emulator', () => {

@@ -13,6 +13,7 @@ import {
 import { ref, uploadBytesResumable, type FirebaseStorage } from "firebase/storage";
 import {
   UploadCanceledError,
+  type BoqBuild,
   type Job,
   type RealtimeSource,
   type Sheet,
@@ -137,6 +138,36 @@ export function createFirestoreRealtime(db: Firestore): RealtimeSource {
         versionSubs.forEach((off) => off());
         versionSubs.clear();
       };
+    },
+    boqState(orgId, projectId, onData, onError) {
+      return onSnapshot(
+        doc(db, projectPath(orgId, projectId)),
+        (d) => {
+          const b = d.exists() ? (d.data().boq as DocumentData | undefined) : undefined;
+          onData(
+            b
+              ? { latestBuildId: (b.latestBuildId as string | null) ?? null, builtAt: toIso(b.builtAt) || null, stale: Boolean(b.stale) }
+              : null,
+          );
+        },
+        onError,
+      );
+    },
+    boqBuild(orgId, projectId, buildId, onData, onError) {
+      return onSnapshot(
+        doc(db, `${projectPath(orgId, projectId)}/boqBuilds/${buildId}`),
+        (d) => {
+          if (!d.exists()) return onData(null);
+          const data = d.data();
+          onData({
+            ...(data as Omit<BoqBuild, "id">),
+            id: d.id,
+            startedAt: toIso(data.startedAt) || null,
+            finishedAt: toIso(data.finishedAt) || null,
+          });
+        },
+        onError,
+      );
     },
   };
 }

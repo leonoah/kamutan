@@ -13,8 +13,20 @@ export * from "./types";
 export function createBackend(): Backend {
   if (env.useMocks) {
     // Dev/demo: ?mockDetections=2000 on the first page load sizes the synthetic overlay (performance checks).
-    const n = typeof location !== "undefined" ? Number(new URLSearchParams(location.search).get("mockDetections")) : 0;
-    return createMockBackend(n > 0 ? { fixtureDetections: Math.min(n, 20_000), devIndex: false } : {});
+    // Sprint 3: ?mockBlockExport=1 (org blocks export with red lines), ?mockBoq=built (start with a built BOQ),
+    // ?mockRole=editor|reviewer|viewer (role of the demo user).
+    const q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
+    const n = Number(q.get("mockDetections"));
+    const role = q.get("mockRole");
+    return createMockBackend({
+      ...(n > 0 ? { fixtureDetections: Math.min(n, 20_000), devIndex: false } : {}),
+      ...(q.get("mockBlockExport") === "1" ? { blockExportOnRed: true } : {}),
+      ...(q.get("mockBoq") === "built" ? { boqPrebuilt: true } : {}),
+      ...(q.get("mockBoq") === "engine" ? { boqEngineOnly: true } : {}),
+      ...(role === "editor" || role === "reviewer" || role === "viewer" || role === "admin"
+        ? { orgs: [{ id: "org-demo", name: "סטודיו נח לעיצוב פנים", role }] }
+        : {}),
+    });
   }
   const fb = getFirebase();
   return {

@@ -47,7 +47,7 @@ function plain(d: DocumentData | undefined): Record<string, unknown> | null {
  * caller-supplied orgId; authorization happens in AccessService beforehand.
  */
 export class FirestoreRepository implements Repository {
-  constructor(private readonly db: Firestore) {}
+  constructor(readonly db: Firestore) {}
 
   // --- orgs & members -----------------------------------------------------------
   async getMember(orgId: string, uid: string): Promise<Member | null> {
@@ -458,12 +458,14 @@ export class FirestoreRepository implements Repository {
   }
 
   // --- audit -------------------------------------------------------------------------
-  private async auditHead(tx: Transaction, orgId: string): Promise<string | null> {
+  /** @internal shared with FirestoreBoqRepository */
+  async auditHead(tx: Transaction, orgId: string): Promise<string | null> {
     const snap = await tx.get(this.db.collection(`orgs/${orgId}/auditLog`).orderBy('at', 'desc').limit(1));
     return (snap.docs[0]?.get('hash') as string | undefined) ?? null;
   }
 
-  private writeAudit(tx: Transaction, orgId: string, prevHash: string | null, event: AuditInput): void {
+  /** @internal */
+  writeAudit(tx: Transaction, orgId: string, prevHash: string | null, event: AuditInput): void {
     const at = Timestamp.now();
     const body = {
       actorId: event.actorId,

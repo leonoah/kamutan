@@ -18,7 +18,20 @@ export const fsPaths = Object.freeze({
   symbolMapping: (o: string, signature: string) => `orgs/${o}/symbolMappings/${signature}`,
   reviewItem: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/reviewItems/${id}`,
   correction: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/corrections/${id}`,
+  boqLines: (o: string, p: string) => `orgs/${o}/projects/${p}/boqLines`,
   boqLine: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqLines/${id}`,
+  /** Sprint 3: aggregation runs (API creates `queued`; worker runs). */
+  boqBuild: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqBuilds/${id}`,
+  /** Sprint 3: Excel export records (API). */
+  boqExport: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/exports/${id}`,
+  /** Sprint 3: org item library / templates / rules / past-BOQ imports. */
+  itemLibrary: (o: string) => `orgs/${o}/itemLibrary`,
+  libraryItem: (o: string, id: string) => `orgs/${o}/itemLibrary/${id}`,
+  boqTemplates: (o: string) => `orgs/${o}/boqTemplates`,
+  boqTemplate: (o: string, id: string) => `orgs/${o}/boqTemplates/${id}`,
+  boqRules: (o: string) => `orgs/${o}/boqRules`,
+  boqRule: (o: string, id: string) => `orgs/${o}/boqRules/${id}`,
+  libraryImport: (o: string, id: string) => `orgs/${o}/libraryImports/${id}`,
   shareLink: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/shareLinks/${id}`,
   auditEvent: (o: string, id: string) => `orgs/${o}/auditLog/${id}`,
   job: (id: string) => `jobs/${id}`,
@@ -62,6 +75,14 @@ export const storagePaths = Object.freeze({
    * (storage.rules) and never signable by the API (not under a version prefix, see ARTIFACT_PATH_RE).
    */
   llmCachePrefix: (o: string) => `orgs/${o}/llm-cache/`,
+  /** Sprint 3: switch↔luminaire link graph of a lighting sheet version (`kamutan.links/1`, worker). */
+  links: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/links.json.gz`,
+  /** Sprint 3: evidence of one BOQ build (`kamutan.boq-evidence/1`, worker; API reads server-side). */
+  boqEvidence: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/evidence.json.gz`,
+  /** Sprint 3: Excel export (API writes; signed URL only, 2 min). */
+  boqExportFile: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}.xlsx`,
+  /** Sprint 3: past-BOQ upload slot (client create-only; API verifies magic bytes). */
+  libraryImport: (o: string, importId: string, ext: 'xls' | 'xlsx') => `orgs/${o}/imports/${importId}.${ext}`,
 
   /** @deprecated Sprint 0 client upload target (orgs/{orgId}/uploads/{uid}/{fileId}); replaced by `quarantine`. */
   upload: (orgId: string, uid: string, fileId: string) => `orgs/${orgId}/uploads/${uid}/${fileId}`,
@@ -79,11 +100,17 @@ export const PROJECT_UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})
 /** Any object under a sheet version's artifact directory (what the API may sign for reading). */
 export const ARTIFACT_PATH_RE = new RegExp(
   `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(?:tiles/\\d{1,2}/\\d{1,5}_\\d{1,5}\\.webp|thumbnail\\.webp|primitives\\.msgpack\\.gz|text\\.json\\.gz` +
-    `|legend\\.json\\.gz|detections\\.json\\.gz|rooms\\.json\\.gz|legend/le_${ID}\\.webp|unknown/u_${ID}\\.webp)$`,
+    `|legend\\.json\\.gz|detections\\.json\\.gz|rooms\\.json\\.gz|links\\.json\\.gz|legend/le_${ID}\\.webp|unknown/u_${ID}\\.webp)$`,
 );
+/** Sprint 3: evidence file of a build. */
+export const BOQ_EVIDENCE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/boq/(${ID})/evidence\\.json\\.gz$`);
+/** Sprint 3: Excel export object. */
+export const BOQ_EXPORT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/exports/(${ID})\\.xlsx$`);
+/** Sprint 3: past-BOQ upload slot. */
+export const LIBRARY_IMPORT_PATH_RE = new RegExp(`^orgs/(${ID})/imports/(${UUID})\\.(xls|xlsx)$`);
 /** The three Sprint-2 understanding artifacts (what the API may read server-side). */
 export const UNDERSTANDING_ARTIFACT_PATH_RE = new RegExp(
-  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(legend|detections|rooms)\\.json\\.gz$`,
+  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(legend|detections|rooms|links)\\.json\\.gz$`,
 );
 /** @deprecated Sprint 0 (see storagePaths.upload). */
 export const UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/uploads/(${ID})/(${ID})$`);

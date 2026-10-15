@@ -1,0 +1,215 @@
+{
+  "$ref": "#/definitions/RequestBoqBuildResponse",
+  "definitions": {
+    "RequestBoqBuildResponse": {
+      "type": "object",
+      "properties": {
+        "build": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "failed"
+              ]
+            },
+            "jobId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "requestedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "finishedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stats": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "lines": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "green": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "yellow": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "red": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "sheets": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "evidence": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "duplicatesRemoved": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unmapped": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "lines",
+                    "green",
+                    "yellow",
+                    "red",
+                    "sheets",
+                    "evidence"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 2000
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "evidenceRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "jobId",
+            "requestedBy",
+            "createdAt",
+            "startedAt",
+            "finishedAt",
+            "stats",
+            "error"
+          ],
+          "additionalProperties": false
+        },
+        "deduplicated": {
+          "type": "boolean"
+        },
+        "jobId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "build",
+        "deduplicated",
+        "jobId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/RequestBoqBuildResponse.json"
+}

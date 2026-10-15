@@ -1,0 +1,94 @@
+{
+  "$ref": "#/definitions/BoqEvidenceArtifact",
+  "definitions": {
+    "BoqEvidenceArtifact": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "kamutan.boq-evidence/1"
+        },
+        "buildId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "lines": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sheetId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "versionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "detectionId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "linkGroupId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 128,
+                      "pattern": "^lk_[A-Za-z0-9_-]+$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "floor": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "sheetId",
+                "versionId",
+                "detectionId",
+                "linkGroupId",
+                "floor"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 5000
+          },
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "lines"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BoqEvidenceArtifact.json"
+}

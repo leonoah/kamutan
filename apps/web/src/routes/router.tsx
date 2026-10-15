@@ -8,6 +8,7 @@ import { ProjectsPage } from "@/features/projects/ProjectsPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
 import { SheetsPage } from "@/features/sheets/SheetsPage";
 import { LegendPage } from "@/features/legend/LegendPage";
+import { LibraryPage } from "@/features/library/LibraryPage";
 import { NotFoundPage } from "./NotFoundPage";
 
 export const routes: RouteObject[] = [
@@ -36,6 +37,7 @@ export const routes: RouteObject[] = [
               { path: "/projects/:projectId", element: <ProjectPage /> },
               { path: "/projects/:projectId/sheets", element: <SheetsPage /> },
               { path: "/projects/:projectId/legend", element: <LegendPage /> },
+              { path: "/library", element: <LibraryPage /> },
             ],
           },
           // Review workspace has its own full-bleed chrome

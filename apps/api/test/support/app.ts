@@ -3,6 +3,9 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../../src/app.module';
 import { ID_TOKEN_VERIFIER } from '../../src/auth/id-token-verifier';
 import { configureApp } from '../../src/bootstrap';
+import { BOQ_STORAGE, type InMemoryBoqStorage } from '../../src/boq/boq-storage';
+import { BOQ_REPOSITORY } from '../../src/db/boq-repository';
+import type { InMemoryBoqRepository } from '../../src/db/boq-memory.repository';
 import type { AppConfig } from '../../src/config/config';
 import { InMemoryRepository } from '../../src/db/in-memory.repository';
 import { REPOSITORY } from '../../src/db/repository';
@@ -22,6 +25,9 @@ export interface TestApp {
   artifacts: InMemoryArtifactReader;
   auth: FakeIdTokenVerifier;
   cfg: AppConfig;
+  /** Sprint 3 */
+  boq: InMemoryBoqRepository;
+  boqStorage: InMemoryBoqStorage;
 }
 
 /** Boots the real AppModule with in-memory Firestore/Storage/PubSub and a fake ID-token verifier. */
@@ -49,5 +55,5 @@ export async function createTestApp(cfg: AppConfig): Promise<TestApp> {
   const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false, logger: false });
   configureApp(app, cfg);
   await app.init();
-  return { app, repo, queue, storage, signer, artifacts, auth, cfg };
+  return { app, repo, queue, storage, signer, artifacts, auth, cfg, boq: app.get(BOQ_REPOSITORY), boqStorage: app.get(BOQ_STORAGE) };
 }

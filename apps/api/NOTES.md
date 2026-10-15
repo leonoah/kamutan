@@ -1,8 +1,10 @@
-# @kamutan/api — notes (Sprint 0 + 1 + 2, Firebase, ADR 0008)
+# @kamutan/api — notes (Sprint 0 + 1 + 2 + 3, Firebase, ADR 0008)
 
 NestJS 11 (TypeScript strict) Core API. Sprint 0: **login → create project → upload & store a file**. Sprint 1:
 **quarantine upload → ingest via Pub/Sub → sheets list / confirm / regions / tiles (signed URLs) / reprocess / job status**.
 Sprint 2: **overlay artifacts (legend/detections/rooms + crops, signed) / legend confirmation / unknown-symbol resolution**.
+Sprint 3: **item library + past-BOQ import, BOQ templates + rules, BOQ build request, lines + review PATCH, evidence, Excel
+export (exceljs, client format)**.
 Runs as Cloud Functions 2nd gen `api` (europe-west1) behind the Firebase Hosting rewrite `/api/**`
 (same origin → no CORS needed), and locally via `src/main.ts`. Contracts (Zod, source of truth for DTOs,
 Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
@@ -33,6 +35,22 @@ Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/c
 | GET | `/projects/:projectId/legend-entries?status=&sheetId=&limit=&cursor=` | viewer | Sprint 2. `LegendEntryPage {items: LegendEntry+thumbUrl, nextCursor, expiresAt}`; doc-id order, limit ≤ 200 (100). `thumbUrl` only when the doc's `thumbPath` equals the path derived from org/project/sheet/version/id (legend crop, or the cluster crop of an API-created entry); anything else → null. |
 | PATCH | `/projects/:projectId/legend-entries/:entryId` | editor | Sprint 2. `{action:'confirm', class?, itemCode?, label?}` (class defaults to a taxonomy `suggestedClass`, else 400) \| `{action:'reassign', class, itemCode?, label?}` \| `{action:'ignore'}` (strict). `label` (≤ 300, user-edited OCR text) is stored on the entry and used as the mapping label; the audit records only `labelChanged`. Class must be a `benchmark/schema/classes.json` id (`SymbolClassSchema`; "unknown" rejected). Transaction: entry (`status`, `class`, `itemCode`, `confirmedBy/At`, `updatedAt`) + upsert `orgs/{o}/symbolMappings/{signature}` `{class, itemCode, label, confirmedBy, confirmedAt, uses+1}` (not on ignore) + audit `legendEntries/{confirm\|reassign\|ignore}` (ids/classes only, no OCR text). → `{entry, mapping\|null}`. |
 | POST | `/projects/:projectId/unknown-clusters/:clusterId/resolve` | editor | Sprint 2. `{sheetId, versionId, class? \| ignore: true (exactly one), itemCode?, createLegendEntry}`. **ignore ("לא רלוונטי")**: mapping `{class: null, itemCode: null, ignored: true, label: "לא רלוונטי"}`, optional entry with status `ignored`, audit `unknownClusters/ignore`, same reprocess (worker skips ignored signatures); response `mapping` nullable in the contract. → reads the cluster (signature, thumb) from the version's `detections.json.gz`; transaction: upsert mapping (label = taxonomy Hebrew name) + optional confirmed entry `le_<sheetId>_<clusterId>` (thumbPath = `unknown/<clusterId>.webp`) + audit `unknownClusters/resolve`; then **reprocess of that sheet through the Sprint-1 path** (`SheetsService.reprocess`: new version + job + audit + publish). `reprocess[]` outcome: `queued` (versionId, jobId) or `skipped` with `not_current` (resolved on an old version) / `in_progress` / `publish_failed` — the mapping is saved either way. 404 unknown cluster/sheet/version, 409 `not_ready` without detections, 409 `conflict` for an invalid signature. Strict rate limit. |
+| GET | `/library/items?orgId=&chapter=&active=&q=&cursor=&limit≤500` | viewer | Sprint 3. Org item library (`ItemLibraryItem`), doc-id order, `q` = substring of code/description (in memory, ≤ 5000 items read). |
+| POST | `/library/items` | editor of `body.orgId` | Sprint 3. `{orgId, code (TEXT), chapter, chapterTitle?, description, unit, tags?}` → id = `itemIdFor(code, description)`, source `manual`; 409 duplicate; audit `itemLibrary/create`. |
+| PATCH | `/library/items/:itemId?orgId=` | editor | Sprint 3. `{unit?, chapterTitle?, tags?, active?}` (code/description = identity, immutable); audit `itemLibrary/update`. |
+| POST | `/library/imports` | editor of `body.orgId` | Sprint 3. `{orgId, filename (.xls/.xlsx), sizeBytes ≤ 20MB, projectId?}` → `libraryImports/{uuid}` (`awaiting_upload`, 10 min) + upload slot `orgs/{o}/imports/{uuid}.{xls\|xlsx}` + contentType. Strict rate limit. |
+| POST | `/library/imports/:importId/finalize` | editor (uploader only) | Sprint 3. 202. Reads the object (≤ 20MB → else 413), magic bytes must match the declared kind (xls = OLE CFB `D0CF11E0A1B11AE1`; xlsx = ZIP whose central directory lists `[Content_Types].xml` + `xl/workbook.xml`) → else 415 + object deleted + import `rejected`; expired slot 410; missing object 409 `upload_missing`. Then tx: `jobs/{jobId}` (`library.import`) + import `queued` + audit `libraryImports/finalize`, publish `LibraryImportJob` (503 + import `failed` on publish error). Idempotent once queued. Strict rate limit. |
+| GET | `/library/imports/:importId?orgId=` | viewer | Sprint 3. `LibraryImportView` = import doc + `job {status, progress, error}`. |
+| GET | `/boq-templates?orgId=` | viewer | Sprint 3. Seeds `tpl_default` (structure of the sample BOQ) + default rules when the org has no default template. |
+| PATCH | `/boq-templates/:templateId?orgId=` | **admin** | Sprint 3. `{name?, chapters?, columns?, titleRows?, default: true?, vatRate?}`; `default: true` unsets the other default; audit `boqTemplates/update`. |
+| GET | `/boq-rules?orgId=` | viewer | Sprint 3. Seeds `DEFAULT_BOQ_RULES` when empty. Sorted by priority desc. |
+| PATCH | `/boq-rules/:ruleId?orgId=` | **admin** | Sprint 3. `{enabled?, priority?, itemCode?}`; audit `boqRules/update` with `{field: {from, to}}`; marks **every project of the org** `boq.stale` (`rule`). |
+| POST | `/projects/:projectId/boq/build` | editor | Sprint 3. 202 `{build, deduplicated, jobId}`. Seeds org defaults, then tx: returns the pending build while it is queued/running and < 30 min old (`deduplicated: true`, nothing published); else `boqBuilds/{id}` (queued) + `jobs/{jobId}` (`boq.build`, `buildId`) + `project.boq.pendingBuildId` + audit `boqBuilds/request`, publish `BoqBuildJob`. Publish failure → build + job `failed`, pending cleared, 503. Strict rate limit. |
+| GET | `/projects/:projectId/boq?cursor=&limit≤500&chapter=&level=&status=` | viewer | Sprint 3. `BoqView {summary {latestBuildId, builtAt, stale, staleReason, build (pending else latest), counts (all lines), floors, blockExportOnRed}, items, nextCursor}`; lines sorted (chapter, natural code "4.9" < "4.10", id); ≤ 5000 lines read. |
+| PATCH | `/projects/:projectId/boq/lines/:lineId` | reviewer (+ editor for `qtyOverride`) | Sprint 3. `{status?, qtyOverride? (number + reason \| null), reason?, note?}` (strict). Tx re-reads the line: `BOQ_LINE_TRANSITIONS` (else 409), stamps `reviewedBy/At` / `approvedBy/At` (cleared when moving back), approved lines accept only `status: reviewed` (+ note) → else 409; override stores `qtyOverride{Reason,By,At}`. Audit `boqLines/update` (numbers + `noteChanged`, never the note text). |
+| GET | `/projects/:projectId/boq/lines/:lineId/evidence` | viewer | Sprint 3. `{lineId, buildId, items[≤2000] {sheetId, versionId, detectionId, linkGroupId, floor}, bySheet, truncated}` from `boq/{buildId}/evidence.json.gz` (the line's `evidenceRef` only when it is THIS org/project's evidence path, else the line's `buildId` / project's `latestBuildId`). Lenient parse (malformed → []), gzip caps as Sprint 2, parsed `lines` cached per path (4). |
+| GET | `/projects/:projectId/boq/evidence?sheetId=&versionId=` | viewer | Sprint 3 (integration). Marker → line lookup for one sheet version from the latest build's evidence: `{sheetId, versionId, buildId, detections {detectionId: lineIds[]}, linkGroups {linkGroupId: lineIds[]}}`. |
+| POST | `/projects/:projectId/boq/export` | editor | Sprint 3. `{templateId?, split: summed\|byFloor, markDraft}` → 409 `export_blocked` (`issues: [{path:'red', message:'<n>'}]`) when org `blockExportOnRed` and red lines exist; 409 `not_ready` without lines; else xlsx (see below) → `orgs/{o}/projects/{p}/exports/{uuid}.xlsx` + `exports/{uuid}` record + audit `exports/create`; returns `{exportId, url (V4 signed, **120 s**, attachment + UTF-8 filename), expiresAt, fileName, counts, hasWarnings}`. Own tier `EXPORT_THROTTLE_LIMIT` (10/min/user). |
 | GET | `/jobs/:jobId` | viewer of `job.orgId` | Top-level job doc; membership checked in the service against the doc's `orgId` (non-members → 404). Tolerates worker docs with numeric `progress` + `stage`. |
 
 OpenAPI: `/api/docs` (UI) and `/api/docs/openapi.json` when `SWAGGER_ENABLED=true` and not production; static copy
@@ -65,6 +83,9 @@ insufficient role → **403**, MFA-gated → `403 mfa_required`.
 | Sheet | `.../projects/{pid}/sheets/{sheetSetId}-p{i}` `{sheetSetId, pageIndex, title, discipline, floors[], scaleDenominator, classification{discipline, floors, sheetTitle, scaleText, confidence, level, reasons}, confirmed, confirmedBy?, confirmedAt?, currentVersionId, updatedAt}` | **worker** creates (split); API: confirm fields, `currentVersionId` on reprocess |
 | SheetVersion | `.../sheets/{sid}/versions/{vid}` `{versionNo, status queued\|processing\|ready\|failed, progress{stage,pct}, error?, page{widthMm,heightMm,rotation}, artifacts{tiles{prefix,format,tileSize,dpi,levels,widthPx,heightPx}, primitives, text, thumbnail}, regions[{id, floor, polygonMm[{x,y}], scaleDenominator}], regionsUpdatedBy?, regionsUpdatedAt?, stats{paths,segments,textLines,glyphs}, workerVersion, jobId?, createdAt?, updatedAt}` | **worker** (initial: all pages share the set's `versionId`); API: `regions*` and the queued doc on reprocess |
 | Job | `jobs/{jobId}` `{orgId, projectId, sheetSetId, sheetId (null = initial), versionId, type:"ingest.sheet_version", status queued\|running\|succeeded\|failed, progress{stage,pct}, attempts, error, createdBy, createdAt, updatedAt}` | API creates; worker updates |
+| Sprint 3 library | `orgs/{o}/itemLibrary/{itemId}`, `boqTemplates/{id}`, `boqRules/{id}`, `libraryImports/{uuid}` | API (manual items, seeds, admin edits, imports); worker (`library.import` upserts items / template, import status) |
+| Sprint 3 BOQ | `.../projects/{p}/boqLines/{lineId}` (worker computes; API PATCH review fields), `boqBuilds/{id}` (API queued → worker), `exports/{id}` (API), project `boq {latestBuildId, builtAt, stale, pendingBuildId, staleReason, staleAt}` | see contracts `boq.ts`; API sets `pendingBuildId` + `stale=true`; worker sets `latestBuildId/builtAt/stale=false/pendingBuildId=null` |
+| Sprint 3 Storage | `orgs/{o}/imports/{uuid}.{xls\|xlsx}` (client create-only), `.../boq/{buildId}/evidence.json.gz` (worker), `.../exports/{id}.xlsx` (API) | `BoqStorage` port: each method pinned to one path regex (`LIBRARY_IMPORT_PATH_RE`, `BOQ_EVIDENCE_PATH_RE`, `BOQ_EXPORT_PATH_RE`) |
 | Audit | `orgs/{orgId}/auditLog/{eventId}` `{actorId, actorKind, entity, entityId, action, after, at, prevHash, hash}` | API: org/project create+update, upload, confirm, set_regions, reprocess, Sprint 2: `legendEntries/{confirm,reassign,ignore}`, `unknownClusters/resolve` (per-org SHA-256 chain in the same transaction) |
 | LegendEntry (Sprint 2) | `.../projects/{pid}/legendEntries/{entryId}` `{sheetId, versionId, label, labelConfidence, suggestedClass, class, itemCode, signature, thumbPath, status suggested\|confirmed\|ignored, confirmedBy?, confirmedAt?, updatedAt}` | **worker** writes `suggested`; API: decisions + entries created from resolved clusters (`le_<sheetId>_<clusterId>`) |
 | SymbolMapping (Sprint 2) | `orgs/{orgId}/symbolMappings/{signature}` `{class\|null, ignored, itemCode, label, confirmedBy, confirmedAt, uses}` | API only (confirm / reassign / resolve, upsert + uses++); worker reads |
@@ -75,6 +96,50 @@ insufficient role → **403**, MFA-gated → `403 mfa_required`.
 
 **Polygons are `[{x, y}, ...]`, not `[[x, y], ...]`**: Firestore rejects nested arrays, so the brief's tuple form
 cannot be stored. The contract (`RegionSchema.polygonMm`) uses objects everywhere (Firestore, API, web).
+
+## Sprint 3 — BOQ, library, export
+
+- **Code layout**: `src/library/` (LibraryService + Library/Templates/Rules controllers, `spreadsheet-magic.ts`),
+  `src/boq/` (BoqService, BoqController, `excel.ts` builder, `boq-storage.ts`), `src/db/boq-*.ts` (BoqRepository port,
+  Firestore + in-memory implementations sharing the core store and the audit hash chain, `boq-docs.ts` mappers + the
+  pure `planLinePatch` state machine). `BOQ_REPOSITORY` / `BOQ_STORAGE` are global providers.
+- **Queue**: `IngestQueue.publish` takes the contracts union `IngestTopicJob` (`ingest.sheet_version` | `boq.build` |
+  `library.import`); attributes `type/jobId/orgId/schemaVersion` come from the payload.
+- **Stale flag** (`project.boq.stale=true` + `staleReason` + `staleAt`): legend PATCH (`legend`), unknown-cluster resolve
+  (`cluster`), sheet confirm (`sheet`), rule PATCH (`rule`, all projects of the org). Best effort (logged, never fails the
+  user's request). The worker only clears `stale` when `staleAt` did not move during its build.
+- **Defaults**: `POST /orgs` seeds `tpl_default` + `DEFAULT_BOQ_RULES` (create-if-missing, admin edits survive); also
+  lazily on GET templates/rules, POST build and export. Same data as `packages/contracts/json-schema/defaults/boq-defaults.json`.
+- **Override vs rebuild**: the API never recomputes lines; `qtyOverride`/status/stamps/note are in
+  `BOQ_LINE_PRESERVED_FIELDS` (contracts `applyRebuild` = reference semantics the worker follows). Effective quantity
+  everywhere (summary, export) = `qtyOverride ?? qty`.
+- **Excel** (`src/boq/excel.ts`, exceljs 4.4.0): sheet "כמויות" RTL, frozen under the header; optional warning row (UX
+  dialog copy with the red/yellow counts) when any line is non-green; template title rows (`{projectName}`, `{date}`,
+  `{orgName}`), optional "טיוטה – כולל פריטים שלא אומתו"; header = template columns + "רמת ביטחון" + "סטטוס" (last =
+  far left in RTL); chapters in template order (matched by `chapterKey(line.chapter)`, then by `codePrefixes`; unknown
+  chapters appended as "פרק X"; **empty chapters are omitted**), each: title row, "הערות:" + notes, line rows (code =
+  string + numFmt `@`, unit price empty, total `=D{r}*E{r}`), "סה"כ" `SUM`; grand totals `SUM(chapter totals)` and
+  `*(1+vatRate)`. `byFloor` split = one row per floor ("תאור – קומה"; an overridden line stays one row with a cell note).
+  Sheet "פירוט לפי קומה" (floors as columns + SUM + final qty + confidence), sheet "ראיות" (line → sheet title / floor /
+  count + reasons). **Every text cell** goes through `sanitizeCell` (leading `= + - @ TAB CR` → `'`, control chars
+  dropped) — titles, notes, descriptions, units, codes, floors, sheet titles, reasons, project name.
+- Price/total/totals use the sample's currency format `"₪"\ #,##0`; VAT = org `settings.vatRate` (default 0.18) else the
+  template's. Worker floor codes (basement/ground/first, -1/0/1…) are shown in Hebrew (`DEFAULT_FLOOR_NAMES`, project
+  `floors[].name` wins); "ראיות" adds the detection ids of each (sheet, floor) group.
+- **Composite counting**: evidence grouped per (sheet, version, floor) counts one unit per distinct (sheet, version,
+  linkGroupId) (floor of its first item) and one per item without a group, so "ראיות" / `bySheet` sum to the line qty.
+  `GET …/lines/:id/evidence` adds `linkGroups[{sheetId, versionId, linkGroupId, floor, kind, switchIds, pointIds,
+  luminaireIds}]` read from the version's links.json.gz (ArtifactReader now also allows `links.json.gz`); the export's
+  "ראיות" column "קבוצות מפסק↔גוף תאורה" lists `lk_N: מפסקים … → נקודות …`.
+- **Rule reseed**: `seedDefaults` creates missing default rules and REPLACES docs with `source: 'default'` and
+  `defaultsVersion < DEFAULT_BOQ_RULES_VERSION` (now 2); admin PATCH turns a default into `source: 'user'`, which is never
+  re-seeded. GET /boq-rules reseeds when any default is missing/outdated.
+- Version stats mapper keeps `stats.links` (`LinkStatsSchema`) when well-formed.
+- Overlay manifest has `links {url} | null` (version `artifacts.links`, signed like the other artifacts).
+- Sample for the Data agent's fidelity check — from Worker-BOQ's REAL local build (dev-index `boqLines` pointer →
+  boq-lines.json + evidence): `EXPORT_SAMPLE_PATH=/home/claude/kamutan-data/debug/export_sample.xlsx npx vitest run
+  test/unit/export-real-sample.test.ts` (skipped when the data dir is absent). The fixture-based sample
+  (`test/fixtures/noah-boq.ts`) is written by excel.test.ts to `EXPORT_FIXTURE_SAMPLE_PATH` / tmp.
 
 ## Upload flow (SEC-13/14/15)
 
@@ -168,6 +233,33 @@ cd apps/api && DATA_DRIVER=memory STORAGE_DRIVER=memory QUEUE_DRIVER=memory \
   Pub/Sub-emulator v3 publish; Sprint 2: legend list (equality filter + doc-id order), confirm/reassign transactions
   with mapping upsert (uses 2, Timestamp, exact fields) + audit. **Skipped locally** (needs `FIRESTORE_EMULATOR_HOST`, CI only).
 
+Sprint 3 tests:
+- `unit/excel.test.ts` — workbook read back with exceljs: 3 sheets RTL, warning row (counts), title rows, header incl.
+  confidence/status columns, chapter 04 + 08 rows with notes (01..03 omitted), "4.10"/"4.00" are TEXT (`@`), natural
+  order, empty price + `D*E` formulas, chapter `SUM` + grand total + VAT formulas, confidence/status Hebrew values,
+  per-floor sheet (floor columns + SUM), evidence sheet rows, no warning when all green, markDraft row, byFloor split +
+  override note, injection payloads neutralised in every sheet (only our formulas exist).
+- `unit/spreadsheet-magic.test.ts` — real xlsx (exceljs), CFB xls, the sample .xls when readable, docx-like zip,
+  truncated / corrupt zip, pdf/png/empty.
+- `unit/boq-docs.test.ts` — full 3×3 status-transition matrix through `planLinePatch`, stamps set/cleared, approved
+  lock, override set/clear + audit without note text, rebuild semantics (`applyRebuild` → effective qty), tolerant mapper.
+- `unit/boq-isolation.test.ts` — services without guards: org B admin → 404 on every BOQ / library / template / rule /
+  import method of org A (incl. finalize with A's import id), role matrix inside the org.
+- `e2e/boq.e2e.test.ts` — build (roles, job + message contract-valid, pendingBuildId, dedupe, stuck > 30 min,
+  publish failure 503), GET (order, counts, floors, paging, filters, cross-org), PATCH (roles per field, state machine,
+  approved lock, strict body, override audited + preserved across a simulated worker rebuild), evidence (groups,
+  malformed, foreign evidenceRef never read), export (403/404, 409 export_blocked, xlsx content + signed 120 s URL +
+  record + audit, byFloor, unknown template, no lines 409, per-user 429), stale flag (legend / sheet / rule; other org untouched).
+- `e2e/library.e2e.test.ts` — items CRUD + roles + duplicate + filters/paging + cross-org; imports (paths, xlsx/xls
+  finalize → job + message + audit, idempotent, only uploader, 415 + delete + rejected for 3 wrong payloads, 409/410/413,
+  publish failure); templates (seed once, admin-only PATCH, default switching); rules (seed, admin PATCH + audit
+  before/after); org bootstrap seeding.
+- `integration/firestore.emulator.test.ts` — + Sprint 3 block (seed idempotent, requestBuild dotted `boq.*` fields +
+  dedupe + failBuild, patchLine transaction + audit, markStale, library + import queue + export record). CI only.
+
+Commands (all green, 14.10.2026, Sprint 3): `pnpm turbo run lint typecheck test build --filter=@kamutan/api
+--filter=@kamutan/contracts` (api 187 passed, 16 emulator-skipped; contracts 71 passed), `pnpm --filter @kamutan/api openapi`.
+
 Commands (all green, 13.10.2026, Sprint 2): `pnpm turbo run lint typecheck test build --filter=@kamutan/api
 --filter=@kamutan/contracts` (api 124 passed, 12 emulator-skipped; contracts 48 passed), `pnpm --filter @kamutan/api openapi`.
 
@@ -176,6 +268,25 @@ Sprint 1 commands (12.10.2026): `pnpm --filter @kamutan/contracts build test`,
 `lint` = `tsc --noEmit --noUnusedLocals --noUnusedParameters` (no ESLint in the repo, same convention as web/viewer).
 
 ## Known gaps / follow-ups
+
+Sprint 3:
+- **Emulator suites not run here** (jar download blocked) — the new FirestoreBoqRepository block and the rules suites
+  run first in CI. Firestore specifics to watch: dotted `boq.*` updates on projects without a `boq` map, `tx.getAll` +
+  query in `seedDefaults`.
+- GET /boq and export read **all** lines (≤ 5000) and page in memory; fine for renovation projects, not for towers.
+- Library list reads ≤ 5000 items and filters `q` in memory (no search index).
+- Export runs synchronously in the request (exceljs, ~50 KB for 30 lines); very large BOQs may need a job.
+- Export uses the latest build's evidence for "ראיות"; sheet titles come from the sheets list (≤ 2000 sheets).
+- Empty template chapters are not exported (the sample lists all chapters; ours only those with lines) — confirm with
+  the owner/Data agent. Chapter header text is the template `title` verbatim.
+- **Override decision (integration round)**: an override keeps draft/reviewed status; on an **approved** line it is
+  allowed and moves the line back to `reviewed` (approval stamps cleared, re-approval required). The reason chip
+  "כמות שונתה ידנית" (`OVERRIDE_REASON`) is stored and also derived on read whenever `qtyOverride` is set (a rebuild
+  cannot drop it); clearing the override removes it. A note alone on an approved line is still 409.
+- Templates/rules admin PATCH do not require MFA (SEC-02 lists admin actions; MFA enforcement is a cross-cutting follow-up).
+- `itemCode` on rules / lines is not validated against the org library (contract format only).
+- Import finalize reads up to 20 MB into memory (Cloud Function 1 GiB). No ClamAV on imports either (same gap as SEC-15).
+- Rate limits are per instance (in-memory throttler), as before.
 
 Sprint 2:
 - Resolve reprocesses **only the sheet the cluster was resolved on** (and only if that version is still current).

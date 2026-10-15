@@ -29,7 +29,7 @@ vi.mock("@kamutan/viewer", async (importOriginal) => {
 const markers = () => (seen.props?.overlays ?? []).filter((f): f is MarkerFeature => f.kind === "marker");
 const polygons = () => (seen.props?.overlays ?? []).filter((f): f is PolygonFeature => f.kind === "polygon");
 
-async function open(path = "/projects/p-noah/review") {
+async function open(path = "/projects/p-noah/review?panel=counts") {
   const utils = await renderApp(path, { signedIn: true });
   await screen.findByRole("application", { name: /^שרטוט ת\. חשמל \/ קומת קרקע/ }, LAZY);
   await waitFor(() => expect(markers().length).toBeGreaterThan(100), LAZY);
@@ -39,7 +39,8 @@ async function open(path = "/projects/p-noah/review") {
 describe("Review workspace with the Sprint-2 overlay", { timeout: 30_000 }, () => {
   it("renders the three panes in RTL order with an LTR drawing", async () => {
     const { container } = await open();
-    const counts = screen.getByRole("region", { name: "ספירה לפי סוג" });
+    const counts = screen.getByRole("region", { name: "כתב כמויות" });
+    expect(screen.getByRole("tabpanel", { name: "ספירה לפי סוג" })).toBeInTheDocument();
     const drawing = screen.getByRole("region", { name: "שרטוט" });
     const queue = screen.getByRole("region", { name: "תור בדיקה" });
     const order = [counts, drawing, queue].map((el) => [...container.querySelectorAll("section")].indexOf(el as HTMLElement));
@@ -80,7 +81,7 @@ describe("Review workspace with the Sprint-2 overlay", { timeout: 30_000 }, () =
   it("'ספירה לפי סוג' groups by class with counts by level; selecting a row focuses its markers (and back)", async () => {
     const user = userEvent.setup();
     await open();
-    const panel = screen.getByRole("region", { name: "ספירה לפי סוג" });
+    const panel = screen.getByRole("tabpanel", { name: "ספירה לפי סוג" });
     const table = within(panel).getByRole("table", { name: "ספירת פריטים לפי סוג ורמת ביטחון" });
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.length).toBe(8); // 7 classes + unknown

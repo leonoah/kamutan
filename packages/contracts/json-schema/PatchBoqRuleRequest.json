@@ -1,0 +1,34 @@
+{
+  "$ref": "#/definitions/PatchBoqRuleRequest",
+  "definitions": {
+    "PatchBoqRuleRequest": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "itemCode": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[0-9A-Za-z.\\-/]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/PatchBoqRuleRequest.json"
+}

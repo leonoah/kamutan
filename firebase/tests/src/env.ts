@@ -68,6 +68,11 @@ export function docPaths(f: OrgFx) {
     symbolMapping: `orgs/${f.org}/symbolMappings/m1`,
     auditEvent: `orgs/${f.org}/auditLog/e1`,
     job: `jobs/job-${f.org}`,
+    // Sprint 3
+    boqRule: `orgs/${f.org}/boqRules/r_socket_single`,
+    libraryImport: `orgs/${f.org}/libraryImports/0b0f6a4e-2d1c-4b8a-9f3e-123456789abc`,
+    boqBuild: `${p}/boqBuilds/b1`,
+    boqExport: `${p}/exports/e1`,
   };
 }
 
@@ -116,6 +121,10 @@ export async function seed(env: RulesTestEnvironment): Promise<void> {
       await db.doc(d.symbolMapping).set({ class: 'socket_power', ignored: false, itemCode: '4.10', label: 'שקע כוח', confirmedBy: f.users.editor, confirmedAt: ts(), uses: 1 });
       await db.doc(d.auditEvent).set({ actorId: null, actorKind: 'system', entity: 'org', entityId: f.org, action: 'create', at: ts(), prevHash: null, hash: 'd'.repeat(64) });
       await db.doc(d.job).set({ orgId: f.org, projectId: f.project, type: 'ingest.sheet_version', status: 'running', progress: 10, createdAt: ts() });
+      await db.doc(d.boqRule).set({ kind: 'class_to_item', match: { classes: ['socket_single'] }, itemCode: '4.00', priority: 100, enabled: true, source: 'default', updatedAt: ts() });
+      await db.doc(d.libraryImport).set({ orgId: f.org, projectId: null, sourceKind: 'xlsx', storagePath: `orgs/${f.org}/imports/x.xlsx`, originalName: 'a.xlsx', sizeBytes: 10, status: 'queued', jobId: null, createdBy: f.users.editor, createdAt: ts(), expiresAt: ts(), finalizedAt: ts(), stats: null, error: null });
+      await db.doc(d.boqBuild).set({ status: 'succeeded', jobId: null, requestedBy: f.users.editor, createdAt: ts(), startedAt: ts(), finishedAt: ts(), stats: null, error: null });
+      await db.doc(d.boqExport).set({ templateId: 'tpl_default', split: 'summed', markDraft: false, storagePath: `${d.project}/exports/e1.xlsx`, buildId: 'b1', counts: {}, sha256: 'e'.repeat(64), sizeBytes: 1, createdBy: f.users.editor, createdAt: ts() });
     }
   });
 }

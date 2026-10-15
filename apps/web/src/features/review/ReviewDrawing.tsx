@@ -46,8 +46,11 @@ export interface ReviewDrawingProps {
   onLifecycles: (v: LifecycleVisibility) => void;
   layers: LayerVisibility;
   onLayers: (v: LayerVisibility) => void;
-  /** Per-sheet open-item counts for the picker (spec: "מונה פריטים פתוחים לכל גיליון"). */
-  openCount: (row: SheetRow) => number | null;
+  /**
+   * Per-sheet badge in the picker: open items ("3 לבדיקה", spec "מונה פריטים פתוחים לכל גיליון"), or — while a BOQ
+   * line is selected — how many of its evidence items are on that sheet.
+   */
+  sheetBadge: (row: SheetRow) => string | null;
 }
 
 /**
@@ -75,7 +78,7 @@ export function ReviewDrawing(p: ReviewDrawingProps) {
           <DropdownMenuContent align="start" className="max-h-[60vh] overflow-auto">
             <DropdownMenuRadioGroup value={row?.sheet.id ?? ""} onValueChange={p.onPick}>
               {p.rows.map((r) => {
-                const open = p.openCount(r);
+                const badge = p.sheetBadge(r);
                 return (
                   <DropdownMenuRadioItem key={r.sheet.id} value={r.sheet.id}>
                     <span className="flex flex-col">
@@ -88,7 +91,7 @@ export function ReviewDrawing(p: ReviewDrawingProps) {
                             <Ltr>{`1:${r.sheet.scaleDenominator}`}</Ltr>
                           </>
                         ) : null}
-                        {open ? ` · ${t("review.toReview", { count: open })}` : null}
+                        {badge ? ` · ${badge}` : null}
                       </span>
                     </span>
                   </DropdownMenuRadioItem>

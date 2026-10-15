@@ -32,6 +32,12 @@ rules_version = '2';
 //                                                  rooms.json.gz, legend/{entryId}.webp, unknown/{clusterId}.webp)
 //                                                  — worker only; clients via signed URLs (tiles-manifest, overlay,
 //                                                  legend-entries).
+//   orgs/{orgId}/imports/{uuid}.{xls|xlsx}         Sprint 3 past-BOQ upload slot. Client create-only: editor/admin,
+//                                                  lowercase UUID + .xls/.xlsx name, 0 < size <= 20 MB, spreadsheet
+//                                                  content types. Never readable / overwritten / deleted by a client.
+//                                                  The API checks magic bytes (OLE CFB / OOXML zip) on finalize.
+//   orgs/{orgId}/projects/{projectId}/exports/**   Sprint 3 Excel exports — API only; 2-minute signed URL (SEC-20).
+//   orgs/{orgId}/projects/{projectId}/boq/**       Sprint 3 build evidence (evidence.json.gz) — worker only; API reads.
 //   orgs/{orgId}/llm-cache/**                      Sprint 2 LLM gateway cache (SEC-23, per org) — worker only, never
 //                                                  client-readable, never signed by the API.
 //   orgs/{orgId}/projects/{projectId}/derived/**,
@@ -67,6 +73,17 @@ service firebase.storage {
       return request.resource.contentType.matches(
         '^(application/pdf|image/png|application/dxf|image/vnd\\.dxf|image/x-dxf|application/acad|image/vnd\\.dwg|image/x-dwg|application/octet-stream)$');
     }
+    function isImportName(name) {
+      // Same as packages/contracts LIBRARY_IMPORT_PATH_RE (UUID + .xls/.xlsx).
+      return name.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.](xls|xlsx)$');
+    }
+    function validImport() {
+      return resource == null
+        && request.resource.size > 0
+        && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.contentType.matches(
+             '^(application/vnd[.]ms-excel|application/vnd[.]openxmlformats-officedocument[.]spreadsheetml[.]sheet|application/octet-stream)$');
+    }
     function validUpload() {
       return resource == null
         && request.resource.size > 0
@@ -90,6 +107,17 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // ---------------------------------------------------------------- Sprint 3: past-BOQ import slot
+    match /orgs/{orgId}/imports/{fileName} {
+      allow read: if false;                        // API reads it server-side on finalize
+      allow create: if signedIn()
+                    && opaqueId(orgId)
+                    && isImportName(fileName)
+                    && canUpload(orgId)
+                    && validImport();
+      allow update, delete: if false;
+    }
+
     // Sprint-0 client upload slot — closed (no client read or write).
     match /orgs/{orgId}/uploads/{rest=**} {
       allow read, write: if false;
@@ -109,6 +137,13 @@ service firebase.storage {
       }
       match /derived/{rest=**} {
         allow read, write: if false;
+      }
+      // ------------------------------------------------------------ Sprint 3: exports + build evidence
+      match /exports/{rest=**} {
+        allow read, write: if false;               // API writes; 2-minute signed download URL only
+      }
+      match /boq/{rest=**} {
+        allow read, write: if false;               // worker writes evidence.json.gz; API reads server-side
       }
     }
 

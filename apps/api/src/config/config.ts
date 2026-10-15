@@ -34,6 +34,8 @@ export const EnvSchema = z
     UPLOAD_THROTTLE_LIMIT: z.coerce.number().int().positive().default(20),
     /** tiles-manifest calls per user per THROTTLE_TTL_MS (each call signs up to 256 URLs). */
     TILES_THROTTLE_LIMIT: z.coerce.number().int().positive().default(60),
+    /** Sprint 3: Excel exports per user per THROTTLE_TTL_MS (SEC-42 "stricter limit on exports"). */
+    EXPORT_THROTTLE_LIMIT: z.coerce.number().int().positive().default(10),
 
     /** Lifetime of signed artifact read URLs (tiles, thumbnail). 15 minutes per the Sprint 1 brief. */
     SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),

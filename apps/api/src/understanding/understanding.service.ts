@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ClusterIdSchema,
   DocIdSchema,
@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { AccessService } from '../access/access.service';
 import type { AuthContext } from '../auth/auth-context';
 import { ApiException, notFound } from '../common/api-exception';
+import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { REPOSITORY, type LegendDecision, type Repository } from '../db/repository';
 import { SheetsService } from '../sheets/sheets.service';
 import { URL_SIGNER, type SignedUrl, type UrlSigner } from '../sheets/url-signer';
@@ -56,7 +57,13 @@ export class UnderstandingService {
     @Inject(URL_SIGNER) private readonly signer: UrlSigner,
     @Inject(ARTIFACT_READER) private readonly artifacts: ArtifactReader,
     private readonly sheets: SheetsService,
+    @Optional() @Inject(BOQ_REPOSITORY) private readonly boq?: BoqRepository,
   ) {}
+
+  /** Sprint 3: a mapping decision changes what the BOQ counts → project BOQ stale (never fails the request). */
+  private async markStale(orgId: string, projectId: string, reason: 'legend' | 'cluster'): Promise<void> {
+    await this.boq?.markStale(orgId, projectId, reason).catch((err: unknown) => this.logger.warn({ err: (err as Error).message, projectId }, 'markStale failed'));
+  }
 
   // ------------------------------------------------------------------ overlay
   async overlay(user: AuthContext, projectId: string, sheetId: string, versionId: string): Promise<OverlayManifest> {
@@ -71,13 +78,14 @@ export class UnderstandingService {
     const legendPath = a.legend ? storagePaths.legend(orgId, projectId, sheetId, versionId) : null;
     const detectionsPath = a.detections ? storagePaths.detections(orgId, projectId, sheetId, versionId) : null;
     const roomsPath = a.rooms ? storagePaths.rooms(orgId, projectId, sheetId, versionId) : null;
+    const linksPath = a.links ? storagePaths.links(orgId, projectId, sheetId, versionId) : null;
 
     const ids = await this.thumbIdsOf(storagePaths.versionArtifacts(orgId, projectId, sheetId, versionId), legendPath, detectionsPath);
     const thumbPaths = new Map<string, string>();
     for (const id of ids.legend) thumbPaths.set(id, storagePaths.legendThumb(orgId, projectId, sheetId, versionId, id));
     for (const id of ids.clusters) thumbPaths.set(id, storagePaths.unknownThumb(orgId, projectId, sheetId, versionId, id));
 
-    const all = [legendPath, detectionsPath, roomsPath, ...thumbPaths.values()].filter((p): p is string => p !== null);
+    const all = [legendPath, detectionsPath, roomsPath, linksPath, ...thumbPaths.values()].filter((p): p is string => p !== null);
     const signed = all.length ? await this.signer.signRead(all) : new Map<string, SignedUrl>();
     let expires = Number.POSITIVE_INFINITY;
     const ref = (p: string | null) => {
@@ -94,12 +102,14 @@ export class UnderstandingService {
     const legend = ref(legendPath);
     const detections = ref(detectionsPath);
     const rooms = ref(roomsPath);
+    const links = ref(linksPath);
     return {
       sheetId,
       versionId,
       legend,
       detections,
       rooms,
+      links,
       thumbs,
       stats: v.stats,
       expiresAt: new Date(Number.isFinite(expires) ? expires : Date.now()).toISOString(),
@@ -218,6 +228,7 @@ export class UnderstandingService {
     }
     const res = await this.repo.decideLegendEntry(orgId, projectId, entryId, decision, user.uid);
     if (!res) throw notFound('legend entry');
+    await this.markStale(orgId, projectId, 'legend');
     return res;
   }
 
@@ -270,6 +281,7 @@ export class UnderstandingService {
       user.uid,
     );
 
+    await this.markStale(orgId, projectId, 'cluster');
     // The worker reads symbolMappings while spotting symbols, so a reprocess of this sheet applies the answer to
     // every instance of the cluster. Other sheets pick it up on their next run (NOTES.md: gap).
     const reprocess: ReprocessOutcome[] = [await this.reprocessSheet(user, projectId, body.sheetId, body.versionId, sheet.currentVersionId, traceparent)];

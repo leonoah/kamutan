@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
+import { BoqModule } from './boq/boq.module';
 import { RolesGuard } from './auth/roles.guard';
 import { UserThrottlerGuard } from './auth/user-throttler.guard';
 import { HttpExceptionFilter } from './common/http-exception.filter';
@@ -39,6 +40,7 @@ export class AppModule {
         UploadsModule,
         SheetsModule,
         UnderstandingModule,
+        BoqModule,
         JobsModule,
       ],
       providers: [

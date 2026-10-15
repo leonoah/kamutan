@@ -1,0 +1,83 @@
+{
+  "$ref": "#/definitions/LibraryImportJob",
+  "definitions": {
+    "LibraryImportJob": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "type": {
+          "type": "string",
+          "const": "library.import"
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "orgId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "importId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "storagePath": {
+          "type": "string",
+          "pattern": "^orgs\\/([A-Za-z0-9_-]{1,128})\\/imports\\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\.(xls|xlsx)$"
+        },
+        "sourceKind": {
+          "type": "string",
+          "enum": [
+            "xls",
+            "xlsx"
+          ]
+        },
+        "traceparent": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "type",
+        "jobId",
+        "orgId",
+        "projectId",
+        "importId",
+        "storagePath",
+        "sourceKind",
+        "traceparent"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/LibraryImportJob.json"
+}

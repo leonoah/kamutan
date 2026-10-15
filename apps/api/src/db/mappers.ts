@@ -1,6 +1,7 @@
 import {
   DetectionClassSchema,
   DetectionStatsSchema,
+  LinkStatsSchema,
   ItemCodeSchema,
   JOB_STATUSES,
   LEGEND_ENTRY_STATUSES,
@@ -22,6 +23,7 @@ import {
   type Org,
   type ProcessingError,
   type Project,
+  type ProjectBoqSummary,
   type Region,
   type Role,
   type Sheet,
@@ -83,9 +85,29 @@ export function toProject(id: string, d: Doc): Project {
     ...(typeof d.address === 'string' ? { address: d.address } : {}),
     templateId: (d.templateId as string | null | undefined) ?? null,
     floors: (d.floors as Project['floors']) ?? [],
+    ...(d.boq && typeof d.boq === 'object' ? { boq: toProjectBoq(d.boq as Doc) } : {}),
     status: d.status as Project['status'],
     createdBy: String(d.createdBy),
     createdAt: iso(d.createdAt),
+  };
+}
+
+/** Date | ISO string | Firestore Timestamp (nested fields are not converted by `plain()`) → ISO or null. */
+export function anyIso(v: unknown): string | null {
+  if (v && typeof v === 'object' && typeof (v as { toDate?: unknown }).toDate === 'function') {
+    return isoOrNull((v as { toDate(): Date }).toDate());
+  }
+  return isoOrNull(v);
+}
+
+export function toProjectBoq(d: Doc): ProjectBoqSummary {
+  return {
+    latestBuildId: str(d.latestBuildId),
+    builtAt: anyIso(d.builtAt),
+    stale: d.stale === true,
+    pendingBuildId: str(d.pendingBuildId),
+    staleReason: str(d.staleReason),
+    staleAt: anyIso(d.staleAt),
   };
 }
 
@@ -163,6 +185,7 @@ function toArtifacts(v: unknown): VersionArtifacts {
     ...(typeof o.thumbnail === 'string' ? { thumbnail: o.thumbnail } : {}),
     ...(typeof o.legend === 'string' ? { legend: o.legend } : {}),
     ...(typeof o.detections === 'string' ? { detections: o.detections } : {}),
+    ...(typeof o.links === 'string' ? { links: o.links } : {}),
     ...(typeof o.rooms === 'string' ? { rooms: o.rooms } : {}),
   };
 }
@@ -177,11 +200,13 @@ function toStats(v: unknown): SheetVersion['stats'] {
   const det = DetectionStatsSchema.safeParse(o.detections);
   const rooms = nonNegInt(o.rooms);
   const legendEntries = nonNegInt(o.legendEntries);
+  const links = LinkStatsSchema.safeParse(o.links);
   return {
     ...base.data,
     ...(det.success ? { detections: det.data } : {}),
     ...(rooms !== undefined ? { rooms } : {}),
     ...(legendEntries !== undefined ? { legendEntries } : {}),
+    ...(links.success ? { links: links.data } : {}),
   };
 }
 
@@ -225,8 +250,10 @@ export function toJob(id: string, d: Doc): Job {
   return {
     id,
     orgId: String(d.orgId),
-    projectId: String(d.projectId),
-    sheetSetId: String(d.sheetSetId),
+    projectId: str(d.projectId),
+    ...(d.sheetSetId !== undefined ? { sheetSetId: str(d.sheetSetId) } : {}),
+    ...(typeof d.buildId === 'string' ? { buildId: d.buildId } : {}),
+    ...(typeof d.importId === 'string' ? { importId: d.importId } : {}),
     ...(d.sheetId !== undefined ? { sheetId: str(d.sheetId) } : {}),
     ...(typeof d.versionId === 'string' ? { versionId: d.versionId } : {}),
     type: String(d.type),

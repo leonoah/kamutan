@@ -14,6 +14,7 @@ import {
 } from "./types";
 import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, rowFromDevIndex, sampleTiles, seedNoah, type DevIndexEntry } from "./mockSheets";
 import { createUnderstandingMock } from "./mockUnderstanding";
+import { createBoqMock } from "./mockBoq";
 
 export interface MockOptions {
   /** Seed projects. Defaults to two demo projects. Pass [] to see the empty state. */
@@ -37,6 +38,14 @@ export interface MockOptions {
    * present (they replace the fixture). Default: on in the browser outside tests.
    */
   devIndex?: boolean;
+  /** Sprint 3: org policy "block export while red lines remain". Default false (`?mockBlockExport=1` in dev). */
+  blockExportOnRed?: boolean;
+  /** Sprint 3: run a BOQ build at startup (tests / screenshots). Default false → empty state "בנה כתב כמויות". */
+  boqPrebuilt?: boolean;
+  /** Sprint 3: simulated build / import tick (ms). Defaults to jobTickMs. */
+  boqTickMs?: number;
+  /** Sprint 3 (dev): ignore Worker-BOQ's local lines, always aggregate with the mock engine. */
+  boqEngineOnly?: boolean;
 }
 
 export const DEMO_ORG_ID = "org-demo";
@@ -149,8 +158,20 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       })
       .catch(() => {
         /* no dev server / no index → keep the fixture */
-      });
+      })
+      .finally(() => boq.startDevPolling());
   }
+  const boq = createBoqMock({
+    rows: (projectId) => sheets.get(projectId) ?? [],
+    detections: (row) => understanding.detections(row),
+    emit: () => emit(),
+    role: () => orgs[0]?.role ?? "viewer",
+    tickMs: opts.boqTickMs ?? jobTick,
+    blockExportOnRed: opts.blockExportOnRed ?? false,
+    devBase: useDevIndex ? DEV_ARTIFACTS_BASE : null,
+    engineOnly: opts.boqEngineOnly ?? false,
+  });
+  if (opts.boqPrebuilt && sheets.has("p-noah")) queueMicrotask(() => boq.buildBoq("p-noah"));
   const jobs: Job[] = [];
   const tokens = new Map<string, { projectId: string; filename: string; kind: SheetSet["fileKind"]; uploaded: boolean }>();
   const uploadedPaths = new Set<string>();
@@ -246,6 +267,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         set.status = ok ? "ready" : "failed";
         const p = projects.get(set.projectId);
         if (p?.stats) p.stats.sheets += rows.filter((r) => r.version?.status === "ready").length;
+        if (ok) boq.markStale(set.projectId);
       }
       emit();
     }, jobTick);
@@ -260,7 +282,12 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
   return {
     emit,
     api: {
-      getMe: () => delay({ uid: "mock-user", mfa: false, orgs: structuredClone(orgs) }),
+      getMe: () =>
+        delay({
+          uid: "mock-user",
+          mfa: false,
+          orgs: orgs.map((o) => ({ ...o, settings: { blockExportOnRed: opts.blockExportOnRed ?? false } })),
+        }),
       listProjects: (orgId) =>
         delay(
           [...projects.values()]
@@ -381,7 +408,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
           confirmedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
-        emit();
+        boq.markStale(projectId);
         return delay(structuredClone(sheet));
       },
       saveSheetRegions: async (projectId, sheetId, regions) => {
@@ -390,7 +417,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         if (!version) throw new ApiError(409, "version_not_ready", "No current version");
         validateRegions(regions);
         version.regions = structuredClone(regions);
-        emit();
+        boq.markStale(projectId);
         return delay({ sheetId, versionId: version.id, regions: structuredClone(regions) });
       },
       getTilesManifest: async (projectId, sheetId, versionId, q) => {
@@ -431,7 +458,9 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         mustGet(projectId);
         const row = findRow(projectId, sheetId);
         if (row.version?.id !== versionId || row.version.status !== "ready") throw new ApiError(409, "version_not_ready", "Version is not ready");
-        return delay(await understanding.getOverlay(row));
+        const manifest = await understanding.getOverlay(row);
+        const links = boq.linksUrl(row);
+        return delay({ ...manifest, links: links ? { url: links } : null });
       },
       listLegendEntries: async (projectId, q = {}) => {
         mustGet(projectId);
@@ -441,13 +470,43 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       patchLegendEntry: async (projectId, entryId, req) => {
         mustGet(projectId);
         const res = await understanding.patchLegendEntry(entryId, req);
+        boq.markStale(projectId);
         const { thumbUrl: _t, ...entry } = res.entry;
         return delay({ entry, mapping: res.mapping });
       },
       resolveUnknownCluster: async (projectId, clusterId, req) => {
         mustGet(projectId);
-        return delay(await understanding.resolveUnknownCluster(sheets.get(projectId) ?? [], clusterId, req));
+        const res = await understanding.resolveUnknownCluster(sheets.get(projectId) ?? [], clusterId, req);
+        boq.markStale(projectId);
+        return delay(res);
       },
+
+      /* ---------- Sprint 3: BOQ ---------- */
+      buildBoq: async (projectId) => {
+        mustGet(projectId);
+        return delay(boq.buildBoq(projectId));
+      },
+      getBoqBuild: async (projectId, buildId) => delay(boq.getBuild(projectId, buildId)),
+      listBoqLines: async (projectId) => {
+        mustGet(projectId);
+        return delay(boq.listLines(projectId));
+      },
+      patchBoqLine: async (projectId, lineId, req) => delay(boq.patchLine(projectId, lineId, req, "mock-user")),
+      getBoqLineEvidence: async (projectId, lineId) => delay(boq.evidence(projectId, lineId)),
+      getBoqSheetEvidence: async (projectId, sheetId, versionId) => delay(boq.sheetEvidence(projectId, sheetId, versionId)),
+      exportBoq: async (projectId, req) => delay(boq.exportBoq(projectId, req)),
+      listLibraryItems: async (_orgId, q = {}) => delay(boq.listItems(q)),
+      patchLibraryItem: async (_orgId, itemId, req) => delay(boq.patchItem(itemId, req)),
+      createLibraryImport: async (orgId, req) => {
+        if (req.sizeBytes > 20 * 1024 * 1024) throw new ApiError(413, "file_too_large", "max 20MB");
+        return delay(boq.createImport(orgId, req.filename));
+      },
+      startLibraryImport: async (_orgId, importId, uploadToken) => delay(boq.startImport(importId, uploadToken)),
+      getLibraryImport: async (_orgId, importId) => delay(boq.getImport(importId)),
+      listBoqTemplates: async () => delay(boq.templates()),
+      setDefaultBoqTemplate: async (_orgId, templateId) => delay(boq.setDefault(templateId)),
+      listBoqRules: async () => delay(boq.rules()),
+      patchBoqRule: async (_orgId, ruleId, req) => delay(boq.patchRule(ruleId, req.enabled, [...projects.keys()])),
     },
 
     uploads: {
@@ -518,6 +577,8 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
               .map((j) => ({ ...j })),
           ),
         ),
+      boqState: (_orgId, projectId, onData) => listen(() => onData(boq.state(projectId))),
+      boqBuild: (_orgId, projectId, buildId, onData) => listen(() => onData(boq.build(projectId, buildId))),
       sheetSets: (_orgId, projectId, onData) =>
         listen(() => onData((sheetSets.get(projectId) ?? []).map((s) => ({ ...s })))),
       sheets: (_orgId, projectId, onData) =>

@@ -1,0 +1,290 @@
+{
+  "$ref": "#/definitions/LinksArtifact",
+  "definitions": {
+    "LinksArtifact": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "kamutan.links/1"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^lk_[A-Za-z0-9_-]+$"
+              },
+              "floor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "fan": {
+                "type": "boolean"
+              },
+              "inferredSwitches": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "arcIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "maxItems": 256
+              },
+              "switchIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "maxItems": 16
+              },
+              "pointIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "maxItems": 64
+              },
+              "luminaireIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "maxItems": 256
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "two_way",
+                  "shared",
+                  "sensor",
+                  "add_to_existing"
+                ]
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "green",
+                  "yellow",
+                  "red"
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "maxItems": 32
+              }
+            },
+            "required": [
+              "id",
+              "switchIds",
+              "pointIds",
+              "luminaireIds",
+              "kind",
+              "confidence",
+              "level",
+              "reasons"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 5000
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^pt_[A-Za-z0-9_-]+$"
+              },
+              "luminaireIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "maxItems": 256
+              },
+              "centerMm": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "additionalProperties": false
+              },
+              "lifecycle": {
+                "type": "string",
+                "enum": [
+                  "existing",
+                  "new"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "luminaireIds",
+              "centerMm",
+              "lifecycle"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 5000
+        },
+        "arcs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^a_[A-Za-z0-9_-]+$"
+              },
+              "polylineMm": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 2000
+              },
+              "ends": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "ambiguous": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "inferredSwitch": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "polylineMm",
+              "ends",
+              "ambiguous",
+              "inferredSwitch"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 5000
+        },
+        "unlinkedLuminaireIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 5000
+        }
+      },
+      "required": [
+        "schema",
+        "groups"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/LinksArtifact.json"
+}

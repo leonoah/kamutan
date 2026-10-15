@@ -541,6 +541,14 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
       extensions: [DASH_EXT],
     };
 
+    // Switch↔luminaire arcs: dashed as drawn, dotted where the system completed a broken arc.
+    const pathDashProps = {
+      getDashArray: (f: PathFeature) => (f.dash === "dashed" ? [7, 4] : f.dash === "dotted" ? [1.5, 3] : [0, 0]),
+      dashJustified: false,
+      dashGapPickable: false,
+      extensions: [DASH_EXT],
+    };
+
     // Passive geometry (floor regions, evidence) — under the pickable layers, never picked.
     if (split.passivePolys.length)
       L.push(
@@ -564,10 +572,13 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           id: "passive-paths",
           data: split.passivePaths,
           getPath: (f) => f.path.map(mm),
-          getColor: (f) => withAlpha(color(f, DEFAULT_PATH), 200),
+          getColor: (f) => withAlpha(color(f, DEFAULT_PATH), f.dimmed ? 90 : (color(f, DEFAULT_PATH)[3] ?? 200)),
           widthUnits: "pixels",
           getWidth: (f) => f.widthPx ?? 1.5,
+          capRounded: true,
+          jointRounded: true,
           pickable: false,
+          ...pathDashProps,
         }),
       );
 
@@ -608,6 +619,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           widthUnits: "pixels",
           widthMinPixels: 1,
           getWidth: (f) => (isSel(f.id) ? 3 : (f.widthPx ?? 1.5)),
+          ...pathDashProps,
           updateTriggers: { getColor: trig, getWidth: trig },
         }),
       );

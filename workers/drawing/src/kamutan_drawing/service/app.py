@@ -1,8 +1,12 @@
 """Cloud Run HTTP entrypoint for Pub/Sub push (topic ``ingest``).
 
 POST /pubsub/ingest  body = Pub/Sub push envelope:
-    {"message": {"data": "<base64 JSON IngestSheetVersionJob>", "messageId": "...", "attributes": {...}},
+    {"message": {"data": "<base64 JSON job>", "messageId": "...", "attributes": {...}},
      "subscription": "projects/.../subscriptions/..."}
+
+The job is routed on its ``type``: ``boq.build`` → :func:`kamutan_drawing.boq.build.run_boq_build`,
+``library.import`` → :func:`kamutan_drawing.library_import.importer.run_library_import`, anything else
+(``ingest.sheet_version``) → :func:`process_sheet_version` exactly as before.
 
 Response semantics (Pub/Sub retries on any non-2xx):
   * 204 - processed (or an idempotent redelivery of a processed job)
@@ -19,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import functools
 import json
 import logging
 import os
@@ -28,7 +33,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
+from ..boq.build import run_boq_build
+from ..boq.contracts import BOQ_BUILD_TYPE, LIBRARY_IMPORT_TYPE, BoqBuildJob, LibraryImportJob
 from ..errors import IngestError
+from ..library_import.importer import run_library_import
 from ..stores.base import BlobStore, DocStore
 from .contracts import IngestSheetVersionJob
 from .pipeline import Options, process_sheet_version
@@ -67,8 +75,11 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
         except (KeyError, TypeError, ValueError, binascii.Error) as e:
             log.warning("rejecting malformed push envelope: %s", type(e).__name__)
             return JSONResponse({"status": "rejected", "reason": "bad_envelope"}, status_code=200)
+        jtype = payload.get("type") if isinstance(payload, dict) else None
+        model: Any
+        model = {BOQ_BUILD_TYPE: BoqBuildJob, LIBRARY_IMPORT_TYPE: LibraryImportJob}.get(str(jtype), IngestSheetVersionJob)
         try:
-            job = IngestSheetVersionJob.model_validate(payload)
+            job = model.model_validate(payload)
         except ValidationError as e:
             log.warning("rejecting invalid job payload: %d errors", len(e.errors()))
             return JSONResponse({"status": "rejected", "reason": "invalid_payload", "errors": len(e.errors())}, status_code=200)
@@ -76,7 +87,14 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
             # CPU-bound and long: run outside the event loop
             from starlette.concurrency import run_in_threadpool
 
-            await run_in_threadpool(process_sheet_version, job, blobs, docs, opts)
+            if isinstance(job, BoqBuildJob):
+                await run_in_threadpool(run_boq_build, job, blobs, docs)
+            elif isinstance(job, LibraryImportJob):
+                await run_in_threadpool(
+                    functools.partial(run_library_import, limits=opts.limits, workdir_root=opts.workdir_root), job, blobs, docs
+                )
+            else:
+                await run_in_threadpool(process_sheet_version, job, blobs, docs, opts)
         except IngestError as e:
             if e.retryable:
                 return JSONResponse({"status": "error", "code": e.code}, status_code=500)

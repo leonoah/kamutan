@@ -79,6 +79,12 @@ class InMemoryDocStore:
             self.docs[path] = deep_merge(old, new) if (merge and old is not None) else new
             self.history.append((path, copy.deepcopy(new)))
 
+    def delete(self, path: str) -> None:
+        """Delete one document (Sprint 3: obsolete draft BOQ lines). Missing → no-op."""
+        with self._lock:
+            self.docs.pop(check_path(path), None)
+            self.history.append((path, {"__deleted__": True}))
+
     def list_docs(self, collection: str, limit: int = 2000) -> list[tuple[str, dict[str, Any]]]:
         """(doc id, doc) of the direct children of ``collection`` (Sprint 2: legend entries, symbol mappings)."""
         pre = check_path(collection) + "/"
