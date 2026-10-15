@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -38,7 +38,8 @@ def wilson_upper(k: int, n: int, z: float = Z95) -> float | None:
 def min_n_for_lower_bound(target: float, errors: int = 0, z: float = Z95, n_max: int = 10_000_000) -> int | None:
     """Smallest n such that wilson_lower(n - errors, n) >= target (monotone in n for fixed errors)."""
     lo = max(errors, 1)
-    if wilson_lower(lo - errors, lo, z) is not None and wilson_lower(lo - errors, lo, z) >= target:
+    lb = wilson_lower(lo - errors, lo, z)
+    if lb is not None and lb >= target:
         return lo
     hi = lo
     while hi <= n_max and wilson_lower(hi - errors, hi, z) < target:  # type: ignore[operator]
@@ -54,7 +55,7 @@ def min_n_for_lower_bound(target: float, errors: int = 0, z: float = Z95, n_max:
     return lo
 
 
-def equal_mass_bins(scores: Sequence[float], n_bins: int = 10) -> list[np.ndarray]:
+def equal_mass_bins(scores: Sequence[float] | np.ndarray, n_bins: int = 10) -> list[np.ndarray]:
     """Split indices (sorted by score) into n_bins groups of (almost) equal size."""
     idx = np.argsort(np.asarray(scores, dtype=float), kind="stable")
     k = min(n_bins, len(idx))
@@ -79,8 +80,7 @@ def reliability(scores: Sequence[float], correct: Sequence[bool], n_bins: int = 
         gap = abs(acc - conf)
         ece += len(b) / n * gap
         mce = max(mce, gap)
-        bins.append({"n": int(len(b)), "conf": conf, "acc": acc, "score_min": float(s[b].min()),
-                     "score_max": float(s[b].max())})
+        bins.append({"n": len(b), "conf": conf, "acc": acc, "score_min": float(s[b].min()), "score_max": float(s[b].max())})
     return {"n": n, "bins": bins, "ece": float(ece), "mce": float(mce), "brier": float(np.mean((s - c) ** 2))}
 
 

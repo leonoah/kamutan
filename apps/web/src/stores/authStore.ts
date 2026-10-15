@@ -9,6 +9,7 @@ interface AuthState {
   setSession: (s: AuthSession | null) => void;
 }
 
+/** Driven exclusively by AuthService.onChange (Firebase onAuthStateChanged). */
 export const useAuthStore = create<AuthState>((set) => ({
   status: "loading",
   session: null,

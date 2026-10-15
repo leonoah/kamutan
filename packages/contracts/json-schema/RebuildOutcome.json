@@ -1,0 +1,56 @@
+{
+  "$ref": "#/definitions/RebuildOutcome",
+  "definitions": {
+    "RebuildOutcome": {
+      "type": "object",
+      "properties": {
+        "stale": {
+          "type": "boolean"
+        },
+        "autoRebuild": {
+          "type": "string",
+          "enum": [
+            "scheduled",
+            "debounced",
+            "followup",
+            "off",
+            "failed"
+          ]
+        },
+        "buildId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notBefore": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "stale",
+        "autoRebuild",
+        "buildId",
+        "notBefore"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/RebuildOutcome.json"
+}

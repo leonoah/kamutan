@@ -1,0 +1,327 @@
+{
+  "$ref": "#/definitions/OverlayManifest",
+  "definitions": {
+    "OverlayManifest": {
+      "type": "object",
+      "properties": {
+        "sheetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "versionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "legend": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detections": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rooms": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "links": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fixtures": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "walls": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thumbs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uri"
+          },
+          "propertyNames": {
+            "pattern": "^(le|u)_[A-Za-z0-9_-]+$"
+          }
+        },
+        "stats": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "paths": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "segments": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "textLines": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "glyphs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "detections": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "green": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "yellow": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "red": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unknown": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "byClass": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "propertyNames": {
+                        "maxLength": 64
+                      }
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "green",
+                    "yellow",
+                    "red",
+                    "unknown",
+                    "byClass"
+                  ],
+                  "additionalProperties": false
+                },
+                "rooms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "legendEntries": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "links": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "green": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "yellow": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "red": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "arcs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "danglingEnds": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "inferredSwitches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unlinkedSwitches": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unlinkedLuminaires": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "byKind": {
+                      "type": "object",
+                      "properties": {
+                        "single": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "two_way": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "sensor": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "add_to_existing": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "groups"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "paths",
+                "segments",
+                "textLines",
+                "glyphs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "sheetId",
+        "versionId",
+        "legend",
+        "detections",
+        "rooms",
+        "thumbs",
+        "stats",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/OverlayManifest.json"
+}

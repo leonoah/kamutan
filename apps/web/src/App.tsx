@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router-dom";
-import { ApiContext, createApiClient } from "@/api/client";
-import type { ApiClient } from "@/api/types";
+import { BackendContext, createBackend } from "@/api/client";
+import type { Backend } from "@/api/types";
 import { Toaster } from "@/components/ui/toast";
 import { createRouter } from "@/routes/router";
 
@@ -12,24 +12,24 @@ export function makeQueryClient() {
   });
 }
 
-export function Providers({ api, queryClient, children }: { api: ApiClient; queryClient: QueryClient; children: ReactNode }) {
+export function Providers({ backend, queryClient, children }: { backend: Backend; queryClient: QueryClient; children: ReactNode }) {
   return (
-    <ApiContext.Provider value={api}>
+    <BackendContext.Provider value={backend}>
       <QueryClientProvider client={queryClient}>
         {children}
         <Toaster />
       </QueryClientProvider>
-    </ApiContext.Provider>
+    </BackendContext.Provider>
   );
 }
 
 export function App() {
-  const [api] = useState(createApiClient);
+  const [backend] = useState(createBackend);
   const [qc] = useState(makeQueryClient);
   const [router] = useState(createRouter);
   return (
-    <Providers api={api} queryClient={qc}>
-      <RouterProvider router={router} future={{ v7_startTransition: true }} />
+    <Providers backend={backend} queryClient={qc}>
+      <RouterProvider router={router} />
     </Providers>
   );
 }

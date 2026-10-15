@@ -1,0 +1,23 @@
+{
+  "$ref": "#/definitions/RoomType",
+  "definitions": {
+    "RoomType": {
+      "type": "string",
+      "enum": [
+        "bathroom",
+        "wc",
+        "kitchen",
+        "bedroom",
+        "living",
+        "corridor",
+        "balcony",
+        "courtyard",
+        "storage",
+        "stairs",
+        "other"
+      ]
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/RoomType.json"
+}

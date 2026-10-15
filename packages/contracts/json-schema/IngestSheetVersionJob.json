@@ -6,23 +6,70 @@
       "properties": {
         "schemaVersion": {
           "type": "number",
-          "const": 1
+          "const": 3
         },
-        "sheetVersionId": {
+        "type": {
           "type": "string",
-          "format": "uuid"
+          "const": "ingest.sheet_version"
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "orgId": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "projectId": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sheetSetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sheetId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pageIndex": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "versionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "storagePath": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\/upload\\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          "pattern": "^orgs\\/([A-Za-z0-9_-]{1,128})\\/projects\\/([A-Za-z0-9_-]{1,128})\\/uploads\\/([A-Za-z0-9_-]{1,128})\\/source\\.(pdf|dwg|dxf|png)$"
         },
         "sha256": {
           "type": "string",
@@ -51,9 +98,14 @@
       },
       "required": [
         "schemaVersion",
-        "sheetVersionId",
+        "type",
+        "jobId",
         "orgId",
         "projectId",
+        "sheetSetId",
+        "sheetId",
+        "pageIndex",
+        "versionId",
         "storagePath",
         "sha256",
         "fileKind",

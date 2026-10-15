@@ -1,19 +1,15 @@
-import { applicationDefault, getApps, initializeApp, type App } from 'firebase-admin/app';
+import { getApp, getApps, initializeApp, type App } from 'firebase-admin/app';
 import type { AppConfig } from '../config/config';
 
+const APP_NAME = 'kamutan-api';
+
 /**
- * Single Firebase Admin app shared by Firestore and Storage.
- * Credentials come from Application Default Credentials: set
- * GOOGLE_APPLICATION_CREDENTIALS to a service-account key file locally, or run on
- * GCP with an attached service account. Set FIRESTORE_EMULATOR_HOST to use the
- * Firestore emulator (no credentials needed).
+ * Single firebase-admin app. Credentials come from Application Default
+ * Credentials (Cloud Functions runtime SA) or GOOGLE_APPLICATION_CREDENTIALS
+ * locally — never from code or config files. Emulators are honoured through the
+ * standard *_EMULATOR_HOST variables.
  */
-export function getFirebaseApp(cfg: AppConfig): App {
-  const existing = getApps()[0];
-  if (existing) return existing;
-  return initializeApp({
-    projectId: cfg.FIREBASE_PROJECT_ID,
-    storageBucket: cfg.STORAGE_BUCKET,
-    credential: process.env.FIRESTORE_EMULATOR_HOST ? undefined : applicationDefault(),
-  });
+export function firebaseApp(cfg: Pick<AppConfig, 'GOOGLE_CLOUD_PROJECT' | 'FIREBASE_STORAGE_BUCKET'>): App {
+  if (getApps().some((a) => a.name === APP_NAME)) return getApp(APP_NAME);
+  return initializeApp({ projectId: cfg.GOOGLE_CLOUD_PROJECT, storageBucket: cfg.FIREBASE_STORAGE_BUCKET }, APP_NAME);
 }

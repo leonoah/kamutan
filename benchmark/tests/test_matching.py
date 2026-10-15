@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from conftest import make_box, make_point
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from conftest import make_box, make_point
 from kbench.matching import MatchParams, iou_bbox, match, pair_quality
 
 

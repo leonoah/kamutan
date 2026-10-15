@@ -1,6 +1,6 @@
 [project]
 name = "kamutan-drawing"
-version = "0.1.0"
+version = "0.2.0"
 description = "Kamutan drawing ingest & OCR workers"
 readme = "README.md"
 authors = [
@@ -8,10 +8,30 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "ezdxf>=1.4.4",
+    "fastapi>=0.143.0",
+    "httpx>=0.28.1",
+    "jsonschema>=4.26.0",
+    "msgpack>=1.2.3",
     "numpy>=2.5.4",
+    "openpyxl>=3.1.5",
     "pillow>=12.3.0",
+    "pydantic>=2.14.1",
     "pypdfium2>=5.14.0",
     "scipy>=1.18.1",
+    "shapely>=2.2.0",
+    "xlrd>=2.0.2",
+]
+
+[project.optional-dependencies]
+serve = [
+    "uvicorn>=0.54.0",
+]
+gcp = [
+    "google-auth>=2.61.0",
+    "google-cloud-firestore>=2.34.1",
+    "google-cloud-storage>=3.17.0",
+    "requests>=2.34.2",
 ]
 
 [build-system]
@@ -20,7 +40,48 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "ezdxf>=1.4.4",
+    "httpx>=0.28.1",
+    "jsonschema>=4.26.0",
+    "mypy>=2.4.0",
     "pytest>=9.1.1",
     "reportlab>=5.0.1",
+    "ruff>=0.17.0",
+    "scipy-stubs>=1.18.1.1",
+    "types-jsonschema>=4.26.0.20261006",
+    "types-openpyxl>=3.1.5.20260827",
+    "types-shapely>=2.1.0.20260728",
 ]
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+"spikes/**" = ["SIM115"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+
+[[tool.mypy.overrides]]
+# google-cloud-storage ships no py.typed marker (firestore / api_core / auth are typed and checked;
+# CI installs --all-extras so they are type-checked against the real packages).
+module = ["google.cloud.storage", "google.cloud.storage.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# msgpack ships no py.typed marker
+module = ["msgpack", "msgpack.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pypdfium2 ships no type information (no py.typed / stubs); scipy is covered by scipy-stubs.
+module = ["pypdfium2", "pypdfium2.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# xlrd ships no type information (Sprint 3 library import; used only inside the sandbox).
+module = ["xlrd", "xlrd.*"]
+ignore_missing_imports = true

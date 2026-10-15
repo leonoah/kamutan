@@ -32,7 +32,7 @@ class Thresholds:
     core_classes: list[str] = field(default_factory=list)
 
     @classmethod
-    def load(cls, path: str | Path | None) -> "Thresholds":
+    def load(cls, path: str | Path | None) -> Thresholds:
         t = cls()
         if path:
             with open(path, encoding="utf-8") as f:
@@ -77,8 +77,11 @@ def compare(current: dict[str, Any], baseline: dict[str, Any], th: Thresholds) -
         return 2, [Check("gt_version", "block", gv_b, gv_c, "comparison only allowed on the same gt_version")]
     checks: list[Check] = []
 
-    checks.append(_drop_check("micro_f1", _get(baseline, "detection", "micro", "f1"),
-                              _get(current, "detection", "micro", "f1"), th.micro_f1_drop))
+    checks.append(
+        _drop_check(
+            "micro_f1", _get(baseline, "detection", "micro", "f1"), _get(current, "detection", "micro", "f1"), th.micro_f1_drop
+        )
+    )
     for c in th.core_classes:
         b = _get(baseline, "detection", "per_class", c, "f1")
         cur = _get(current, "detection", "per_class", c, "f1")
@@ -87,8 +90,14 @@ def compare(current: dict[str, Any], baseline: dict[str, Any], th: Thresholds) -
         if cur is None:
             cur = 0.0  # class disappeared from current run
         checks.append(_drop_check(f"f1[{c}]", b, cur, th.core_class_f1_drop))
-    checks.append(_drop_check("items_correct", _get(baseline, "items_correct", "rate"),
-                              _get(current, "items_correct", "rate"), th.items_correct_drop))
+    checks.append(
+        _drop_check(
+            "items_correct",
+            _get(baseline, "items_correct", "rate"),
+            _get(current, "items_correct", "rate"),
+            th.items_correct_drop,
+        )
+    )
 
     pg_b = _get(baseline, "calibration", "green", "p_green")
     pg_c = _get(current, "calibration", "green", "p_green")
@@ -97,23 +106,44 @@ def compare(current: dict[str, Any], baseline: dict[str, Any], th: Thresholds) -
     else:
         drop = pg_b - pg_c
         block = (drop > 1e-12 and pg_c < th.p_green_floor) or drop > th.p_green_drop + 1e-12
-        checks.append(Check("p_green", "block" if block else "pass", pg_b, pg_c,
-                            f"drop {drop:+.4f}; blocks on any drop below {th.p_green_floor} or drop > {th.p_green_drop}"))
+        checks.append(
+            Check(
+                "p_green",
+                "block" if block else "pass",
+                pg_b,
+                pg_c,
+                f"drop {drop:+.4f}; blocks on any drop below {th.p_green_floor} or drop > {th.p_green_drop}",
+            )
+        )
 
     e_b, e_c = _get(baseline, "calibration", "ece"), _get(current, "calibration", "ece")
     if e_b is None or e_c is None:
         checks.append(Check("ece", "skip", e_b, e_c, "metric missing"))
     else:
         inc = e_c - e_b
-        checks.append(Check("ece", "block" if inc > th.ece_increase + 1e-12 else "pass", e_b, e_c,
-                            f"increase {inc:+.4f} (limit {th.ece_increase})"))
+        checks.append(
+            Check(
+                "ece",
+                "block" if inc > th.ece_increase + 1e-12 else "pass",
+                e_b,
+                e_c,
+                f"increase {inc:+.4f} (limit {th.ece_increase})",
+            )
+        )
 
     # smoke lines: any confirmed line that was correct in baseline and is wrong now
     base_ok = {(r["project_id"], r["code"]) for r in _get(baseline, "boq", "lines") or [] if r.get("correct")}
     cur_lines = {(r["project_id"], r["code"]): r for r in _get(current, "boq", "lines") or []}
     broken = sorted(f"{p}:{c}" for (p, c) in base_ok if not cur_lines.get((p, c), {}).get("correct", False))
-    checks.append(Check("smoke_lines", "block" if broken else "pass", len(base_ok), len(base_ok) - len(broken),
-                        ("newly wrong: " + ", ".join(broken)) if broken else ""))
+    checks.append(
+        Check(
+            "smoke_lines",
+            "block" if broken else "pass",
+            len(base_ok),
+            len(base_ok) - len(broken),
+            ("newly wrong: " + ", ".join(broken)) if broken else "",
+        )
+    )
 
     b_b, b_c = _get(baseline, "review_burden", "burden"), _get(current, "review_burden", "burden")
     if b_b is None or b_c is None:
@@ -122,8 +152,15 @@ def compare(current: dict[str, Any], baseline: dict[str, Any], th: Thresholds) -
         inc = b_c - b_b
         if inc > th.burden_increase + 1e-12:
             green_up = pg_b is not None and pg_c is not None and pg_c > pg_b
-            checks.append(Check("burden", "warn" if green_up else "block", b_b, b_c,
-                                f"increase {inc:+.4f}; P_green {'rose' if green_up else 'did not rise'}"))
+            checks.append(
+                Check(
+                    "burden",
+                    "warn" if green_up else "block",
+                    b_b,
+                    b_c,
+                    f"increase {inc:+.4f}; P_green {'rose' if green_up else 'did not rise'}",
+                )
+            )
         else:
             checks.append(Check("burden", "pass", b_b, b_c, f"increase {inc:+.4f}"))
 
@@ -131,28 +168,44 @@ def compare(current: dict[str, Any], baseline: dict[str, Any], th: Thresholds) -
     t_c = _get(current, "run", "timing", "p95_sheet_seconds")
     if t_b and t_c is not None:
         rel = (t_c - t_b) / t_b
-        checks.append(Check("p95_sheet_time", "block" if rel > th.p95_time_increase_rel + 1e-12 else "pass",
-                            t_b, t_c, f"relative {rel:+.1%}"))
+        checks.append(
+            Check(
+                "p95_sheet_time", "block" if rel > th.p95_time_increase_rel + 1e-12 else "pass", t_b, t_c, f"relative {rel:+.1%}"
+            )
+        )
     failures = _get(current, "run", "failures") or []
-    checks.append(Check("run_failures", "block" if failures else "pass", None, len(failures),
-                        "; ".join(map(str, failures))))
+    checks.append(Check("run_failures", "block" if failures else "pass", None, len(failures), "; ".join(map(str, failures))))
     if current.get("ceiling_violations"):
-        checks.append(Check("ceiling_rules", "block", None, len(current["ceiling_violations"]),
-                            "hard failure: raster green or scale-conflict area not red"))
+        checks.append(
+            Check(
+                "ceiling_rules",
+                "block",
+                None,
+                len(current["ceiling_violations"]),
+                "hard failure: raster green or scale-conflict area not red",
+            )
+        )
 
     code = 1 if any(c.status == "block" for c in checks) else 0
     return code, checks
 
 
 def checks_to_json(code: int, checks: list[Check]) -> dict[str, Any]:
-    return {"exit_code": code, "result": {0: "pass", 1: "regression", 2: "not_comparable"}[code],
-            "checks": [asdict(c) for c in checks]}
+    return {
+        "exit_code": code,
+        "result": {0: "pass", 1: "regression", 2: "not_comparable"}[code],
+        "checks": [asdict(c) for c in checks],
+    }
 
 
 def checks_to_markdown(code: int, checks: list[Check]) -> str:
     head = {0: "PASS", 1: "BLOCKED — regression", 2: "NOT COMPARABLE"}[code]
-    out = [f"# kbench regression gate: {head}", "", "| check | status | baseline | current | detail |",
-           "| --- | --- | --- | --- | --- |"]
+    out = [
+        f"# kbench regression gate: {head}",
+        "",
+        "| check | status | baseline | current | detail |",
+        "| --- | --- | --- | --- | --- |",
+    ]
     for c in checks:
         out.append(f"| {c.name} | {c.status} | {_fmt(c.baseline)} | {_fmt(c.current)} | {c.detail} |")
     return "\n".join(out) + "\n"

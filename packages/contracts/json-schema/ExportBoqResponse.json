@@ -1,0 +1,89 @@
+{
+  "$ref": "#/definitions/ExportBoqResponse",
+  "definitions": {
+    "ExportBoqResponse": {
+      "type": "object",
+      "properties": {
+        "exportId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "lines": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "green": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "yellow": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "red": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "draft": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reviewed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "approved": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "overridden": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "lines",
+            "green",
+            "yellow",
+            "red",
+            "draft",
+            "reviewed",
+            "approved",
+            "overridden"
+          ],
+          "additionalProperties": false
+        },
+        "hasWarnings": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "exportId",
+        "url",
+        "expiresAt",
+        "fileName",
+        "counts",
+        "hasWarnings"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ExportBoqResponse.json"
+}

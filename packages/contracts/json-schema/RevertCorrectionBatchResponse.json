@@ -1,0 +1,187 @@
+{
+  "$ref": "#/definitions/RevertCorrectionBatchResponse",
+  "definitions": {
+    "RevertCorrectionBatchResponse": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "kinds": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "propertyNames": {
+                "enum": [
+                  "add",
+                  "remove",
+                  "reclassify",
+                  "move",
+                  "link",
+                  "unlink",
+                  "measure",
+                  "count",
+                  "accept",
+                  "reject"
+                ]
+              }
+            },
+            "sheetIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "maxItems": 500
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "cluster",
+                "lasso",
+                "similar",
+                "selection",
+                "other"
+              ]
+            },
+            "similarSearchId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "by": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "revertedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revertedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "count",
+            "kinds",
+            "sheetIds",
+            "source",
+            "similarSearchId",
+            "by",
+            "at",
+            "revertedAt"
+          ],
+          "additionalProperties": false
+        },
+        "reverted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rebuild": {
+          "type": "object",
+          "properties": {
+            "stale": {
+              "type": "boolean"
+            },
+            "autoRebuild": {
+              "type": "string",
+              "enum": [
+                "scheduled",
+                "debounced",
+                "followup",
+                "off",
+                "failed"
+              ]
+            },
+            "buildId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "notBefore": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "stale",
+            "autoRebuild",
+            "buildId",
+            "notBefore"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "batch",
+        "reverted",
+        "rebuild"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/RevertCorrectionBatchResponse.json"
+}

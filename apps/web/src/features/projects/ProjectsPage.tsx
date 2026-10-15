@@ -2,7 +2,7 @@ import { useRef, useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, FolderPlus, Plus } from "lucide-react";
-import type { Project, ProjectStatus } from "@/api/types";
+import type { Job, Project } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
@@ -12,19 +12,24 @@ import { Ltr } from "@/components/Ltr";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CreateProjectDialog } from "./CreateProjectDialog";
-import { useProjects } from "./queries";
+import { activeProgress, projectPhase, useProjects, verifiedPct, type ProjectPhase } from "./queries";
+import { useOrgId } from "@/features/org/useCurrentOrg";
+import { useLiveJobs } from "@/features/realtime/hooks";
 
-const statusDot: Record<ProjectStatus, string> = {
+const statusDot: Record<ProjectPhase, string> = {
   draft: "bg-state-existing",
-  uploading: "bg-primary",
   processing: "bg-primary",
   review: "bg-conf-mid",
-  approved: "bg-conf-high",
+  ready: "bg-conf-high",
+  archived: "bg-state-existing",
 };
 
 export function ProjectsPage() {
   const { t } = useTranslation();
-  const { data, isLoading, isError, refetch } = useProjects();
+  const orgId = useOrgId();
+  const { data, isLoading, isError, refetch } = useProjects(orgId);
+  // One org-wide listener: projects with running ingest jobs show live progress.
+  const jobs = useLiveJobs(orgId).data;
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<File[] | undefined>();
 
@@ -60,7 +65,7 @@ export function ProjectsPage() {
       ) : !data || data.length === 0 ? (
         <EmptyDrop onFiles={(files) => openCreate(files)} onCreate={() => openCreate()} />
       ) : (
-        <ProjectsTable projects={data} />
+        <ProjectsTable projects={data} jobs={jobs ?? []} />
       )}
 
       <CreateProjectDialog open={open} onOpenChange={setOpen} pendingFiles={pending} />
@@ -68,7 +73,7 @@ export function ProjectsPage() {
   );
 }
 
-function ProjectsTable({ projects }: { projects: Project[] }) {
+function ProjectsTable({ projects, jobs }: { projects: Project[]; jobs: Job[] }) {
   const { t } = useTranslation();
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-surface">
@@ -85,60 +90,67 @@ function ProjectsTable({ projects }: { projects: Project[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {projects.map((p) => (
-            <TableRow key={p.id} className="h-16 hover:bg-surface-sunken/60">
-              <TableCell className="ps-5">
-                <Link to={`/projects/${p.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
-                  {p.name}
-                </Link>
-                {p.address ? <p className="mt-0.5 text-meta text-muted-foreground">{p.address}</p> : null}
-              </TableCell>
-              <TableCell>
-                <span className="inline-flex items-center gap-2 text-dense text-foreground">
-                  <span aria-hidden className={cn("size-2 rounded-full", statusDot[p.status])} />
-                  {t(`projects.status.${p.status}`)}
-                </span>
-              </TableCell>
-              <TableCell>
-                {p.sheetsCount > 0 ? (
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between gap-2 text-dense">
-                      <Ltr className="font-medium text-foreground">{`${p.verifiedPct}%`}</Ltr>
-                      {p.toReviewCount > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-meta text-muted-foreground">
-                          <ConfidenceShape level="low" className="size-2.5" />
-                          {t("projects.toReview", { count: p.toReviewCount })}
-                        </span>
-                      ) : null}
+          {projects.map((p) => {
+            const phase = projectPhase(p, jobs);
+            const pct = verifiedPct(p);
+            const live = activeProgress(p.id, jobs);
+            const sheets = p.stats?.sheets ?? 0;
+            const toReview = p.stats?.reviewOpen ?? 0;
+            return (
+              <TableRow key={p.id} className="h-16 hover:bg-surface-sunken/60">
+                <TableCell className="ps-5">
+                  <Link to={`/projects/${p.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
+                    {p.name}
+                  </Link>
+                  {p.address ? <p className="mt-0.5 text-meta text-muted-foreground">{p.address}</p> : null}
+                </TableCell>
+                <TableCell>
+                  <span className="inline-flex items-center gap-2 text-dense text-foreground">
+                    <span aria-hidden className={cn("size-2 rounded-full", statusDot[phase], phase === "processing" && "animate-pulse")} />
+                    {live !== null ? t("projects.processingPct", { pct: live }) : t(`projects.status.${phase}`)}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  {pct !== null ? (
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between gap-2 text-dense">
+                        <Ltr className="font-medium text-foreground">{`${pct}%`}</Ltr>
+                        {toReview > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-meta text-muted-foreground">
+                            <ConfidenceShape level="low" className="size-2.5" />
+                            {t("projects.toReview", { count: toReview })}
+                          </span>
+                        ) : null}
+                      </div>
+                      <Progress
+                        value={pct}
+                        aria-label={`${t("projects.columns.verified")}: ${pct}%`}
+                        indicatorClassName="bg-conf-high"
+                      />
                     </div>
-                    <Progress
-                      value={p.verifiedPct}
-                      aria-label={`${t("projects.columns.verified")}: ${p.verifiedPct}%`}
-                      indicatorClassName="bg-conf-high"
-                    />
-                  </div>
-                ) : (
-                  <span className="text-meta text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell className="text-end text-dense text-foreground">
-                <Ltr>{p.sheetsCount}</Ltr>
-              </TableCell>
-              <TableCell className="text-dense text-muted-foreground">
-                <Ltr>{formatDate(p.updatedAt)}</Ltr>
-              </TableCell>
-              <TableCell className="pe-5 text-end">
-                <Link
-                  to={p.status === "review" || p.status === "approved" ? `/projects/${p.id}/review` : `/projects/${p.id}`}
-                  className="inline-flex items-center gap-1 rounded text-dense font-medium text-primary hover:underline"
-                >
-                  {t(`projects.next.${p.status}`)}
-                  {/* "next" chevrons point left in RTL */}
-                  <ChevronLeft className="size-4 ltr:rotate-180" aria-hidden />
-                </Link>
-              </TableCell>
-            </TableRow>
-          ))}
+                  ) : (
+                    <span className="text-meta text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-end text-dense text-foreground">
+                  <Ltr>{sheets}</Ltr>
+                </TableCell>
+                <TableCell className="text-dense text-muted-foreground">
+                  <Ltr>{formatDate(p.createdAt)}</Ltr>
+                </TableCell>
+                <TableCell className="pe-5 text-end">
+                  <Link
+                    to={phase === "review" || phase === "ready" ? `/projects/${p.id}/review` : `/projects/${p.id}`}
+                    className="inline-flex items-center gap-1 rounded text-dense font-medium text-primary hover:underline"
+                  >
+                    {t(`projects.next.${phase}`)}
+                    {/* "next" chevrons point left in RTL */}
+                    <ChevronLeft className="size-4 ltr:rotate-180" aria-hidden />
+                  </Link>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>

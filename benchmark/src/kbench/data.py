@@ -47,8 +47,13 @@ def class_domain(cls: str, classes: dict[str, dict[str, Any]] | None = None) -> 
     classes = classes if classes is not None else load_classes()
     if cls in classes:
         return classes[cls]["domain"]
-    for prefix, dom in (("socket", "electrical"), ("switch", "lighting"), ("luminaire", "lighting"),
-                        ("fixture", "plumbing"), ("faucet", "plumbing")):
+    for prefix, dom in (
+        ("socket", "electrical"),
+        ("switch", "lighting"),
+        ("luminaire", "lighting"),
+        ("fixture", "plumbing"),
+        ("faucet", "plumbing"),
+    ):
         if cls.startswith(prefix):
             return dom
     return "other"
@@ -163,8 +168,9 @@ def sheet_from_geojson(obj: dict[str, Any], fallback_id: str = "") -> Sheet:
     for raw in obj.get("features", []):
         p = raw["properties"]
         g = raw["geometry"]
-        feats.append(Feature(id=str(p["id"]), sheet_id=sid, cls=p["class"], geom_type=g["type"],
-                             coords=g["coordinates"], props=p))
+        feats.append(
+            Feature(id=str(p["id"]), sheet_id=sid, cls=p["class"], geom_type=g["type"], coords=g["coordinates"], props=p)
+        )
     return Sheet(sheet_id=sid, meta=meta, features=feats)
 
 
@@ -172,7 +178,8 @@ def _check_codes(boq: dict[str, Any], path: Path) -> None:
     for key in ("lines", "change_orders"):
         for ln in boq.get(key, []):
             if not isinstance(ln.get("code"), str):
-                raise ValueError(f"{path}: line code {ln.get('code')!r} must be a string (TEXT), not a number")
+                # Malformed ground-truth *data* (not a caller bug): ValueError is the documented contract.
+                raise ValueError(f"{path}: line code {ln.get('code')!r} must be a string (TEXT), not a number")  # noqa: TRY004
 
 
 def load_project(root: str | Path) -> Project:

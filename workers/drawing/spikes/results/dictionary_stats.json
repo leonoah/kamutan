@@ -1,78 +1,78 @@
 {
- "n_lines": 3058,
- "n_lines_rot90": 172,
- "n_glyph_instances": 14026,
- "n_unique_shapes": 1635,
- "n_unique_seen_ge2": 733,
- "n_singletons": 902,
- "n_labelled_clusters": 1511,
- "n_distinct_labels": 104,
- "instances_covered_by_labelled": 0.9819,
+ "n_lines": 4849,
+ "n_lines_rot90": 161,
+ "n_glyph_instances": 15758,
+ "n_unique_shapes": 1710,
+ "n_unique_seen_ge2": 792,
+ "n_singletons": 918,
+ "n_labelled_clusters": 1637,
+ "n_distinct_labels": 98,
+ "instances_covered_by_labelled": 0.9875,
  "shapes_per_label_top": [
   [
    "0",
-   116
-  ],
-  [
-   "-",
-   85
+   108
   ],
   [
    "א",
-   80
+   106
   ],
   [
    "2",
-   66
+   84
   ],
   [
-   "ו",
-   52
+   "-",
+   71
   ],
   [
    "6",
-   51
+   59
   ],
   [
-   "5",
-   46
+   "7",
+   48
   ],
   [
-   ".",
-   44
+   "/",
+   47
   ],
   [
    "ל",
-   37
+   45
   ],
   [
-   "|",
-   37
+   "4",
+   43
+  ],
+  [
+   "8",
+   41
+  ],
+  [
+   "5",
+   40
   ],
   [
    "ה",
-   37
-  ],
-  [
-   "ר",
-   33
+   36
   ],
   [
    "ס",
-   32
+   34
   ],
   [
-   "כ",
-   31
+   ".",
+   33
   ],
   [
-   "י",
-   31
+   "9",
+   33
   ]
  ],
  "timing": {
-  "ocr_heb_s": 35.9,
-  "ocr_eng_s": 39.5,
-  "propagated": 101
+  "ocr_heb_s": 29.3,
+  "ocr_eng_s": 37.5,
+  "propagated": 104
  }
 }

@@ -1,0 +1,177 @@
+# Kamutan nightly — long parser fuzzing, kbench, golden ingest tests.
+#
+# Security notes (same rules as ci.yml, SEC-44..SEC-50):
+# - read-only token; no pull_request_target; every action pinned to a full commit SHA.
+# - Customer drawings are NEVER stored in the repo or uploaded as artifacts (SEC-54). Only the
+#   Hypothesis example database (synthetic, generated inputs) is cached/uploaded.
+# - Data-dependent jobs (kbench, golden) run only when the KAMUTAN_DATA_* secrets exist and skip
+#   cleanly otherwise (forks, before the owner sets up the encrypted dataset).
+#
+# Budget: 07_test_plan says 30 min nightly, 06_security says up to 4 h. Default is 30 min (GitHub
+# minutes on a private repo); raise it per run with workflow_dispatch `fuzz_budget_s` (max ~5 h).
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "17 1 * * *" # 01:17 UTC (04:17 Israel summer time)
+  workflow_dispatch:
+    inputs:
+      fuzz_budget_s:
+        description: "Hypothesis wall-clock budget in seconds (split across pdf/dxf/png)"
+        required: false
+        default: "1800"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Long parser fuzzing (SEC-16/17; 07_test_plan "Upload fuzzing ... nightly")
+  # ---------------------------------------------------------------------------
+  fuzz-long:
+    name: Fuzz (parser sandbox, long)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    defaults:
+      run:
+        working-directory: workers/drawing
+    env:
+      UV_LOCKED: "1"
+      HYPOTHESIS_VERSION: "6.168.5"
+      KAMUTAN_FUZZ: "1"
+      KAMUTAN_FUZZ_BUDGET_S: ${{ github.event.inputs.fuzz_budget_s || '1800' }}
+      KAMUTAN_FUZZ_DB: ${{ github.workspace }}/workers/drawing/.hypothesis-fuzz
+      KAMUTAN_FUZZ_TARGET: sandbox
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: workers/drawing/uv.lock
+      - name: Restore Hypothesis example database (replays past failures first)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: workers/drawing/.hypothesis-fuzz
+          key: hypothesis-fuzz-${{ github.run_id }}
+          restore-keys: hypothesis-fuzz-
+      - name: Install (uv sync --locked)
+        run: uv sync --locked --all-groups
+      - name: Validate the budget input
+        run: |
+          case "$KAMUTAN_FUZZ_BUDGET_S" in
+            ''|*[!0-9]*) echo "::error::fuzz_budget_s must be an integer"; exit 1 ;;
+          esac
+          if [ "$KAMUTAN_FUZZ_BUDGET_S" -gt 18000 ]; then echo "::error::fuzz_budget_s > 18000"; exit 1; fi
+      - name: Fuzz (corpus + generative)
+        run: |
+          uv run --locked --with "hypothesis==${HYPOTHESIS_VERSION}" \
+            pytest -m fuzz tests/fuzz -q -s -p no:cacheprovider --junitxml="$RUNNER_TEMP/fuzz.xml"
+      - name: Upload Hypothesis database on failure (synthetic inputs only)
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hypothesis-fuzz-db-${{ github.run_id }}
+          path: |
+            workers/drawing/.hypothesis-fuzz
+            ${{ runner.temp }}/fuzz.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Data-dependent: kbench + golden ingest tests (skip without the dataset secrets)
+  # ---------------------------------------------------------------------------
+  data:
+    name: kbench + golden (${{ matrix.suite }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [kbench, golden]
+    steps:
+      - name: Check benchmark data secrets
+        id: data
+        env:
+          DATA_URL: ${{ secrets.KAMUTAN_DATA_URL }}
+          DATA_KEY: ${{ secrets.KAMUTAN_DATA_KEY }}
+        run: |
+          if [ -n "$DATA_URL" ] && [ -n "$DATA_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::KAMUTAN_DATA_URL/KAMUTAN_DATA_KEY not configured — ${{ matrix.suite }} skipped."
+            echo "### ${{ matrix.suite }} skipped: data secrets not configured" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.data.outputs.available == 'true'
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        if: steps.data.outputs.available == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            benchmark/uv.lock
+            workers/drawing/uv.lock
+      - name: System packages (Tesseract heb+eng, age)
+        if: steps.data.outputs.available == 'true' && matrix.suite == 'golden'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-heb tesseract-ocr-eng age
+      - name: Fetch + decrypt benchmark dataset
+        if: steps.data.outputs.available == 'true'
+        env:
+          DATA_URL: ${{ secrets.KAMUTAN_DATA_URL }}
+          DATA_KEY: ${{ secrets.KAMUTAN_DATA_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          dest="$RUNNER_TEMP/kamutan-data"
+          mkdir -p "$dest"
+          command -v age >/dev/null || { sudo apt-get update -q && sudo apt-get install -y --no-install-recommends age; }
+          # Short-lived signed URL to an age-encrypted tarball in the private bucket (owner action, see infra/IAM.md §5).
+          curl -sSfL "$DATA_URL" -o "$RUNNER_TEMP/data.tar.age"
+          age -d -i <(printf '%s\n' "$DATA_KEY") "$RUNNER_TEMP/data.tar.age" | tar -x -C "$dest"
+          rm -f "$RUNNER_TEMP/data.tar.age"
+          echo "KAMUTAN_DATA_DIR=$dest" >> "$GITHUB_ENV"
+      - name: kbench
+        if: steps.data.outputs.available == 'true' && matrix.suite == 'kbench'
+        working-directory: benchmark
+        run: |
+          uv sync --locked
+          uv run kbench validate "$KAMUTAN_DATA_DIR/gt/noah"
+          # TODO(sprint-2): kbench eval/compare against the main baseline once detections exist.
+      - name: Ingest the sample set (worker CLI)
+        if: steps.data.outputs.available == 'true' && matrix.suite == 'golden'
+        working-directory: workers/drawing
+        run: |
+          set -euo pipefail
+          uv sync --locked
+          out="$RUNNER_TEMP/ingest-out"
+          mkdir -p "$out"
+          # One invocation for the whole set, so all sheets share one org glyph dictionary (as in production).
+          uv run python -m kamutan_drawing.cli ingest "$KAMUTAN_DATA_DIR"/sample-noah/sheet_*.pdf --out "$out"
+          echo "KAMUTAN_INGEST_OUT=$out" >> "$GITHUB_ENV"
+      - name: Golden comparison
+        if: steps.data.outputs.available == 'true' && matrix.suite == 'golden'
+        working-directory: benchmark
+        run: |
+          uv sync --locked
+          uv run python tests/golden/golden.py run \
+            --expected-dir "$KAMUTAN_DATA_DIR/gt/noah/golden" --outputs-root "$KAMUTAN_INGEST_OUT" \
+            --report "$RUNNER_TEMP/golden.md"
+      - name: Golden summary
+        if: always() && steps.data.outputs.available == 'true' && matrix.suite == 'golden'
+        run: |
+          # Report holds sheet ids, verdicts and numbers only (no drawing content).
+          [ -f "$RUNNER_TEMP/golden.md" ] && cat "$RUNNER_TEMP/golden.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Wipe dataset
+        if: always() && steps.data.outputs.available == 'true'
+        run: rm -rf "$RUNNER_TEMP/kamutan-data" "$RUNNER_TEMP/data.tar.age" "$RUNNER_TEMP/ingest-out"

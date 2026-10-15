@@ -1,0 +1,90 @@
+{
+ "tess_raster300": {
+  "legend_elec": {
+   "edits": 51,
+   "chars": 271,
+   "char_acc": 0.8118
+  },
+  "ALL": {
+   "edits": 378,
+   "chars": 2681,
+   "char_acc": 0.859
+  },
+  "legend_light": {
+   "edits": 153,
+   "chars": 772,
+   "char_acc": 0.8018
+  },
+  "titleblock": {
+   "edits": 174,
+   "chars": 1638,
+   "char_acc": 0.8938
+  }
+ },
+ "tess_raster400": {
+  "legend_elec": {
+   "edits": 35,
+   "chars": 271,
+   "char_acc": 0.8708
+  },
+  "ALL": {
+   "edits": 530,
+   "chars": 2681,
+   "char_acc": 0.8023
+  },
+  "legend_light": {
+   "edits": 181,
+   "chars": 772,
+   "char_acc": 0.7655
+  },
+  "titleblock": {
+   "edits": 314,
+   "chars": 1638,
+   "char_acc": 0.8083
+  }
+ },
+ "tess_vector": {
+  "legend_elec": {
+   "edits": 25,
+   "chars": 271,
+   "char_acc": 0.9077
+  },
+  "ALL": {
+   "edits": 442,
+   "chars": 2681,
+   "char_acc": 0.8351
+  },
+  "legend_light": {
+   "edits": 132,
+   "chars": 772,
+   "char_acc": 0.829
+  },
+  "titleblock": {
+   "edits": 285,
+   "chars": 1638,
+   "char_acc": 0.826
+  }
+ },
+ "glyph_dict": {
+  "legend_elec": {
+   "edits": 11,
+   "chars": 271,
+   "char_acc": 0.9594
+  },
+  "ALL": {
+   "edits": 38,
+   "chars": 2681,
+   "char_acc": 0.9858
+  },
+  "legend_light": {
+   "edits": 27,
+   "chars": 772,
+   "char_acc": 0.965
+  },
+  "titleblock": {
+   "edits": 0,
+   "chars": 1638,
+   "char_acc": 1.0
+  }
+ }
+}

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ctypes
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,9 @@ class VectorSheet:
     curves: np.ndarray  # (k,8) float32 p0,c1,c2,p3
     curve_path: np.ndarray  # (k,) int32
     stats: dict[str, Any] = field(default_factory=dict)
+    # --- optional (DXF): layer per path, index into ``layers`` (-1 = none) ---
+    path_layer: np.ndarray | None = None
+    layers: list[str] = field(default_factory=list)
 
     @property
     def n_paths(self) -> int:
@@ -238,7 +242,7 @@ def extract_page(page: pdfium.PdfPage, page_index: int = 0) -> VectorSheet:
                 curves.append(np.concatenate([cur, c1, c2, p3]).astype(np.float32))
                 curve_path.append(path_idx)
                 fl = _flatten_bezier(cur, c1, c2, p3)
-                for a, b in zip(fl[:-1], fl[1:]):
+                for a, b in pairwise(fl):
                     lines.append((a[0], a[1], b[0], b[1]))
                     kinds.append(SEG_BEZIER)
                 cur = p3
@@ -312,16 +316,10 @@ def sheet_stats(vs: VectorSheet, **extra: int) -> dict[str, Any]:
     from collections import Counter
 
     rgb = Counter(
-        "#%02x%02x%02x" % tuple(int(v) for v in c[:3])
-        for c, s in zip(vs.path_stroke_rgba, vs.path_stroked)
-        if s
+        "#{:02x}{:02x}{:02x}".format(*(int(v) for v in c[:3])) for c, s in zip(vs.path_stroke_rgba, vs.path_stroked) if s
     )
     widths = Counter(round(float(w), 3) for w in vs.path_width_mm)
-    lens = (
-        np.hypot(vs.segs[:, 2] - vs.segs[:, 0], vs.segs[:, 3] - vs.segs[:, 1])
-        if vs.n_segs
-        else np.zeros(0)
-    )
+    lens = np.hypot(vs.segs[:, 2] - vs.segs[:, 0], vs.segs[:, 3] - vs.segs[:, 1]) if vs.n_segs else np.zeros(0)
     return {
         "page_index": vs.page_index,
         "width_mm": round(vs.width_mm, 2),
@@ -351,8 +349,9 @@ def paper_size_name(w: float, h: float, tol: float = 3.0) -> str:
     return f"{a:.0f}x{b:.0f}mm"
 
 
-def extract_pdf(path: str | Path, pages: list[int] | None = None) -> list[VectorSheet]:
-    pdf = pdfium.PdfDocument(str(path))
+def extract_pdf(path: str | Path | bytes, pages: list[int] | None = None) -> list[VectorSheet]:
+    """Extract every (or the given) page. ``path`` may also be the PDF bytes."""
+    pdf = pdfium.PdfDocument(path if isinstance(path, bytes) else str(path))
     try:
         idx = range(len(pdf)) if pages is None else pages
         out = []

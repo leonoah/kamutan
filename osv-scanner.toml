@@ -1,0 +1,17 @@
+# osv-scanner configuration (SEC-45). Applies to lockfiles in this directory (pnpm-lock.yaml).
+# Every ignore MUST have: the advisory id, a concrete reason (why it is not exploitable here AND
+# why it cannot be fixed now), and an expiry (`ignoreUntil`, max ~3 months). When it expires CI
+# fails again and the entry must be re-reviewed — never extend without re-checking for a fix.
+# Changes to this file require CODEOWNERS (human) approval.
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2027-01-12T00:00:00Z
+reason = """
+braces <=3.0.3: stack-exhaustion DoS on deeply nested brace patterns. NO patched release exists
+(advisory: patched_versions <0.0.0, 3.0.3 is the latest). Only reachable through build-time
+tooling of apps/web (tailwindcss 3 -> chokidar / fast-glob / micromatch) expanding the glob
+patterns hard-coded in apps/web/tailwind.config.ts; braces is not in the shipped browser bundle,
+the Cloud Functions API or the worker image, and never sees user input. Re-check for a braces
+fix or migrate to Tailwind v4 (no chokidar/micromatch) before expiry.
+"""

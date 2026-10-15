@@ -1,0 +1,115 @@
+{
+  "$ref": "#/definitions/LinkGroup",
+  "definitions": {
+    "LinkGroup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^lk_[A-Za-z0-9_-]+$"
+        },
+        "floor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fan": {
+          "type": "boolean"
+        },
+        "inferredSwitches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "arcIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 256
+        },
+        "switchIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 16
+        },
+        "pointIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "luminaireIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 256
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "single",
+            "two_way",
+            "shared",
+            "sensor",
+            "add_to_existing"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "green",
+            "yellow",
+            "red"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "id",
+        "switchIds",
+        "pointIds",
+        "luminaireIds",
+        "kind",
+        "confidence",
+        "level",
+        "reasons"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/LinkGroup.json"
+}

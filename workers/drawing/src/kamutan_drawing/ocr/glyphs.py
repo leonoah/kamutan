@@ -19,6 +19,7 @@ Coordinates are paper mm, y down (see ``ingest.pdf_vector``).
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -63,6 +64,9 @@ class Glyph:
     key_v1: str = ""  # older signature (all flattened pieces), kept for the spike comparison
     cluster: int = -1
     label: str | None = None
+    # stroke polylines in the line frame (bezier interiors dropped): [(has_curve, (k,2) vertices)]
+    polys: list[tuple[bool, np.ndarray]] = field(default_factory=list)
+    paths: list[int] = field(default_factory=list)  # VectorSheet path indices of the strokes
 
 
 @dataclass
@@ -109,9 +113,7 @@ def path_segments(vs: VectorSheet, i: int) -> np.ndarray:
 def candidate_paths(vs: VectorSheet) -> np.ndarray:
     b = vs.path_bbox
     ext = np.maximum(b[:, 2] - b[:, 0], b[:, 3] - b[:, 1])
-    return np.where(
-        vs.path_stroked & (vs.path_fill_mode == 0) & (ext < MAX_STROKE_EXTENT) & (vs.path_seg_count > 0)
-    )[0]
+    return np.where(vs.path_stroked & (vs.path_fill_mode == 0) & (ext < MAX_STROKE_EXTENT) & (vs.path_seg_count > 0))[0]
 
 
 def connected_components(vs: VectorSheet, cand: np.ndarray | None = None) -> list[Component]:
@@ -156,10 +158,15 @@ def connected_components(vs: VectorSheet, cand: np.ndarray | None = None) -> lis
         h = bb[:, 3].max() - bb[:, 1].min()
         if w < 1.8 * h:
             continue
+        here = []
         for k, i in zip(ks, ids):
-            pw, ph = bb[ids.index(i), 2] - bb[ids.index(i), 0], bb[ids.index(i), 3] - bb[ids.index(i), 1]
+            j = ids.index(i)
+            pw, ph = bb[j, 2] - bb[j, 0], bb[j, 3] - bb[j, 1]
             if pw > 0.6 * w and ph < 0.05 * max(h, 1e-3) and vs.path_seg_count[i] <= 2:
-                drop.add(k)
+                here.append(k)
+        # only when real letter strokes remain ('=' or '-' pairs are not underlines)
+        if here and len(here) < len(ks) and h >= 1.0:
+            drop.update(here)
     if drop:
         keep = np.array([i for k, i in enumerate(cand) if k not in drop])
         return connected_components(vs, keep)
@@ -195,39 +202,62 @@ def _rot_segs(s: np.ndarray, rot: int) -> np.ndarray:
 
 
 def _link_lines(boxes: np.ndarray, styles: list, max_gap_factor: float = 1.2, min_vov: float = 0.5) -> list[list[int]]:
-    """Group boxes (already in line frame) into horizontal lines."""
+    """Group boxes (already in line frame) into horizontal lines.
+
+    Phase 1 links letter-sized boxes that overlap vertically and are close
+    horizontally. Phase 2 attaches small marks (geresh, gershayim, dots, colon
+    dots) to the single best line whose vertical band contains them, so that a
+    mark can never glue two different lines (e.g. a heading and a symbol below).
+    """
     n = len(boxes)
     if n == 0:
         return []
     dsu = _DSU(n)
     h = np.maximum(boxes[:, 3] - boxes[:, 1], 1e-3)
+    w = boxes[:, 2] - boxes[:, 0]
     cx = (boxes[:, 0] + boxes[:, 2]) / 2
     cy = (boxes[:, 1] + boxes[:, 3]) / 2
     tree = cKDTree(np.stack([cx, cy], 1))
     r = float(np.percentile(h, 95)) * 3 + 1.0
-    for i, j in tree.query_pairs(r):
+    pairs = tree.query_pairs(r)
+    small_cand: dict[int, list[int]] = defaultdict(list)
+    linked = np.zeros(n, dtype=bool)
+    for i, j in pairs:
         if styles[i] != styles[j]:
             continue
         hi = max(h[i], h[j])
         gap = max(boxes[i, 0], boxes[j, 0]) - min(boxes[i, 2], boxes[j, 2])
-        ov = min(boxes[i, 3], boxes[j, 3]) - max(boxes[i, 1], boxes[j, 1])
         if min(h[i], h[j]) < 0.45 * hi:
-            # small mark (geresh, gershayim, dot, comma): attach to a neighbouring
-            # letter if it sits inside the letter's extended vertical band
             sm, bg = (i, j) if h[i] < h[j] else (j, i)
-            if not (boxes[bg, 1] - 0.35 * hi <= cy[sm] <= boxes[bg, 3] + 0.15 * hi):
-                continue
-            if boxes[sm, 2] - boxes[sm, 0] > 0.5 * hi:
-                continue  # wide flat things (underlines, table rules) are not marks
-            if gap > 0.6 * hi:
-                continue
-            dsu.union(i, j)
+            if w[sm] <= 0.8 * hi and gap <= 0.6 * hi and boxes[bg, 1] - 0.35 * hi <= cy[sm] <= boxes[bg, 3] + 0.15 * hi:
+                small_cand[sm].append(bg)
             continue
+        ov = min(boxes[i, 3], boxes[j, 3]) - max(boxes[i, 1], boxes[j, 1])
         if ov < min_vov * min(h[i], h[j]):
             continue
         if gap > max_gap_factor * hi:
             continue
         dsu.union(i, j)
+        linked[i] = linked[j] = True
+    # phase 2: attach each small mark to one line only (letters already in a line
+    # through phase 1 are not "marks" of some bigger neighbour, e.g. a legend symbol)
+    gmax: dict[int, float] = defaultdict(float)
+    for k in range(n):
+        r_ = dsu.find(k)
+        gmax[r_] = max(gmax[r_], float(h[k]))
+    for sm, bigs in small_cand.items():
+        if linked[sm] and gmax[dsu.find(sm)] >= 0.45 * max(h[b] for b in bigs):
+            continue  # sm is a letter of its own line, not a mark of a bigger neighbour
+        best, score = None, None
+        for bg in bigs:
+            y0, y1 = boxes[bg, 1], boxes[bg, 3]
+            out = 0.0 if y0 <= cy[sm] <= y1 else min(abs(cy[sm] - y0), abs(cy[sm] - y1)) / h[bg]
+            gap = max(boxes[sm, 0], boxes[bg, 0]) - min(boxes[sm, 2], boxes[bg, 2])
+            sc = (round(out, 3), max(gap, 0.0))
+            if score is None or sc < score:
+                best, score = bg, sc
+        if best is not None:
+            dsu.union(sm, best)
     groups: dict[int, list[int]] = {}
     for k in range(n):
         groups.setdefault(dsu.find(k), []).append(k)
@@ -256,7 +286,8 @@ def _merge_stacked(boxes: np.ndarray, H: float) -> list[list[int]]:
             pad = 0.05 * H  # zero-width strokes (':' dots, ק/ה legs) need a margin
             ov = min(g[2], b[2]) - max(g[0], b[0]) + 2 * pad
             wmin = min(g[2] - g[0], b[2] - b[0]) + 2 * pad
-            if ov > 0.5 * wmin:
+            raw_gap = b[0] - g[2]
+            if ov > 0.5 * wmin or raw_gap <= 0.05 * H:  # stacked, or strokes of one letter that almost touch (מ, ע)
                 groups[-1].append(k)
                 gb[-1] = np.array([min(g[0], b[0]), min(g[1], b[1]), max(g[2], b[2]), max(g[3], b[3])])
                 continue
@@ -314,7 +345,7 @@ def stroke_key(polys: list[tuple[bool, np.ndarray]], x0: float, baseline: float,
         a = tuple(map(tuple, q))
         b = tuple(reversed(a))
         t = min(a, b)
-        parts.add(("c" if curve else "l") + "|".join("%d,%d" % p for p in t))
+        parts.add(("c" if curve else "l") + "|".join(f"{p[0]},{p[1]}" for p in t))
     return ";".join(sorted(parts)) or "dot"
 
 
@@ -337,7 +368,7 @@ def glyph_signature(segs_line: np.ndarray, x0: float, baseline: float, H: float)
             continue
         tup.add((a, b, c, d) if (a, b) <= (c, d) else (c, d, a, b))
     # merge collinear chains is overkill; quantised set of unit pieces is enough
-    key = ";".join("%d,%d,%d,%d" % t for t in sorted(tup)) or "dot"
+    key = ";".join(",".join(map(str, t)) for t in sorted(tup)) or "dot"
     # bitmap feature
     img = np.zeros((FEAT_ROWS, FEAT_COLS), dtype=np.float32)
     sx = FEAT_COLS / FEAT_X1
@@ -362,16 +393,22 @@ def extract_text_lines(vs: VectorSheet, sheet: str = "") -> list[TextLine]:
     styles = [c.style for c in comps]
     used = np.zeros(len(comps), dtype=bool)
     lines: list[TextLine] = []
-    for rot in (0, 90, -90):
+    # passes: horizontal lines; vertical text (tighter gaps: rotated glyphs are
+    # adjacent, while a column of table numbers is widely spaced); finally
+    # isolated letter-sized singletons (row numbers "1".."9", single letters).
+    passes = ((0, 1.3, 2), (90, 0.6, 3), (-90, 0.6, 3), (0, 1.3, 1))
+    for rot, gap_f, min_n in passes:
         idx = np.where(~used)[0]
         if len(idx) == 0:
             break
         boxes = np.array([_rot_bbox(comps[i].bbox, rot) for i in idx])
-        for grp in _link_lines(boxes, [styles[i] for i in idx]):
-            if rot == 0 and len(grp) < 2:
-                continue  # singletons get a chance as vertical text
-            if rot != 0 and len(grp) < 3:
+        for grp in _link_lines(boxes, [styles[i] for i in idx], max_gap_factor=gap_f):
+            if len(grp) < min_n:
                 continue
+            if len(grp) == 1:
+                bw, bh = boxes[grp[0], 2] - boxes[grp[0], 0], boxes[grp[0], 3] - boxes[grp[0], 1]
+                if not (1.0 <= bh <= 6.0 and bw <= 1.3 * bh):
+                    continue
             gboxes = boxes[grp]
             base, top, H = _line_metrics(gboxes)
             glyphs: list[Glyph] = []
@@ -386,7 +423,17 @@ def extract_text_lines(vs: VectorSheet, sheet: str = "") -> list[TextLine]:
                 cb = np.array([comps[c].bbox for c in ci])
                 pbb = np.array([cb[:, 0].min(), cb[:, 1].min(), cb[:, 2].max(), cb[:, 3].max()])
                 glyphs.append(
-                    Glyph(comps=ci, bbox=bbox, segs=segs, key=key, feat=feat, page_bbox=pbb, key_v1=key_v1)
+                    Glyph(
+                        comps=ci,
+                        bbox=bbox,
+                        segs=segs,
+                        key=key,
+                        feat=feat,
+                        page_bbox=pbb,
+                        key_v1=key_v1,
+                        polys=polys,
+                        paths=[p for c in ci for p in comps[c].paths],
+                    )
                 )
             glyphs.sort(key=lambda g: g.bbox[0])
             pb = np.array([comps[int(idx[k])].bbox for k in grp])

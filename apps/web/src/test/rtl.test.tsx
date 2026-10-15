@@ -12,7 +12,10 @@ describe("RTL root", () => {
     const doc = new DOMParser().parseFromString(html, "text/html");
     expect(doc.documentElement.getAttribute("dir")).toBe("rtl");
     expect(doc.documentElement.getAttribute("lang")).toBe("he");
-    expect(html).toMatch(/family=Heebo/);
+    // Fonts are self-hosted (CSP font-src 'self'); no Google Fonts.
+    expect(html).not.toMatch(/fonts\.googleapis|fonts\.gstatic/);
+    const main = readFileSync(resolve(__dirname, "../main.tsx"), "utf8");
+    expect(main).toMatch(/@fontsource\/heebo\/hebrew-400\.css/);
   });
 
   it("Hebrew is the default language and sets dir/lang on <html>", () => {

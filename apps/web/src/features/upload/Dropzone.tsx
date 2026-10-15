@@ -1,22 +1,22 @@
-import { useCallback, useId, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, FileImage, FileText, FileX2, RotateCcw, UploadCloud, X, Check } from "lucide-react";
-import { useApi } from "@/api/client";
-import type { FileKind } from "@/api/types";
+import { useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Ban, Check, FileImage, FileText, FileX2, Pause, Play, RotateCcw, UploadCloud, X } from "lucide-react";
+import { useBackend } from "@/api/client";
+import type { Backend, FileKind } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toast";
 import { Ltr } from "@/components/Ltr";
 import { cn } from "@/lib/utils";
-import { formatBytes, formatDate } from "@/lib/format";
+import { formatBytes } from "@/lib/format";
 import { ACCEPT_ATTR } from "./validation";
 import { useUploadStore, type UploadEntry } from "./uploadStore";
 
 export function Dropzone({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
-  const api = useApi();
+  const backend = useBackend();
   const qc = useQueryClient();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -25,35 +25,30 @@ export function Dropzone({ projectId }: { projectId: string }) {
 
   const allEntries = useUploadStore((s) => s.entries);
   const entries = allEntries.filter((e) => e.projectId === projectId);
-  const { addFiles, retry, remove, clearProject } = useUploadStore.getState();
+  const { addFiles, clearFinished } = useUploadStore.getState();
 
-  const valid = entries.filter((e) => e.status !== "rejected");
+  const valid = entries.filter((e) => e.status !== "rejected" && e.status !== "canceled");
   const done = valid.filter((e) => e.status === "done");
-  const inFlight = valid.some((e) => e.status === "uploading" || e.status === "queued");
+  const inFlight = valid.some((e) => !["done", "error"].includes(e.status));
+
+  // Announce each finished file once and refresh project stats.
+  const announced = useRef(new Set<string>());
+  useEffect(() => {
+    for (const e of done) {
+      if (announced.current.has(e.id)) continue;
+      announced.current.add(e.id);
+      toast({ title: t("upload.processingStarted", { name: `\u2068${e.name}\u2069` }), tone: "success" });
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+    }
+  }, [done, qc, t]);
 
   const onFiles = useCallback(
     (list: FileList | null) => {
       if (!list || list.length === 0) return;
-      void addFiles(api, projectId, Array.from(list));
+      void addFiles(backend, projectId, Array.from(list));
     },
-    [addFiles, api, projectId],
+    [addFiles, backend, projectId],
   );
-
-  const finish = useMutation({
-    mutationFn: () =>
-      api.createSheetSet(
-        projectId,
-        done.map((e) => e.uploadId!).filter(Boolean),
-        t("upload.setName", { date: formatDate(new Date()) }),
-      ),
-    onSuccess: (set) => {
-      toast({ title: t("upload.setCreated", { count: set.fileCount }), tone: "success" });
-      clearProject(projectId);
-      void qc.invalidateQueries({ queryKey: ["projects"] });
-      void qc.invalidateQueries({ queryKey: ["sheet-sets", projectId] });
-    },
-    onError: () => toast({ title: t("upload.setError"), tone: "error" }),
-  });
 
   const dragHandlers = {
     onDragEnter: (e: DragEvent) => {
@@ -136,17 +131,16 @@ export function Dropzone({ projectId }: { projectId: string }) {
           </div>
           <ul className="divide-y divide-border" aria-label={t("upload.listLabel")}>
             {entries.map((e) => (
-              <FileRow key={e.id} entry={e} onRemove={() => remove(e.id)} onRetry={() => retry(api, e.id)} />
+              <FileRow key={e.id} entry={e} backend={backend} />
             ))}
           </ul>
-          <div className="flex justify-end border-t border-border px-4 py-3">
-            <Button
-              onClick={() => finish.mutate()}
-              disabled={done.length === 0 || inFlight || finish.isPending}
-            >
-              {finish.isPending ? t("upload.finishing") : t("upload.finish")}
-            </Button>
-          </div>
+          {!inFlight && entries.length > 0 ? (
+            <div className="flex justify-end border-t border-border px-4 py-2">
+              <Button variant="ghost" size="sm" onClick={() => clearFinished(projectId)}>
+                {t("upload.clearFinished")}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -156,30 +150,44 @@ export function Dropzone({ projectId }: { projectId: string }) {
 const kindIcon = (kind: FileKind | null) =>
   kind === "png" ? FileImage : kind === null ? FileX2 : FileText;
 
-function FileRow({ entry, onRemove, onRetry }: { entry: UploadEntry; onRemove: () => void; onRetry: () => void }) {
+function FileRow({ entry, backend }: { entry: UploadEntry; backend: Backend }) {
   const { t } = useTranslation();
+  const { pause, resume, cancel, retry, remove } = useUploadStore.getState();
   const Icon = kindIcon(entry.kind);
-  const pct = entry.size > 0 ? Math.round((entry.loaded / entry.size) * 100) : 0;
+  const pct = entry.size > 0 ? Math.floor((entry.loaded / entry.size) * 100) : 0;
   const failed = entry.status === "rejected" || entry.status === "error";
+  const iso = `\u2068${entry.name}\u2069`;
+  const showBar = ["queued", "preparing", "uploading", "paused", "finalizing", "done"].includes(entry.status);
+  const cancellable = ["queued", "preparing", "uploading", "paused"].includes(entry.status);
 
   const errorText = (() => {
     switch (entry.errorCode) {
       case "unsupported":
-        return t("upload.errorUnsupported", { name: `⁨${entry.name}⁩` });
+        return t("upload.errorUnsupported", { name: iso });
       case "too_large":
         return t("upload.errorTooLarge");
       case "empty":
-        return t("upload.errorEmpty", { name: `⁨${entry.name}⁩` });
+        return t("upload.errorEmpty", { name: iso });
       case "mismatch":
-        return t("upload.errorMismatch", { name: `⁨${entry.name}⁩` });
+        return t("upload.errorMismatch", { name: iso });
       case "duplicate":
-        return t("upload.errorDuplicate", { name: `⁨${entry.name}⁩` });
+        return t("upload.errorDuplicate", { name: iso });
       case "network":
         return t("upload.errorNetwork");
+      case "expired":
+        return t("upload.errorExpired");
+      case "server":
+        return t("upload.errorServer");
       default:
         return null;
     }
   })();
+
+  const iconBtn = (label: string, onClick: () => void, icon: ReactNode) => (
+    <Button variant="ghost" size="icon-sm" onClick={onClick} aria-label={label} title={label}>
+      {icon}
+    </Button>
+  );
 
   return (
     <li className="flex items-start gap-3 px-4 py-3" data-status={entry.status}>
@@ -205,15 +213,21 @@ function FileRow({ entry, onRemove, onRetry }: { entry: UploadEntry; onRemove: (
           >
             {entry.status === "done" ? <Check className="size-3.5" aria-hidden /> : null}
             {t(`upload.status.${entry.status}`)}
-            {entry.status === "uploading" ? <Ltr>{` ${pct}%`}</Ltr> : null}
+            {entry.status === "uploading" || entry.status === "paused" ? <Ltr>{` ${pct}%`}</Ltr> : null}
           </span>
         </div>
-        {entry.status === "uploading" || entry.status === "queued" || entry.status === "done" ? (
+        {showBar ? (
           <Progress
-            value={entry.status === "done" ? 100 : pct}
+            value={entry.status === "done" || entry.status === "finalizing" ? 100 : pct}
             aria-label={t("upload.progress", { name: entry.name })}
-            indicatorClassName={entry.status === "done" ? "bg-conf-high" : undefined}
+            indicatorClassName={cn(
+              entry.status === "done" && "bg-conf-high",
+              entry.status === "paused" && "bg-state-existing",
+            )}
           />
+        ) : null}
+        {entry.result?.deduplicated ? (
+          <p className="text-meta text-muted-foreground">{t("upload.deduplicated")}</p>
         ) : null}
         {errorText ? (
           <p className="text-dense text-destructive" role="alert">
@@ -222,20 +236,20 @@ function FileRow({ entry, onRemove, onRetry }: { entry: UploadEntry; onRemove: (
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {entry.status === "error" ? (
-          <Button variant="ghost" size="icon-sm" onClick={onRetry} aria-label={t("upload.retry")} title={t("upload.retry")}>
-            <RotateCcw aria-hidden />
-          </Button>
-        ) : null}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onRemove}
-          aria-label={t("upload.remove", { name: entry.name })}
-          title={t("upload.remove", { name: entry.name })}
-        >
-          <X aria-hidden />
-        </Button>
+        {entry.status === "uploading"
+          ? iconBtn(t("upload.pause", { name: entry.name }), () => pause(entry.id), <Pause aria-hidden />)
+          : null}
+        {entry.status === "paused"
+          ? iconBtn(t("upload.resume", { name: entry.name }), () => resume(entry.id), <Play aria-hidden />)
+          : null}
+        {entry.status === "error" || entry.status === "canceled"
+          ? iconBtn(t("upload.retry"), () => retry(backend, entry.id), <RotateCcw aria-hidden />)
+          : null}
+        {cancellable
+          ? iconBtn(t("upload.cancel", { name: entry.name }), () => cancel(entry.id), <Ban aria-hidden />)
+          : entry.status !== "finalizing"
+            ? iconBtn(t("upload.remove", { name: entry.name }), () => remove(entry.id), <X aria-hidden />)
+            : null}
       </div>
     </li>
   );

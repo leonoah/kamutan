@@ -1,23 +1,18 @@
 import { z } from 'zod';
-import { RoleSchema } from './roles.js';
 
-/**
- * Identity-token claims the API relies on (Firebase ID token). `sub` is the Firebase
- * uid (an opaque string, not a UUID). The API treats the membership table as
- * authoritative; `org_roles` is only a hint and never trusted for authorization.
- */
-export const AccessTokenClaimsSchema = z
+/** Decoded Firebase ID token claims the API relies on (firebase-admin verifyIdToken). */
+export const IdTokenClaimsSchema = z
   .object({
-    sub: z.string().min(1).max(128),
-    role: z.string().optional(),
-    aud: z.union([z.string(), z.array(z.string())]).optional(),
-    exp: z.number().int(),
-    iat: z.number().int().optional(),
-    iss: z.string().optional(),
-    aal: z.enum(['aal1', 'aal2']).optional(),
-    session_id: z.string().optional(),
-    org_ids: z.array(z.string().uuid()).optional(),
-    org_roles: z.record(z.string().uuid(), RoleSchema).optional(),
+    uid: z.string().min(1).max(128),
+    email: z.string().optional(),
+    email_verified: z.boolean().optional(),
+    firebase: z
+      .object({
+        sign_in_provider: z.string(),
+        /** Present when the session was established with a second factor (MFA). */
+        sign_in_second_factor: z.string().optional(),
+      })
+      .passthrough(),
   })
   .passthrough();
-export type AccessTokenClaims = z.infer<typeof AccessTokenClaimsSchema>;
+export type IdTokenClaims = z.infer<typeof IdTokenClaimsSchema>;

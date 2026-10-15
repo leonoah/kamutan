@@ -1,9 +1,0 @@
-rules_version = '2';
-// Drawings are private. Uploads/reads happen via the API (signed URLs + Admin SDK).
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if false;
-    }
-  }
-}

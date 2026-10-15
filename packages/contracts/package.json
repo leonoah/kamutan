@@ -21,7 +21,8 @@
   "sideEffects": false,
   "scripts": {
     "build": "node scripts/clean.cjs && tsc -p tsconfig.cjs.json && tsc -p tsconfig.esm.json && tsc -p tsconfig.types.json && node scripts/write-pkg-markers.cjs",
-    "gen": "pnpm run build && node scripts/gen-json-schema.cjs",
+    "gen": "node scripts/gen-taxonomy.cjs && pnpm run build && node scripts/gen-json-schema.cjs",
+    "gen:taxonomy": "node scripts/gen-taxonomy.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -29,9 +30,9 @@
     "zod": "^3.25.28"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
-    "typescript": "^5.9.3",
-    "vitest": "^5.0.3",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.11",
     "zod-to-json-schema": "^3.25.2"
   }
 }

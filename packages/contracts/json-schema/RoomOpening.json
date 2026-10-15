@@ -1,0 +1,70 @@
+{
+  "$ref": "#/definitions/RoomOpening",
+  "definitions": {
+    "RoomOpening": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^o_[A-Za-z0-9_-]+$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "door",
+            "window",
+            "opening"
+          ]
+        },
+        "wallId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^w_[A-Za-z0-9_-]+$"
+        },
+        "widthM": {
+          "type": "number",
+          "minimum": 0
+        },
+        "heightM": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "centerMm": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "wallId",
+        "widthM",
+        "heightM",
+        "centerMm"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/RoomOpening.json"
+}

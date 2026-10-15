@@ -1,337 +1,492 @@
-import { randomUUID } from 'node:crypto';
 import {
-  FieldPath,
-  Firestore,
-  type DocumentData,
-  type Query,
-  type Transaction,
-} from 'firebase-admin/firestore';
-import {
-  roleSatisfies,
-  type MyOrg,
+  DEFAULT_ORG_SETTINGS,
+  fsPaths,
+  type Job,
+  type LegendEntry,
+  type LegendEntryStatus,
+  type Member,
   type Org,
+  type ProcessingError,
   type Project,
+  type Region,
   type Role,
+  type Sheet,
   type SheetSet,
+  type SheetSetStatus,
+  type SheetSummary,
   type SheetVersion,
-  type SheetVersionStatus,
+  type SymbolMapping,
 } from '@kamutan/contracts';
-import type { AuthContext } from '../auth/auth-context';
-import { conflict } from '../common/api-exception';
+import { FieldPath, FieldValue, Timestamp, type DocumentData, type Firestore, type Query, type Transaction } from 'firebase-admin/firestore';
+import { auditHash } from './audit-chain';
+import { confirmAudit, newVersionDoc, regionsAudit } from './in-memory.repository';
+import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
+import { mappers, versionSummary } from './mappers';
 import {
-  decodeCursor,
-  encodeCursor,
-  type AuditEntry,
-  type NewJob,
-  type NewProject,
-  type NewSheetSetUpload,
-  type ProjectListOptions,
-  type ProjectPatch,
+  RepoConflictError,
+  type AuditInput,
+  type ConfirmInput,
+  type LegendDecision,
+  type NewSheetSet,
+  type ReprocessResult,
   type Repository,
-  type RepositoryTx,
-  type SheetSetWithVersion,
+  type ResolveClusterInput,
 } from './repository';
 
-/** Authorization failure for a write the caller's role does not allow (maps like an RLS violation). */
-export class AccessDenied extends Error {
-  readonly code = '42501';
-  constructor(what: string) {
-    super(`access denied for ${what}`);
-  }
+/** Firestore Timestamp → Date (top level and one nested level), so mappers see plain values. */
+function plain(d: DocumentData | undefined): Record<string, unknown> | null {
+  if (!d) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(d)) out[k] = v instanceof Timestamp ? v.toDate() : v;
+  return out;
 }
-
-export const COLLECTIONS = {
-  orgs: 'orgs',
-  memberships: 'memberships', // doc id `${orgId}_${userId}`
-  orgSlugs: 'orgSlugs', // doc id = slug; enforces uniqueness
-  projects: 'projects',
-  sheetSets: 'sheetSets',
-  sheetVersions: 'sheetVersions',
-  jobs: 'jobs',
-  audit: 'auditLog',
-} as const;
-
-const GRPC_ALREADY_EXISTS = 6;
-const now = () => new Date().toISOString();
-const memberId = (orgId: string, userId: string) => `${orgId}_${userId}`;
 
 /**
- * Firestore-backed repository. There is no database-level RLS here: every method
- * checks the caller's membership/role explicitly, and Firestore security rules
- * deny all direct client access (only this API, via the Admin SDK, reads/writes).
- *
- * `run` is one Firestore transaction: reads go through the transaction snapshot,
- * writes are buffered and applied after `fn` finishes, so `fn` may interleave
- * reads and writes freely. Firestore retries `fn` on contention, which also makes
- * concurrent uploads of the same file dedupe correctly.
+ * Firestore implementation (firebase-admin). Admin SDK bypasses Security
+ * Rules: every tenant read/write is addressed under orgs/{orgId}/... from the
+ * caller-supplied orgId; authorization happens in AccessService beforehand.
  */
 export class FirestoreRepository implements Repository {
-  private seq = 0;
+  constructor(readonly db: Firestore) {}
 
-  constructor(private readonly db: Firestore) {
-    db.settings({ ignoreUndefinedProperties: true });
+  // --- orgs & members -----------------------------------------------------------
+  async getMember(orgId: string, uid: string): Promise<Member | null> {
+    const d = plain((await this.db.doc(fsPaths.member(orgId, uid)).get()).data());
+    return d ? mappers.toMember(d) : null;
   }
 
-  async run<T>(user: AuthContext, fn: (tx: RepositoryTx) => Promise<T>): Promise<T> {
-    try {
-      return await this.db.runTransaction(async (t) => {
-        const tx = new FirestoreTx(this.db, t, user.userId, () => ++this.seq);
-        const result = await fn(tx);
-        tx.flush();
-        return result;
-      });
-    } catch (err) {
-      if ((err as { code?: number }).code === GRPC_ALREADY_EXISTS) throw conflict('resource already exists');
-      throw err;
-    }
-  }
-
-  async ping(): Promise<void> {
-    await this.db.collection(COLLECTIONS.orgs).limit(1).get();
-  }
-
-  async close(): Promise<void> {
-    await this.db.terminate();
-  }
-}
-
-class FirestoreTx implements RepositoryTx {
-  private readonly writes: Array<() => void> = [];
-
-  constructor(
-    private readonly db: Firestore,
-    private readonly t: Transaction,
-    private readonly userId: string,
-    private readonly nextSeq: () => number,
-  ) {}
-
-  /** Applies buffered writes; Firestore requires them after all reads. */
-  flush(): void {
-    for (const w of this.writes) w();
-  }
-
-  private col(name: string) {
-    return this.db.collection(name);
-  }
-
-  private async getDoc(collection: string, id: string): Promise<DocumentData | null> {
-    const snap = await this.t.get(this.col(collection).doc(id));
-    return snap.exists ? (snap.data() as DocumentData) : null;
-  }
-
-  private async getQuery(q: Query): Promise<DocumentData[]> {
-    return (await this.t.get(q)).docs.map((d) => d.data());
-  }
-
-  private async role(orgId: string): Promise<Role | null> {
-    const m = await this.getDoc(COLLECTIONS.memberships, memberId(orgId, this.userId));
-    return (m?.role as Role | undefined) ?? null;
-  }
-
-  private async requireWrite(orgId: string, what: string): Promise<void> {
-    const r = await this.role(orgId);
-    if (!r || !roleSatisfies(r, 'editor')) throw new AccessDenied(what);
-  }
-
-  async listMyOrgs(): Promise<MyOrg[]> {
-    const memberships = await this.getQuery(this.col(COLLECTIONS.memberships).where('userId', '==', this.userId));
-    const orgs = await Promise.all(
-      memberships.map(async (m) => {
-        const org = await this.getDoc(COLLECTIONS.orgs, String(m.orgId));
-        return org ? ({ ...(org as Org), role: m.role as Role } satisfies MyOrg) : null;
-      }),
-    );
-    return orgs.filter((o): o is MyOrg => o !== null).sort((a, b) => a.name.localeCompare(b.name));
+  async listMembershipsOf(uid: string): Promise<Array<{ orgId: string; role: Role }>> {
+    // Needs the collection-group field override on members.uid (firebase/firestore.indexes.json).
+    const snap = await this.db.collectionGroup('members').where('uid', '==', uid).get();
+    return snap.docs
+      .filter((d) => d.ref.parent.parent?.parent.id === 'orgs')
+      .map((d) => ({ orgId: d.ref.parent.parent?.id as string, role: d.get('role') as Role }));
   }
 
   async getOrg(orgId: string): Promise<Org | null> {
-    if (!(await this.role(orgId))) return null;
-    return ((await this.getDoc(COLLECTIONS.orgs, orgId)) as Org | null) ?? null;
+    const d = plain((await this.db.doc(fsPaths.org(orgId)).get()).data());
+    return d ? mappers.toOrg(orgId, d) : null;
   }
 
-  async createOrg(name: string, slug: string): Promise<Org> {
-    const slugRef = this.col(COLLECTIONS.orgSlugs).doc(slug);
-    if ((await this.t.get(slugRef)).exists) throw conflict('org slug already taken');
-    const ts = now();
-    const org: Org = { id: randomUUID(), name, slug, settings: {}, createdAt: ts, updatedAt: ts };
-    this.writes.push(() => {
-      this.t.create(slugRef, { orgId: org.id });
-      this.t.create(this.col(COLLECTIONS.orgs).doc(org.id), org);
-      this.t.create(this.col(COLLECTIONS.memberships).doc(memberId(org.id, this.userId)), {
-        orgId: org.id,
-        userId: this.userId,
+  async createOrgWithAdmin(name: string, admin: { uid: string; email?: string }): Promise<Org> {
+    const ref = this.db.collection('orgs').doc();
+    const createdAt = Timestamp.now();
+    await this.db.runTransaction(async (tx) => {
+      const head = await this.auditHead(tx, ref.id);
+      tx.create(ref, { name, settings: { ...DEFAULT_ORG_SETTINGS }, createdAt });
+      tx.create(this.db.doc(fsPaths.member(ref.id, admin.uid)), {
+        uid: admin.uid,
         role: 'admin',
-        createdAt: ts,
+        ...(admin.email ? { email: admin.email } : {}),
+        addedBy: admin.uid,
+        createdAt,
       });
+      this.writeAudit(tx, ref.id, head, { actorId: admin.uid, entity: 'orgs', entityId: ref.id, action: 'create' });
     });
-    return org;
+    return mappers.toOrg(ref.id, { name, settings: DEFAULT_ORG_SETTINGS, createdAt: createdAt.toDate() });
   }
 
-  async getMyRole(orgId: string): Promise<Role | null> {
-    return this.role(orgId);
+  // --- projects ---------------------------------------------------------------------
+  async findProjectOrgId(projectId: string): Promise<string | null> {
+    // Needs a collection-group field override on projects.projectId.
+    const snap = await this.db.collectionGroup('projects').where('projectId', '==', projectId).limit(2).get();
+    const docs = snap.docs.filter((d) => d.ref.parent.parent?.parent.id === 'orgs');
+    if (docs.length !== 1) return null;
+    return docs[0]?.ref.parent.parent?.id ?? null;
   }
 
-  async listProjects(opts: ProjectListOptions): Promise<{ items: Project[]; nextCursor: string | null }> {
-    const cur = opts.cursor ? decodeCursor(opts.cursor) : null;
-    let orgIds: string[];
-    if (opts.orgId) {
-      orgIds = (await this.role(opts.orgId)) ? [opts.orgId] : [];
-    } else {
-      const ms = await this.getQuery(this.col(COLLECTIONS.memberships).where('userId', '==', this.userId));
-      orgIds = ms.map((m) => String(m.orgId));
+  async getProject(orgId: string, projectId: string): Promise<Project | null> {
+    const d = plain((await this.db.doc(fsPaths.project(orgId, projectId)).get()).data());
+    return d ? mappers.toProject(projectId, d) : null;
+  }
+
+  async listProjects(orgId: string, opts: { limit: number; cursor?: string }) {
+    let q = this.db.collection(`orgs/${orgId}/projects`).orderBy('createdAt', 'desc').limit(opts.limit + 1);
+    if (opts.cursor) {
+      const cur = await this.db.doc(fsPaths.project(orgId, opts.cursor)).get();
+      if (!cur.exists) return { items: [], nextCursor: null };
+      q = q.startAfter(cur);
     }
-
-    const perOrg = await Promise.all(
-      orgIds.map(async (orgId) => {
-        let q: Query = this.col(COLLECTIONS.projects)
-          .where('orgId', '==', orgId)
-          .orderBy('createdAt', 'desc')
-          .orderBy(FieldPath.documentId(), 'desc');
-        if (cur) q = q.startAfter(cur.createdAt, cur.id);
-        return (await this.getQuery(q.limit(opts.limit + 1))) as Project[];
-      }),
-    );
-
-    const all = perOrg
-      .flat()
-      .filter((p) => p.status !== ('deleted' as string))
-      .sort((a, b) => (a.createdAt === b.createdAt ? b.id.localeCompare(a.id) : b.createdAt.localeCompare(a.createdAt)));
-    const items = all.slice(0, opts.limit);
-    const last = items[items.length - 1];
-    return { items, nextCursor: all.length > opts.limit && last ? encodeCursor(last.createdAt, last.id) : null };
+    const snap = await q.get();
+    const items = snap.docs.slice(0, opts.limit).map((d) => mappers.toProject(d.id, plain(d.data()) ?? {}));
+    return { items, nextCursor: snap.docs.length > opts.limit && items.length ? (items.at(-1) as Project).id : null };
   }
 
-  async getProject(projectId: string): Promise<Project | null> {
-    const p = (await this.getDoc(COLLECTIONS.projects, projectId)) as Project | null;
-    if (!p || p.status === ('deleted' as string)) return null;
-    return (await this.role(p.orgId)) ? p : null;
-  }
-
-  async createProject(input: NewProject): Promise<Project> {
-    await this.requireWrite(input.orgId, 'projects');
-    // Distinct, strictly increasing timestamps keep cursor pagination deterministic.
-    const ts = new Date(Date.now() + this.nextSeq()).toISOString();
-    const p: Project = {
-      id: randomUUID(),
-      orgId: input.orgId,
+  async createProject(orgId: string, input: { name: string; address?: string }, actorUid: string): Promise<Project> {
+    const ref = this.db.collection(`orgs/${orgId}/projects`).doc();
+    const doc = {
+      projectId: ref.id,
+      orgId,
       name: input.name,
-      address: input.address,
+      ...(input.address ? { address: input.address } : {}),
+      templateId: null,
+      floors: [],
       status: 'active',
-      createdBy: this.userId,
-      createdAt: ts,
-      updatedAt: ts,
+      createdBy: actorUid,
+      createdAt: Timestamp.now(),
     };
-    this.writes.push(() => this.t.create(this.col(COLLECTIONS.projects).doc(p.id), p));
-    return p;
-  }
-
-  async updateProject(projectId: string, patch: ProjectPatch): Promise<Project | null> {
-    const p = await this.getProject(projectId);
-    if (!p) return null;
-    await this.requireWrite(p.orgId, 'projects');
-    const next: Project = { ...p, ...stripUndefined(patch), updatedAt: now() };
-    this.writes.push(() => this.t.set(this.col(COLLECTIONS.projects).doc(p.id), next));
-    return next;
-  }
-
-  async lockProjectFile(): Promise<void> {
-    // The surrounding Firestore transaction retries on conflicting writes, so the
-    // find-then-create sequence in the caller is already serialized per document.
-  }
-
-  async findSheetSetBySha(projectId: string, sha256: string): Promise<SheetSetWithVersion | null> {
-    const sets = (await this.getQuery(
-      this.col(COLLECTIONS.sheetSets).where('projectId', '==', projectId).where('sourceSha256', '==', sha256).limit(1),
-    )) as SheetSet[];
-    const sheetSet = sets[0];
-    if (!sheetSet || !(await this.role(sheetSet.orgId))) return null;
-    const versions = await this.getQuery(
-      this.col(COLLECTIONS.sheetVersions).where('sheetSetId', '==', sheetSet.id).where('sourceSha256', '==', sha256).limit(1),
-    );
-    const sv = versions[0];
-    if (!sv) return null;
-    const { sheetSetId: _ignored, ...sheetVersion } = sv;
-    return { sheetSet, sheetVersion: sheetVersion as SheetVersion };
-  }
-
-  async listSheetSets(projectId: string): Promise<SheetSet[]> {
-    const sets = (await this.getQuery(this.col(COLLECTIONS.sheetSets).where('projectId', '==', projectId))) as SheetSet[];
-    const visible: SheetSet[] = [];
-    for (const s of sets) if (await this.role(s.orgId)) visible.push(s);
-    return visible.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  async createSheetSetWithVersion(input: NewSheetSetUpload): Promise<SheetSetWithVersion> {
-    await this.requireWrite(input.orgId, 'sheet_sets');
-    if (!input.storagePath.startsWith(`${input.orgId}/`)) throw new Error('storage_path outside org prefix');
-    const ts = now();
-    const sheetSet: SheetSet = {
-      id: randomUUID(),
-      orgId: input.orgId,
-      projectId: input.projectId,
-      name: input.name,
-      uploadedBy: this.userId,
-      sourceFilePath: input.storagePath,
-      sourceSha256: input.sha256,
-      fileKind: input.fileKind,
-      createdAt: ts,
-    };
-    const sheetVersion: SheetVersion = {
-      id: randomUUID(),
-      orgId: input.orgId,
-      sheetId: randomUUID(),
-      versionNo: 1,
-      sourceSha256: input.sha256,
-      storagePath: input.storagePath,
-      pageIndex: 0,
-      status: 'uploaded',
-      widthMm: null,
-      heightMm: null,
-      scale: null,
-      isRaster: false,
-      pipelineState: {},
-      createdAt: ts,
-    };
-    this.writes.push(() => {
-      this.t.create(this.col(COLLECTIONS.sheetSets).doc(sheetSet.id), sheetSet);
-      this.t.create(this.col(COLLECTIONS.sheetVersions).doc(sheetVersion.id), { ...sheetVersion, sheetSetId: sheetSet.id });
+    await this.db.runTransaction(async (tx) => {
+      const org = await tx.get(this.db.doc(fsPaths.org(orgId)));
+      if (!org.exists) throw new Error('org does not exist');
+      const head = await this.auditHead(tx, orgId);
+      tx.create(ref, doc);
+      this.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'projects', entityId: ref.id, action: 'create' });
     });
-    return { sheetSet, sheetVersion };
+    return mappers.toProject(ref.id, plain(doc) ?? {});
   }
 
-  async setSheetVersionStatus(sheetVersionId: string, status: SheetVersionStatus): Promise<void> {
-    const sv = await this.getDoc(COLLECTIONS.sheetVersions, sheetVersionId);
-    if (!sv || !(await this.role(String(sv.orgId)))) return;
-    await this.requireWrite(String(sv.orgId), 'sheet_versions');
-    this.writes.push(() => this.t.update(this.col(COLLECTIONS.sheetVersions).doc(sheetVersionId), { status }));
+  async updateProject(
+    orgId: string,
+    projectId: string,
+    patch: { name?: string; address?: string; status?: Project['status'] },
+    actorUid: string,
+  ): Promise<Project | null> {
+    const ref = this.db.doc(fsPaths.project(orgId, projectId));
+    const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    return this.db.runTransaction(async (tx) => {
+      const cur = await tx.get(ref);
+      if (!cur.exists) return null;
+      const head = await this.auditHead(tx, orgId);
+      tx.update(ref, { ...clean, updatedAt: FieldValue.serverTimestamp() });
+      this.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'projects', entityId: projectId, action: 'update', after: clean });
+      return mappers.toProject(projectId, { ...(plain(cur.data()) ?? {}), ...clean });
+    });
   }
 
-  async createJob(input: NewJob): Promise<string> {
-    await this.requireWrite(input.orgId, 'jobs');
-    const id = randomUUID();
-    const doc = { ...input, id, status: 'queued', createdBy: this.userId, createdAt: now(), seq: Date.now() * 1000 + this.nextSeq() };
-    this.writes.push(() => this.t.create(this.col(COLLECTIONS.jobs).doc(id), doc));
-    return id;
+  // --- sheet sets ---------------------------------------------------------------------
+  async getSheetSet(orgId: string, projectId: string, sheetSetId: string): Promise<SheetSet | null> {
+    const d = plain((await this.db.doc(fsPaths.sheetSet(orgId, projectId, sheetSetId)).get()).data());
+    return d ? mappers.toSheetSet(orgId, projectId, sheetSetId, d) : null;
   }
 
-  async findJobId(sheetVersionId: string, type: string): Promise<string | null> {
-    const jobs = await this.getQuery(
-      this.col(COLLECTIONS.jobs).where('sheetVersionId', '==', sheetVersionId).where('type', '==', type),
-    );
-    const visible: DocumentData[] = [];
-    for (const j of jobs) if (await this.role(String(j.orgId))) visible.push(j);
-    visible.sort((a, b) => Number(b.seq) - Number(a.seq));
-    return visible[0] ? String(visible[0].id) : null;
+  async createSheetSetIngest(orgId: string, projectId: string, input: NewSheetSet) {
+    return this.db.runTransaction(async (tx) => {
+      // All reads before writes (Firestore transaction rule).
+      const setRef = this.db.doc(fsPaths.sheetSet(orgId, projectId, input.sha256)); // doc id = sha256 → atomic dedupe
+      const existing = await tx.get(setRef);
+      if (existing.exists) {
+        return { sheetSet: mappers.toSheetSet(orgId, projectId, setRef.id, plain(existing.data()) ?? {}), deduplicated: true };
+      }
+      const project = await tx.get(this.db.doc(fsPaths.project(orgId, projectId)));
+      if (!project.exists) throw new Error('project does not exist');
+      const head = await this.auditHead(tx, orgId);
+
+      const now = Timestamp.now();
+      const jobRef = this.db.collection('jobs').doc();
+      const versionId = this.db.collection('_').doc().id; // auto id, used by every page sheet of this set
+      const set = {
+        fileKind: input.fileKind,
+        sha256: input.sha256,
+        storagePath: input.storagePath,
+        status: 'uploaded',
+        name: input.name,
+        uploadedBy: input.uploadedBy,
+        uploadFileId: input.uploadFileId,
+        sizeBytes: input.sizeBytes,
+        ingestJobId: jobRef.id,
+        versionId,
+        pageCount: null,
+        createdAt: now,
+      };
+      tx.create(setRef, set);
+      tx.create(jobRef, {
+        orgId,
+        projectId,
+        sheetSetId: setRef.id,
+        sheetId: null,
+        versionId,
+        type: input.jobType,
+        status: 'queued',
+        progress: { stage: 'ingest', pct: 0 },
+        attempts: 0,
+        error: null,
+        createdBy: input.uploadedBy,
+        createdAt: now,
+        updatedAt: now,
+      });
+      this.writeAudit(tx, orgId, head, {
+        actorId: input.uploadedBy,
+        entity: 'sheetSets',
+        entityId: setRef.id,
+        action: 'upload',
+        after: { projectId, fileKind: input.fileKind, sha256: input.sha256, sizeBytes: input.sizeBytes, jobId: jobRef.id },
+      });
+      return { sheetSet: mappers.toSheetSet(orgId, projectId, setRef.id, plain(set) ?? {}), deduplicated: false };
+    });
   }
 
-  async writeAudit(entry: AuditEntry): Promise<void> {
-    if (!(await this.role(entry.orgId))) throw new AccessDenied('audit_log');
-    const doc = { ...entry, actorId: this.userId, createdAt: now() };
-    // Append-only: the API only ever creates audit entries.
-    this.writes.push(() => this.t.create(this.col(COLLECTIONS.audit).doc(randomUUID()), doc));
+  async findSheetSetByUploadFileId(orgId: string, projectId: string, fileId: string): Promise<SheetSet | null> {
+    const snap = await this.db.collection(`orgs/${orgId}/projects/${projectId}/sheetSets`).where('uploadFileId', '==', fileId).limit(1).get();
+    const d = snap.docs[0];
+    return d ? mappers.toSheetSet(orgId, projectId, d.id, plain(d.data()) ?? {}) : null;
   }
-}
 
-function stripUndefined<T extends object>(o: T): Partial<T> {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+  async setSheetSetStatus(orgId: string, projectId: string, sheetSetId: string, status: SheetSetStatus) {
+    await this.db.doc(fsPaths.sheetSet(orgId, projectId, sheetSetId)).update({ status });
+  }
+
+  // --- sheets & versions --------------------------------------------------------------
+  async listSheets(orgId: string, projectId: string, opts: { limit: number; cursor?: string; sheetSetId?: string }) {
+    let q: Query = this.db.collection(fsPaths.sheets(orgId, projectId));
+    if (opts.sheetSetId) q = q.where('sheetSetId', '==', opts.sheetSetId);
+    q = q.orderBy(FieldPath.documentId());
+    if (opts.cursor) q = q.startAfter(opts.cursor);
+    const snap = await q.limit(opts.limit + 1).get();
+    const docs = snap.docs.slice(0, opts.limit);
+    const sheets = docs.map((d) => mappers.toSheet(d.id, plain(d.data()) ?? {}));
+    const refs = sheets.flatMap((sh) => (sh.currentVersionId ? [this.db.doc(fsPaths.version(orgId, projectId, sh.id, sh.currentVersionId))] : []));
+    const versions = new Map<string, SheetVersion>();
+    if (refs.length) {
+      for (const v of await this.db.getAll(...refs)) {
+        const sheetId = v.ref.parent.parent?.id as string;
+        if (v.exists) versions.set(`${sheetId}/${v.id}`, mappers.toVersion(sheetId, v.id, plain(v.data()) ?? {}));
+      }
+    }
+    const items: SheetSummary[] = sheets.map((sh) => ({
+      ...sh,
+      currentVersion: versionSummary(sh.currentVersionId ? (versions.get(`${sh.id}/${sh.currentVersionId}`) ?? null) : null),
+    }));
+    return { items, nextCursor: snap.docs.length > opts.limit && items.length ? (items.at(-1) as SheetSummary).id : null };
+  }
+
+  async getSheet(orgId: string, projectId: string, sheetId: string): Promise<Sheet | null> {
+    const d = plain((await this.db.doc(fsPaths.sheet(orgId, projectId, sheetId)).get()).data());
+    return d ? mappers.toSheet(sheetId, d) : null;
+  }
+
+  async getVersion(orgId: string, projectId: string, sheetId: string, versionId: string): Promise<SheetVersion | null> {
+    const d = plain((await this.db.doc(fsPaths.version(orgId, projectId, sheetId, versionId)).get()).data());
+    return d ? mappers.toVersion(sheetId, versionId, d) : null;
+  }
+
+  async confirmSheet(orgId: string, projectId: string, sheetId: string, input: ConfirmInput, actorUid: string): Promise<Sheet | null> {
+    const ref = this.db.doc(fsPaths.sheet(orgId, projectId, sheetId));
+    return this.db.runTransaction(async (tx) => {
+      const cur = await tx.get(ref);
+      if (!cur.exists) return null;
+      if (((cur.get('currentVersionId') as string | undefined) ?? null) !== input.expectedVersionId) {
+        throw new RepoConflictError('version_changed');
+      }
+      const vRef = input.regions && input.expectedVersionId ? this.db.doc(fsPaths.version(orgId, projectId, sheetId, input.expectedVersionId)) : null;
+      if (vRef && !(await tx.get(vRef)).exists) throw new RepoConflictError('version_missing');
+      const head = await this.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      const patch = {
+        discipline: input.discipline,
+        floors: input.floors,
+        scaleDenominator: input.scaleDenominator,
+        confirmed: true,
+        confirmedBy: actorUid,
+        confirmedAt: now,
+        updatedAt: now,
+      };
+      tx.update(ref, patch);
+      if (vRef && input.regions) tx.update(vRef, { regions: input.regions, regionsUpdatedBy: actorUid, regionsUpdatedAt: now });
+      this.writeAudit(tx, orgId, head, {
+        actorId: actorUid,
+        entity: 'sheets',
+        entityId: sheetId,
+        action: 'confirm',
+        after: confirmAudit(projectId, input),
+      });
+      return mappers.toSheet(sheetId, { ...(plain(cur.data()) ?? {}), ...plain(patch) });
+    });
+  }
+
+  async setRegions(orgId: string, projectId: string, sheetId: string, versionId: string, regions: Region[], actorUid: string) {
+    const sRef = this.db.doc(fsPaths.sheet(orgId, projectId, sheetId));
+    const vRef = this.db.doc(fsPaths.version(orgId, projectId, sheetId, versionId));
+    return this.db.runTransaction(async (tx) => {
+      const [sheet, version] = await Promise.all([tx.get(sRef), tx.get(vRef)]);
+      if (!sheet.exists || !version.exists) return null;
+      if (sheet.get('currentVersionId') !== versionId) throw new RepoConflictError('version_changed');
+      const head = await this.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      tx.update(vRef, { regions, regionsUpdatedBy: actorUid, regionsUpdatedAt: now });
+      this.writeAudit(tx, orgId, head, {
+        actorId: actorUid,
+        entity: 'sheetVersions',
+        entityId: versionId,
+        action: 'set_regions',
+        after: regionsAudit(projectId, sheetId, regions),
+      });
+      return mappers.toVersion(sheetId, versionId, { ...(plain(version.data()) ?? {}), regions });
+    });
+  }
+
+  async createReprocessVersion(orgId: string, projectId: string, sheetId: string, actorUid: string, jobType: string) {
+    const sRef = this.db.doc(fsPaths.sheet(orgId, projectId, sheetId));
+    return this.db.runTransaction(async (tx): Promise<ReprocessResult | null> => {
+      const sheetSnap = await tx.get(sRef);
+      if (!sheetSnap.exists) return null;
+      const sheet = mappers.toSheet(sheetId, plain(sheetSnap.data()) ?? {});
+      const setSnap = await tx.get(this.db.doc(fsPaths.sheetSet(orgId, projectId, sheet.sheetSetId)));
+      if (!setSnap.exists) return null;
+      let curV: SheetVersion | null = null;
+      if (sheet.currentVersionId) {
+        const v = await tx.get(this.db.doc(fsPaths.version(orgId, projectId, sheetId, sheet.currentVersionId)));
+        if (v.exists) curV = mappers.toVersion(sheetId, v.id, plain(v.data()) ?? {});
+      }
+      if (curV && (curV.status === 'queued' || curV.status === 'processing')) throw new RepoConflictError('in_progress');
+      const head = await this.auditHead(tx, orgId);
+
+      const now = Timestamp.now();
+      const vRef = sRef.collection('versions').doc();
+      const jobRef = this.db.collection('jobs').doc();
+      const version = newVersionDoc(curV, jobRef.id, now);
+      tx.create(vRef, version);
+      tx.create(jobRef, {
+        orgId,
+        projectId,
+        sheetSetId: sheet.sheetSetId,
+        sheetId,
+        versionId: vRef.id,
+        type: jobType,
+        status: 'queued',
+        progress: { stage: 'ingest', pct: 0 },
+        attempts: 0,
+        error: null,
+        createdBy: actorUid,
+        createdAt: now,
+        updatedAt: now,
+      });
+      tx.update(sRef, { currentVersionId: vRef.id, updatedAt: now });
+      this.writeAudit(tx, orgId, head, {
+        actorId: actorUid,
+        entity: 'sheets',
+        entityId: sheetId,
+        action: 'reprocess',
+        after: { projectId, versionId: vRef.id, previousVersionId: sheet.currentVersionId, jobId: jobRef.id },
+      });
+      return {
+        sheet: { ...sheet, currentVersionId: vRef.id, updatedAt: now.toDate().toISOString() },
+        version: mappers.toVersion(sheetId, vRef.id, plain(version) ?? {}),
+        sheetSet: mappers.toSheetSet(orgId, projectId, sheet.sheetSetId, plain(setSnap.data()) ?? {}),
+        jobId: jobRef.id,
+      };
+    });
+  }
+
+  async failJob(orgId: string, jobId: string, error: ProcessingError, version?: { projectId: string; sheetId: string; versionId: string }) {
+    const batch = this.db.batch();
+    const jobRef = this.db.doc(fsPaths.job(jobId));
+    const job = await jobRef.get();
+    if (job.exists && job.get('orgId') === orgId) {
+      batch.update(jobRef, { status: 'failed', error, updatedAt: FieldValue.serverTimestamp() });
+    }
+    if (version) {
+      batch.update(this.db.doc(fsPaths.version(orgId, version.projectId, version.sheetId, version.versionId)), {
+        status: 'failed',
+        error,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
+  // --- legend entries & symbol mappings ------------------------------------------------
+  async listLegendEntries(orgId: string, projectId: string, opts: { limit: number; cursor?: string; status?: LegendEntryStatus; sheetId?: string }) {
+    // Equality filters + document-id order are served by the automatic single-field indexes.
+    let q: Query = this.db.collection(fsPaths.legendEntries(orgId, projectId));
+    if (opts.status) q = q.where('status', '==', opts.status);
+    if (opts.sheetId) q = q.where('sheetId', '==', opts.sheetId);
+    q = q.orderBy(FieldPath.documentId());
+    if (opts.cursor) q = q.startAfter(opts.cursor);
+    const snap = await q.limit(opts.limit + 1).get();
+    const items = snap.docs.slice(0, opts.limit).map((d) => mappers.toLegendEntry(d.id, plain(d.data()) ?? {}));
+    return { items, nextCursor: snap.docs.length > opts.limit && items.length ? (items.at(-1) as LegendEntry).id : null };
+  }
+
+  async getLegendEntry(orgId: string, projectId: string, entryId: string): Promise<LegendEntry | null> {
+    const d = plain((await this.db.doc(fsPaths.legendEntry(orgId, projectId, entryId)).get()).data());
+    return d ? mappers.toLegendEntry(entryId, d) : null;
+  }
+
+  async decideLegendEntry(orgId: string, projectId: string, entryId: string, decision: LegendDecision, actorUid: string) {
+    const ref = this.db.doc(fsPaths.legendEntry(orgId, projectId, entryId));
+    return this.db.runTransaction(async (tx) => {
+      // All reads before writes.
+      const snap = await tx.get(ref);
+      if (!snap.exists) return null;
+      const cur = mappers.toLegendEntry(entryId, plain(snap.data()) ?? {});
+      const mRef = decision.action === 'ignore' ? null : this.db.doc(fsPaths.symbolMapping(orgId, cur.signature));
+      const prevMapping = mRef ? plain((await tx.get(mRef)).data()) : null;
+      const head = await this.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      const patch = legendDecisionPatch(cur, decision, actorUid, now);
+      let mapping: SymbolMapping | null = null;
+      if (mRef && decision.action !== 'ignore') {
+        const m = mappingDoc(prevMapping ?? undefined, { class: decision.class, itemCode: patch.itemCode as string | null, label: decisionLabel(cur, decision) }, actorUid, now);
+        tx.set(mRef, m);
+        mapping = mappers.toSymbolMapping(cur.signature, plain(m) ?? {});
+      }
+      tx.update(ref, patch);
+      this.writeAudit(tx, orgId, head, legendDecisionAudit(projectId, cur, decision, patch, mapping?.uses ?? null, actorUid));
+      return { entry: mappers.toLegendEntry(entryId, { ...(plain(snap.data()) ?? {}), ...plain(patch) }), mapping };
+    });
+  }
+
+  async resolveUnknownCluster(orgId: string, projectId: string, input: ResolveClusterInput, actorUid: string) {
+    const mRef = this.db.doc(fsPaths.symbolMapping(orgId, input.signature));
+    return this.db.runTransaction(async (tx) => {
+      const prev = plain((await tx.get(mRef)).data());
+      const head = await this.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      const m = mappingDoc(prev ?? undefined, input, actorUid, now);
+      tx.set(mRef, m);
+      let legendEntry: LegendEntry | null = null;
+      if (input.legendEntry) {
+        const doc = clusterLegendEntryDoc(input, input.legendEntry.thumbPath, actorUid, now);
+        tx.set(this.db.doc(fsPaths.legendEntry(orgId, projectId, input.legendEntry.id)), doc);
+        legendEntry = mappers.toLegendEntry(input.legendEntry.id, plain(doc) ?? {});
+      }
+      const mapping = mappers.toSymbolMapping(input.signature, plain(m) ?? {});
+      this.writeAudit(tx, orgId, head, resolveClusterAudit(projectId, input, mapping.uses, actorUid));
+      return { mapping, legendEntry };
+    });
+  }
+
+  async getSymbolMapping(orgId: string, signature: string): Promise<SymbolMapping | null> {
+    const d = plain((await this.db.doc(fsPaths.symbolMapping(orgId, signature)).get()).data());
+    return d ? mappers.toSymbolMapping(signature, d) : null;
+  }
+
+  // --- jobs -----------------------------------------------------------------------------
+  async getJob(jobId: string): Promise<Job | null> {
+    const d = plain((await this.db.doc(fsPaths.job(jobId)).get()).data());
+    return d ? mappers.toJob(jobId, d) : null;
+  }
+
+  // --- audit -------------------------------------------------------------------------
+  /** @internal shared with FirestoreBoqRepository */
+  async auditHead(tx: Transaction, orgId: string): Promise<string | null> {
+    const snap = await tx.get(this.db.collection(`orgs/${orgId}/auditLog`).orderBy('at', 'desc').limit(1));
+    return (snap.docs[0]?.get('hash') as string | undefined) ?? null;
+  }
+
+  /** @internal */
+  writeAudit(tx: Transaction, orgId: string, prevHash: string | null, event: AuditInput): void {
+    const at = Timestamp.now();
+    const body = {
+      actorId: event.actorId,
+      actorKind: 'user',
+      entity: event.entity,
+      entityId: event.entityId,
+      action: event.action,
+      after: event.after ?? null,
+      at: at.toDate().toISOString(),
+    };
+    tx.create(this.db.collection(`orgs/${orgId}/auditLog`).doc(), { ...body, at, prevHash, hash: auditHash(prevHash, body) });
+  }
+
+  async appendAudit(orgId: string, event: AuditInput): Promise<void> {
+    await this.db.runTransaction(async (tx) => {
+      const head = await this.auditHead(tx, orgId);
+      this.writeAudit(tx, orgId, head, event);
+    });
+  }
+
+  async ping(): Promise<void> {
+    await this.db.collection('orgs').limit(1).select().get();
+  }
 }

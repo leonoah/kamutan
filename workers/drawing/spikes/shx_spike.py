@@ -18,13 +18,11 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-import numpy as np
-
 from kamutan_drawing.ingest.pdf_vector import extract_pdf
 from kamutan_drawing.ocr.dictionary import GlyphDictionary, contact_sheet
 from kamutan_drawing.ocr.glyphs import TextLine, extract_text_lines
 from kamutan_drawing.ocr.tess import ocr_text, render_line
-from kamutan_drawing.ocr.textutil import cer_counts, normalize
+from kamutan_drawing.ocr.textutil import cer_counts
 from kamutan_drawing.render.raster import render_region
 
 HERE = Path(__file__).resolve().parent
@@ -61,13 +59,15 @@ def stage_extract() -> list[TextLine]:
             "t_glyphs_s": round(t2 - t1, 2),
         }
         print(sid_of(f), stats[sid_of(f)]["n_paths"], len(L), stats[sid_of(f)]["n_glyphs"], flush=True)
-    pickle.dump(lines, open(OUT / "lines.pkl", "wb"))
+    # spike-local cache written by this script, never untrusted input
+    pickle.dump(lines, open(OUT / "lines.pkl", "wb"))  # nosemgrep
     (OUT / "extract_stats.json").write_text(json.dumps(stats, indent=1))
     return lines
 
 
 def load_lines() -> list[TextLine]:
-    return pickle.load(open(OUT / "lines.pkl", "rb"))
+    # spike-local cache written by this script, never untrusted input
+    return pickle.load(open(OUT / "lines.pkl", "rb"))  # nosemgrep
 
 
 # ---------------------------------------------------------------- label
@@ -81,7 +81,8 @@ def stage_label(lines: list[TextLine]) -> GlyphDictionary:
     gd.finalize_labels()
     n_prop = gd.propagate_nearest()
     gd.timing = {"ocr_heb_s": round(t1 - t, 1), "ocr_eng_s": round(t2 - t1, 1), "propagated": n_prop}
-    pickle.dump(gd, open(OUT / "gd.pkl", "wb"))
+    # spike-local cache written by this script, never untrusted input
+    pickle.dump(gd, open(OUT / "gd.pkl", "wb"))  # nosemgrep
     gd.save(OUT / "glyph_dictionary.json")
     contact_sheet(gd, lines).save(OUT / "glyph_contact_sheet.png")
     print("clusters", gd.n_unique, "labelled", sum(1 for c in gd.clusters if c.label), gd.timing)
@@ -210,7 +211,8 @@ if __name__ == "__main__":
     if "label" in stages:
         gd = stage_label(lines)
     else:
-        gd = pickle.load(open(OUT / "gd.pkl", "rb"))
+        # spike-local cache written by this script, never untrusted input
+        gd = pickle.load(open(OUT / "gd.pkl", "rb"))  # nosemgrep
     gd.assign(lines)
     if "stats" in stages or "label" in stages:
         dictionary_stats(lines, gd)

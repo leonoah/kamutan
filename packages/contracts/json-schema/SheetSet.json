@@ -6,54 +6,21 @@
       "properties": {
         "id": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "orgId": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "projectId": {
           "type": "string",
-          "format": "uuid"
-        },
-        "name": {
-          "type": "string",
           "minLength": 1,
-          "maxLength": 255
-        },
-        "uploadedBy": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "uuid"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "sourceFilePath": {
-          "anyOf": [
-            {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 1024
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "sourceSha256": {
-          "anyOf": [
-            {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "fileKind": {
           "type": "string",
@@ -62,6 +29,62 @@
             "dwg",
             "dxf",
             "png"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "storagePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "uploaded",
+            "queued",
+            "splitting",
+            "ready",
+            "failed"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "uploadedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ingestJobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "versionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "pageCount": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "createdAt": {
@@ -73,11 +96,11 @@
         "id",
         "orgId",
         "projectId",
-        "name",
-        "uploadedBy",
-        "sourceFilePath",
-        "sourceSha256",
         "fileKind",
+        "sha256",
+        "storagePath",
+        "status",
+        "uploadedBy",
         "createdAt"
       ],
       "additionalProperties": false

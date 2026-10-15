@@ -1,37 +1,47 @@
-import type { getStorage } from 'firebase-admin/storage';
-import { assertSafePath, type ObjectStorage, type SignedUpload } from './object-storage';
+import type { App } from 'firebase-admin/app';
+import { getStorage } from 'firebase-admin/storage';
+import { assertKnownPath, assertProjectUploadPath, assertQuarantinePath, type ObjectStorage } from './object-storage';
 
-type Bucket = ReturnType<ReturnType<typeof getStorage>['bucket']>;
-
-/**
- * Firebase (Google Cloud) Storage via the Admin SDK. Objects are private and only
- * reachable through this class. Uploads use short-lived V4 signed URLs, so the
- * server credentials must be able to sign (a service account key or an attached
- * service account with the Token Creator role). The bucket needs a CORS rule that
- * allows PUT from the web origin.
- */
+/** Cloud Storage via firebase-admin (ADC). Honours FIREBASE_STORAGE_EMULATOR_HOST. */
 export class FirebaseObjectStorage implements ObjectStorage {
-  constructor(private readonly bucket: Bucket) {}
+  constructor(
+    private readonly app: App,
+    private readonly bucketName: string,
+  ) {}
 
-  async createSignedUpload(path: string, opts: { expiresInSec: number; maxBytes: number }): Promise<SignedUpload> {
-    assertSafePath(path);
-    const [url] = await this.bucket.file(path).getSignedUrl({
-      version: 'v4',
-      action: 'write',
-      expires: Date.now() + opts.expiresInSec * 1000,
-    });
-    return { url, method: 'PUT', headers: {} };
+  private bucket() {
+    return getStorage(this.app).bucket(this.bucketName);
   }
 
   async openRead(path: string): Promise<AsyncIterable<Uint8Array> | null> {
-    assertSafePath(path);
-    const file = this.bucket.file(path);
+    assertQuarantinePath(path);
+    const file = this.bucket().file(path);
     const [exists] = await file.exists();
-    return exists ? file.createReadStream() : null;
+    if (!exists) return null;
+    return file.createReadStream({ validation: false });
+  }
+
+  async move(src: string, dest: string, meta: { contentType: string; metadata: Record<string, string> }): Promise<void> {
+    assertQuarantinePath(src);
+    assertProjectUploadPath(dest);
+    const [copied] = await this.bucket().file(src).copy(this.bucket().file(dest));
+    await copied.setMetadata({
+      contentType: meta.contentType,
+      contentDisposition: 'attachment', // never rendered inline (SEC-20)
+      cacheControl: 'private, max-age=0, no-store',
+      metadata: meta.metadata,
+    });
+    await this.bucket().file(src).delete({ ignoreNotFound: true });
+  }
+
+  async exists(path: string): Promise<boolean> {
+    assertKnownPath(path);
+    const [exists] = await this.bucket().file(path).exists();
+    return exists;
   }
 
   async remove(path: string): Promise<void> {
-    assertSafePath(path);
-    await this.bucket.file(path).delete({ ignoreNotFound: true });
+    assertKnownPath(path);
+    await this.bucket().file(path).delete({ ignoreNotFound: true });
   }
 }

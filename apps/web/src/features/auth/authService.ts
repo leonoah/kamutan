@@ -1,9 +1,7 @@
-import { initializeApp } from "firebase/app";
 import {
   GoogleAuthProvider,
-  getAuth,
   isSignInWithEmailLink,
-  onIdTokenChanged,
+  onAuthStateChanged,
   sendSignInLinkToEmail,
   signInWithEmailAndPassword,
   signInWithEmailLink,
@@ -13,120 +11,147 @@ import {
   type User,
 } from "firebase/auth";
 import { env } from "@/lib/env";
+import { getFirebase } from "@/lib/firebase";
 
 export interface AuthSession {
-  userId: string;
+  uid: string;
   email: string;
-  accessToken: string;
+  displayName: string | null;
 }
 
-export type AuthErrorCode = "invalid_credentials" | "cancelled" | "generic";
+export type AuthErrorCode =
+  | "invalid_credentials"
+  | "invalid_link"
+  | "popup_closed"
+  | "too_many_requests"
+  | "user_disabled"
+  | "generic";
 
 export class AuthError extends Error {
-  constructor(public code: AuthErrorCode, message: string = code) {
+  constructor(
+    public code: AuthErrorCode,
+    message: string = code,
+  ) {
     super(message);
     this.name = "AuthError";
   }
 }
 
 export interface AuthService {
-  getSession(): Promise<AuthSession | null>;
+  getSession(): AuthSession | null;
   signInWithPassword(email: string, password: string): Promise<AuthSession>;
-  /** Google sign-in popup. */
+  /** Sends a Firebase email sign-in link that lands on /auth/complete. */
+  sendMagicLink(email: string): Promise<void>;
+  isEmailLink(url: string): boolean;
+  /** Completes an email-link sign-in. `email` falls back to the one stored when the link was sent. */
+  completeEmailLink(url: string, email?: string): Promise<AuthSession>;
+  /** Email remembered on this device when the link was requested (null on another device). */
+  storedEmailForLink(): string | null;
   signInWithGoogle(): Promise<AuthSession>;
-  /** Email-link sign-in. Resolves when the email was sent. */
-  sendMagicLink(email: string, redirectTo: string): Promise<void>;
   signOut(): Promise<void>;
+  /** Fires immediately with the current state (like onAuthStateChanged), then on every change. */
   onChange(cb: (session: AuthSession | null) => void): () => void;
+  /** Fresh Firebase ID token for `Authorization: Bearer` (null when signed out). */
+  getIdToken(): Promise<string | null>;
 }
 
-/* ---------- Firebase ---------- */
+export const EMAIL_FOR_SIGN_IN_KEY = "kamutan.emailForSignIn";
+export const AUTH_COMPLETE_PATH = "/auth/complete";
 
-const EMAIL_LINK_KEY = "kamutan.emailForSignIn";
-
-function toSession(user: User | null, accessToken: string): AuthSession | null {
-  return user ? { userId: user.uid, email: user.email ?? "", accessToken } : null;
-}
-
-const INVALID_CREDENTIAL_CODES = new Set([
-  "auth/invalid-credential",
-  "auth/wrong-password",
-  "auth/user-not-found",
-  "auth/invalid-email",
-]);
-
-function mapError(err: unknown): AuthError {
-  const code = (err as { code?: string } | null)?.code ?? "";
-  if (INVALID_CREDENTIAL_CODES.has(code)) return new AuthError("invalid_credentials", code);
-  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
-    return new AuthError("cancelled", code);
-  }
-  return new AuthError("generic", code || (err instanceof Error ? err.message : "error"));
-}
-
-export function createFirebaseAuth(auth: Auth): AuthService {
-  // Completes an email-link (magic link) sign-in when the user lands back on the app.
-  const ready: Promise<void> = (async () => {
-    if (!isSignInWithEmailLink(auth, window.location.href)) return;
-    const email = localStorage.getItem(EMAIL_LINK_KEY);
-    if (!email) return; // opened on another device: the user must request a new link
+const store = {
+  get: (k: string) => {
     try {
-      await signInWithEmailLink(auth, email, window.location.href);
-      localStorage.removeItem(EMAIL_LINK_KEY);
+      return localStorage.getItem(k);
     } catch {
-      /* expired / used link: fall through to the login screen */
+      return null;
     }
-  })();
+  },
+  set: (k: string, v: string | null) => {
+    try {
+      if (v === null) localStorage.removeItem(k);
+      else localStorage.setItem(k, v);
+    } catch {
+      /* storage unavailable */
+    }
+  },
+};
 
-  async function current(): Promise<AuthSession | null> {
-    await ready;
-    await auth.authStateReady();
-    const user = auth.currentUser;
-    // getIdToken() returns a cached token and refreshes it shortly before expiry.
-    return user ? toSession(user, await user.getIdToken()) : null;
+/* ---------------- Firebase ---------------- */
+
+const toSession = (u: User | null): AuthSession | null =>
+  u ? { uid: u.uid, email: u.email ?? "", displayName: u.displayName } : null;
+
+/** Maps Firebase Auth error codes (auth/...) to UI codes. Never leaks whether an account exists. */
+export function mapFirebaseAuthError(err: unknown): AuthError {
+  const code = (err as { code?: string })?.code ?? "";
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+    case "auth/invalid-email":
+    case "auth/invalid-login-credentials":
+      return new AuthError("invalid_credentials", code);
+    case "auth/invalid-action-code":
+    case "auth/expired-action-code":
+      return new AuthError("invalid_link", code);
+    case "auth/popup-closed-by-user":
+    case "auth/cancelled-popup-request":
+    case "auth/popup-blocked":
+      return new AuthError("popup_closed", code);
+    case "auth/too-many-requests":
+      return new AuthError("too_many_requests", code);
+    case "auth/user-disabled":
+      return new AuthError("user_disabled", code);
+    default:
+      return new AuthError("generic", code || String(err));
   }
+}
+
+export function createFirebaseAuth(auth: Auth, origin = window.location.origin): AuthService {
+  const wrap = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (e) {
+      throw e instanceof AuthError ? e : mapFirebaseAuthError(e);
+    }
+  };
 
   return {
-    getSession: current,
-    async signInWithPassword(email, password) {
-      try {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
-        return toSession(cred.user, await cred.user.getIdToken()) as AuthSession;
-      } catch (err) {
-        throw mapError(err);
-      }
-    },
-    async signInWithGoogle() {
-      try {
-        const cred = await signInWithPopup(auth, new GoogleAuthProvider());
-        return toSession(cred.user, await cred.user.getIdToken()) as AuthSession;
-      } catch (err) {
-        throw mapError(err);
-      }
-    },
-    async sendMagicLink(email, redirectTo) {
-      try {
-        await sendSignInLinkToEmail(auth, email, { url: redirectTo, handleCodeInApp: true });
-        localStorage.setItem(EMAIL_LINK_KEY, email);
-      } catch (err) {
-        throw mapError(err);
-      }
-    },
-    async signOut() {
-      await signOut(auth);
-    },
-    onChange(cb) {
-      return onIdTokenChanged(auth, (user) => {
-        if (!user) return cb(null);
-        void user.getIdToken().then((token) => cb(toSession(user, token)));
-      });
-    },
+    getSession: () => toSession(auth.currentUser),
+    signInWithPassword: (email, password) =>
+      wrap(async () => toSession((await signInWithEmailAndPassword(auth, email, password)).user)!),
+    sendMagicLink: (email) =>
+      wrap(async () => {
+        await sendSignInLinkToEmail(auth, email, { url: `${origin}${AUTH_COMPLETE_PATH}`, handleCodeInApp: true });
+        store.set(EMAIL_FOR_SIGN_IN_KEY, email);
+      }),
+    isEmailLink: (url) => isSignInWithEmailLink(auth, url),
+    storedEmailForLink: () => store.get(EMAIL_FOR_SIGN_IN_KEY),
+    completeEmailLink: (url, email) =>
+      wrap(async () => {
+        if (!isSignInWithEmailLink(auth, url)) throw new AuthError("invalid_link");
+        const addr = email ?? store.get(EMAIL_FOR_SIGN_IN_KEY);
+        if (!addr) throw new AuthError("invalid_link", "missing email");
+        const cred = await signInWithEmailLink(auth, addr, url);
+        store.set(EMAIL_FOR_SIGN_IN_KEY, null);
+        return toSession(cred.user)!;
+      }),
+    signInWithGoogle: () =>
+      wrap(async () => {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: "select_account" });
+        return toSession((await signInWithPopup(auth, provider)).user)!;
+      }),
+    signOut: () => signOut(auth),
+    onChange: (cb) => onAuthStateChanged(auth, (u) => cb(toSession(u))),
+    getIdToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
   };
 }
 
-/* ---------- Mock (VITE_USE_MOCKS=true, tests) ---------- */
+/* ---------------- Mock (VITE_USE_MOCKS=true, tests) ---------------- */
 
 const MOCK_KEY = "kamutan.mock-session";
+export const MOCK_EMAIL_LINK = "/auth/complete?mode=signIn&oobCode=mock-oob-code";
 
 export function createMockAuth(opts: { persist?: boolean; latencyMs?: number } = {}): AuthService {
   const persist = opts.persist ?? true;
@@ -149,54 +174,67 @@ export function createMockAuth(opts: { persist?: boolean; latencyMs?: number } =
         if (s) sessionStorage.setItem(MOCK_KEY, JSON.stringify(s));
         else sessionStorage.removeItem(MOCK_KEY);
       } catch {
-        /* storage unavailable */
+        /* ignore */
       }
     }
     listeners.forEach((l) => l(s));
   };
+  const sessionFor = (email: string, displayName: string | null = null): AuthSession => ({
+    uid: `mock-${email.replace(/[^A-Za-z0-9]/g, "_")}`,
+    email,
+    displayName,
+  });
 
   return {
-    async getSession() {
-      return current;
-    },
+    getSession: () => current,
     async signInWithPassword(email, password) {
       await wait();
       // Mirrors SEC-01 minimum password length so demo behaviour matches production rules.
       if (password.length < 10) throw new AuthError("invalid_credentials");
-      const s: AuthSession = { userId: `mock-${email}`, email, accessToken: "mock-token" };
+      const s = sessionFor(email);
+      set(s);
+      return s;
+    },
+    async sendMagicLink(email) {
+      await wait();
+      store.set(EMAIL_FOR_SIGN_IN_KEY, email);
+    },
+    isEmailLink: (url) => /[?&]oobCode=/.test(url) && /[?&]mode=signIn/.test(url),
+    storedEmailForLink: () => store.get(EMAIL_FOR_SIGN_IN_KEY),
+    async completeEmailLink(url, email) {
+      await wait();
+      if (!/oobCode=mock-oob-code/.test(url)) throw new AuthError("invalid_link");
+      const addr = email ?? store.get(EMAIL_FOR_SIGN_IN_KEY);
+      if (!addr) throw new AuthError("invalid_link", "missing email");
+      store.set(EMAIL_FOR_SIGN_IN_KEY, null);
+      const s = sessionFor(addr);
       set(s);
       return s;
     },
     async signInWithGoogle() {
       await wait();
-      const s: AuthSession = { userId: "mock-google-user", email: "google.user@example.com", accessToken: "mock-token" };
+      const s = sessionFor("demo.user@gmail.com", "משתמשת הדגמה");
       set(s);
       return s;
-    },
-    async sendMagicLink() {
-      await wait();
     },
     async signOut() {
       set(null);
     },
     onChange(cb) {
       listeners.add(cb);
+      queueMicrotask(() => listeners.has(cb) && cb(current));
       return () => listeners.delete(cb);
     },
+    getIdToken: async () => (current ? `mock-id-token.${current.uid}` : null),
   };
 }
 
-/* ---------- active instance ---------- */
+/* ---------------- active instance ---------------- */
 
 let active: AuthService | null = null;
 
 export function getAuthService(): AuthService {
-  if (!active) {
-    active =
-      env.useMocks || !env.firebase.apiKey
-        ? createMockAuth()
-        : createFirebaseAuth(getAuth(initializeApp(env.firebase)));
-  }
+  if (!active) active = env.useMocks ? createMockAuth() : createFirebaseAuth(getFirebase().auth);
   return active;
 }
 
@@ -205,6 +243,6 @@ export function setAuthService(service: AuthService | null) {
   active = service;
 }
 
-export async function getAccessToken(): Promise<string | null> {
-  return (await getAuthService().getSession())?.accessToken ?? null;
+export async function getIdToken(): Promise<string | null> {
+  return getAuthService().getIdToken();
 }

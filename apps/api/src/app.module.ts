@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthModule } from './auth/auth.module';
+import { BoqModule } from './boq/boq.module';
 import { RolesGuard } from './auth/roles.guard';
 import { UserThrottlerGuard } from './auth/user-throttler.guard';
 import { HttpExceptionFilter } from './common/http-exception.filter';
@@ -12,9 +13,13 @@ import type { AppConfig } from './config/config';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './db/database.module';
 import { HealthModule } from './health/health.module';
+import { JobsModule } from './jobs/jobs.module';
 import { OrgsModule } from './orgs/orgs.module';
 import { ProjectsModule } from './projects/projects.module';
 import { QueueModule } from './queue/queue.module';
+import { ReviewModule } from './review/review.module';
+import { SheetsModule } from './sheets/sheets.module';
+import { UnderstandingModule } from './understanding/understanding.module';
 import { UploadsModule } from './uploads/uploads.module';
 
 @Module({})
@@ -25,7 +30,7 @@ export class AppModule {
       imports: [
         ConfigModule.forRoot(cfg),
         LoggerModule.forRoot(loggerParams(cfg)),
-        // In-memory store; per-instance limits. Redis storage is a Sprint 1 item (see NOTES.md).
+        // In-memory store: per function instance. Shared store + per-org quotas are a follow-up (NOTES.md).
         ThrottlerModule.forRoot([{ name: 'default', ttl: cfg.THROTTLE_TTL_MS, limit: cfg.THROTTLE_LIMIT }]),
         DatabaseModule,
         QueueModule,
@@ -33,7 +38,12 @@ export class AppModule {
         HealthModule,
         OrgsModule,
         ProjectsModule,
-        UploadsModule.forRoot(cfg),
+        UploadsModule,
+        SheetsModule,
+        UnderstandingModule,
+        BoqModule,
+        ReviewModule,
+        JobsModule,
       ],
       providers: [
         // Order matters: authenticate → rate-limit per user → authorize.

@@ -28,16 +28,16 @@ export function loggerParams(cfg: AppConfig): Params {
         req: (req: { id?: unknown; method?: string; url?: string }) => ({
           id: req.id,
           method: req.method,
-          path: typeof req.url === 'string' ? req.url.split('?')[0]?.replace(/\/local-storage\/[^/]+/, '/local-storage/:token') : undefined,
+          path: typeof req.url === 'string' ? req.url.split('?')[0] : undefined,
         }),
         res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
       },
       customProps: (req: IncomingMessage) => {
-        const r = req as IncomingMessage & { auth?: { userId: string }; orgAccess?: { orgId: string } };
-        return { userId: r.auth?.userId, orgId: r.orgAccess?.orgId };
+        const r = req as IncomingMessage & { auth?: { uid: string }; orgAccess?: { orgId: string } };
+        return { uid: r.auth?.uid, orgId: r.orgAccess?.orgId };
       },
       customLogLevel: (_req, res, err) => (err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info'),
-      autoLogging: { ignore: (req) => (req.url ?? '').startsWith('/v1/health') },
+      autoLogging: { ignore: (req) => (req.url ?? '').startsWith('/api/v1/health') },
     },
   };
 }

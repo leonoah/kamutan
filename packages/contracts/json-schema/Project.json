@@ -6,11 +6,15 @@
       "properties": {
         "id": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "orgId": {
           "type": "string",
-          "format": "uuid"
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "name": {
           "type": "string",
@@ -18,15 +22,155 @@
           "maxLength": 200
         },
         "address": {
-          "anyOf": [
-            {
-              "type": "string",
-              "maxLength": 500
-            },
-            {
-              "type": "null"
-            }
+          "type": "string",
+          "maxLength": 500
+        },
+        "templateId": {
+          "type": [
+            "string",
+            "null"
           ]
+        },
+        "floors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "sortOrder": {
+                "type": "integer"
+              },
+              "elevationM": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "sortOrder"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "sheets": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reviewOpen": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "boqLines": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "red": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "yellow": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "green": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "sheets",
+            "reviewOpen",
+            "boqLines",
+            "red",
+            "yellow",
+            "green"
+          ],
+          "additionalProperties": false
+        },
+        "boq": {
+          "type": "object",
+          "properties": {
+            "latestBuildId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "builtAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "pendingBuildId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "staleReason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "staleAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "latestBuildId",
+            "builtAt",
+            "stale"
+          ],
+          "additionalProperties": false
         },
         "status": {
           "type": "string",
@@ -36,21 +180,12 @@
           ]
         },
         "createdBy": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "uuid"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
         },
         "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
           "type": "string",
           "format": "date-time"
         }
@@ -59,11 +194,10 @@
         "id",
         "orgId",
         "name",
-        "address",
+        "floors",
         "status",
         "createdBy",
-        "createdAt",
-        "updatedAt"
+        "createdAt"
       ],
       "additionalProperties": false
     }

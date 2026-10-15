@@ -1,0 +1,51 @@
+{
+  "$ref": "#/definitions/DetectionStats",
+  "definitions": {
+    "DetectionStats": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "green": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "yellow": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "red": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "byClass": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "propertyNames": {
+            "maxLength": 64
+          }
+        }
+      },
+      "required": [
+        "total",
+        "green",
+        "yellow",
+        "red",
+        "unknown",
+        "byClass"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/DetectionStats.json"
+}

@@ -1,26 +1,30 @@
+import { PROJECT_UPLOAD_PATH_RE, QUARANTINE_PATH_RE } from '@kamutan/contracts';
+
 export const OBJECT_STORAGE = Symbol('OBJECT_STORAGE');
 
-export interface SignedUpload {
-  url: string;
-  method: 'PUT';
-  headers: Record<string, string>;
-}
-
 /**
- * Private object storage for drawing uploads (bucket `drawings`, objects under
- * `{orgId}/…`). The Supabase implementation is the only place the service-role
- * key is used (SEC-08), with a closed set of operations.
+ * Admin access to the default bucket (kamutan-fba67.firebasestorage.app).
+ * Only server-generated paths of the ADR 0008 layout are ever touched:
+ * reads from `orgs/{orgId}/quarantine/{uuid}`, writes to
+ * `orgs/{orgId}/projects/{projectId}/uploads/{sheetSetId}/source.{ext}`.
  */
 export interface ObjectStorage {
-  createSignedUpload(path: string, opts: { expiresInSec: number; maxBytes: number }): Promise<SignedUpload>;
-  /** Streams an object, or returns null when it does not exist. */
+  /** Streams a quarantined object, or null when it does not exist. */
   openRead(path: string): Promise<AsyncIterable<Uint8Array> | null>;
+  /** Server-side move quarantine → project upload (copy + delete). Overwrites (destination is content-addressed). */
+  move(src: string, dest: string, meta: { contentType: string; metadata: Record<string, string> }): Promise<void>;
+  exists(path: string): Promise<boolean>;
   remove(path: string): Promise<void>;
 }
 
-/** Defense in depth: only server-generated `{uuid}/upload/{uuid}` paths are ever touched. */
-export function assertSafePath(path: string): void {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/upload\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(path)) {
-    throw new Error('unsafe storage path');
-  }
+export function assertQuarantinePath(path: string): void {
+  if (!QUARANTINE_PATH_RE.test(path)) throw new Error('unsafe quarantine path');
+}
+
+export function assertProjectUploadPath(path: string): void {
+  if (!PROJECT_UPLOAD_PATH_RE.test(path)) throw new Error('unsafe upload path');
+}
+
+export function assertKnownPath(path: string): void {
+  if (!QUARANTINE_PATH_RE.test(path) && !PROJECT_UPLOAD_PATH_RE.test(path)) throw new Error('unsafe storage path');
 }

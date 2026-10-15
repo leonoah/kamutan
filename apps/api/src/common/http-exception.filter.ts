@@ -55,6 +55,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const code = STATUS_TO_CODE[status] ?? (status >= 500 ? 'internal_error' : 'bad_request');
       const message = status === 413 ? 'payload too large' : status >= 500 ? 'internal error' : exception.message;
       body = { code, message, requestId };
+    } else if (isClientHttpError(exception)) {
+      // body-parser (entity.too.large → 413, entity.parse.failed → 400, …): not an HttpException, but a client error.
+      status = exception.status;
+      body = { code: STATUS_TO_CODE[status] ?? 'bad_request', message: status === 413 ? 'payload too large' : 'malformed request body', requestId };
     } else {
       body = { code: 'internal_error', message: 'internal error', requestId };
     }
@@ -66,4 +70,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (body.issues === undefined) delete body.issues;
     if (!res.headersSent) res.status(status).json({ error: body } satisfies ApiError);
   }
+}
+
+/** Errors from express middleware that carry a 4xx `status` and `expose: true` (http-errors). */
+function isClientHttpError(e: unknown): e is { status: number } {
+  const x = e as { status?: unknown; expose?: unknown } | null;
+  return !!x && typeof x.status === 'number' && x.status >= 400 && x.status < 500 && x.expose === true;
 }

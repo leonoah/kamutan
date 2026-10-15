@@ -1,0 +1,70 @@
+{
+  "$ref": "#/definitions/UnknownCluster",
+  "definitions": {
+    "UnknownCluster": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^u_[A-Za-z0-9_-]+$"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{8,128}$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exemplarBboxMm": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "w": {
+              "type": "number",
+              "minimum": 0
+            },
+            "h": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "w",
+            "h"
+          ],
+          "additionalProperties": false
+        },
+        "thumb": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^unknown\\/u_[A-Za-z0-9_-]{1,125}\\.webp$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "signature",
+        "count",
+        "exemplarBboxMm",
+        "thumb"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/UnknownCluster.json"
+}

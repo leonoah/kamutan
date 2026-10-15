@@ -1,0 +1,1336 @@
+{
+  "template": {
+    "id": "tpl_default",
+    "name": "תבנית ברירת מחדל (לפי כתב הכמויות לדוגמה)",
+    "default": true,
+    "source": "default",
+    "sourceRef": "boq_sample.xls#כמויות",
+    "vatRate": 0.18,
+    "titleRows": [
+      "כתב כמויות ומחירים",
+      "שם הפרויקט: {projectName}"
+    ],
+    "columns": [
+      {
+        "key": "code",
+        "title": "סעיף",
+        "width": 8
+      },
+      {
+        "key": "description",
+        "title": "תאור העבודה",
+        "width": 60
+      },
+      {
+        "key": "unit",
+        "title": "יחידה",
+        "width": 10
+      },
+      {
+        "key": "qty",
+        "title": "כמות סה\"כ",
+        "width": 11
+      },
+      {
+        "key": "unitPrice",
+        "title": "מחיר יח'",
+        "width": 11
+      },
+      {
+        "key": "total",
+        "title": "סה\"כ ₪",
+        "width": 14
+      }
+    ],
+    "chapters": [
+      {
+        "code": "01",
+        "title": "פרק 01 - עבודות הריסה ופינוי",
+        "notes": [
+          "1. כלל הפינויים יהיו לשפך העירייה."
+        ],
+        "codePrefixes": [
+          "1"
+        ]
+      },
+      {
+        "code": "02",
+        "title": "פרק 02 - עבודות בנייה",
+        "notes": [
+          "1. כל הבלוקים בטון שחור.",
+          "2. העבודה כוללת שטרבות, עמודונים, קורות וחגורות בטון ע\"פ תקן ומסביב לפתחים.",
+          "3. הקבלן יספק את הבלוקים והחומר השחור.",
+          "4. כלל העבודות ההנדסיות ייעשו בהתאם להוראות המהנדס בלבד (!) לרבות כמות וסוג הזיון, וסוג הבטון."
+        ],
+        "codePrefixes": [
+          "2"
+        ]
+      },
+      {
+        "code": "03",
+        "title": "פרק 03 – עבודות אינסטלציה",
+        "notes": [
+          "1. כלל צנרות המים יהיו מתוצרת SP ובעלי מחברי לחיצה (לא הברגה!)",
+          "2. ברזי ניל יסופקו ע\"י הקבלן",
+          "3. העבודה כוללת התקנת כלל כיורים, ברזים תעלות ניקוז, אינטרפוצים, אסלות וכד'",
+          "4. העבודה תכלול ביטון כלל הצנרות"
+        ],
+        "codePrefixes": [
+          "3"
+        ]
+      },
+      {
+        "code": "04",
+        "title": "פרק 04 – עבודות חשמל",
+        "notes": [
+          "1. כל העבודות יבוצעו בהתאם למפרט הסטנדרטי הבין משרדי לעבודות חשמל ע\"י חשמלאי מוסמך.",
+          "2. תמחור כלל עבודות יתבצע על בסיס תכניות החשמל.",
+          "3. לכמויות ופרוט ראה תכניות חשמל מצורפות.",
+          "4. יש לקרוא פירוט זה בקפידה וביחד עם תכנית חשמל ותאורה",
+          "7. התכנית אינה כוללת התייחסות למערכת אזעקה."
+        ],
+        "codePrefixes": [
+          "4"
+        ]
+      },
+      {
+        "code": "05",
+        "title": "פרק 05 - עבודות ריצוף, חיפוי ואיטום",
+        "notes": [
+          "1. האריחים בלבד יסופקו ע\"י המזמין.",
+          "2. חיבורי הפינות יהיו בגרונג בלבד ולא עם פינות מתכת!",
+          "3. ריצוף וחיפוי יבוצע על פי תכנית פריסות חדרי רחצה.",
+          "4. יש למלא רובה אקרילית בגווני האריח תוצרת מפאי, אלא אם התבקש אחרת.",
+          "5. יש להקפיד על שיפועים במקלחון, במדפים, ספסלים ונישות בתוך המקלחון .",
+          "7. כל החומר השחור - חול, מלט לבן, רובה וכ'ו יסופקו ע\"י הקבלן כולל אביזרי עזר כגון שומרי מרחק.",
+          "8. העבודה כוללת כיסוי הרצפות החדשות בקרטון גלי או חומר אחר עד גמר העבודה.",
+          "9. העבודה כוללת שינוע כלל החומר הלבן מהמדרכה אל תוך הבית"
+        ],
+        "codePrefixes": [
+          "5"
+        ]
+      },
+      {
+        "code": "06",
+        "title": "פרק 06 - עבודות גבס",
+        "notes": [
+          "1. יש לעבוד עם פינות מתכת ולא פינות נייר.",
+          "2. יש לשתול מסגרות מעץ לחיזוק סביב המקומות המיועדים למשקופי הדלתות.",
+          "3. יש להתקין בקירות הגבס חיזוקים לתלית אביזרים כגון טלויזיה, מדפים, מתלה מגבות וכ'ו",
+          "4. כלל הקירות יהיו מלוחות גבס ירוק נגד מים.",
+          "5. בכלל מחיצות הגבס יותקנו מזרוני צמר סלעים עטוף בניילון 80 ק\"ג למ\"ק עם מקדם בליעה אקוסטי."
+        ],
+        "codePrefixes": [
+          "7"
+        ]
+      },
+      {
+        "code": "07",
+        "title": "פרק 07 - עבודות שפכטל, טיח וצבע",
+        "notes": [
+          "1. העבודה כוללת את כל ההכנות הנדרשות לביצוע עבודות הצבע לפי הוראות היצרן, כולל מספר שכבות הצבע הנדרשות.",
+          "3. לפני תחילת העבודה יש לשים מסקנטייפ על כל הפנלים ועל כל הסרגלים בצורה מוקפדת."
+        ],
+        "codePrefixes": [
+          "8"
+        ]
+      },
+      {
+        "code": "08",
+        "title": "פרק 08- שונות",
+        "notes": [],
+        "codePrefixes": [
+          "9"
+        ]
+      }
+    ]
+  },
+  "rules": [
+    {
+      "id": "r_socket_single",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_single"
+        ]
+      },
+      "itemCode": "4.00",
+      "itemDescription": "שקע בודד",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_socket_double",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_double"
+        ]
+      },
+      "itemCode": "4.01",
+      "itemDescription": "שקע כפול",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_socket_triple",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_triple"
+        ]
+      },
+      "itemCode": "4.02",
+      "itemDescription": "אביזר שלישיית שקעים",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_socket_power",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_power"
+        ]
+      },
+      "itemCode": "4.03",
+      "itemDescription": "שקע כח",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_socket_power_double",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_power_double"
+        ]
+      },
+      "itemCode": "4.04",
+      "itemDescription": "שקע כח כפול",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_comms_point",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "tv_point",
+          "data_point",
+          "phone_point",
+          "bezek_point"
+        ]
+      },
+      "itemCode": "4.05",
+      "itemDescription": "נק' תקשורת (כבלים/ טלפון/ רשת) הכנה עם חוט משיכה",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_socket_box_6",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_box_6"
+        ]
+      },
+      "itemCode": "4.06",
+      "itemDescription": "אביזר עדה פלאסט הכולל 6 שקעים, נק' כבלים, נק' טלפון ונק' רשת",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_speaker",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "speaker"
+        ]
+      },
+      "itemCode": "4.07",
+      "itemDescription": "נק' קצה לרמקול",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_heater_feed",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "heater_feed"
+        ]
+      },
+      "itemCode": "4.17",
+      "itemDescription": "הזנה לתנור חימום+ מפסק",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_intercom",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "intercom"
+        ]
+      },
+      "itemCode": "4.18",
+      "itemDescription": "נק' אינטרקום",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_conduit_cobra",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "conduit_cobra"
+        ]
+      },
+      "itemCode": "4.20",
+      "itemDescription": "צינור קוברה 50 מ\"מ באורך 1.5 מ'",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_socket_3phase",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_3phase"
+        ]
+      },
+      "itemCode": "4.21",
+      "itemDescription": "שקע תלת פאזי",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_doorbell",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "doorbell"
+        ]
+      },
+      "itemCode": "4.22",
+      "itemDescription": "הזנה למפסק ופעמון",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_water_heater_feed",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "water_heater_feed"
+        ]
+      },
+      "itemCode": "4.23",
+      "itemDescription": "הזנה לדוד חשמל יחידת דיור כולל התקנת מפסק טיימר של גוויס",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_panel",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ]
+      },
+      "itemCode": "4.24",
+      "itemDescription": "אספקה והתקנת לוח חשמל",
+      "unit": "יחידה",
+      "priority": 50,
+      "reasons": [
+        "שיוך לפריט לפי כלל ברירת מחדל"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_light_single",
+      "kind": "composite_lighting",
+      "match": {
+        "pointMergeMm": 600,
+        "groupKind": "single",
+        "pointCount": 1
+      },
+      "itemCode": "4.09",
+      "itemDescription": "נק' מאור כוללת מפסק",
+      "unit": "יחידה",
+      "priority": 200,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_light_two_way",
+      "kind": "composite_lighting",
+      "match": {
+        "pointMergeMm": 600,
+        "groupKind": "two_way",
+        "pointCount": 1
+      },
+      "itemCode": "4.10",
+      "itemDescription": "נק' מאור בעלת שני מפסקים מחליפים",
+      "unit": "יחידה",
+      "priority": 200,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_light_shared_2",
+      "kind": "composite_lighting",
+      "match": {
+        "pointMergeMm": 600,
+        "groupKind": "shared",
+        "pointCount": 2
+      },
+      "itemCode": "4.11",
+      "itemDescription": "שתי נק' מאור משותפות בעלות מפסק בודד",
+      "unit": "יחידה",
+      "priority": 200,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_light_shared_3",
+      "kind": "composite_lighting",
+      "match": {
+        "pointMergeMm": 600,
+        "groupKind": "shared",
+        "pointCount": 3
+      },
+      "itemCode": "4.16",
+      "itemDescription": "שלוש נקודות מאור בעלות מפסק בודד",
+      "unit": "יחידה",
+      "priority": 200,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_light_add_2way",
+      "kind": "composite_lighting",
+      "match": {
+        "pointMergeMm": 600,
+        "groupKind": "add_to_existing",
+        "switchClasses": [
+          "switch_2way"
+        ]
+      },
+      "itemCode": "4.12",
+      "itemDescription": "הוספת מפסק מחליף לנקודת מאור קיימת",
+      "unit": "יחידה",
+      "priority": 200,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_light_add_fan",
+      "kind": "composite_lighting",
+      "match": {
+        "pointMergeMm": 600,
+        "groupKind": "add_to_existing",
+        "switchClasses": [
+          "switch_fan"
+        ]
+      },
+      "itemCode": "4.14",
+      "itemDescription": "הוספת מפסק למאוורר עבור נק' מאור קיימת",
+      "unit": "יחידה",
+      "priority": 200,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_light_sensor",
+      "kind": "composite_lighting",
+      "match": {
+        "pointMergeMm": 600,
+        "groupKind": "sensor"
+      },
+      "itemCode": "4.15",
+      "itemDescription": "נק' מאור ללא מפסק (חיישן תנועה)",
+      "unit": "יחידה",
+      "priority": 200,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_install_luminaires",
+      "kind": "install_count",
+      "match": {
+        "classes": [
+          "luminaire_ceiling",
+          "luminaire_wall",
+          "luminaire_pendant",
+          "luminaire_strip",
+          "luminaire_outdoor"
+        ],
+        "excludeClasses": [
+          "ceiling_fan"
+        ],
+        "excludeSupply": [],
+        "excludeLifecycle": [
+          "demolish"
+        ]
+      },
+      "itemCode": "9.01",
+      "itemDescription": "התקנת גופי התאורה בבית",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_ac_drain",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "ac_unit"
+        ],
+        "perRoom": false
+      },
+      "itemCode": "3.01",
+      "itemDescription": "ניקוז למזגן",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_basin_wall_faucet",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_basin",
+          "fixture_kitchen_sink"
+        ],
+        "withFaucetClasses": [
+          "faucet_wall"
+        ],
+        "faucetRadiusMm": 600,
+        "perRoom": false
+      },
+      "itemCode": "3.02",
+      "itemDescription": "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז קיר",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_basin_flower_faucet",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_basin",
+          "fixture_kitchen_sink"
+        ],
+        "withoutFaucetClasses": [
+          "faucet_wall"
+        ],
+        "faucetRadiusMm": 600,
+        "perRoom": false
+      },
+      "itemCode": "3.03",
+      "itemDescription": "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז פרח",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_wc_concealed",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_wc_concealed"
+        ],
+        "perRoom": false
+      },
+      "itemCode": "3.04",
+      "itemDescription": "נק' מים וניקוז לניאגרה סמויה, לרבות ביטון הניאגרה, ותליית האסלה",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_washing_machine",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_washing_machine"
+        ],
+        "perRoom": false
+      },
+      "itemCode": "3.05",
+      "itemDescription": "נק' מים וניקוז למכונת כביסה",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_garden_tap",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "garden_tap"
+        ],
+        "perRoom": false
+      },
+      "itemCode": "3.06",
+      "itemDescription": "נק' מים קרים עבור תמי 4/ ברז גן",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_wc_monoblock",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_wc_monoblock"
+        ],
+        "perRoom": false
+      },
+      "itemCode": "3.07",
+      "itemDescription": "נק' מים וניקוז עבור ניאגרה מונובלוק. העבודה תכלול התקנת ניאגרה, אסלה ומושב",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_shower_basement",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_shower"
+        ],
+        "floors": [
+          "basement",
+          "-1"
+        ],
+        "perRoom": true
+      },
+      "itemCode": "3.13",
+      "itemDescription": "נק' מים חמים קרים וניקוז למקלחון מרתף",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_shower",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_shower"
+        ],
+        "roomTypes": [
+          "bathroom",
+          "wc",
+          "other"
+        ],
+        "perRoom": true
+      },
+      "itemCode": "3.11",
+      "itemDescription": "נק' מים חמים קרים וניקוז עבור מקלחון חדר רחצה",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_plumb_bath",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_bath"
+        ],
+        "perRoom": true
+      },
+      "itemCode": "3.12",
+      "itemDescription": "נק' מים חמים קרים וניקוז לאמבטיה חדר רחצה",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_oneoff_water_feed",
+      "kind": "one_off_suggestion",
+      "match": {
+        "classes": [
+          "fixture_wc_concealed",
+          "fixture_wc_monoblock",
+          "fixture_basin",
+          "fixture_shower",
+          "fixture_bath",
+          "fixture_kitchen_sink",
+          "fixture_washing_machine"
+        ],
+        "textPatterns": [
+          "הזנת מים",
+          "שעון מים"
+        ],
+        "quantity": 1
+      },
+      "itemCode": "3.08",
+      "itemDescription": "הזנת מים חדשה מהשעון הראשי ועד הבית",
+      "unit": "יחידה",
+      "priority": 10,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_oneoff_manifold",
+      "kind": "one_off_suggestion",
+      "match": {
+        "classes": [
+          "fixture_wc_concealed",
+          "fixture_wc_monoblock",
+          "fixture_basin",
+          "fixture_shower",
+          "fixture_bath",
+          "fixture_kitchen_sink",
+          "fixture_washing_machine"
+        ],
+        "textPatterns": [
+          "מרכזיית מים",
+          "מרכזיה"
+        ],
+        "quantity": 1
+      },
+      "itemCode": "3.09",
+      "itemDescription": "אספקה והתקנה של מרכזיית מים עם ברזי שליטה נפרדים",
+      "unit": "יחידה",
+      "priority": 10,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_oneoff_heater_feed",
+      "kind": "one_off_suggestion",
+      "match": {
+        "classes": [
+          "water_heater_feed"
+        ],
+        "textPatterns": [
+          "דוד"
+        ],
+        "quantity": 1
+      },
+      "itemCode": "3.10",
+      "itemDescription": "הזנת מים חדשה עבור דוד",
+      "unit": "יחידה",
+      "priority": 10,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_oneoff_greywater_pump",
+      "kind": "one_off_suggestion",
+      "match": {
+        "textPatterns": [
+          "משאבה",
+          "דלוחין"
+        ],
+        "floors": [
+          "basement",
+          "-1"
+        ],
+        "roomTypes": [
+          "bathroom",
+          "wc"
+        ],
+        "quantity": 1
+      },
+      "itemCode": "3.14",
+      "itemDescription": "אספקה והתקנה של משאבה לניקוז דלוחין קומת מרתף",
+      "unit": "יחידה",
+      "priority": 10,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_oneoff_rain_pump",
+      "kind": "one_off_suggestion",
+      "match": {
+        "roomTypes": [
+          "courtyard"
+        ],
+        "textPatterns": [
+          "חצר אנגלית"
+        ],
+        "quantity": 1
+      },
+      "itemCode": "3.15",
+      "itemDescription": "אספקה והתקנה של משאבה לניקוז מי גשם בחצר אנגלית",
+      "unit": "יחידה",
+      "priority": 10,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_tile_cladding_wet",
+      "kind": "tiling_cladding",
+      "match": {
+        "roomTypes": [
+          "bathroom",
+          "wc"
+        ],
+        "mode": "full",
+        "subtractOpenings": true,
+        "defaultDoorHeightM": 2.1,
+        "defaultWindowSillM": 1,
+        "defaultWindowHeadM": 2.1,
+        "capAtCeiling": true,
+        "excludeNiches": true
+      },
+      "itemCode": "5.01",
+      "itemDescription": "חיפוי קירות חדרי רחצה באריחי קרמיקה",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "wasteFactor": 0.07,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_tile_floor_wet",
+      "kind": "tiling_floor",
+      "match": {
+        "roomTypes": [
+          "bathroom",
+          "wc"
+        ],
+        "wetOnly": false,
+        "includeNiches": true
+      },
+      "itemCode": "5.02",
+      "itemDescription": "ריצוף ריצפות חדרי רחצה וחצר אנגלית באריחי גרניט פורצלן",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "wasteFactor": 0.07,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_tile_corners",
+      "kind": "tiling_corner",
+      "match": {
+        "roomTypes": [
+          "bathroom",
+          "wc"
+        ]
+      },
+      "itemCode": "5.03",
+      "itemDescription": "חיתוך גרונג במפגש אריחי קרמיקה בפינות חיצוניות",
+      "unit": "מ\"א",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_waterproofing_wet",
+      "kind": "waterproofing",
+      "match": {
+        "roomTypes": [
+          "bathroom",
+          "wc"
+        ],
+        "wetOnly": true,
+        "requireFixtureClasses": [
+          "fixture_shower",
+          "fixture_bath"
+        ]
+      },
+      "itemCode": "5.05",
+      "itemDescription": "איטום ריצפות חדרי הרחצה בשתי שכבות סיכה",
+      "unit": "קומפלט",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_tile_partial_kitchen",
+      "kind": "tiling_cladding",
+      "match": {
+        "roomTypes": [
+          "kitchen"
+        ],
+        "mode": "partial",
+        "subtractOpenings": false
+      },
+      "itemCode": "5.06",
+      "itemDescription": "חיפוי קיר מטבח באריחי גרניט פורצלן",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "wasteFactor": 0.07,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_tile_partial_other",
+      "kind": "tiling_cladding",
+      "match": {
+        "roomTypes": [
+          "wc",
+          "bathroom",
+          "living",
+          "corridor",
+          "other"
+        ],
+        "mode": "partial",
+        "subtractOpenings": false
+      },
+      "itemCode": "5.07",
+      "itemDescription": "חיפוי קיר חלקי באריחי קרמיקה",
+      "unit": "מ\"ר",
+      "priority": 90,
+      "wasteFactor": 0.07,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_waterproof_marker",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "waterproof_marker"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_note_point",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "note_point"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_breaker",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "breaker"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_legend_entry",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "legend_entry"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_legend_box",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "legend_box"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_region",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "region"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_room",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "room"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_faucet_basin",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "faucet_basin"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_faucet_wall",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "faucet_wall"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_floor_tiling",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "floor_tiling"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_none_wall_cladding",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "wall_cladding"
+        ]
+      },
+      "itemCode": null,
+      "itemDescription": "לא נכלל בכתב הכמויות",
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_auth_sockets",
+      "kind": "authority",
+      "match": {
+        "family": "sockets",
+        "classes": [
+          "socket_single",
+          "socket_double",
+          "socket_triple",
+          "socket_power",
+          "socket_power_double",
+          "socket_3phase",
+          "socket_box_6"
+        ],
+        "discipline": "electrical",
+        "radiusMm": 150
+      },
+      "itemCode": null,
+      "itemDescription": null,
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_auth_comms",
+      "kind": "authority",
+      "match": {
+        "family": "comms",
+        "classes": [
+          "tv_point",
+          "data_point",
+          "phone_point",
+          "bezek_point",
+          "speaker",
+          "intercom",
+          "doorbell"
+        ],
+        "discipline": "electrical",
+        "radiusMm": 150
+      },
+      "itemCode": null,
+      "itemDescription": null,
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_auth_feeds",
+      "kind": "authority",
+      "match": {
+        "family": "feeds",
+        "classes": [
+          "heater_feed",
+          "water_heater_feed",
+          "panel",
+          "conduit_cobra"
+        ],
+        "discipline": "electrical",
+        "radiusMm": 150
+      },
+      "itemCode": null,
+      "itemDescription": null,
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_auth_switches",
+      "kind": "authority",
+      "match": {
+        "family": "switches",
+        "classes": [
+          "switch_single",
+          "switch_2way",
+          "switch_fan",
+          "switch_cross",
+          "switch_shutter"
+        ],
+        "discipline": "lighting",
+        "radiusMm": 150
+      },
+      "itemCode": null,
+      "itemDescription": null,
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_auth_luminaires",
+      "kind": "authority",
+      "match": {
+        "family": "luminaires",
+        "classes": [
+          "luminaire_ceiling",
+          "luminaire_wall",
+          "luminaire_pendant",
+          "luminaire_strip",
+          "luminaire_outdoor",
+          "ceiling_fan"
+        ],
+        "discipline": "lighting",
+        "radiusMm": 150
+      },
+      "itemCode": null,
+      "itemDescription": null,
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_auth_fixtures",
+      "kind": "authority",
+      "match": {
+        "family": "fixtures",
+        "classes": [
+          "fixture_wc_concealed",
+          "fixture_wc_monoblock",
+          "fixture_basin",
+          "fixture_shower",
+          "fixture_bath",
+          "fixture_kitchen_sink",
+          "fixture_washing_machine",
+          "faucet_basin",
+          "faucet_wall",
+          "garden_tap"
+        ],
+        "discipline": "plumbing",
+        "radiusMm": 150
+      },
+      "itemCode": null,
+      "itemDescription": null,
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    },
+    {
+      "id": "r_auth_ac",
+      "kind": "authority",
+      "match": {
+        "family": "ac",
+        "classes": [
+          "ac_unit"
+        ],
+        "discipline": "plumbing",
+        "radiusMm": 150,
+        "authorityOrder": [
+          "plumbing",
+          "electrical"
+        ],
+        "matchRooms": true,
+        "roomMatchRadiusMm": 1600
+      },
+      "itemCode": null,
+      "itemDescription": null,
+      "unit": null,
+      "priority": 0,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 5
+    }
+  ]
+}

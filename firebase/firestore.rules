@@ -1,0 +1,222 @@
+rules_version = '2';
+
+// Kamutan — Cloud Firestore security rules (ADR 0008).
+//
+// Principles
+//  * Tenant = path: every tenant document lives under orgs/{orgId}; membership is
+//    exists(orgs/{orgId}/members/{uid}). A document can never move between orgs.
+//  * Clients READ their org's data; clients WRITE only in ONE place:
+//      projects/*/reviewItems       status/resolution fields only (editor/reviewer/admin)
+//    Sprint 4: projects/*/corrections is NO LONGER client-writable — corrections go through
+//    POST /v1/projects/:pid/corrections[/batch] (role per kind, page/version checks, audit hash chain, BOQ stale +
+//    debounced rebuild). correctionBatches / roomSettings / similarSearches are API-only too.
+//    Sprint 3: projects/*/boqLines is NO LONGER client-writable — status / note / qtyOverride go through
+//    PATCH /v1/projects/:pid/boq/lines/:id (role per field, transition check, audit hash chain). One write path
+//    means one place for the state machine, the audit event and the "approved = locked" rule.
+//    Everything else is written by the API / worker with firebase-admin (bypasses rules).
+//  * shareLinks (hash only) readable by admin/editor; auditLog readable by admin only.
+//  * External share viewers never touch Firestore (API only).
+//  * Default deny.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------ helpers
+    function signedIn() {
+      return request.auth != null && request.auth.uid is string;
+    }
+    function memberDoc(orgId) {
+      return /databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid);
+    }
+    function isMember(orgId) {
+      return signedIn() && exists(memberDoc(orgId));
+    }
+    function roleIn(orgId, roles) {
+      return isMember(orgId) && get(memberDoc(orgId)).data.role in roles;
+    }
+    function isAdmin(orgId)     { return roleIn(orgId, ['admin']); }
+    function canEditShare(orgId){ return roleIn(orgId, ['admin', 'editor']); }
+    function canCorrect(orgId)  { return roleIn(orgId, ['admin', 'editor', 'reviewer']); }
+
+    function str(v, maxLen) {
+      return v is string && v.size() > 0 && v.size() <= maxLen;
+    }
+    function optStr(data, key, maxLen) {
+      return !(key in data) || data[key] == null || (data[key] is string && data[key].size() <= maxLen);
+    }
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+    function newVal(key) { return request.resource.data.get(key, null); }
+
+    // ------------------------------------------------------------------ default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------------ jobs (top level)
+    // Server/worker-written. Readable only by members of the job's org; list
+    // queries must filter by orgId (where('orgId', '==', X)). A job doc without a
+    // string orgId is unreadable. The worker never trusts orgId from the doc alone:
+    // it re-derives it from the Pub/Sub payload + storagePath prefix (IAM.md).
+    match /jobs/{jobId} {
+      allow get, list: if signedIn() && resource.data.orgId is string && isMember(resource.data.orgId);
+      allow write: if false;
+    }
+
+    // "Which orgs am I in?" — collection-group query on members where uid == me.
+    match /{path=**}/members/{memberId} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ------------------------------------------------------------------ orgs
+    match /orgs/{orgId} {
+      allow read: if isMember(orgId);
+      allow write: if false;                       // API only
+
+      match /members/{uid} {
+        allow read: if isMember(orgId);
+        allow write: if false;                     // memberships managed by admin via API
+      }
+
+      match /auditLog/{eventId} {
+        allow read: if isAdmin(orgId);
+        allow write: if false;                     // append-only, server-written (create/update/delete denied)
+      }
+
+      match /itemLibrary/{itemId} {
+        allow read: if isMember(orgId);
+        allow write: if false;
+      }
+      match /boqTemplates/{templateId} {
+        allow read: if isMember(orgId);
+        allow write: if false;                     // seed + admin PATCH via API; worker (import)
+      }
+      // Sprint 3: BOQ rules (seeded defaults; admin toggles via API, audited).
+      match /boqRules/{ruleId} {
+        allow read: if isMember(orgId);
+        allow write: if false;
+      }
+      // Sprint 3: past-BOQ imports (API creates/finalizes after the magic-bytes check; worker updates status).
+      match /libraryImports/{importId} {
+        allow read: if isMember(orgId);
+        allow write: if false;
+      }
+      // Sprint 2: org memory "symbol signature -> class/itemCode" (doc id = signature). Written ONLY by the
+      // API on legend confirm/reassign and unknown-cluster resolve (role check + audit); the worker reads it.
+      match /symbolMappings/{mappingId} {
+        allow read: if isMember(orgId);
+        allow write: if false;
+      }
+
+      // ---------------------------------------------------------------- projects
+      match /projects/{projectId} {
+        allow read: if isMember(orgId);
+        allow write: if false;                     // create/update via API
+
+        match /sheetSets/{setId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+
+        // Sprint 1 (ingest): sheet = one page of a sheetSet (sheetId = `${sheetSetId}-p${i}`).
+        // Written by the worker (classification, scale, currentVersionId) and by the API
+        // (confirm: confirmed/confirmedBy/confirmedAt, floors, discipline, scaleDenominator).
+        // No client write at all — confirm and region edits are API calls (role + audit there).
+        match /sheets/{sheetId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+
+          // status/progress/artifacts/regions/stats — worker (and API for regions) only.
+          // Artifact paths in this doc are NOT readable through storage.rules; the client
+          // asks the API for short-lived signed URLs (tiles-manifest).
+          match /versions/{versionId} {
+            allow read: if isMember(orgId);
+            allow write: if false;
+          }
+        }
+
+        // Sprint 2: legend rows of the project. The worker writes `suggested` entries; confirm / ignore /
+        // reassign are API calls (PATCH /v1/projects/:pid/legend-entries/:id, editor+, audited). A client can
+        // never mark an entry confirmed or forge an org mapping. thumbPath points at a Storage object that is
+        // NOT client-readable (signed URL from the API only).
+        match /legendEntries/{entryId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+
+        // Share links: token stored as SHA-256 only; created/revoked via API.
+        match /shareLinks/{linkId} {
+          allow read: if canEditShare(orgId);
+          allow write: if false;
+        }
+
+        // -------------------------------------------------------------- corrections (Sprint 4: API only)
+        // The human edits (add/remove/reclassify/move/link/unlink/measure/count/accept/reject). Written ONLY by the
+        // API (role per kind: accept/reject reviewer+, others editor+; audited; undo = revertedAt). Members read them
+        // (history panel, live overlay). No client write: one write path for the role check and the audit chain.
+        match /corrections/{correctionId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+        // One doc per batch POST (≤ 500 corrections, one undo step).
+        match /correctionBatches/{batchId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+        // Tiling inputs per room (`{sheetId}__{roomId}`): PUT /v1/projects/:pid/rooms/:sid/:rid/settings (editor+).
+        match /roomSettings/{settingsId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+        // Learn-from-correction searches: API creates `queued` + job; the worker writes candidates. Crops live in
+        // Storage under projects/*/similar/** and are reachable only through API-signed URLs.
+        match /similarSearches/{searchId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+
+        // -------------------------------------------------------------- reviewItems
+        // Server creates; editor/reviewer/admin may change only status + resolution.
+        match /reviewItems/{itemId} {
+          allow read: if isMember(orgId);
+          allow create, delete: if false;
+          allow update: if canCorrect(orgId) && validReviewUpdate();
+
+          function validReviewUpdate() {
+            return changed().hasOnly(['status', 'resolution', 'resolvedBy', 'resolvedAt'])
+              && newVal('status') in ['open', 'resolved', 'dismissed']
+              && optStr(request.resource.data, 'resolution', 2000)
+              && (
+                   (newVal('status') in ['resolved', 'dismissed']
+                     && newVal('resolvedBy') == request.auth.uid
+                     && newVal('resolvedAt') == request.time)
+                || (newVal('status') == 'open'
+                     && newVal('resolvedBy') == null
+                     && newVal('resolvedAt') == null)
+              );
+          }
+        }
+
+        // -------------------------------------------------------------- boqLines (Sprint 3: API only)
+        // Worker writes computed fields (boq.build); the API PATCH writes status + stamps, note and qtyOverride
+        // (reviewer+ / editor+, BOQ_LINE_TRANSITIONS, approved lines locked, audited). No client write at all.
+        match /boqLines/{lineId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+
+        // Sprint 3: aggregation runs (API creates `queued` + job; worker runs) and Excel export records (API).
+        // The export FILE lives in Storage and is only reachable through a 2-minute signed URL.
+        match /boqBuilds/{buildId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+        match /exports/{exportId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+      }
+    }
+  }
+}

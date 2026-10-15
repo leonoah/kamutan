@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { LogOut, Monitor, Moon, Sun, ChevronDown } from "lucide-react";
 import {
@@ -17,12 +17,16 @@ import { useAuthStore } from "@/stores/authStore";
 import { useThemeStore, type ThemePref } from "@/stores/themeStore";
 import { getAuthService } from "@/features/auth/authService";
 import { env } from "@/lib/env";
+import { useCurrentOrg } from "@/features/org/useCurrentOrg";
+import { useOrgStore } from "@/stores/orgStore";
 import { cn } from "@/lib/utils";
 
 export function UserMenu() {
   const { t } = useTranslation();
   const session = useAuthStore((s) => s.session);
   const { pref, setPref } = useThemeStore();
+  const { org, orgs } = useCurrentOrg();
+  const selectOrg = useOrgStore((s) => s.select);
   const initial = (session?.email ?? "?").slice(0, 1).toUpperCase();
   return (
     <DropdownMenu dir="rtl">
@@ -36,10 +40,25 @@ export function UserMenu() {
         <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel>
+        <DropdownMenuLabel className="flex flex-col gap-0.5">
+          {session?.displayName ? <span className="text-dense text-foreground">{session.displayName}</span> : null}
           <bdi dir="ltr">{session?.email}</bdi>
+          {org ? <span className="text-foreground">{org.name}</span> : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {orgs.length > 1 ? (
+          <>
+            <DropdownMenuLabel>{t("org.switch")}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={org?.id ?? ""} onValueChange={(v) => selectOrg(v)}>
+              {orgs.map((o) => (
+                <DropdownMenuRadioItem key={o.id} value={o.id}>
+                  {o.name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuLabel>{t("app.theme")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={pref} onValueChange={(v) => setPref(v as ThemePref)}>
           <DropdownMenuRadioItem value="system">
@@ -69,6 +88,25 @@ export function TopBar({ children, className }: { children?: ReactNode; classNam
         <Link to="/projects" className="rounded" aria-label={t("app.name")}>
           <Logo />
         </Link>
+        <nav aria-label={t("app.mainNav")} className="flex items-center gap-1">
+          {[
+            { to: "/projects", label: t("projects.title") },
+            { to: "/library", label: t("library.nav") },
+          ].map((l) => (
+            <NavLink
+              key={l.to}
+              to={l.to}
+              className={({ isActive }) =>
+                cn(
+                  "rounded px-2.5 py-1.5 text-dense font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                  isActive && "bg-primary/[0.08] text-foreground",
+                )
+              }
+            >
+              {l.label}
+            </NavLink>
+          ))}
+        </nav>
         <div className="flex min-w-0 flex-1 items-center gap-3">{children}</div>
         {env.useMocks ? (
           <span className="hidden rounded-sm border border-dashed border-input px-2 py-0.5 text-meta text-muted-foreground md:inline">

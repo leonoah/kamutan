@@ -1,31 +1,23 @@
 import { z } from 'zod';
-import { Sha256HexSchema, TimestampSchema, UuidSchema } from './common.js';
-import { FileKindSchema, SheetSetSchema, SheetVersionSchema } from './sheets.js';
-
-/** Upload object path: `{orgId}/upload/{uploadId}` (no user-controlled segments, SEC-13). */
-export const StoragePathSchema = z
-  .string()
-  .regex(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/upload\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    'invalid storage path',
-  );
+import { Sha256HexSchema, TimestampSchema } from './common.js';
+import { DocIdSchema } from './org.js';
+import { FileKindSchema, SheetSetSchema } from './sheets.js';
 
 /** Per-file size limit (SEC-14). */
 export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
-/** Signed upload URL / upload token lifetime (SEC-13). */
+/** Upload token lifetime (SEC-13). */
 export const UPLOAD_TTL_SECONDS = 10 * 60;
 /** Allowed extensions → file kind. Extension is a hint only; magic bytes are authoritative. */
-export const EXTENSION_TO_KIND = Object.freeze({
-  pdf: 'pdf',
-  dwg: 'dwg',
-  dxf: 'dxf',
-  png: 'png',
+export const EXTENSION_TO_KIND = Object.freeze({ pdf: 'pdf', dwg: 'dwg', dxf: 'dxf', png: 'png' } as const);
+/** Content-Type the client should set on the Storage upload (must satisfy storage.rules). */
+export const KIND_TO_CONTENT_TYPE = Object.freeze({
+  pdf: 'application/pdf',
+  png: 'image/png',
+  dxf: 'application/dxf',
+  dwg: 'application/acad',
 } as const);
 
-/**
- * Original filename as supplied by the client. It is stored only as sanitized
- * metadata and never used in a storage path (SEC-13).
- */
+/** Original filename: sanitized metadata only, never part of a storage path (SEC-13). */
 export const UploadFilenameSchema = z
   .string()
   .min(1)
@@ -38,28 +30,31 @@ export const CreateUploadRequestSchema = z
   .object({
     filename: UploadFilenameSchema,
     sizeBytes: z.number().int().positive().max(MAX_UPLOAD_BYTES),
-    /** Optional client-computed sha256; verified server-side on finalize. */
+    /** Optional client-computed sha256; the server always recomputes it. */
     sha256: Sha256HexSchema.optional(),
   })
   .strict();
 export type CreateUploadRequest = z.infer<typeof CreateUploadRequestSchema>;
 
+/**
+ * POST /api/v1/projects/:projectId/uploads. The client then uploads the bytes
+ * directly to Cloud Storage (resumable, Firebase JS SDK) at `storagePath`.
+ */
 export const CreateUploadResponseSchema = z.object({
-  uploadId: UuidSchema,
-  /** Opaque signed token; pass it back to finalize. */
-  uploadToken: z.string().min(16),
-  /** Where the client uploads the raw bytes. */
-  uploadUrl: z.string().url(),
-  method: z.literal('PUT'),
-  headers: z.record(z.string(), z.string()),
+  /** UUID of the pending upload. */
+  fileId: DocIdSchema,
+  /** orgs/{orgId}/quarantine/{fileId} (SEC-13; create-only for editors, see storage.rules). */
   storagePath: z.string(),
+  /** Opaque HMAC token (10 min); pass it to finalize. */
+  uploadToken: z.string().min(16),
+  contentType: z.string(),
   fileKind: FileKindSchema,
   maxBytes: z.number().int().positive(),
   expiresAt: TimestampSchema,
 });
 export type CreateUploadResponse = z.infer<typeof CreateUploadResponseSchema>;
 
-/** POST /v1/projects/:projectId/sheet-sets — finalize an upload and start ingest. */
+/** POST /api/v1/projects/:projectId/sheet-sets — verify the upload and start ingest. */
 export const FinalizeUploadRequestSchema = z
   .object({
     uploadToken: z.string().min(16).max(4096),
@@ -69,12 +64,17 @@ export const FinalizeUploadRequestSchema = z
   .strict();
 export type FinalizeUploadRequest = z.infer<typeof FinalizeUploadRequestSchema>;
 
+/**
+ * Sprint 1: finalize no longer creates sheet/version docs — the worker creates `sheets/{sheetSetId}-p{i}`
+ * (+ `versions/{versionId}`) while splitting. Follow progress on jobs/{jobId}.
+ */
 export const FinalizeUploadResponseSchema = z.object({
   sheetSet: SheetSetSchema,
-  sheetVersion: SheetVersionSchema,
-  /** True when an identical file (same sha256) already existed in this project. */
+  /** True when identical bytes (same sha256) already existed in this project. */
   deduplicated: z.boolean(),
-  /** Ingest job id (`jobs.id`, also the BullMQ job id); on dedupe, the existing job. */
-  jobId: z.string().nullable(),
+  /** jobs/{jobId} of the ingest job (the existing one when deduplicated). */
+  jobId: DocIdSchema,
+  /** Version id every page sheet of this set will get. */
+  versionId: DocIdSchema,
 });
 export type FinalizeUploadResponse = z.infer<typeof FinalizeUploadResponseSchema>;

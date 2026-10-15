@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ..ingest.pdf_vector import VectorSheet
 from ..ocr.textutil import levenshtein, normalize
+
+if TYPE_CHECKING:
+    from ..ocr.dictionary import TextSpan
 
 LABELS: dict[str, list[str]] = {
     "project": ["שם הפרויקט"],
@@ -47,6 +51,7 @@ FLOORS: dict[str, tuple[str, list[str]]] = {
     "ground": ("קרקע", ["קרקע"]),
     "first": ("א'", ["א'", "א"]),
     "second": ("ב'", ["ב'", "ב"]),
+    "third": ("ג'", ["ג'", "ג"]),
     "roof": ("גג", ["גג"]),
 }
 
@@ -119,7 +124,7 @@ def _cell_for(label_bbox, v, h, page_h: float):
 
 def read_title_block(spans, vs: VectorSheet, min_ratio: float = 0.66) -> TitleBlock:
     spans = [s for s in spans if s.rotation == 0]
-    hits: dict[str, tuple[float, object]] = {}
+    hits: dict[str, tuple[float, TextSpan]] = {}
     for s in spans:
         txt = _clean(s.text)
         if not txt or len(txt) > 20:
@@ -205,8 +210,8 @@ def classify_sheet(tb: TitleBlock) -> SheetClass:
     keep = [d for d in disc if d[1] >= 0.9] or disc[:1]
     floors = _best_keyword(name, FLOORS, 0.75)
     # "א" alone is ambiguous; only accept the first-floor token after "קומה"
-    if any(c == "first" for c, _ in floors) and "קומה" not in normalize(name) and "קומת" not in normalize(name):
-        floors = [f for f in floors if f[0] != "first"]
+    if "קומה" not in normalize(name) and "קומת" not in normalize(name):
+        floors = [f for f in floors if f[0] not in ("first", "second", "third")]
     scale = parse_scale(tb.fields.get("scale", ""))
     if scale is None:
         notes.append("scale not parsed from title block")

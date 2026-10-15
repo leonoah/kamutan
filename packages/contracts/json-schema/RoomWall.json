@@ -1,0 +1,64 @@
+{
+  "$ref": "#/definitions/RoomWall",
+  "definitions": {
+    "RoomWall": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^w_[A-Za-z0-9_-]+$"
+        },
+        "aMm": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": false
+        },
+        "bMm": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": false
+        },
+        "lengthM": {
+          "type": "number",
+          "minimum": 0
+        },
+        "exterior": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "aMm",
+        "bMm",
+        "lengthM",
+        "exterior"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/RoomWall.json"
+}

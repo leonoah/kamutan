@@ -2,9 +2,13 @@ import { createBrowserRouter, Navigate, Outlet, type RouteObject } from "react-r
 import { AppShell } from "@/components/AppShell";
 import { AuthProvider, RequireAuth } from "@/features/auth/AuthProvider";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { CompleteEmailLinkPage } from "@/features/auth/CompleteEmailLinkPage";
+import { RequireOrg } from "@/features/org/RequireOrg";
 import { ProjectsPage } from "@/features/projects/ProjectsPage";
 import { ProjectPage } from "@/features/projects/ProjectPage";
-import { ReviewPage } from "@/features/review/ReviewPage";
+import { SheetsPage } from "@/features/sheets/SheetsPage";
+import { LegendPage } from "@/features/legend/LegendPage";
+import { LibraryPage } from "@/features/library/LibraryPage";
 import { NotFoundPage } from "./NotFoundPage";
 
 export const routes: RouteObject[] = [
@@ -16,10 +20,13 @@ export const routes: RouteObject[] = [
     ),
     children: [
       { path: "/login", element: <LoginPage /> },
+      { path: "/auth/complete", element: <CompleteEmailLinkPage /> },
       {
         element: (
           <RequireAuth>
-            <Outlet />
+            <RequireOrg>
+              <Outlet />
+            </RequireOrg>
           </RequireAuth>
         ),
         children: [
@@ -28,10 +35,17 @@ export const routes: RouteObject[] = [
             children: [
               { path: "/projects", element: <ProjectsPage /> },
               { path: "/projects/:projectId", element: <ProjectPage /> },
+              { path: "/projects/:projectId/sheets", element: <SheetsPage /> },
+              { path: "/projects/:projectId/legend", element: <LegendPage /> },
+              { path: "/library", element: <LibraryPage /> },
             ],
           },
           // Review workspace has its own full-bleed chrome
-          { path: "/projects/:projectId/review", element: <ReviewPage /> },
+          // Lazy route: the review workspace pulls in the drawing viewer (Deck.gl) — keep it out of the main chunk.
+          {
+            path: "/projects/:projectId/review",
+            lazy: async () => ({ Component: (await import("@/features/review/ReviewPage")).ReviewPage }),
+          },
         ],
       },
       { path: "/", element: <Navigate to="/projects" replace /> },
@@ -40,12 +54,4 @@ export const routes: RouteObject[] = [
   },
 ];
 
-export const routerFuture = {
-  v7_relativeSplatPath: true,
-  v7_fetcherPersist: true,
-  v7_normalizeFormMethod: true,
-  v7_partialHydration: true,
-  v7_skipActionErrorRevalidation: true,
-} as const;
-
-export const createRouter = () => createBrowserRouter(routes, { future: routerFuture });
+export const createRouter = () => createBrowserRouter(routes);

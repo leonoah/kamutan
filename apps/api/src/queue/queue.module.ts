@@ -1,10 +1,10 @@
 import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../config/config';
-import { BullMqIngestQueue, INGEST_QUEUE, InMemoryIngestQueue, type IngestQueue } from './ingest-queue';
+import { INGEST_QUEUE, InMemoryIngestQueue, PubSubIngestQueue, type IngestQueue } from './ingest-queue';
 
 export function createIngestQueue(cfg: AppConfig): IngestQueue {
-  if (cfg.QUEUE_DRIVER === 'bullmq') return new BullMqIngestQueue(cfg.REDIS_URL as string);
-  return new InMemoryIngestQueue();
+  if (cfg.QUEUE_DRIVER === 'pubsub') return new PubSubIngestQueue(cfg.GOOGLE_CLOUD_PROJECT, cfg.INGEST_TOPIC);
+  return new InMemoryIngestQueue(cfg.INGEST_TOPIC);
 }
 
 @Global()

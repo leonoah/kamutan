@@ -11,9 +11,12 @@ import {
 import { createHash } from 'node:crypto';
 import { APP_CONFIG, type AppConfig } from '../config/config';
 
-export const STRICT_RATE_LIMIT = 'kamutan:strictRateLimit';
-/** Applies the stricter UPLOAD_THROTTLE_LIMIT to a route (uploads, later exports/share links/LLM). */
-export const StrictRateLimit = () => SetMetadata(STRICT_RATE_LIMIT, true);
+export const RATE_LIMIT_TIER = 'kamutan:rateLimitTier';
+export type RateLimitTier = 'strict' | 'tiles' | 'export';
+/** Per-route limit tier (per user, per route, per THROTTLE_TTL_MS window). */
+export const RateLimit = (tier: RateLimitTier) => SetMetadata(RATE_LIMIT_TIER, tier);
+/** Applies the stricter UPLOAD_THROTTLE_LIMIT to a route (uploads, reprocess, later exports/share links/LLM). */
+export const StrictRateLimit = () => RateLimit('strict');
 
 /**
  * Rate limit per authenticated user (falls back to a hashed client IP on public
@@ -31,16 +34,19 @@ export class UserThrottlerGuard extends ThrottlerGuard {
   }
 
   protected override async handleRequest(props: ThrottlerRequest): Promise<boolean> {
-    const strict = this.reflector.getAllAndOverride<boolean>(STRICT_RATE_LIMIT, [
+    const tier = this.reflector.getAllAndOverride<RateLimitTier | undefined>(RATE_LIMIT_TIER, [
       props.context.getHandler(),
       props.context.getClass(),
     ]);
-    return super.handleRequest(strict ? { ...props, limit: this.cfg.UPLOAD_THROTTLE_LIMIT } : props);
+    if (tier === 'strict') return super.handleRequest({ ...props, limit: this.cfg.UPLOAD_THROTTLE_LIMIT });
+    if (tier === 'tiles') return super.handleRequest({ ...props, limit: this.cfg.TILES_THROTTLE_LIMIT });
+    if (tier === 'export') return super.handleRequest({ ...props, limit: this.cfg.EXPORT_THROTTLE_LIMIT });
+    return super.handleRequest(props);
   }
 
   protected override async getTracker(req: Record<string, unknown>): Promise<string> {
-    const auth = req.auth as { userId?: string } | undefined;
-    if (auth?.userId) return `u:${auth.userId}`;
+    const auth = req.auth as { uid?: string } | undefined;
+    if (auth?.uid) return `u:${auth.uid}`;
     const ip = typeof req.ip === 'string' ? req.ip : 'unknown';
     // Hash so raw IPs never land in the throttler store.
     return `ip:${createHash('sha256').update(ip).digest('hex').slice(0, 32)}`;

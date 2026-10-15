@@ -51,13 +51,19 @@ def test_schemas_are_valid_json_schema():
 
 
 def test_schema_rejects_numeric_codes_and_bad_enums():
-    boq = {"schema_version": "1.0", "project_id": "x",
-           "lines": [{"code": 4.1, "description": "d", "unit": "יחידה", "quantity": 1}]}
+    boq = {
+        "schema_version": "1.0",
+        "project_id": "x",
+        "lines": [{"code": 4.1, "description": "d", "unit": "יחידה", "quantity": 1}],
+    }
     assert schema_errors(boq, "boq_truth.schema.json")
     boq["lines"][0]["code"] = "4.10"
     assert not schema_errors(boq, "boq_truth.schema.json")
-    disputes = {"schema_version": "1.0", "project_id": "x",
-                "disputes": [{"id": "GT-D-001", "title": "t", "lines": ["4.00"], "status": "open"}]}
+    disputes = {
+        "schema_version": "1.0",
+        "project_id": "x",
+        "disputes": [{"id": "GT-D-001", "title": "t", "lines": ["4.00"], "status": "open"}],
+    }
     assert schema_errors(disputes, "disputes.schema.json")
     disputes["disputes"][0]["status"] = "open — awaiting owner"
     assert not schema_errors(disputes, "disputes.schema.json")

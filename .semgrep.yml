@@ -14,7 +14,7 @@ rules:
       - pattern: <$EL dangerouslySetInnerHTML={...}>...</$EL>
       - pattern: "{dangerouslySetInnerHTML: ...}"
     paths:
-      include: ["apps/**", "packages/**"]
+      include: ["/apps/**", "/packages/**"]
 
   # --- SEC-08: service_role only inside the dedicated wrapper modules --------------------
   - id: kamutan-service-role-outside-wrapper
@@ -30,11 +30,11 @@ rules:
       - pattern: process.env["SUPABASE_SERVICE_ROLE_KEY"]
       - pattern-regex: \b(SUPABASE_SERVICE_ROLE_KEY|serviceRoleKey)\b
     paths:
-      include: ["apps/**", "packages/**"]
+      include: ["/apps/**", "/packages/**"]
       exclude:
-        - "apps/api/src/config/**"
-        - "apps/api/src/privileged/**"
-        - "apps/api/src/**/storage/**"
+        - "/apps/api/src/config/**"
+        - "/apps/api/src/privileged/**"
+        - "/apps/api/src/**/storage/**"
         - "**/*.spec.ts"
         - "**/*.test.ts"
         - "**/*.md"
@@ -53,7 +53,7 @@ rules:
       - pattern: os.getenv("SUPABASE_SERVICE_ROLE_KEY", ...)
       - pattern-regex: \bSUPABASE_SERVICE_ROLE_KEY\b
     paths:
-      include: ["workers/**"]
+      include: ["/workers/**"]
 
   # --- ADR-0002: PyMuPDF is AGPL, use pypdfium2 ----------------------------------------
   - id: kamutan-no-pymupdf
@@ -124,7 +124,7 @@ rules:
       - pattern: $LOG.$M(..., response=$P, ...)
       - pattern: print($P.content)
     paths:
-      include: ["workers/**"]
+      include: ["/workers/**"]
 
   # --- SEC-17: parsers must not shell out through a shell -------------------------------
   - id: kamutan-subprocess-shell-true
@@ -136,7 +136,7 @@ rules:
       - pattern: subprocess.$F(..., shell=True, ...)
       - pattern: os.system(...)
     paths:
-      include: ["workers/**", "benchmark/**"]
+      include: ["/workers/**", "/benchmark/**"]
 
   # --- SEC-48: no pull_request_target in workflows ---------------------------------------
   - id: kamutan-no-pull-request-target
@@ -145,4 +145,4 @@ rules:
     message: pull_request_target is forbidden in Kamutan workflows (SEC-48).
     pattern-regex: '(?m)^\s*pull_request_target\s*:'
     paths:
-      include: [".github/workflows/**"]
+      include: ["/.github/workflows/**"]

@@ -1,79 +1,58 @@
 import { z } from 'zod';
 
-const bool = z
-  .enum(['true', 'false', '1', '0'])
-  .transform((v) => v === 'true' || v === '1');
-
-const csv = z
-  .string()
-  .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean));
+const bool = z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1');
+const csv = z.string().transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean));
 
 export const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     PORT: z.coerce.number().int().min(1).max(65535).default(3001),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-    /** Public base URL of this API (used to build local-storage upload URLs). */
-    PUBLIC_API_URL: z.string().url().default('http://localhost:3001'),
-    /** Comma-separated exact origins allowed by CORS (SEC-41). */
-    CORS_ORIGINS: csv.default('http://localhost:5173'),
+    /**
+     * Exact origins allowed by CORS. Empty (default) = same-origin only: in
+     * production the web app calls /api/** on the same Hosting origin (ADR 0008).
+     */
+    CORS_ORIGINS: csv.default(''),
     SWAGGER_ENABLED: bool.default('true'),
 
-    // --- Auth (Firebase ID tokens) ---
-    /** Firebase project id. Tokens are verified against Google's public keys; iss/aud derive from it. */
-    FIREBASE_PROJECT_ID: z.string().optional(),
-    /** Dev/test only: HS256 shared secret for locally minted tokens. Rejected in production. */
-    DEV_JWT_SECRET: z.string().min(32).optional(),
-    /** Expected `aud` when FIREBASE_PROJECT_ID is not set (tests with DEV_JWT_SECRET). */
-    JWT_AUDIENCE: z.string().default('authenticated'),
+    // --- Firebase / Google Cloud (credentials via ADC / GOOGLE_APPLICATION_CREDENTIALS only) ---
+    GOOGLE_CLOUD_PROJECT: z.string().min(1).default('kamutan-fba67'),
+    FIREBASE_STORAGE_BUCKET: z.string().min(1).default('kamutan-fba67.firebasestorage.app'),
 
-    // --- Data ---
+    // --- Drivers (memory = tests / offline dev; refused in production) ---
     DATA_DRIVER: z.enum(['firestore', 'memory']).default('firestore'),
+    STORAGE_DRIVER: z.enum(['firebase', 'memory']).default('firebase'),
+    QUEUE_DRIVER: z.enum(['pubsub', 'memory']).default('pubsub'),
+    INGEST_TOPIC: z.string().min(1).default('ingest'),
 
-    // --- Queue ---
-    QUEUE_DRIVER: z.enum(['bullmq', 'memory']).default('memory'),
-    REDIS_URL: z.string().optional(),
-
-    // --- Storage ---
-    STORAGE_DRIVER: z.enum(['firebase', 'local']).default('local'),
-    STORAGE_LOCAL_DIR: z.string().default('.local-storage'),
-    /** Firebase Storage bucket (e.g. `my-project.firebasestorage.app`). Object names start with '{orgId}/'. */
-    STORAGE_BUCKET: z.string().optional(),
-    /** HMAC secret for upload tokens (>= 32 chars). */
+    /** HMAC secret for upload tokens (>= 32 chars). Secret Manager in Functions. */
     UPLOAD_TOKEN_SECRET: z.string().min(32).optional(),
 
-    // --- Rate limiting (SEC-42) ---
+    // --- Rate limiting (SEC-42), per instance ---
     THROTTLE_TTL_MS: z.coerce.number().int().positive().default(60_000),
     THROTTLE_LIMIT: z.coerce.number().int().positive().default(120),
     UPLOAD_THROTTLE_LIMIT: z.coerce.number().int().positive().default(20),
+    /** tiles-manifest calls per user per THROTTLE_TTL_MS (each call signs up to 256 URLs). */
+    TILES_THROTTLE_LIMIT: z.coerce.number().int().positive().default(60),
+    /** Sprint 3: Excel exports per user per THROTTLE_TTL_MS (SEC-42 "stricter limit on exports"). */
+    EXPORT_THROTTLE_LIMIT: z.coerce.number().int().positive().default(10),
+
+    /** Lifetime of signed artifact read URLs (tiles, thumbnail). 15 minutes per the Sprint 1 brief. */
+    SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
   })
   .superRefine((env, ctx) => {
     const req = (cond: boolean, path: string, message: string) => {
       if (!cond) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
     };
-    req(
-      Boolean(env.FIREBASE_PROJECT_ID) || Boolean(env.DEV_JWT_SECRET),
-      'FIREBASE_PROJECT_ID',
-      'set FIREBASE_PROJECT_ID (or DEV_JWT_SECRET for local development only)',
-    );
-    if (env.QUEUE_DRIVER === 'bullmq') req(Boolean(env.REDIS_URL), 'REDIS_URL', 'required when QUEUE_DRIVER=bullmq');
-    if (env.STORAGE_DRIVER === 'firebase') {
-      req(Boolean(env.STORAGE_BUCKET), 'STORAGE_BUCKET', 'required when STORAGE_DRIVER=firebase');
-      req(Boolean(env.FIREBASE_PROJECT_ID), 'FIREBASE_PROJECT_ID', 'required when STORAGE_DRIVER=firebase');
-    }
-    if (env.DATA_DRIVER === 'firestore') {
-      req(Boolean(env.FIREBASE_PROJECT_ID), 'FIREBASE_PROJECT_ID', 'required when DATA_DRIVER=firestore');
-    }
     req(Boolean(env.UPLOAD_TOKEN_SECRET), 'UPLOAD_TOKEN_SECRET', 'required (>= 32 chars)');
+    req(!env.CORS_ORIGINS.includes('*'), 'CORS_ORIGINS', 'wildcard origin is not allowed');
     if (env.NODE_ENV === 'production') {
       req(env.DATA_DRIVER === 'firestore', 'DATA_DRIVER', 'memory driver is not allowed in production');
-      req(!env.DEV_JWT_SECRET, 'DEV_JWT_SECRET', 'dev tokens are not allowed in production');
-      req(env.QUEUE_DRIVER === 'bullmq', 'QUEUE_DRIVER', 'memory queue is not allowed in production');
-      req(env.STORAGE_DRIVER === 'firebase', 'STORAGE_DRIVER', 'local storage is not allowed in production');
-      req(!env.CORS_ORIGINS.includes('*'), 'CORS_ORIGINS', 'wildcard origin is not allowed');
-      req(Boolean(env.REDIS_URL?.startsWith('rediss://')), 'REDIS_URL', 'rediss:// (TLS) is required in production');
+      req(env.STORAGE_DRIVER === 'firebase', 'STORAGE_DRIVER', 'memory storage is not allowed in production');
+      req(env.QUEUE_DRIVER === 'pubsub', 'QUEUE_DRIVER', 'memory queue is not allowed in production');
     }
   });
+
 export type AppConfig = z.infer<typeof EnvSchema>;
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -86,21 +65,4 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error(`Invalid configuration:\n  - ${problems.join('\n  - ')}`);
   }
   return parsed.data;
-}
-
-/** Google's public keys for Firebase ID tokens (RS256). */
-export const FIREBASE_JWKS_URL =
-  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
-
-export function jwksUrl(cfg: AppConfig): string | undefined {
-  return cfg.FIREBASE_PROJECT_ID ? FIREBASE_JWKS_URL : undefined;
-}
-
-export function jwtIssuer(cfg: AppConfig): string | undefined {
-  return cfg.FIREBASE_PROJECT_ID ? `https://securetoken.google.com/${cfg.FIREBASE_PROJECT_ID}` : undefined;
-}
-
-/** Firebase tokens carry the project id as `aud`. */
-export function jwtAudience(cfg: AppConfig): string {
-  return cfg.FIREBASE_PROJECT_ID ?? cfg.JWT_AUDIENCE;
 }

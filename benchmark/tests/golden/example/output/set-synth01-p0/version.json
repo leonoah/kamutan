@@ -1,0 +1,14 @@
+{
+  "status": "ready",
+  "progress": { "stage": "done", "pct": 100 },
+  "page": { "widthMm": 420.2, "heightMm": 297.1, "rotation": 0 },
+  "artifacts": {
+    "tiles": { "prefix": "orgs/o/projects/p/sheets/set-synth01-p0/versions/v1/tiles", "format": "webp", "tileSize": 256, "dpi": 300, "levels": 6, "widthPx": 4963, "heightPx": 3509 },
+    "primitives": "orgs/o/projects/p/sheets/set-synth01-p0/versions/v1/primitives.msgpack.gz",
+    "text": "orgs/o/projects/p/sheets/set-synth01-p0/versions/v1/text.json.gz",
+    "thumbnail": "orgs/o/projects/p/sheets/set-synth01-p0/versions/v1/thumbnail.webp"
+  },
+  "regions": [],
+  "stats": { "paths": 1010, "segments": 3900, "textLines": 55, "glyphs": 300 },
+  "workerVersion": "synthetic"
+}

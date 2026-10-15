@@ -1,0 +1,277 @@
+{
+  "$ref": "#/definitions/Room",
+  "definitions": {
+    "Room": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^r_[A-Za-z0-9_-]+$"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nameConfidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "floor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "polygonMm": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 3,
+          "maxItems": 4096
+        },
+        "areaM2": {
+          "type": "number",
+          "minimum": 0
+        },
+        "perimeterM": {
+          "type": "number",
+          "minimum": 0
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "green",
+            "yellow",
+            "red"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "maxItems": 16
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "bathroom",
+            "wc",
+            "kitchen",
+            "bedroom",
+            "living",
+            "corridor",
+            "balcony",
+            "courtyard",
+            "storage",
+            "stairs",
+            "other"
+          ]
+        },
+        "wet": {
+          "type": "boolean"
+        },
+        "walls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^w_[A-Za-z0-9_-]+$"
+              },
+              "aMm": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "additionalProperties": false
+              },
+              "bMm": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "additionalProperties": false
+              },
+              "lengthM": {
+                "type": "number",
+                "minimum": 0
+              },
+              "exterior": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "aMm",
+              "bMm",
+              "lengthM",
+              "exterior"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 512
+        },
+        "openings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^o_[A-Za-z0-9_-]+$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "door",
+                  "window",
+                  "opening"
+                ]
+              },
+              "wallId": {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^w_[A-Za-z0-9_-]+$"
+              },
+              "widthM": {
+                "type": "number",
+                "minimum": 0
+              },
+              "heightM": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "centerMm": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "wallId",
+              "widthM",
+              "heightM",
+              "centerMm"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 256
+        },
+        "externalCorners": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "ceilingHeightM": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 10
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "niche": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "nameConfidence",
+        "floor",
+        "polygonMm",
+        "areaM2",
+        "perimeterM",
+        "confidence",
+        "level",
+        "reasons"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/Room.json"
+}

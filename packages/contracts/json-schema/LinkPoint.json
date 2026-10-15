@@ -1,0 +1,55 @@
+{
+  "$ref": "#/definitions/LinkPoint",
+  "definitions": {
+    "LinkPoint": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^pt_[A-Za-z0-9_-]+$"
+        },
+        "luminaireIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 256
+        },
+        "centerMm": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "additionalProperties": false
+        },
+        "lifecycle": {
+          "type": "string",
+          "enum": [
+            "existing",
+            "new"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "luminaireIds",
+        "centerMm",
+        "lifecycle"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/LinkPoint.json"
+}

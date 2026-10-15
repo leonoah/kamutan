@@ -18,10 +18,10 @@ MM_PER_INCH = 25.4
 TILE_SIZE = 256
 
 
-def _open(pdf: str | Path | pdfium.PdfDocument) -> tuple[pdfium.PdfDocument, bool]:
+def _open(pdf: str | Path | bytes | pdfium.PdfDocument) -> tuple[pdfium.PdfDocument, bool]:
     if isinstance(pdf, pdfium.PdfDocument):
         return pdf, False
-    return pdfium.PdfDocument(str(pdf)), True
+    return pdfium.PdfDocument(pdf if isinstance(pdf, bytes) else str(pdf)), True
 
 
 def render_page(
@@ -74,10 +74,10 @@ def render_region(
                 fill_color=(255, 255, 255, 255),
             )
             img = bmp.to_pil()
-        else:  # pragma: no cover
+        else:  # /Rotate != 0 (portrait sheets of the sample set): full render + crop
             full = page.render(scale=dpi / 72.0, grayscale=grayscale).to_pil()
             f = dpi / MM_PER_INCH
-            img = full.crop((int(x0 * f), int(y0 * f), int(math.ceil(x1 * f)), int(math.ceil(y1 * f))))
+            img = full.crop((int(x0 * f), int(y0 * f), math.ceil(x1 * f), math.ceil(y1 * f)))
         page.close()
         return img.convert("L" if grayscale else "RGB")
     finally:

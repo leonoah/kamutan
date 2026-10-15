@@ -4,8 +4,9 @@ import { inspectStream, TooLargeError } from '../../src/uploads/inspect';
 import { UploadTokenError, UploadTokenSigner, type UploadTokenClaims } from '../../src/uploads/upload-token';
 import { UPLOAD_SECRET } from '../support/helpers';
 
-const ORG = '11111111-1111-4111-8111-111111111111';
-const UID = '22222222-2222-4222-8222-222222222222';
+const ORG = 'orgAAAAAAAAAAAAAAAAA';
+const UID = 'uid_1';
+const FID = '0b6f3d4e-1c2a-4b5d-9e8f-0123456789ab';
 
 describe('filename', () => {
   it('maps extensions case-insensitively', () => {
@@ -32,12 +33,12 @@ describe('filename', () => {
 describe('upload token', () => {
   const signer = new UploadTokenSigner(UPLOAD_SECRET);
   const claims: UploadTokenClaims = {
-    v: 1,
-    uid: UID,
+    v: 3,
+    fid: FID,
     org: ORG,
-    prj: UID,
+    prj: 'projCCCCCCCCCCCCCCCC',
     usr: UID,
-    path: `${ORG}/upload/${UID}`,
+    path: `orgs/${ORG}/quarantine/${FID}`,
     name: 'a.pdf',
     kind: 'pdf',
     size: 10,
@@ -51,10 +52,13 @@ describe('upload token', () => {
   it('rejects tampering, foreign keys and expiry', () => {
     const t = signer.sign(claims);
     const [body, sig] = t.split('.') as [string, string];
-    const forged = Buffer.from(JSON.stringify({ ...claims, org: UID })).toString('base64url');
+    const forged = Buffer.from(JSON.stringify({ ...claims, prj: 'otherProject' })).toString('base64url');
     expect(() => signer.verify(`${forged}.${sig}`)).toThrow(UploadTokenError);
     expect(() => new UploadTokenSigner('another-secret-another-secret-0123456').verify(t)).toThrow(UploadTokenError);
     expect(() => signer.verify(`${body}`)).toThrow(UploadTokenError);
+    expect(() => signer.sign({ ...claims, path: `orgs/other/quarantine/${FID}` })).toThrow();
+    expect(() => signer.sign({ ...claims, path: `orgs/${ORG}/uploads/${UID}/${FID}` })).toThrow(); // Sprint 0 path
+    expect(() => signer.sign({ ...claims, fid: 'not-a-uuid', path: `orgs/${ORG}/quarantine/not-a-uuid` })).toThrow();
     const expired = signer.sign({ ...claims, exp: 1 });
     expect(() => signer.verify(expired)).toThrow(expect.objectContaining({ reason: 'expired' }));
   });
