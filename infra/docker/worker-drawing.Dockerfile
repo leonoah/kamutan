@@ -18,7 +18,7 @@
 
 # ---------- build ----------
 FROM ghcr.io/astral-sh/uv:0.13 AS uv
-FROM python:3.12-slim AS build
+FROM python:3.14-slim AS build
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -36,7 +36,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --all-extras --no-editable
 
 # ---------- runtime ----------
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Debian packages track the base image security updates; reproducibility comes from the
 # base-image digest pin (TODO above), not from per-package versions.
