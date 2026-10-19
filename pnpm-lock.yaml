@@ -109,8 +109,8 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
       unplugin-swc:
-        specifier: ^1.5.1
-        version: 1.6.0(@swc/core@1.16.18)(esbuild@0.25.12)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7))
+        specifier: ^2.0.0
+        version: 2.0.0(@swc/core@1.16.18)(esbuild@0.25.12)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7))
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7))
@@ -4800,8 +4800,9 @@ packages:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
     engines: {node: '>= 0.8'}
 
-  unplugin-swc@1.6.0:
-    resolution: {integrity: sha512-aOdzxAwJvz1GeQ8vwSNA2N8AreHYBrpwxqnwzxmB7LCdeZiXOBDj0rgjZod+lMxFsJGm8k6lF/1iKF/9wacLbw==}
+  unplugin-swc@2.0.0:
+    resolution: {integrity: sha512-hMdGJEtkwiJhzuXXx4Nb1XYDeD9KG4+P7KZOaErJTpZNYhTo1sbWIsXb+u410zXyaqH00veNX4UxOr6TpUwNiQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       '@swc/core': ^1.2.108
 
@@ -10345,7 +10346,7 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin-swc@1.6.0(@swc/core@1.16.18)(esbuild@0.25.12)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)):
+  unplugin-swc@2.0.0(@swc/core@1.16.18)(esbuild@0.25.12)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)):
     dependencies:
       '@rollup/pluginutils': 5.4.0(rollup@4.64.5)
       '@swc/core': 1.16.18
