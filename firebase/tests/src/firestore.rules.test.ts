@@ -203,8 +203,11 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
     const offboard = (org: string) => env.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().doc(`orgs/${org}`).update({ status: 'offboarding', deleteAfter: Timestamp.fromDate(new Date(Date.now() + 30 * 864e5)) });
     });
+    // `member` (= the viewer's OWN membership doc) is not in this list: the self-read rule for the
+    // "which orgs am I in" collection-group query stays open on purpose (own uid/role only, no org content);
+    // other members' docs are closed — see the explicit test below.
     const closed = [
-      'member', 'project', 'sheetSet', 'sheet', 'version', 'legendEntry', 'reviewItem', 'correction', 'boqDraft', 'itemLibrary',
+      'project', 'sheetSet', 'sheet', 'version', 'legendEntry', 'reviewItem', 'correction', 'boqDraft', 'itemLibrary',
       'boqTemplate', 'symbolMapping', 'job', 'boqRule', 'libraryImport', 'boqBuild', 'boqExport', 'correctionBatch', 'roomSettings',
       'similarSearch', 'markedPdfExport', 'auditEvent',
     ] as const;
@@ -226,6 +229,13 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
       await assertFails(
         db(A.users.reviewer).doc(a.reviewItem).update({ status: 'resolved', resolution: 'x', resolvedBy: A.users.reviewer, resolvedAt: FieldValue.serverTimestamp() }),
       );
+    });
+
+    it("members: own membership stays readable (org discovery → blocked screen), other members' docs are denied", async () => {
+      await offboard(A.org);
+      await assertSucceeds(db(A.users.viewer).doc(a.member).get());
+      for (const role of ['admin', 'editor', 'reviewer'] as const) await assertFails(db(A.users[role]).doc(a.member).get());
+      await assertFails(db(A.users.admin).collection(`orgs/${A.org}/members`).get());
     });
 
     it('still visible: the org doc (status for the blocked screen) to members, offboarding exports to the admin', async () => {
