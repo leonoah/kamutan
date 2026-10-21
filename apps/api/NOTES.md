@@ -241,7 +241,7 @@ cannot be stored. The contract (`RegionSchema.polygonMm`) uses objects everywher
   qty, no notes / override reasons / uids; `overlay` = lenient detections/links/rooms + `lineIds` from the latest
   build's evidence, items inside the masked title block dropped, no text layer; `pdf` → 302 to a 2-min signed URL of
   the per-link marked PDF (409 while pending, 404 when not allowed).
-- **Tiles**: proxied through the API (never signed for share viewers) with **sharp 0.34.5** (Apache-2.0; its prebuilt
+- **Tiles**: proxied through the API (never signed for share viewers) with **sharp 0.35.5** (Apache-2.0; its prebuilt
   libvips binary is LGPL-3.0, dynamically linked, unmodified — compliant for a server; noted for legal review). Text
   rendered by Pango from the bundled `assets/fonts/DejaVuSans.ttf` (Bitstream Vera license, `LICENSE-DejaVuSans.txt`;
   never downloaded at runtime), "שותף עם {recipient|label} • dd.mm.yyyy • {linkId[0:6]}", −30°, ~35 % alpha, repeated
@@ -281,7 +281,7 @@ cannot be stored. The contract (`RegionSchema.polygonMm`) uses objects everywher
   `titleBlock`, `referenceSources`, `reprocessReason`, detection `scoreRaw`, room `type 'niche'`, `parentRoomId`,
   `walls[].open`, `ReprocessRequest`, error codes `org_offboarding`, `recent_auth_required`, `share_unavailable`,
   `method_not_allowed`, paths `shareToken`, `auditHead`, `markedPdf`, `offboardingZip`, `TILE_PATH_RE` …
-- **Deps added**: `sharp@0.34.5` (Apache-2.0; libvips LGPL-3.0 prebuilt), `fflate@0.8.3` (MIT). Font asset DejaVu Sans.
+- **Deps added**: `sharp@0.35.5` (Apache-2.0; libvips LGPL-3.0 prebuilt), `fflate@0.8.3` (MIT). Font asset DejaVu Sans.
 
 Sprint 5 tests: `e2e/governance.e2e.test.ts` (E2E-11 history, audit list/filters/cursor/roles, verify tamper/delete/fork,
 marked PDF job + status + URL + roles/409/503, settings + ranges), `e2e/share.e2e.test.ts` (token once + hash only,

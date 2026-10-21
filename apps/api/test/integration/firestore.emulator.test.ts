@@ -398,7 +398,7 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
     });
 
     it('concurrent appends serialize on the head doc: the chain verifies, no forks; list filters + cursor', async () => {
-      await Promise.all(Array.from({ length: 12 }, (_, i) => repo.appendAudit(orgA, { actorId: uid('aEditor'), entity: 'boqLines', entityId: `l${i % 3}`, action: 'update', after: { i } })));
+      await Promise.all(Array.from({ length: 12 }, (_, i) => repo.appendAudit(orgA, { actorId: uid('aEditor'), entity: 'boqLines', entityId: `s5-l${i % 3}`, action: 'update', after: { i } })));
       const res = verifyChain(await gov.auditForVerify(orgA));
       expect(res).toMatchObject({ ok: true, brokenAt: null });
       expect((await db.doc(fsPaths.auditHead(orgA)).get()).get('hash')).toBe(res.headHash);
@@ -407,7 +407,7 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
       expect(p1.items.every((e) => e.entity === 'boqLines')).toBe(true);
       const p2 = await gov.listAudit(orgA, { limit: 5, entity: 'boqLines', cursor: p1.nextCursor as string });
       expect(p2.items.map((e) => e.id)).not.toContain(p1.items[0]?.id);
-      expect((await gov.auditForEntity(orgA, 'boqLines', 'l1')).length).toBe(4);
+      expect((await gov.auditForEntity(orgA, 'boqLines', 's5-l1')).length).toBe(4);
     });
 
     it('share link: create (link + token index + audit, per-link PDF export + job), lookup, view count, revoke', async () => {

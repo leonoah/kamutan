@@ -2,6 +2,9 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
 
+/** sharp ≥0.35 ships ESM typings without the `sharp` namespace; derive the overlay type from the API. */
+type OverlayOptions = Parameters<ReturnType<typeof sharp>['composite']>[0][number];
+
 /**
  * Burned-in watermark + title-block mask for share-link tiles (SEC-28), with sharp (Apache-2.0; its prebuilt libvips
  * is LGPL-3.0, dynamically linked and unmodified — see NOTES.md). The text is rendered by Pango from a bundled font
@@ -67,7 +70,7 @@ export class TileWatermarker {
 
   private async buildPattern(text: string): Promise<{ data: Buffer; size: number }> {
     const P = WATERMARK_PERIOD_PX;
-    const layers: sharp.OverlayOptions[] = [];
+    const layers: OverlayOptions[] = [];
     // Faint diagonal hatch: a mark even if text rendering were unavailable.
     const hatch = Buffer.from(
       `<svg xmlns="http://www.w3.org/2000/svg" width="${P}" height="${P}"><path d="M0 ${P} L${P} 0" stroke="#7a0019" stroke-opacity="0.10" stroke-width="2"/></svg>`,
@@ -133,7 +136,7 @@ export class TileWatermarker {
       .extract({ left, top, width: Math.min(w, pat.size - left), height: Math.min(h, pat.size - top) })
       .png()
       .toBuffer();
-    const layers: sharp.OverlayOptions[] = [];
+    const layers: OverlayOptions[] = [];
     for (const m of opts.masks) {
       const x = Math.max(0, Math.floor(m.x));
       const y = Math.max(0, Math.floor(m.y));

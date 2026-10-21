@@ -469,6 +469,14 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
+      - name: Trivy findings as annotations (logs are not always reachable)
+        if: failure() && steps.exists.outputs.ok == 'true'
+        env:
+          IMAGE: kamutan/${{ matrix.image }}:ci
+        run: |
+          trivy image --quiet --severity CRITICAL,HIGH --ignore-unfixed --format json "$IMAGE" \
+            | jq -r '.Results[]? | .Target as $t | .Vulnerabilities[]? | "::error title=Trivy \(.Severity)::\($t): \(.PkgName) \(.InstalledVersion) -> \(.FixedVersion) (\(.VulnerabilityID))"' \
+            | head -50
 
   # ---------------------------------------------------------------------------
   # Benchmark gate (placeholder). Runs only when workers/** or benchmark/** change.

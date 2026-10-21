@@ -11,7 +11,7 @@ unmodified; every new runtime dependency is reviewed in its PR (SEC-44, CODEOWNE
 
 | Component | Version | Used by | Licence | Status / obligations |
 | --- | --- | --- | --- | --- |
-| `sharp` | 0.34.5 | API (share tiles: watermark + title-block mask) | Apache-2.0 | ok (obligations): keep its NOTICE/licence in the deployed `node_modules` (default). |
+| `sharp` | 0.35.5 | API (share tiles: watermark + title-block mask) | Apache-2.0 | ok (obligations): keep its NOTICE/licence in the deployed `node_modules` (default). |
 | libvips (prebuilt `@img/sharp-libvips-linux-x64`) | 1.2.4 | API, via sharp | **LGPL-3.0-or-later** (bundles further libraries under permissive licences, see the package's `THIRD-PARTY-NOTICES`) | ok (obligations) / **legal review**: dynamically linked, unmodified, server-side only (not distributed to customers) — LGPL obligations triggered only on distribution; if images or functions are ever handed to a customer, ship the LGPL text + a way to relink. Recorded per apps/api/NOTES.md. |
 | `fflate` | 0.8.3 | API (`apiJobs`: offboarding ZIP, streaming) | MIT | ok. (`fflate@0.7.5` also present transitively — MIT.) |
 | `pypdf` | 6.20.1 | worker (marked PDF: page import/merge) | BSD-3-Clause | ok. |
