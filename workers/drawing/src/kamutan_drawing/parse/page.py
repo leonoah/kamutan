@@ -189,6 +189,12 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
         "scaleCheck": {k: v for k, v in cls.scale.items() if k != "samples"},
         "classificationSource": cls.source,
         "regions": reg.regions,
+        # Sprint 5: title-block rectangle (paper mm) — share links mask it (SheetVersion.titleBlockMm)
+        "titleBlockMm": (
+            {"x": round(tb[0], 2), "y": round(tb[1], 2), "w": round(tb[2] - tb[0], 2), "h": round(tb[3] - tb[1], 2)}
+            if (tb := cls.title_block_bbox) is not None
+            else None
+        ),
         "stats": {
             "paths": vs.n_paths,
             "segments": vs.n_segs,

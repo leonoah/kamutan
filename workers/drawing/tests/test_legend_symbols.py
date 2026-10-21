@@ -150,7 +150,10 @@ def test_legend_found_from_ruled_table_with_labels_and_classes(sheet):
         assert len(e.signature) == 16
 
 
-def test_spotting_finds_every_symbol_in_any_orientation(sheet):
+def test_spotting_finds_every_symbol_in_any_orientation(sheet, allow_green):
+    """Heuristic levels (permissive calibration table); the conservative cap is checked at the end."""
+    from kamutan_drawing import calibration as C
+
     _, vs, spans = sheet
     res = detect_symbols(vs, spans, parse_legends(vs, spans), discipline="electrical", scale_den=50)
     dets = [d for d in res.detections if d.source == "vector"]
@@ -175,6 +178,18 @@ def test_spotting_finds_every_symbol_in_any_orientation(sheet):
     # nothing is detected inside the legend itself
     x0, y0, x1, y1 = LEGEND_BOX
     assert not [d for d in res.detections if x0 <= d.center[0] <= x1 and y0 <= d.center[1] <= y1]
+    # Sprint 5, conservative table (no class has enough DEV truth): the same items are capped at yellow with the
+    # calibration chip; scoreRaw keeps the heuristic score
+    C.set_default_table(C.fallback_table())
+    cons = detect_symbols(vs, spans, parse_legends(vs, spans), discipline="electrical", scale_den=50).detections
+    assert not [d for d in cons if d.level == "green"]
+    cplain = [
+        d
+        for d in cons
+        if d.source == "vector"
+        and (round(d.center[0]), round(d.center[1])) in {(round(p.center[0]), round(p.center[1])) for p in plain}
+    ]
+    assert cplain and all(d.reasons == [C.R_CONSERVATIVE] and abs((d.score_raw or 0) - d.score) < 1e-3 for d in cplain)
 
 
 def test_unknown_repeated_symbols_become_one_cluster(tmp_path):

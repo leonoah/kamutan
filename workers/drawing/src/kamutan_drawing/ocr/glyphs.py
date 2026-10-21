@@ -116,24 +116,46 @@ def candidate_paths(vs: VectorSheet) -> np.ndarray:
     return np.where(vs.path_stroked & (vs.path_fill_mode == 0) & (ext < MAX_STROKE_EXTENT) & (vs.path_seg_count > 0))[0]
 
 
+def _linspace_t(n: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """For every piece count ``n`` (≥ 1 points each), the parameters ``np.linspace(0, 1, n)`` would give, flattened,
+    plus the owner index — bit-identical to calling ``linspace`` per segment (k · (1/(n-1)), last point exactly 1)."""
+    n = np.asarray(n, dtype=np.int64)
+    rep = np.repeat(np.arange(len(n)), n)
+    k = np.arange(int(n.sum())) - np.repeat(np.cumsum(n) - n, n)
+    div = np.maximum(n - 1, 1)
+    t = k.astype(np.float64) * np.repeat(1.0 / div, n)
+    last = k == np.repeat(n - 1, n)
+    t[last & np.repeat(n > 1, n)] = 1.0
+    return t, rep
+
+
+def _densify(vs: VectorSheet, cand: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Points every ≤ ``DENSIFY_STEP`` along the segments of the candidate paths and their owner (index into
+    ``cand``) — vectorised form of the per-segment ``linspace`` loop (same points, same order)."""
+    if len(cand) == 0:
+        return np.zeros((0, 2)), np.zeros(0, dtype=np.int64)
+    starts = vs.path_seg_start[cand].astype(np.int64)
+    counts = vs.path_seg_count[cand].astype(np.int64)
+    seg_owner = np.repeat(np.arange(len(cand)), counts)
+    seg_idx = np.repeat(starts, counts) + (np.arange(int(counts.sum())) - np.repeat(np.cumsum(counts) - counts, counts))
+    sg = vs.segs[seg_idx].astype(np.float64)
+    if not len(sg):
+        return np.zeros((0, 2)), np.zeros(0, dtype=np.int64)
+    L = np.hypot(sg[:, 2] - sg[:, 0], sg[:, 3] - sg[:, 1])
+    m = np.maximum(1, np.ceil(L / DENSIFY_STEP).astype(int))
+    t, rep = _linspace_t(m + 1)
+    x0, y0, x1, y1 = sg[rep, 0], sg[rep, 1], sg[rep, 2], sg[rep, 3]
+    P = np.column_stack([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t])
+    return P, seg_owner[rep]
+
+
 def connected_components(vs: VectorSheet, cand: np.ndarray | None = None) -> list[Component]:
     """Union touching strokes of the same style (colour + width)."""
     if cand is None:
         cand = candidate_paths(vs)
-    pts: list[np.ndarray] = []
-    owner: list[np.ndarray] = []
-    for k, i in enumerate(cand):
-        sg = path_segments(vs, int(i)).astype(np.float64)
-        L = np.hypot(sg[:, 2] - sg[:, 0], sg[:, 3] - sg[:, 1])
-        n = np.maximum(1, np.ceil(L / DENSIFY_STEP).astype(int))
-        for (x0, y0, x1, y1), m in zip(sg, n):
-            t = np.linspace(0.0, 1.0, m + 1)[:, None]
-            pts.append(np.hstack([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]))
-            owner.append(np.full(m + 1, k))
-    if not pts:
+    P, O = _densify(vs, cand)
+    if not len(P):
         return []
-    P = np.vstack(pts)
-    O = np.concatenate(owner)
     styles = [_style_of(vs, int(i)) for i in cand]
     dsu = _DSU(len(cand))
     pairs = cKDTree(P).query_pairs(TOUCH_TOL, output_type="ndarray")
@@ -219,26 +241,39 @@ def _link_lines(boxes: np.ndarray, styles: list, max_gap_factor: float = 1.2, mi
     cy = (boxes[:, 1] + boxes[:, 3]) / 2
     tree = cKDTree(np.stack([cx, cy], 1))
     r = float(np.percentile(h, 95)) * 3 + 1.0
-    pairs = tree.query_pairs(r)
+    # Sprint 5 (perf): the per-pair tests are evaluated with numpy, then applied in the set's own iteration order
+    # (DSU unions and the small-mark candidate lists depend on it) — same result as the scalar loop
+    plist = list(tree.query_pairs(r))
     small_cand: dict[int, list[int]] = defaultdict(list)
     linked = np.zeros(n, dtype=bool)
-    for i, j in pairs:
-        if styles[i] != styles[j]:
-            continue
-        hi = max(h[i], h[j])
-        gap = max(boxes[i, 0], boxes[j, 0]) - min(boxes[i, 2], boxes[j, 2])
-        if min(h[i], h[j]) < 0.45 * hi:
-            sm, bg = (i, j) if h[i] < h[j] else (j, i)
-            if w[sm] <= 0.8 * hi and gap <= 0.6 * hi and boxes[bg, 1] - 0.35 * hi <= cy[sm] <= boxes[bg, 3] + 0.15 * hi:
-                small_cand[sm].append(bg)
-            continue
-        ov = min(boxes[i, 3], boxes[j, 3]) - max(boxes[i, 1], boxes[j, 1])
-        if ov < min_vov * min(h[i], h[j]):
-            continue
-        if gap > max_gap_factor * hi:
-            continue
-        dsu.union(i, j)
-        linked[i] = linked[j] = True
+    if plist:
+        pa = np.array(plist, dtype=np.int64)
+        I, J = pa[:, 0], pa[:, 1]
+        sid = {st: k for k, st in enumerate(dict.fromkeys(styles))}
+        style_id = np.array([sid[st] for st in styles], dtype=np.int64)
+        same = style_id[I] == style_id[J]
+        hiv = np.maximum(h[I], h[J])
+        gapv = np.maximum(boxes[I, 0], boxes[J, 0]) - np.minimum(boxes[I, 2], boxes[J, 2])
+        small = np.minimum(h[I], h[J]) < 0.45 * hiv
+        smv = np.where(h[I] < h[J], I, J)
+        bgv = np.where(h[I] < h[J], J, I)
+        mark = (
+            same
+            & small
+            & (w[smv] <= 0.8 * hiv)
+            & (gapv <= 0.6 * hiv)
+            & (boxes[bgv, 1] - 0.35 * hiv <= cy[smv])
+            & (cy[smv] <= boxes[bgv, 3] + 0.15 * hiv)
+        )
+        ov = np.minimum(boxes[I, 3], boxes[J, 3]) - np.maximum(boxes[I, 1], boxes[J, 1])
+        link = same & ~small & (ov >= min_vov * np.minimum(h[I], h[J])) & (gapv <= max_gap_factor * hiv)
+        for q in np.flatnonzero(mark | link):
+            if mark[q]:
+                small_cand[int(smv[q])].append(int(bgv[q]))
+            else:
+                i, j = int(I[q]), int(J[q])
+                dsu.union(i, j)
+                linked[i] = linked[j] = True
     # phase 2: attach each small mark to one line only (letters already in a line
     # through phase 1 are not "marks" of some bigger neighbour, e.g. a legend symbol)
     gmax: dict[int, float] = defaultdict(float)
@@ -373,10 +408,11 @@ def glyph_signature(segs_line: np.ndarray, x0: float, baseline: float, H: float)
     img = np.zeros((FEAT_ROWS, FEAT_COLS), dtype=np.float32)
     sx = FEAT_COLS / FEAT_X1
     sy = FEAT_ROWS / (FEAT_Y1 - FEAT_Y0)
-    for x_0, y_0, x_1, y_1 in s:
-        L = max(abs(x_1 - x_0) * sx, abs(y_1 - y_0) * sy)
-        n = int(np.ceil(L * 2)) + 1
-        t = np.linspace(0, 1, n)
+    if len(s):  # vectorised form of a per-segment linspace walk (same sample points)
+        L = np.maximum(np.abs(s[:, 2] - s[:, 0]) * sx, np.abs(s[:, 3] - s[:, 1]) * sy)
+        n = np.ceil(L * 2).astype(int) + 1
+        t, rep = _linspace_t(n)
+        x_0, y_0, x_1, y_1 = s[rep, 0], s[rep, 1], s[rep, 2], s[rep, 3]
         xs = ((x_0 + (x_1 - x_0) * t) * sx).astype(int)
         ys = ((y_0 + (y_1 - y_0) * t - FEAT_Y0) * sy).astype(int)
         m = (xs >= 0) & (xs < FEAT_COLS) & (ys >= 0) & (ys < FEAT_ROWS)

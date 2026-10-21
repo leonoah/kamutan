@@ -289,6 +289,39 @@
                     "groups"
                   ],
                   "additionalProperties": false
+                },
+                "calibration": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "conservative",
+                        "full"
+                      ]
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "version"
+                  ],
+                  "additionalProperties": false
+                },
+                "timingsMs": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "propertyNames": {
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
                 }
               },
               "required": [

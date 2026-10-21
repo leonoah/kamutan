@@ -41,8 +41,26 @@ import {
 } from './library.js';
 import { ApiErrorSchema } from './errors.js';
 import { HealthResponseSchema } from './health.js';
-import { BoqBuildJobSchema, FindSimilarJobSchema, IngestSheetVersionJobSchema, IngestTopicJobSchema, JobSchema, LibraryImportJobSchema } from './jobs.js';
-import { CreateOrgRequestSchema, MeResponseSchema, MemberSchema, MyOrgSchema, OrgSchema } from './org.js';
+import {
+  BoqBuildJobSchema,
+  FindSimilarJobSchema,
+  IngestSheetVersionJobSchema,
+  IngestTopicJobSchema,
+  JobSchema,
+  LibraryImportJobSchema,
+  MarkedPdfJobSchema,
+  OffboardingExportJobSchema,
+} from './jobs.js';
+import {
+  CreateOrgRequestSchema,
+  MeResponseSchema,
+  MemberSchema,
+  MyOrgSchema,
+  OrgSchema,
+  OrgSettingsSchema,
+  PatchOrgSettingsRequestSchema,
+  PatchOrgSettingsResponseSchema,
+} from './org.js';
 import { CreateProjectRequestSchema, ProjectPageSchema, ProjectSchema, UpdateProjectRequestSchema } from './project.js';
 import { ReviewItemSchema } from './review.js';
 import {
@@ -70,7 +88,33 @@ import {
   SimilarSearchViewSchema,
 } from './corrections.js';
 import { RoleSchema } from './roles.js';
-import { ShareLinkSchema } from './share.js';
+import {
+  CreateShareLinkRequestSchema,
+  CreateShareLinkResponseSchema,
+  PublicShareBoqSchema,
+  PublicShareMetaSchema,
+  PublicShareOverlaySchema,
+  ShareLinkListSchema,
+  ShareLinkSchema,
+  ShareLinkViewSchema,
+  ShareTokenIndexSchema,
+} from './share.js';
+import { AuditEventSchema, AuditPageSchema, AuditVerifyResponseSchema, LineHistoryItemSchema, LineHistoryResponseSchema } from './audit.js';
+import {
+  CreateMarkedPdfRequestSchema,
+  CreateMarkedPdfResponseSchema,
+  ExportRecordSchema,
+  ExportStatusResponseSchema,
+  MarkedPdfOptionsSchema,
+} from './exports.js';
+import {
+  CreateOffboardingExportResponseSchema,
+  DeletionCertificateSchema,
+  OffboardingExportSchema,
+  OffboardingExportViewSchema,
+  OffboardOrgRequestSchema,
+  OffboardOrgResponseSchema,
+} from './offboarding.js';
 import {
   ConfirmSheetRequestSchema,
   DetectionStatsSchema,
@@ -79,6 +123,7 @@ import {
   PutRegionsRequestSchema,
   PutRegionsResponseSchema,
   RegionSchema,
+  ReprocessRequestSchema,
   ReprocessSheetResponseSchema,
   SheetClassificationSchema,
   SheetPageSchema,
@@ -251,4 +296,35 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   FixtureRecord: FixtureRecordSchema,
   FixturesArtifact: FixturesArtifactSchema,
   WallsArtifact: WallsArtifactSchema,
+  // Sprint 5 — audit/history, marked PDF, share links, offboarding, org settings, calibration stats
+  AuditEvent: AuditEventSchema,
+  AuditPage: AuditPageSchema,
+  AuditVerifyResponse: AuditVerifyResponseSchema,
+  LineHistoryItem: LineHistoryItemSchema,
+  LineHistoryResponse: LineHistoryResponseSchema,
+  MarkedPdfOptions: MarkedPdfOptionsSchema,
+  MarkedPdfJob: MarkedPdfJobSchema,
+  CreateMarkedPdfRequest: CreateMarkedPdfRequestSchema,
+  CreateMarkedPdfResponse: CreateMarkedPdfResponseSchema,
+  ExportRecord: ExportRecordSchema,
+  ExportStatusResponse: ExportStatusResponseSchema,
+  ShareLinkView: ShareLinkViewSchema,
+  ShareTokenIndex: ShareTokenIndexSchema,
+  CreateShareLinkRequest: CreateShareLinkRequestSchema,
+  CreateShareLinkResponse: CreateShareLinkResponseSchema,
+  ShareLinkList: ShareLinkListSchema,
+  PublicShareMeta: PublicShareMetaSchema,
+  PublicShareBoq: PublicShareBoqSchema,
+  PublicShareOverlay: PublicShareOverlaySchema,
+  OrgSettings: OrgSettingsSchema,
+  PatchOrgSettingsRequest: PatchOrgSettingsRequestSchema,
+  PatchOrgSettingsResponse: PatchOrgSettingsResponseSchema,
+  OffboardingExport: OffboardingExportSchema,
+  OffboardingExportView: OffboardingExportViewSchema,
+  CreateOffboardingExportResponse: CreateOffboardingExportResponseSchema,
+  OffboardingExportJob: OffboardingExportJobSchema,
+  OffboardOrgRequest: OffboardOrgRequestSchema,
+  OffboardOrgResponse: OffboardOrgResponseSchema,
+  DeletionCertificate: DeletionCertificateSchema,
+  ReprocessRequest: ReprocessRequestSchema,
 });

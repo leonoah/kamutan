@@ -34,6 +34,7 @@ export function DetectionDetails({ d, ctx, onClose, compact = false }: { d: Dete
         <span className="text-meta text-muted-foreground">
           {roomName} · {floor}
         </span>
+        <ScoreText d={d} />
         {d.reasons.length ? (
           <div className="flex flex-wrap gap-1">
             {d.reasons.slice(0, 2).map((r) => (
@@ -52,9 +53,7 @@ export function DetectionDetails({ d, ctx, onClose, compact = false }: { d: Dete
           <h3 className="text-body font-bold text-foreground">{name}</h3>
           <div className="flex flex-wrap items-center gap-2">
             <ConfidenceBadge level={level} size="sm" />
-            <span className="text-meta text-muted-foreground">
-              {t("understanding.score", { score: d.score.toFixed(2) })}
-            </span>
+            <ScoreText d={d} />
           </div>
         </div>
         {onClose ? (
@@ -115,5 +114,18 @@ export function DetectionDetails({ d, ctx, onClose, compact = false }: { d: Dete
         ) : null}
       </dl>
     </div>
+  );
+}
+
+/** Sprint 5: the score shown is the calibrated one ("ביטחון מכויל 0.83"); the raw detector score is secondary. */
+export function ScoreText({ d }: { d: Pick<Detection, "score" | "scoreRaw" | "manual"> }) {
+  const { t } = useTranslation();
+  if (d.manual === "added") return null;
+  const raw = d.scoreRaw;
+  return (
+    <span className="text-meta text-muted-foreground" data-score-calibrated={d.score.toFixed(2)}>
+      {raw !== undefined ? t("understanding.scoreCalibrated", { score: d.score.toFixed(2) }) : t("understanding.score", { score: d.score.toFixed(2) })}
+      {raw !== undefined && Math.abs(raw - d.score) >= 0.005 ? <> · {t("understanding.scoreRaw", { raw: raw.toFixed(2) })}</> : null}
+    </span>
   );
 }

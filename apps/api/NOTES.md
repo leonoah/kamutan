@@ -1,4 +1,4 @@
-# @kamutan/api — notes (Sprint 0 + 1 + 2 + 3 + 4, Firebase, ADR 0008)
+# @kamutan/api — notes (Sprint 0 + 1 + 2 + 3 + 4 + 5, Firebase, ADR 0008)
 
 NestJS 11 (TypeScript strict) Core API. Sprint 0: **login → create project → upload & store a file**. Sprint 1:
 **quarantine upload → ingest via Pub/Sub → sheets list / confirm / regions / tiles (signed URLs) / reprocess / job status**.
@@ -62,6 +62,19 @@ Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/c
 | PUT | `/projects/:projectId/rooms/:sheetId/:roomId/settings` | editor | Sprint 4. Whole doc (strict). Validated against the current version's room: wall ids, span ≤ wall length (+5 cm), no overlapping spans per wall, `keepOpenings` ⊂ room openings (400); room must exist (404). Tx + audit `roomSettings/update` (numbers/flags); stale (`room`) + rebuild. |
 | POST | `/projects/:projectId/similar-searches` | reviewer | Sprint 4. `{exemplar {sheetId, versionId, bboxMm (0<w,h≤200), class}, scope sheet\|project, correctionId?}`; version ready (409), box inside the page (400). Tx: `similarSearches/{id}` (queued) + `jobs/{jobId}` (`symbols.find_similar`, `searchId`) + audit; publish `FindSimilarJob` (503 + search/job `failed` on error). Strict rate limit. 202 `{search, jobId}`. |
 | GET | `/projects/:projectId/similar-searches/:searchId` | viewer | Sprint 4. `SimilarSearchView {search, thumbUrls {candId: url}, expiresAt}`; candidates parsed leniently (malformed / duplicate / foreign-thumb dropped, score desc); crops signed from `orgs/{o}/projects/{p}/similar/{searchId}/{candId}.webp` (ids-derived, ≤ 256). |
+| GET | `/projects/:projectId/boq/lines/:lineId/history` | reviewer | Sprint 5. `LineHistoryResponse` newest first: `status` / `qtyOverride` (+ override reason) / `note` (never the text) items from `boqLines` audit events + `correction` items (same itemCode, or a detection in the line's evidence). `rebuild` items when the worker audits rebuilds. |
+| POST | `/projects/:projectId/boq/export/marked-pdf` | editor | Sprint 5. `{sheetIds?, options{floorSplit, watermark, hideTitleBlock}}` → 202 `{exportId, jobId}`: `exports/{id}` (`marked_pdf`, queued) + `jobs/{jobId}` + audit, publishes `export.marked_pdf`. 409 `not_ready` without a build; 503 + export failed on publish error. Tier `export`. |
+| GET | `/projects/:projectId/exports/:exportId` | viewer | Sprint 5. `ExportStatusResponse` for both kinds; when ready a signed URL (marked PDF **15 min**, xlsx 2 min) + audit `exports/download`. Worker `succeeded` is read as `ready`. |
+| POST | `/projects/:projectId/share-links` | editor | Sprint 5. `{days 1..90 (14), label, recipient?, hideTitleBlock (true), allowPdfDownload (false)}` → 201 `{link (no tokenHash), url, token}` — raw 32-byte base64url token ONCE; stored: SHA-256 on the link + `shareTokens/{hash}` index. Version lock = current READY version per sheet. `allowPdfDownload` also queues a per-link watermarked marked PDF. Strict tier. |
+| GET | `/projects/:projectId/share-links` | editor | Sprint 5. All links (active/expired/revoked, `state`, `viewCount`, `lastViewedAt`), newest first. |
+| DELETE | `/projects/:projectId/share-links/:linkId` | editor | Sprint 5. Immediate, idempotent revoke (one audit event). |
+| GET | `/public/share/:token/meta` \| `boq` \| `sheets/:sheetId/overlay` \| `sheets/:sheetId/tiles/:z/:x/:y` \| `pdf` | **public** | Sprint 5. See "Share links". |
+| GET | `/orgs/:orgId/audit?cursor=&limit≤200&entity=&action=&entityId=` | admin | Sprint 5. `AuditPage` newest first (+ `actorName`). |
+| GET | `/orgs/:orgId/audit/verify` | admin | Sprint 5. `{ok, checked, brokenAt, headHash}` — recomputes every hash and follows prevHash links (detects tamper, deletion, fork, second genesis). Strict tier. |
+| PATCH | `/orgs/:orgId/settings` | admin | Sprint 5. `{greenThreshold 0.9–0.995, blockExportOnRed, llmEnabled, trainingOptIn}` (strict, ≥ 1); audit `orgs/update_settings {changes: {field: {from,to}}}`; greenThreshold/blockExportOnRed mark every project's BOQ stale. |
+| POST | `/orgs/:orgId/offboarding/export` | admin + MFA + sign-in ≤ 10 min | Sprint 5. 202 → `offboardingExports/{id}` + job, message on topic `api-jobs`. |
+| GET | `/orgs/:orgId/offboarding/export/:exportId` | admin (works while offboarding) | Sprint 5. Status + 24 h signed URL when ready; audited. |
+| POST | `/orgs/:orgId/offboarding` | admin + MFA + sign-in ≤ 10 min + `confirm` = org name | Sprint 5. See "Offboarding". |
 | GET | `/jobs/:jobId` | viewer of `job.orgId` | Top-level job doc; membership checked in the service against the doc's `orgId` (non-members → 404). Tolerates worker docs with numeric `progress` + `stage`. |
 
 OpenAPI: `/api/docs` (UI) and `/api/docs/openapi.json` when `SWAGGER_ENABLED=true` and not production; static copy
@@ -198,6 +211,101 @@ cannot be stored. The contract (`RegionSchema.polygonMm`) uses objects everywher
   detections with that `roomId`); PUT rejects `claddingHeightM` above the ceiling (request or room) with 400. Export:
   area / length lines (`מ"ר`, `מ"א`, m2, m …) are displayed with 2 decimals (`numFmt 0.00`, `qtyFormat`), values stay
   exact so the formulas compute on them; `export-real-sample` compares with `toBeCloseTo(…, 2)`.
+
+## Sprint 5 — history, audit, marked PDF, share links, offboarding, settings
+
+- **Code layout**: `src/governance/` (AuditService + `verifyChain`, ExportsService, OffboardingService (+ ZIP runner),
+  DependentsService, controllers, `governance-storage.ts`, `auth-admin.ts` (revokeRefreshTokens port), `api-jobs-queue.ts`),
+  `src/share/` (ShareLinksService, PublicShareService + controller, `watermark.ts`, `share-rate-limit.ts`),
+  `src/db/governance-*.ts` (port + Firestore + in-memory + mappers), `src/scripts/offboard-purge.ts`.
+- **Audit chain** (SEC-35): every event now also updates `orgs/{o}/auditMeta/head {hash, at, count}` inside the same
+  transaction. Firestore transactions read that doc first, so two concurrent appends conflict and one retries (the
+  Sprint 0–4 head was a query, which does not lock "the next" doc → possible fork). Several events in one transaction
+  chain onto each other. `actorKind` is now `user | share_link | system` (hashed). Every append also writes a
+  content-free log line `{event:'audit', orgId, entity, action, actorType, actorUid, entityId}` (R-A2, SEC-43).
+  Events added: `boqLines/update` carries the override `reason` (justification, not the note), `exports/create|download`
+  (marked_pdf + xlsx), `shareLinks/create|revoke|revoke_all|view`, `orgs/update_settings|offboard|revoke_sessions`,
+  `offboardingExports/create|ready|download`. Verification follows links, not timestamps (clock skew safe).
+- **Share links** (FR-30, SEC-26–29): token lookup = SHA-256 → `shareTokens/{hash}` (direct doc read) → link →
+  `timingSafeEqual` with the link's `tokenHash`; unknown tokens perform a dummy link read (same reads). Unknown → 404,
+  expired / revoked / org offboarding → 410, **identical body** `{error:{code:'share_unavailable', …}}`; 410 adds
+  `x-share-state: expired|revoked` so the viewer can show "פג תוקף"/"בוטל". Middleware (`publicShareMiddleware`) sets
+  `X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` on every `/public/**`
+  response and answers **405** to any non-GET/HEAD before routing. A write to the private API carrying a share token
+  (bearer of the token shape, or `X-Share-Token`) → **403**; reads with it → 401. Rate limits (per instance): 60/min per
+  IP and per token (`SHARE_RATE_LIMIT_PER_MIN`), tiles 600/min (`SHARE_TILE_RATE_LIMIT_PER_MIN`; a viewport is dozens of
+  tiles), 10 unknown tokens/min from an IP → that IP 429 for 15 min; 429 carries `Retry-After`. Views: `viewCount++` on
+  `meta`; audit `shareLinks/view {endpoint, ipPrefix (/24 | /48), userAgent ≤ 200}` at most once per (link, prefix,
+  endpoint) per 5 min per instance. Only the link's **locked versions** are served (reprocessed sheets keep showing the
+  locked version; sheets added later are invisible). `meta` hides the address when `hideTitleBlock`; `boq` = effective
+  qty, no notes / override reasons / uids; `overlay` = lenient detections/links/rooms + `lineIds` from the latest
+  build's evidence, items inside the masked title block dropped, no text layer; `pdf` → 302 to a 2-min signed URL of
+  the per-link marked PDF (409 while pending, 404 when not allowed).
+- **Tiles**: proxied through the API (never signed for share viewers) with **sharp 0.34.5** (Apache-2.0; its prebuilt
+  libvips binary is LGPL-3.0, dynamically linked, unmodified — compliant for a server; noted for legal review). Text
+  rendered by Pango from the bundled `assets/fonts/DejaVuSans.ttf` (Bitstream Vera license, `LICENSE-DejaVuSans.txt`;
+  never downloaded at runtime), "שותף עם {recipient|label} • dd.mm.yyyy • {linkId[0:6]}", −30°, ~35 % alpha, repeated
+  on a 384 px pattern in level-pixel space (seamless across tiles) + a faint hatch (still marks if Pango fails). Title
+  block mask = `version.titleBlockMm`, else the worker's `titleBlock.bboxMm`, else a 45 mm bottom strip.
+- **Marked PDF** (FR-29): API creates the export + job; Worker-Export renders `exports/{id}/marked.pdf`. Export docs
+  are `ExportRecord` (`kind`, `status`, `startedAt`, `versionIds`, …); Sprint-3 xlsx docs map to `xlsx/ready`.
+- **Offboarding** (SEC-52): export + offboard need admin + MFA (`OFFBOARDING_REQUIRE_MFA`, refused `false` in
+  production — R-A7) + `auth_time` ≤ 10 min (`recent_auth_required`). **Decision: the ZIP is built by the API**, not
+  the drawing worker: topic `api-jobs` → Cloud Function `apiJobs` (2 GiB, 540 s, no retry; idempotent — `ready` is
+  never rebuilt), streaming with **fflate 0.8.3** (MIT): sources pass-through, `boq.xlsx` (byFloor), `boq-lines.json`,
+  `corrections.json`, `room-settings.json`, `sheets.json`, `rooms/{sheetId}.json`, `manifest.json`; sha256 + size on the
+  doc; 24 h URL. Offboard: typed org name (trimmed, exact), status `offboarding`, `deleteAfter` = +30 d (kept on repeat
+  calls), all share links revoked (`revoke_all`), `revokeRefreshTokens` for every member. While offboarding
+  `AccessService` answers `403 org_offboarding` to members for everything except `GET /orgs/:id` and the export
+  status/download (outsiders still 404).
+- **Purge** `node dist/scripts/offboard-purge.js [--org id] [--dry-run] [--out dir] [--now ISO]` (ADC only): Storage
+  prefix `orgs/{o}/` first, then Firestore `recursiveDelete(orgs/{o})` + jobs + shareTokens, then
+  `offboardingCertificates/{orgId}` = `DeletionCertificate` (counts, auditHead, inventory hashes, timestamps,
+  self-hash; no names/content) printed/written as JSON. Re-runnable. Scheduling it (daily) is DevOps.
+- **Dependents** (Worker-B): scheduled function `reprocessDependents` (every minute) → `DependentsService.runDue`:
+  due `reprocessRequests` (`notBefore` ≤ now, capped at `firstRequestedAt + 900 s`) are claimed in a transaction
+  (`pending → firing`), decided like `due_requests` (drop sheet gone / already reprocessed with all sources; wait while
+  queued/processing; else fire), fired via `createReprocessVersion` (actor `system_dependents`) + `reprocessReason` +
+  `ingest.sheet_version`, then `fired {versionId, firedAt}`. Stale claims (> 10 min) are retried; publish failure →
+  pending again at now + 300 s. Collection-group indexes (status, notBefore) / (status, claimedAt).
+- **Security fixes from DevOps**: R-A1 the request logger redacts `/api/v1/public/share/<redacted>/…` (`logPath`,
+  test drives pino-http); R-A7 above; R-A5 JSON CSP without helmet defaults (`default-src 'none'; frame-ancestors
+  'none'; base-uri 'none'; form-action 'none'`) + `X-Frame-Options: DENY`; R-A2 audit log line.
+- **R-A8**: `setGlobalOptions({ serviceAccount })` in `function.ts` → `api`, `apiJobs`, `reprocessDependents` run as
+  param `API_SERVICE_ACCOUNT` (default `kamutan-api@`, expanded by the Firebase CLI to
+  `kamutan-api@<project>.iam.gserviceaccount.com`; override per project in `.env.<project>`). Emulators ignore it.
+  **R-A9**: the purge prints each certificate as ONE JSON line on stdout (`certificateLine`); `--out` file stays pretty.
+- **Contracts** (all additive): `audit.ts`, `exports.ts`, `offboarding.ts`, `share.ts` (link fields + public DTOs),
+  jobs `export.marked_pdf` (`MarkedPdfJob`, in `IngestTopicJob`) and `offboarding.export` (topic `api-jobs`), org
+  `status/deleteAfter`, `PatchOrgSettingsRequest`, version `stats.calibration`, `stats.timingsMs`, `titleBlockMm`,
+  `titleBlock`, `referenceSources`, `reprocessReason`, detection `scoreRaw`, room `type 'niche'`, `parentRoomId`,
+  `walls[].open`, `ReprocessRequest`, error codes `org_offboarding`, `recent_auth_required`, `share_unavailable`,
+  `method_not_allowed`, paths `shareToken`, `auditHead`, `markedPdf`, `offboardingZip`, `TILE_PATH_RE` …
+- **Deps added**: `sharp@0.34.5` (Apache-2.0; libvips LGPL-3.0 prebuilt), `fflate@0.8.3` (MIT). Font asset DejaVu Sans.
+
+Sprint 5 tests: `e2e/governance.e2e.test.ts` (E2E-11 history, audit list/filters/cursor/roles, verify tamper/delete/fork,
+marked PDF job + status + URL + roles/409/503, settings + ranges), `e2e/share.e2e.test.ts` (token once + hash only,
+validation, role matrix, list/revoke, headers, meta/boq/overlay content, watermarked + masked tiles (pixel checks),
+version lock, 404/410 identical bodies, 405, share-token write 403, pdf 302/409/404, rate limits + lockout),
+`e2e/offboarding.e2e.test.ts` (MFA / recent auth, ZIP contents + sha256, offboard + revocations, blocked access,
+purge + certificate + isolation), `e2e/dependents.e2e.test.ts`, `unit/governance.unit.test.ts` (chain, history mapping,
+ipPrefix, watermark, limiter, recent auth, service-level isolation, R-A1 log redaction, R-A7, worker field mappers),
+emulator block "Sprint 5" in `integration/firestore.emulator.test.ts` (CI only).
+Commands (green, 21.10.2026): `pnpm turbo run lint typecheck test build --filter=@kamutan/api --filter=@kamutan/contracts
+--filter=@kamutan/firebase-tests --concurrency=2` (api 278 passed / 21 emulator-skipped; contracts 108; firebase-tests
+46 passed / 170 emulator-skipped), `pnpm --filter @kamutan/api openapi`.
+
+Known gaps (Sprint 5):
+- Rate limits / lockout / view-audit dedupe are per function instance (as all throttling); a shared store is open.
+- Share `boq` shows the CURRENT lines (reviewed state), not a snapshot at link creation; the overlay uses the latest
+  build's evidence, so a locked older version may show fewer `lineIds` (Worker-Export notes the same for the PDF).
+- No project-delete endpoint exists yet, so "revoke on project delete" (`revokeReason: project_deleted`) is only modelled.
+- Emulator suites (governance repo, new rules) not run here — first CI run is the check. Firestore needs the new
+  composite indexes (auditLog filters, orgs status+deleteAfter, reprocessRequests collection group).
+- `libvips` is LGPL-3.0 (prebuilt, dynamically linked) — record in the licence inventory.
+- `apiJobs` / `reprocessDependents` functions and the `api-jobs` topic need DevOps deploy wiring (firebase deploy
+  creates both from `function.ts` exports) and the runtime SA needs `firebaseauth.users.update` (revokeRefreshTokens).
+- `rebuild` history items appear only if the worker writes `boqLines/rebuild` audit events (it does not today).
 
 ## Upload flow (SEC-13/14/15)
 

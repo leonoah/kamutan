@@ -14,6 +14,18 @@ import {
   type RoomSettings,
   type RoomSettingsResponse,
   type SimilarSearch,
+  type AuditEvent,
+  type AuditPage,
+  type CalibrationStats,
+  type ExportDoc,
+  type OffboardingExport,
+  type OrgSettings,
+  type PublicShareBoq,
+  type PublicShareClient,
+  type PublicShareMeta,
+  type PublicShareOverlay,
+  type ShareErrorKind,
+  type ShareLink,
 } from "./types";
 
 /* ---------------- Sprint 4 adapters (contracts corrections.ts ↔ app DTOs) ---------------- */
@@ -135,6 +147,8 @@ interface BoqViewDto {
     stale: boolean;
     build: BoqBuild | null;
     blockExportOnRed: boolean;
+    /** Sprint 5 (optional): calibration of the latest build. */
+    calibration?: CalibrationStats | null;
   };
   items: BoqLine[];
   nextCursor: string | null;
@@ -174,6 +188,226 @@ export function toLibraryImport(v: {
         }
       : null,
     error: v.error,
+  };
+}
+
+/* ---------------- Sprint 5 adapters ---------------- */
+
+/** Export doc (GET …/exports/:id → `{export, url?}` or the doc itself) → app DTO. */
+export function toExportDoc(v: Record<string, unknown>): ExportDoc {
+  const doc = (v.export as Record<string, unknown> | undefined) ?? v;
+  const str = (x: unknown) => (typeof x === "string" ? x : null);
+  const err = doc.error as ExportDoc["error"] | undefined;
+  return {
+    id: String(doc.id ?? doc.exportId ?? ""),
+    kind: (doc.kind as ExportDoc["kind"]) ?? "marked_pdf",
+    // contracts ExportStatus uses `ready` (the worker may write `succeeded`); the app says `succeeded`.
+    status: doc.status === "ready" ? "succeeded" : ((doc.status as ExportDoc["status"]) ?? "queued"),
+    progress: typeof doc.progress === "number" ? doc.progress : null,
+    pageCount: typeof doc.pageCount === "number" ? doc.pageCount : null,
+    createdBy: str(doc.createdBy),
+    createdAt: str(doc.createdAt) ?? new Date().toISOString(),
+    error: err ?? null,
+    url: str(v.url) ?? str(v.signedUrl) ?? str(doc.url),
+    filename: str(v.fileName) ?? str(v.filename) ?? str(doc.fileName) ?? str(doc.filename),
+    expiresAt: str(v.expiresAt) ?? str(doc.expiresAt),
+  };
+}
+
+/** Share link DTO (additive fields may be missing on links created before Sprint 5). */
+export function toShareLink(v: Partial<ShareLink> & { id: string; expiresAt: string; createdAt: string }): ShareLink {
+  return {
+    id: v.id,
+    label: v.label ?? "",
+    recipient: v.recipient ?? null,
+    versionLock: v.versionLock ?? [],
+    expiresAt: v.expiresAt,
+    revokedAt: v.revokedAt ?? null,
+    hideTitleBlock: v.hideTitleBlock ?? true,
+    allowPdfDownload: v.allowPdfDownload ?? false,
+    viewCount: v.viewCount ?? 0,
+    lastViewedAt: v.lastViewedAt ?? null,
+    createdBy: v.createdBy ?? "",
+    createdAt: v.createdAt,
+  };
+}
+
+export function toOffboardingExport(v: Record<string, unknown>): OffboardingExport {
+  const doc = (v.export as Record<string, unknown> | undefined) ?? (v.job as Record<string, unknown> | undefined) ?? v;
+  const str = (x: unknown) => (typeof x === "string" ? x : null);
+  return {
+    id: String(doc.id ?? v.exportId ?? v.jobId ?? ""),
+    status: doc.status === "ready" ? "succeeded" : ((doc.status as OffboardingExport["status"]) ?? "queued"),
+    progress: typeof doc.progress === "number" ? doc.progress : null,
+    url: str(v.url) ?? str(doc.url),
+    expiresAt: str(v.expiresAt) ?? str(doc.expiresAt),
+    error: (doc.error as OffboardingExport["error"]) ?? null,
+    createdAt: str(doc.createdAt) ?? new Date().toISOString(),
+  };
+}
+
+/** Public share errors: 404 unknown; 410 expired / revoked (by code); 429 rate limited. */
+export function shareErrorKind(e: unknown): ShareErrorKind {
+  if (!(e instanceof ApiError)) return "error";
+  if (e.status === 404) return "not_found";
+  if (e.status === 429) return "rate_limited";
+  if (e.status === 410) {
+    if (/revok/i.test(e.code)) return "revoked";
+    if (/expir/i.test(e.code)) return "expired";
+    return "expired";
+  }
+  return "error";
+}
+
+/**
+ * Unauthenticated client of `/v1/public/share/:token/…` (external viewer). GET only, no Authorization header, no
+ * cookies, no referrer — it cannot write: there is no method for it and every request is a hard-coded GET.
+ */
+export function createPublicShareClient(base = env.apiBase, fetchImpl: typeof fetch = fetch): PublicShareClient {
+  const enc = encodeURIComponent;
+  const path = (token: string, rest: string) => `${base}/public/share/${enc(token)}${rest}`;
+  async function get<T>(url: string): Promise<T> {
+    const res = await fetchImpl(url, {
+      method: "GET",
+      credentials: "omit",
+      referrerPolicy: "no-referrer",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+      let code = res.status === 410 ? "gone" : res.status === 404 ? "not_found" : "internal_error";
+      let message = res.statusText;
+      try {
+        const body = (await res.json()) as { error?: { code?: string; message?: string } };
+        code = body.error?.code ?? code;
+        message = body.error?.message ?? message;
+      } catch {
+        /* non-JSON */
+      }
+      // contracts SHARE_STATE_HEADER: 410 bodies are identical (`share_unavailable`); the header tells which screen.
+      const state = res.headers?.get?.("x-share-state");
+      if (res.status === 410 && (state === "expired" || state === "revoked")) code = `share_${state}`;
+      throw new ApiError(res.status, code, message);
+    }
+    return (await res.json()) as T;
+  }
+  return {
+    getMeta: async (token) => normalizeShareMeta(await get<PublicShareMeta>(path(token, "/meta"))),
+    getBoq: async (token) => {
+      const v = await get<PublicShareBoq & { items?: PublicShareBoq["lines"] }>(path(token, "/boq"));
+      // Spec S15: no reasons / scores in the external view (contracts lines carry `reasons`; drop them here).
+      const lines = (v.lines ?? v.items ?? []).map((l) => {
+        const { reasons: _r, overridden: _o, floor: _f, ...rest } = l as typeof l & { reasons?: unknown; overridden?: unknown; floor?: unknown };
+        return { ...rest, byFloor: rest.byFloor ?? {} };
+      });
+      return { lines, ...(v.chapters ? { chapters: v.chapters } : {}) };
+    },
+    getOverlay: async (token, sheetId) => normalizeShareOverlay(await get<Parameters<typeof normalizeShareOverlay>[0]>(path(token, `/sheets/${enc(sheetId)}/overlay`)), sheetId),
+    tileUrl: (token, sheetId, z, x, y) => path(token, `/sheets/${enc(sheetId)}/tiles/${z}/${x}/${y}`),
+    pdfUrl: (token) => path(token, "/pdf"),
+  };
+}
+
+/** contracts PublicShareMetaSchema: `{ link, project, sheets: [{ sheetId, … }], pdf }`. */
+interface PublicShareMetaDto {
+  link: { shortId: string; label: string; recipient: string | null; expiresAt: string; createdAt: string; hideTitleBlock: boolean; allowPdfDownload: boolean; watermark: string };
+  project: { name: string; address: string | null };
+  sheets: (Omit<PublicShareMeta["sheets"][number], "id"> & { sheetId: string })[];
+  pdf: { status: "queued" | "running" | "ready" | "failed" } | null;
+}
+export function normalizeShareMeta(raw: PublicShareMeta | PublicShareMetaDto): PublicShareMeta {
+  if ("link" in raw && "project" in raw) {
+    const { link, project, sheets, pdf } = raw;
+    return normalizeShareMeta({
+      linkId: link.shortId,
+      projectName: project.name,
+      orgName: null,
+      label: link.label,
+      expiresAt: link.expiresAt,
+      // The versions are locked when the link is created.
+      versionDate: link.createdAt,
+      hideTitleBlock: link.hideTitleBlock,
+      // The per-link watermarked PDF is generated after creation: offer it once it is ready.
+      allowPdfDownload: link.allowPdfDownload && pdf?.status === "ready",
+      showConfidence: true,
+      watermark: link.watermark,
+      sheets: sheets.map(({ sheetId, ...x }) => ({ ...x, id: sheetId })),
+    });
+  }
+  const v = raw;
+  return {
+    ...v,
+    orgName: v.orgName ?? null,
+    label: v.label ?? "",
+    versionDate: v.versionDate ?? null,
+    hideTitleBlock: v.hideTitleBlock ?? true,
+    allowPdfDownload: v.allowPdfDownload ?? false,
+    showConfidence: v.showConfidence ?? true,
+    watermark: v.watermark ?? "",
+    sheets: (v.sheets ?? []).map((s) => ({ ...s, floors: s.floors ?? [], title: s.title ?? null, discipline: s.discipline ?? null, page: s.page ?? null, tiles: s.tiles ?? null })),
+  };
+}
+
+/** Overlay: accepts `evidence` (line → detections) or per-detection `lineIds`. */
+type ShareDetectionDto = Omit<PublicShareOverlay["detections"][number], "lifecycle" | "roomId"> & { lifecycle?: PublicShareOverlay["detections"][number]["lifecycle"]; roomId?: string | null; lineIds?: string[] };
+type ShareRoomDto = Omit<PublicShareOverlay["rooms"][number], "polygonMm" | "floor"> & { polygonMm?: { x: number; y: number }[]; floor?: string | null; bboxMm?: { x: number; y: number; w: number; h: number } | null };
+type ShareLinkGroupDto = PublicShareOverlay["linkGroups"][number] & { lineIds?: string[] };
+/**
+ * contracts PublicShareOverlaySchema: detections carry `lineIds` (no lifecycle / room), groups are `links`, rooms have a
+ * `bboxMm` (no polygon — drawn as their box). Also accepts the app's own shape (mock).
+ */
+export function normalizeShareOverlay(
+  v: Omit<Partial<PublicShareOverlay>, "detections" | "rooms" | "linkGroups"> & { detections?: ShareDetectionDto[]; rooms?: ShareRoomDto[]; linkGroups?: ShareLinkGroupDto[]; links?: ShareLinkGroupDto[]; maskMm?: unknown },
+  sheetId: string,
+): PublicShareOverlay {
+  const evidence: Record<string, string[]> = { ...(v.evidence ?? {}) };
+  if (!v.evidence)
+    for (const d of v.detections ?? []) for (const l of d.lineIds ?? []) (evidence[l] ??= []).push(d.id);
+  const box = (b: { x: number; y: number; w: number; h: number }) => [
+    { x: b.x, y: b.y },
+    { x: b.x + b.w, y: b.y },
+    { x: b.x + b.w, y: b.y + b.h },
+    { x: b.x, y: b.y + b.h },
+  ];
+  return {
+    sheetId: v.sheetId ?? sheetId,
+    versionId: v.versionId ?? "",
+    detections: (v.detections ?? []).map(({ lineIds: _l, ...d }) => ({ ...d, lifecycle: d.lifecycle ?? "new", roomId: d.roomId ?? null })),
+    rooms: (v.rooms ?? [])
+      .filter((r) => r.polygonMm?.length || r.bboxMm)
+      .map(({ bboxMm, polygonMm, ...r }) => ({ ...r, floor: r.floor ?? null, polygonMm: polygonMm?.length ? polygonMm : box(bboxMm!) })),
+    linkGroups: (v.linkGroups ?? v.links ?? []).map(({ lineIds: _l, ...g }) => ({ ...g, pointIds: g.pointIds ?? [] })),
+    evidence,
+  };
+}
+
+/** contracts AuditPage item → app AuditEvent. */
+interface AuditEventDto {
+  id: string;
+  actorId: string | null;
+  actorKind: string;
+  actorName: string | null;
+  entity: string;
+  entityId: string | null;
+  action: string;
+  after: Record<string, unknown> | null;
+  at: string;
+  prevHash: string | null;
+  hash: string;
+}
+export function toAuditEvent(v: AuditEventDto | AuditEvent): AuditEvent {
+  if (!("actorId" in v)) return v;
+  return {
+    id: v.id,
+    at: v.at,
+    actor: v.actorKind === "user" && v.actorId ? { uid: v.actorId, displayName: v.actorName } : null,
+    actorKind: v.actorKind,
+    action: v.action,
+    entity: v.entity,
+    entityId: v.entityId,
+    after: v.after,
+    hash: v.hash,
+    prevHash: v.prevHash,
   };
 }
 
@@ -275,6 +509,7 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
         items,
         boq: sm ? { latestBuildId: sm.latestBuildId, builtAt: sm.builtAt, stale: sm.stale } : null,
         blockExportOnRed: sm?.blockExportOnRed ?? false,
+        calibration: sm?.calibration ?? sm?.build?.stats?.calibration ?? null,
       };
     },
     patchBoqLine: async (projectId, lineId, req) => {
@@ -384,5 +619,47 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
       const v = await request<{ search: SimilarSearchDto; thumbUrls: Record<string, string> }>(`/projects/${enc(projectId)}/similar-searches/${enc(id)}`);
       return toSimilar(v.search, v.thumbUrls ?? {});
     },
+
+    /* Sprint 5 */
+    getLineHistory: (projectId, lineId) => request(`/projects/${enc(projectId)}/boq/lines/${enc(lineId)}/history`),
+    listAudit: async (orgId, q = {}) => {
+      const qs = new URLSearchParams();
+      if (q.cursor) qs.set("cursor", q.cursor);
+      if (q.entity) qs.set("entity", q.entity);
+      if (q.action) qs.set("action", q.action);
+      if (q.limit) qs.set("limit", String(q.limit));
+      const s = qs.toString();
+      const page = await request<{ items: AuditEventDto[]; nextCursor: string | null }>(`/orgs/${enc(orgId)}/audit${s ? `?${s}` : ""}`);
+      return { items: page.items.map(toAuditEvent), nextCursor: page.nextCursor } satisfies AuditPage;
+    },
+    verifyAudit: (orgId) => request(`/orgs/${enc(orgId)}/audit/verify`),
+    exportMarkedPdf: async (projectId, req) => {
+      // contracts CreateMarkedPdfRequestSchema: { sheetIds, options: { floorSplit, hideTitleBlock } } (legend always on).
+      const r = await post<{ exportId?: string; export?: { id: string } }>(`/projects/${enc(projectId)}/boq/export/marked-pdf`, {
+        sheetIds: req.sheetIds,
+        options: { floorSplit: req.floorSplit, hideTitleBlock: req.hideTitleBlock },
+      });
+      return { exportId: r.exportId ?? r.export?.id ?? "" };
+    },
+    getExport: async (projectId, exportId) => toExportDoc(await request(`/projects/${enc(projectId)}/exports/${enc(exportId)}`)),
+    createShareLink: async (projectId, req) => {
+      const r = await post<{ link: ShareLink; url: string }>(`/projects/${enc(projectId)}/share-links`, req);
+      return { link: toShareLink(r.link), url: r.url };
+    },
+    listShareLinks: async (projectId) => {
+      const r = await request<{ items: ShareLink[] } | ShareLink[]>(`/projects/${enc(projectId)}/share-links`);
+      return (Array.isArray(r) ? r : r.items).map(toShareLink);
+    },
+    revokeShareLink: async (projectId, linkId) => {
+      const r = await request<{ link?: ShareLink } | undefined>(`/projects/${enc(projectId)}/share-links/${enc(linkId)}`, { method: "DELETE" });
+      return r?.link ? toShareLink(r.link) : null;
+    },
+    patchOrgSettings: async (orgId, req) => {
+      const r = await request<{ settings: OrgSettings } | OrgSettings>(`/orgs/${enc(orgId)}/settings`, { method: "PATCH", body: JSON.stringify(req) });
+      return "settings" in r ? r.settings : r;
+    },
+    startOffboardingExport: async (orgId) => toOffboardingExport(await post(`/orgs/${enc(orgId)}/offboarding/export`, { includeSources: true })),
+    getOffboardingExport: async (orgId, id) => toOffboardingExport(await request(`/orgs/${enc(orgId)}/offboarding/export/${enc(id)}`)),
+    offboardOrg: (orgId, req) => post(`/orgs/${enc(orgId)}/offboarding`, req),
   };
 }

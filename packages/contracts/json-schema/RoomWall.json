@@ -47,6 +47,9 @@
         },
         "exterior": {
           "type": "boolean"
+        },
+        "open": {
+          "type": "boolean"
         }
       },
       "required": [

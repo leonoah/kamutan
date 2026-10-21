@@ -9,6 +9,9 @@ const fa = vi.hoisted(() => ({
   signOut: vi.fn(),
   onAuthStateChanged: vi.fn(),
   setCustomParameters: vi.fn(),
+  getIdTokenResult: vi.fn(),
+  reauthenticateWithPopup: vi.fn(),
+  reauthenticateWithCredential: vi.fn(),
 }));
 
 vi.mock("firebase/auth", () => ({
@@ -17,6 +20,7 @@ vi.mock("firebase/auth", () => ({
   GoogleAuthProvider: vi.fn().mockImplementation(function () {
     return { providerId: "google.com", setCustomParameters: fa.setCustomParameters };
   }),
+  EmailAuthProvider: { credential: vi.fn((email: string, password: string) => ({ email, password })) },
 }));
 
 import { AuthError, EMAIL_FOR_SIGN_IN_KEY, createFirebaseAuth, mapFirebaseAuthError } from "./authService";
@@ -105,5 +109,40 @@ describe("Firebase AuthService", () => {
     await expect(svc.getIdToken()).resolves.toBeNull();
     authState.currentUser = user;
     await expect(svc.getIdToken()).resolves.toBe("id-token-123");
+  });
+
+  describe("Sprint 5: recent login", () => {
+    const u = (providerId: string) => ({ ...user, providerData: [{ providerId }], getIdToken: vi.fn(async () => "fresh") });
+
+    it("reads auth_time from the ID token result", async () => {
+      await expect(svc.getAuthTime()).resolves.toBeNull();
+      authState.currentUser = u("password") as never;
+      fa.getIdTokenResult.mockResolvedValue({ authTime: "Thu, 15 Oct 2026 10:00:00 GMT" });
+      await expect(svc.getAuthTime()).resolves.toBe(Date.parse("2026-10-15T10:00:00Z"));
+    });
+
+    it("re-authenticates Google users with a popup and forces a fresh token", async () => {
+      const g = u("google.com");
+      authState.currentUser = g as never;
+      expect(svc.reauthMethod()).toBe("google");
+      await svc.reauthenticate();
+      expect(fa.reauthenticateWithPopup).toHaveBeenCalledWith(g, expect.objectContaining({ providerId: "google.com" }));
+      expect(g.getIdToken).toHaveBeenCalledWith(true);
+    });
+
+    it("re-authenticates password users with a credential; refuses without a password", async () => {
+      const p = u("password");
+      authState.currentUser = p as never;
+      expect(svc.reauthMethod()).toBe("password");
+      await expect(svc.reauthenticate()).rejects.toMatchObject({ code: "invalid_credentials" });
+      await svc.reauthenticate("correct-horse-battery");
+      expect(fa.reauthenticateWithCredential).toHaveBeenCalledWith(p, { email: "dana@studio.co.il", password: "correct-horse-battery" });
+      expect(p.getIdToken).toHaveBeenCalledWith(true);
+    });
+
+    it("email-link-only users are asked to sign in again", () => {
+      authState.currentUser = u("emailLink") as never;
+      expect(svc.reauthMethod()).toBe("signin");
+    });
   });
 });

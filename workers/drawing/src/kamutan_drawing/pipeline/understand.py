@@ -40,6 +40,7 @@ from typing import Any
 
 import numpy as np
 
+from ..calibration import ROOM_KEY, clean_green_threshold, default_table
 from ..ingest.pdf_vector import VectorSheet
 from ..legend.parse import LegendEntry, LegendResult, parse_legends
 from ..links import LINK_DISCIPLINES, link_sheet
@@ -156,15 +157,60 @@ def detection_stats(dets: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _crop(render: Callable[..., Any] | None, box: BBox, margin: float = 1.0) -> bytes | None:
-    if render is None:
-        return None
+def _crop_request(box: BBox, margin: float = 1.0) -> tuple[float, int, int, int, int]:
+    """``(px_per_mm, x, y, w, h)`` of the thumbnail of ``box`` (≤ THUMB_PX, ≤ 24 px/mm)."""
     x0, y0, x1, y1 = box[0] - margin, box[1] - margin, box[2] + margin, box[3] + margin
     w_mm, h_mm = max(x1 - x0, 0.5), max(y1 - y0, 0.5)
     ppm = min(THUMB_PX / w_mm, THUMB_PX / h_mm, 24.0)
-    w, h = max(1, int(w_mm * ppm)), max(1, int(h_mm * ppm))
+    return ppm, max(0, int(x0 * ppm)), max(0, int(y0 * ppm)), max(1, int(w_mm * ppm)), max(1, int(h_mm * ppm))
+
+
+class BatchRender:
+    """Sprint 5 (perf): a page render costs ~0.2 s of fixed pdfium work however small the bitmap, so thumbnail
+    crops that share a scale (legend rows: 24 px/mm) are rendered as a few clustered regions (≤ ``max_px``
+    pixels each) and cut out of them. Requests outside a prefetched region fall back to a direct render."""
+
+    def __init__(self, render: Callable[..., Any], max_px: int = 8_000_000) -> None:
+        self.render, self.max_px = render, max_px
+        self.regions: list[tuple[float, int, int, int, int, Any]] = []
+
+    def prefetch(self, reqs: list[tuple[float, int, int, int, int]]) -> None:
+        by_ppm: dict[float, list[tuple[int, int, int, int]]] = {}
+        for ppm, x, y, w, h in reqs:
+            by_ppm.setdefault(ppm, []).append((x, y, w, h))
+        for ppm, rs in sorted(by_ppm.items()):
+            if len(rs) < 2:
+                continue
+            clusters: list[list[int]] = []
+            for x, y, w, h in sorted(rs, key=lambda r: (r[1], r[0])):
+                for c in clusters:
+                    nx0, ny0, nx1, ny1 = min(c[0], x), min(c[1], y), max(c[2], x + w), max(c[3], y + h)
+                    if (nx1 - nx0) * (ny1 - ny0) <= self.max_px:
+                        c[:] = [nx0, ny0, nx1, ny1]
+                        break
+                else:
+                    clusters.append([x, y, x + w, y + h])
+            for c in clusters:
+                try:
+                    img = self.render(ppm, c[0], c[1], c[2] - c[0], c[3] - c[1])
+                except Exception:  # a crop is a convenience; the direct path still works
+                    log.warning("batched thumbnail render failed", exc_info=True)
+                    continue
+                self.regions.append((ppm, c[0], c[1], c[2], c[3], img))
+
+    def __call__(self, ppm: float, x: int, y: int, w: int, h: int) -> Any:
+        for p, x0, y0, x1, y1, img in self.regions:
+            if p == ppm and x0 <= x and y0 <= y and x + w <= x1 and y + h <= y1:
+                return img.crop((x - x0, y - y0, x - x0 + w, y - y0 + h))
+        return self.render(ppm, x, y, w, h)
+
+
+def _crop(render: Callable[..., Any] | None, box: BBox, margin: float = 1.0) -> bytes | None:
+    if render is None:
+        return None
+    ppm, x, y, w, h = _crop_request(box, margin)
     try:
-        img = render(ppm, max(0, int(x0 * ppm)), max(0, int(y0 * ppm)), w, h)
+        img = render(ppm, x, y, w, h)
     except Exception:  # a crop is a convenience; never fail the stage for it
         log.warning("thumbnail render failed", exc_info=True)
         return None
@@ -215,6 +261,8 @@ def understand(
     links: bool = True,
     fixtures: bool = True,
     reference_walls: list[Any] | None = None,
+    green_threshold: float | None = None,
+    scale_conflict: bool = False,
 ) -> dict[str, Any]:
     """Run legend → detect → rooms → links on one sheet. Writes the artifacts into ``out_dir`` when given.
 
@@ -222,7 +270,13 @@ def understand(
     no "קומה לא ודאית" reason is added. ``reference_walls``: Worker-B's ``ReferenceWalls`` of the project's
     construction / architecture sheets (``walls.json.gz`` of their current versions, construction first) — the
     MEP sheets' ``rooms.segment`` borrows the thin partitions they lack. Wall-source sheets write their own
-    ``walls.json.gz`` (``wallsFile``)."""
+    ``walls.json.gz`` (``wallsFile``).
+
+    Sprint 5 calibration (:mod:`kamutan_drawing.calibration`): every level produced here (symbols, fixtures,
+    rooms, link groups) goes through the table — ``scoreRaw`` keeps the heuristic score, conservative mode caps
+    classes without enough DEV truth at yellow. ``green_threshold``: the org's ``greenThreshold`` (checked against
+    the table's Wilson LB). ``scale_conflict``: the sheet's declared scale contradicts its dimensions — every
+    area item (room) is red (hard ceiling)."""
     from ..classify.sheet import classify_page
 
     mappings = mappings or {}
@@ -290,6 +344,7 @@ def understand(
             scale_den=scale_den,
             mappings=sig_maps,
             text_paths=text_paths,
+            green_threshold=green_threshold,
         )
         det.detections = [d for d in det.detections if not (d.entry is not None and d.entry.signature in ignored)]
     elif run_detect and raster and raster_image is not None:
@@ -318,6 +373,7 @@ def understand(
         except Exception:  # rooms are best effort; detections must still be written
             log.warning("rooms.segment failed", exc_info=True)
             room_objs = []
+    _calibrate_rooms(room_objs, green_threshold=green_threshold, scale_conflict=scale_conflict)
     _assign_rooms(det.detections, room_objs, regions)
     _room_ceilings(room_objs, spans)
     walls_doc: dict[str, Any] | None = None
@@ -355,7 +411,7 @@ def understand(
         else:
             # the fixtures stage supersedes the Sprint-2 plumbing text anchors on the sheets where it runs
             det.detections = [d for d in det.detections if not (d.source == "text" and d.cls in TEXT_ANCHOR_SUPERSEDED)]
-        fx_dets = [d for d in (_fixture_detection(f) for f in fx_objs) if d is not None]
+        fx_dets = [d for d in (_fixture_detection(f, green_threshold=green_threshold) for f in fx_objs) if d is not None]
         if room_objs:
             _apply_room_types(room_objs, fx_dets)
     elif room_objs:
@@ -407,6 +463,16 @@ def understand(
     thumbs: dict[str, str | None] = {}
     if out_dir is not None:
         out_dir.mkdir(parents=True, exist_ok=True)
+        if render is not None:  # one pdfium call per cluster of thumbnails instead of one per thumbnail
+            batch = BatchRender(render)
+            batch.prefetch(
+                [
+                    _crop_request(e.symbol_bbox if e.label_bbox is None else _union(e.symbol_bbox, e.label_bbox))
+                    for e in legend.entries
+                ]
+                + [_crop_request(c.exemplar, 1.5) for c in det.clusters]
+            )
+            render = batch
         for e in legend.entries:
             eid = e.entry_id(sheet_id)
             box = e.symbol_bbox if e.label_bbox is None else _union(e.symbol_bbox, e.label_bbox)
@@ -430,6 +496,7 @@ def understand(
                 cj["thumb"] = None
     leg_json = legend_json(legend, sheet_id, thumbs, applied)
     det_doc = {"schema": DETECTIONS_SCHEMA, "detections": dets_json, "unknownClusters": clusters_json}
+    lap("crops")  # legend / unknown-cluster thumbnails (Sprint 5: reported apart from links)
     # ---------------------------------------------------------------- links (lighting sheets)
     links_doc: dict[str, Any] | None = None
     link_stats: dict[str, Any] | None = None
@@ -480,6 +547,7 @@ def understand(
         **({"wallsFile": WALLS_FILE} if walls_doc is not None and out_dir is not None else {}),
         **({"referenceWalls": len(reference_walls)} if reference_walls else {}),
         **({"regionFloors": region_floors} if region_floors else {}),
+        "calibration": default_table().stats(),
     }
 
 
@@ -598,9 +666,10 @@ def _flag_uncertain_floors(
                 r.level = _demote(r.reasons, r.level, R_FLOOR)
 
 
-def _fixture_detection(f: Any) -> Detection | None:
+def _fixture_detection(f: Any, *, green_threshold: float | None = None) -> Detection | None:
     """Worker-B's ``FixtureDetection`` (or its ``to_json`` dict) → a :class:`Detection`, so the floor rule,
-    lifecycle and the artifact writer treat fixtures like every other detection (id kept: ``d_fx_<n>``)."""
+    lifecycle, calibration and the artifact writer treat fixtures like every other detection (id kept:
+    ``d_fx_<n>``). The fixture's own score is the raw score; the table caps its level (Sprint 5)."""
     try:
         j = f.to_json() if hasattr(f, "to_json") else dict(f)
         b = j["bboxMm"]
@@ -624,7 +693,33 @@ def _fixture_detection(f: Any) -> Detection | None:
         return None
     if not d.id.startswith("d_"):
         d.id = "d_" + d.id
+    sr = j.get("scoreRaw")
+    raw = float(sr) if isinstance(sr, int | float) and not isinstance(sr, bool) else d.score
+    c = default_table().calibrate(d.cls, raw, d.reasons, level=d.level, green_threshold=green_threshold)
+    d.score_raw, d.score, d.level, d.reasons = raw, c.score, c.level, c.reasons
     return d
+
+
+R_SCALE_CONFLICT = "קנה מידה סותר"  # = classify.sheet.R_SCALE_CONFLICT
+
+
+def _calibrate_rooms(rooms: list[Any], *, green_threshold: float | None, scale_conflict: bool) -> None:
+    """Room levels through the calibration table (class key ``room``) + the hard ceiling: on a sheet whose scale
+    contradicts its dimensions every area item is red. ``confidence`` stays the producer's (rooms have no
+    ``scoreMap`` yet)."""
+    for r in rooms:
+        if not hasattr(r, "level") or not hasattr(r, "reasons"):
+            continue
+        reasons = list(getattr(r, "reasons", None) or [])
+        if scale_conflict:
+            if R_SCALE_CONFLICT not in reasons:
+                reasons.append(R_SCALE_CONFLICT)
+            r.reasons, r.level = reasons, "red"
+            continue
+        c = default_table().calibrate(
+            ROOM_KEY, float(getattr(r, "confidence", 0.0) or 0.0), reasons, level=str(r.level), green_threshold=green_threshold
+        )
+        r.level, r.reasons = c.level, c.reasons
 
 
 def _fixtures_doc(objs: list[Any], dets: list[Detection]) -> dict[str, Any]:
@@ -641,7 +736,15 @@ def _fixtures_doc(objs: list[Any], dets: list[Detection]) -> dict[str, Any]:
         d = by_id.get(str(rec.get("id"))) or by_id.get("d_" + str(rec.get("id")))
         if d is not None:
             rec.update(
-                {"floor": d.floor, "lifecycle": d.lifecycle, "supply": d.supply, "level": d.level, "reasons": list(d.reasons)}
+                {
+                    "floor": d.floor,
+                    "lifecycle": d.lifecycle,
+                    "supply": d.supply,
+                    "score": round(float(d.score), 3),
+                    "scoreRaw": round(float(d.score if d.score_raw is None else d.score_raw), 3),
+                    "level": d.level,
+                    "reasons": list(d.reasons),
+                }
             )
     return doc
 
@@ -690,7 +793,8 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     """Sandbox task ``understand``. ``args``: kind, path (source, relative), index, pageDir (the page
     task's outDir, relative), outDir (relative), sheet, discipline, scaleDenominator, regions,
     mappings {signature: {class, itemCode, label, status, entryId}}, detect, rooms, links,
-    floorsConfirmed (the sheet doc is ``confirmed``: regions' floors are authoritative)."""
+    floorsConfirmed (the sheet doc is ``confirmed``: regions' floors are authoritative), greenThreshold (org
+    setting), scaleConflict (the page's scale check failed and the user did not confirm a scale)."""
     from ..classify.sheet import span_from_line
     from ..types_sprint2 import vector_sheet_from_primitives
 
@@ -748,6 +852,8 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             links=bool(args.get("links", True)),
             fixtures=bool(args.get("fixtures", True)),
             reference_walls=refs or None,
+            green_threshold=clean_green_threshold(args.get("greenThreshold")),
+            scale_conflict=bool(args.get("scaleConflict", False)),
         )
     finally:
         close()

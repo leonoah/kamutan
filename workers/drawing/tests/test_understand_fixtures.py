@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from kamutan_drawing.calibration import R_CONSERVATIVE
 from kamutan_drawing.pipeline import understand as U
 from kamutan_drawing.pipeline.understand import understand
 from kamutan_drawing.symbols.detect import Detection
@@ -69,7 +70,7 @@ def _gz(p):
     return json.loads(gzip.decompress(p.read_bytes()))
 
 
-def test_fixtures_become_detections_and_supersede_text_anchors(sheet, tmp_path, monkeypatch):
+def test_fixtures_become_detections_and_supersede_text_anchors(sheet, tmp_path, monkeypatch, allow_green):
     vs, spans = sheet
     seen: dict[str, Any] = {}
 
@@ -126,7 +127,23 @@ def test_floor_rule_demotes_fixtures_like_symbols(sheet, tmp_path, monkeypatch):
     out2 = tmp_path / "o2"
     understand(vs, spans, sheet_id="s", discipline="architecture", scale_den=50, regions=two, text_paths=set(), out_dir=out2,
                floors_confirmed=True)  # fmt: skip
-    assert _gz(out2 / "detections.json.gz")["detections"][0]["level"] == "green"
+    # confirmed floors remove the floor chip; the conservative table (default) still caps the fixture class
+    d2 = _gz(out2 / "detections.json.gz")["detections"][0]
+    # scoreRaw = the fixture's own score; score = the (plumbing domain) isotonic map of it
+    assert d2["level"] == "yellow" and d2["reasons"] == [R_CONSERVATIVE] and d2["scoreRaw"] == 0.9
+    # with a table that allows the class, the confirmed sheet's fixture is green
+    from kamutan_drawing import calibration as C
+
+    from .calib_util import AllowAll
+
+    C.set_default_table(AllowAll())
+    try:
+        out3 = tmp_path / "o3"
+        understand(vs, spans, sheet_id="s", discipline="architecture", scale_den=50, regions=two, text_paths=set(),
+                   out_dir=out3, floors_confirmed=True)  # fmt: skip
+    finally:
+        C.set_default_table(None)
+    assert _gz(out3 / "detections.json.gz")["detections"][0]["level"] == "green"
 
 
 def test_fixture_failure_or_off_keeps_the_rest(sheet, tmp_path, monkeypatch):

@@ -108,12 +108,13 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
       await assertFails(db(A.users.admin).doc(a.auditEvent).delete());
     });
 
-    it('shareLinks: admin/editor read, reviewer/viewer cannot; nobody writes or revokes from client', async () => {
-      await assertSucceeds(db(A.users.admin).doc(a.shareLink).get());
-      await assertSucceeds(db(A.users.editor).doc(a.shareLink).get());
-      await assertFails(db(A.users.reviewer).doc(a.shareLink).get());
-      await assertFails(db(A.users.viewer).doc(a.shareLink).get());
+    it('shareLinks (Sprint 5): never client-readable (tokenHash), not even by admin; nobody writes or revokes from client', async () => {
+      for (const role of ['admin', 'editor', 'reviewer', 'viewer'] as const) {
+        await assertFails(db(A.users[role]).doc(a.shareLink).get());
+        await assertFails(db(A.users[role]).collection(`orgs/${A.org}/projects/${A.project}/shareLinks`).get());
+      }
       await assertFails(db(A.users.editor).doc(a.shareLink).update({ revokedAt: FieldValue.serverTimestamp() }));
+      await assertFails(db(A.users.admin).collectionGroup('shareLinks').get());
     });
 
     it('jobs: clients cannot create or update job progress', async () => {
@@ -165,6 +166,34 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
 
     it('a worker-looking similar result cannot be forged by a client', async () => {
       await assertFails(db(A.users.reviewer).doc(a.similarSearch).update({ status: 'succeeded', candidates: [{ id: 'c_1' }] }));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  describe('Sprint 5: exports, offboarding exports, token index, certificates, audit head, reprocess requests', () => {
+    it('exports (xlsx + marked PDF records): project members read, nobody writes; other org / outsider / anon nothing', async () => {
+      for (const role of ['admin', 'editor', 'reviewer', 'viewer'] as const) {
+        await assertSucceeds(db(A.users[role]).doc(a.markedPdfExport).get());
+        await assertFails(db(A.users[role]).doc(a.markedPdfExport).update({ status: 'ready' }));
+        await assertFails(db(A.users[role]).doc(`${a.markedPdfExport}-new`).set({ kind: 'marked_pdf' }));
+      }
+      await assertFails(db(B.users.admin).doc(a.markedPdfExport).get());
+      await assertFails(db(OUTSIDER).doc(a.markedPdfExport).get());
+      await assertFails(db(null).doc(a.markedPdfExport).get());
+    });
+
+    it('offboardingExports: admin read only; no client writes', async () => {
+      await assertSucceeds(db(A.users.admin).doc(a.offboardingExport).get());
+      for (const role of ['editor', 'reviewer', 'viewer'] as const) await assertFails(db(A.users[role]).doc(a.offboardingExport).get());
+      await assertFails(db(B.users.admin).doc(a.offboardingExport).get());
+      await assertFails(db(A.users.admin).doc(a.offboardingExport).update({ status: 'ready' }));
+    });
+
+    it.each(['shareToken', 'certificate', 'auditHead', 'reprocessRequest'] as const)('%s: no client access at all', async (k) => {
+      for (const uid of [A.users.admin, A.users.editor, A.users.viewer, B.users.admin, OUTSIDER, null]) {
+        await assertFails(db(uid).doc(a[k]).get());
+        await assertFails(db(uid).doc(a[k]).set({ x: 1 }));
+      }
     });
   });
 

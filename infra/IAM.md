@@ -15,8 +15,10 @@ Identities at a glance:
 | --- | --- | --- | --- |
 | `kamutan-worker@` | Cloud Run `kamutan-worker` runtime | read/write objects under `orgs/` (except any `orgs/*/quarantine/`), read/write Firestore | list the bucket, touch quarantine, publish, read secrets, act as another SA |
 | `kamutan-pubsub-push@` | Pub/Sub push subscription (OIDC token) | invoke `kamutan-worker` | anything else |
-| `kamutan-api@` | Cloud Function `api` runtime | Firestore, objects under `orgs/`, publish to `ingest` only, read `UPLOAD_TOKEN_SECRET` only, sign its own V4 URLs | list the bucket, other topics/secrets, deploy |
-| `kamutan-deploy@` | GitHub Actions via Workload Identity Federation (no key) | deploy rules/indexes/hosting/function, deploy the worker revision | read data, change IAM, act as SAs other than the two runtime SAs |
+| `kamutan-api@` | Cloud Functions `api`, `apiJobs`, `reprocessDependents` runtime | Firestore, objects under `orgs/`, publish to `ingest` and `api-jobs` only, read `UPLOAD_TOKEN_SECRET` only, sign its own V4 URLs, revoke Firebase Auth refresh tokens (custom role `kamutanAuthRevoke`), invoke `apiJobs` (Eventarc trigger identity) | list the bucket, other topics/secrets, create/delete Auth users, deploy |
+| `kamutan-purge@` | Cloud Run job `kamutan-offboard-purge` (SEC-52) | Firestore, list + delete objects in the bucket | publish, secrets, Auth, act as another SA |
+| `kamutan-scheduler@` | Cloud Scheduler → run the purge job | `run.jobs.run` on that one job | anything else |
+| `kamutan-deploy@` | GitHub Actions via Workload Identity Federation (no key) | deploy rules/indexes/hosting/functions (incl. the scheduled one), deploy the worker revision, update the purge job image | read data, change IAM, act as SAs other than the runtime SAs |
 
 ## 0. Variables, APIs, bucket hardening
 
@@ -28,6 +30,8 @@ PROJECT_NUMBER=$(gcloud projects describe "$PROJECT" --format='value(projectNumb
 REPO=leonoah/kamutan
 WORKER_SA=kamutan-worker@$PROJECT.iam.gserviceaccount.com
 PUSH_SA=kamutan-pubsub-push@$PROJECT.iam.gserviceaccount.com
+PURGE_SA=kamutan-purge@$PROJECT.iam.gserviceaccount.com
+SCHED_SA=kamutan-scheduler@$PROJECT.iam.gserviceaccount.com
 API_SA=kamutan-api@$PROJECT.iam.gserviceaccount.com
 DEPLOY_SA=kamutan-deploy@$PROJECT.iam.gserviceaccount.com
 PUBSUB_AGENT=service-$PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com
@@ -36,7 +40,8 @@ gcloud config set project "$PROJECT"
 gcloud services enable run.googleapis.com pubsub.googleapis.com iam.googleapis.com iamcredentials.googleapis.com \
   sts.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com cloudfunctions.googleapis.com \
   secretmanager.googleapis.com firestore.googleapis.com firebaserules.googleapis.com firebasehosting.googleapis.com \
-  billingbudgets.googleapis.com policytroubleshooter.googleapis.com
+  billingbudgets.googleapis.com policytroubleshooter.googleapis.com \
+  eventarc.googleapis.com cloudscheduler.googleapis.com identitytoolkit.googleapis.com
 
 # SEC-19: no ACLs, no public access, ever. (Firebase Storage rules, download tokens and V4 signed URLs keep working.)
 gcloud storage buckets update "gs://$BUCKET" --uniform-bucket-level-access --public-access-prevention
@@ -46,6 +51,8 @@ gcloud iam service-accounts create kamutan-worker      --display-name="Kamutan d
 gcloud iam service-accounts create kamutan-pubsub-push --display-name="Pub/Sub push -> kamutan-worker (OIDC)"
 gcloud iam service-accounts create kamutan-api         --display-name="Kamutan API (Cloud Functions gen2)"
 gcloud iam service-accounts create kamutan-deploy      --display-name="GitHub Actions deploy (WIF)"
+gcloud iam service-accounts create kamutan-purge       --display-name="Kamutan offboarding purge (Cloud Run job)"
+gcloud iam service-accounts create kamutan-scheduler   --display-name="Cloud Scheduler -> kamutan-offboard-purge"
 ```
 
 Shared IAM Condition for object access (bucket-level binding): objects under `orgs/`, but **not** in any
@@ -147,6 +154,17 @@ Semantics (matches `workers/drawing/src/kamutan_drawing/service/app.py`): perman
 (acked, job `failed`); transient → `5xx`, redelivered with backoff up to 5 attempts, then `ingest-dlq`.
 Alert on `subscription/dead_letter_message_count > 0` for `ingest-worker-push` (Cloud Monitoring).
 
+### 2b. Topic `api-jobs` (Sprint 5: the API's own background jobs → function `apiJobs`)
+
+The topic carries `offboarding.export` jobs (contracts `TOPICS.apiJobs`). `firebase deploy` would create it on the
+first deploy of `apiJobs`, but creating it here keeps topic creation out of the deploy SA's rights.
+Delivery: Eventarc push subscription created by the function deploy; the function has `retry: false` (a failed export
+is marked `failed` and requested again), so no DLQ is needed.
+
+```bash
+gcloud pubsub topics create api-jobs --message-retention-duration=1d
+```
+
 ## 3. API — `kamutan-api@` (Cloud Functions gen2 runtime)
 
 The function must run as this SA, not the default compute SA (which has Editor on older projects):
@@ -177,8 +195,75 @@ gcloud secrets add-iam-policy-binding UPLOAD_TOKEN_SECRET \
   --member="serviceAccount:$API_SA" --role=roles/secretmanager.secretAccessor
 ```
 
-Firebase ID-token verification needs no IAM (public keys). The API never needs `firebaseauth.admin` for
-Sprint 1. Signed URL TTLs: tiles 15 min (brief) — SEC-20 asks 5 min; reconcile in the API (owner decision).
+Sprint 5 additions (functions `apiJobs` + `reprocessDependents`, offboarding):
+
+```bash
+# Publish the API's own background jobs (offboarding export) — this topic only.
+gcloud pubsub topics add-iam-policy-binding api-jobs \
+  --member="serviceAccount:$API_SA" --role=roles/pubsub.publisher
+
+# SEC-52: offboarding revokes every member's refresh tokens (admin.auth().revokeRefreshTokens = accounts:update).
+# Custom role instead of roles/firebaseauth.admin: no create/delete users, no config changes.
+gcloud iam roles create kamutanAuthRevoke --project="$PROJECT" --title="Kamutan revoke Auth sessions" \
+  --description="revokeRefreshTokens for offboarding (SEC-52)" \
+  --permissions=firebaseauth.users.get,firebaseauth.users.update --stage=GA
+gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$API_SA" \
+  --role="projects/$PROJECT/roles/kamutanAuthRevoke" --condition=None
+
+# After the first deploy of the functions: the Eventarc trigger of `apiJobs` and the Cloud Scheduler job of
+# `reprocessDependents` push AS the function's runtime SA, which must be allowed to invoke those two services
+# (Cloud Run service names are the lower-cased function ids).
+for SVC in apijobs reprocessdependents; do
+  gcloud run services add-iam-policy-binding "$SVC" --region="$REGION" \
+    --member="serviceAccount:$API_SA" --role=roles/run.invoker
+done
+# Pub/Sub may mint OIDC tokens for the trigger identity (projects created before 2021-04-08; harmless otherwise).
+gcloud iam service-accounts add-iam-policy-binding "$API_SA" \
+  --member="serviceAccount:$PUBSUB_AGENT" --role=roles/iam.serviceAccountTokenCreator
+```
+
+**API owner action (request R-A8, `docs/security/sprint-5-requests.md`):** `serviceAccount: kamutan-api@…` must be set
+on **all three** exports in `function.ts` (`api`, `apiJobs`, `reprocessDependents`), e.g. once via
+`setGlobalOptions({ serviceAccount })`; otherwise they run as the default compute SA and none of the bindings above
+apply. Verify after deploy:
+`gcloud functions describe <fn> --gen2 --region=$REGION --format='value(serviceConfig.serviceAccountEmail)'`.
+
+## 3b. Offboarding purge — Cloud Run job `kamutan-offboard-purge` (SEC-52 steps 3–5), daily
+
+Hard-deletes orgs whose `status == offboarding` and `deleteAfter <= now` (`apps/api/src/scripts/offboard-purge.ts`,
+image `infra/docker/api-jobs.Dockerfile`). It needs to **list** `orgs/{org}/` (the API SA cannot list by design), so
+it gets its own identity. Created once here; CI only updates the image (`_deploy-env.yml`). Runbook:
+`docs/runbooks/offboarding-purge.md`.
+
+```bash
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member="serviceAccount:$PURGE_SA" --role=roles/datastore.user --condition=None
+# Unconditioned on purpose: list is a bucket-level permission (prefix conditions never match it).
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+  --member="serviceAccount:$PURGE_SA" --role=roles/storage.objectAdmin
+
+# First image: push one manually or let a deploy run once (the job step warns until the job exists), then:
+IMAGE="$REGION-docker.pkg.dev/$PROJECT/kamutan/api-jobs@sha256:<digest from the deploy summary>"
+gcloud run jobs create kamutan-offboard-purge --region="$REGION" --image="$IMAGE" \
+  --service-account="$PURGE_SA" --tasks=1 --max-retries=1 --task-timeout=3600s --memory=1Gi --cpu=1 \
+  --set-env-vars=NODE_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT,FIREBASE_STORAGE_BUCKET=$BUCKET,LOG_LEVEL=info
+
+# Daily trigger 03:07 UTC (after the 01:30 Firestore export, so the last export before deletion holds the org).
+gcloud run jobs add-iam-policy-binding kamutan-offboard-purge --region="$REGION" \
+  --member="serviceAccount:$SCHED_SA" --role=roles/run.invoker
+gcloud scheduler jobs create http kamutan-offboard-purge-daily --location="$REGION" \
+  --schedule="7 3 * * *" --time-zone=Etc/UTC --attempt-deadline=180s \
+  --uri="https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/jobs/kamutan-offboard-purge:run" \
+  --http-method=POST --oauth-service-account-email="$SCHED_SA" \
+  --oauth-token-scope=https://www.googleapis.com/auth/cloud-platform
+```
+
+(`roles/run.invoker` on a job includes `run.jobs.run`; `run.jobs.runWithOverrides` — needed for `--args` — is not
+granted to the scheduler, so it can only start the default, full purge.)
+
+
+Firebase ID-token verification needs no IAM (public keys). Since Sprint 5 the API revokes refresh tokens on
+offboarding (custom role `kamutanAuthRevoke`, §3), never `roles/firebaseauth.admin`. Signed URL TTLs: tiles 15 min (brief) — SEC-20 asks 5 min; reconcile in the API (owner decision).
 
 ## 4. Deploy — `kamutan-deploy@` via Workload Identity Federation (GitHub OIDC, no keys)
 
@@ -209,6 +294,15 @@ gcloud iam service-accounts add-iam-policy-binding "$API_SA" \
 gcloud secrets add-iam-policy-binding UPLOAD_TOKEN_SECRET \
   --member="serviceAccount:$DEPLOY_SA" --role=roles/secretmanager.viewer
 
+# Sprint 5 functions: `reprocessDependents` (onSchedule) makes firebase deploy create/update a Cloud Scheduler job,
+# `apiJobs` (onMessagePublished) checks the existing `api-jobs` topic (§2b) and creates an Eventarc trigger.
+gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$DEPLOY_SA" \
+  --role=roles/cloudscheduler.admin --condition=None
+gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$DEPLOY_SA" \
+  --role=roles/pubsub.viewer --condition=None
+gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$DEPLOY_SA" \
+  --role=roles/eventarc.developer --condition=None
+
 # Worker image + revision (resource-scoped):
 gcloud artifacts repositories create kamutan --repository-format=docker --location="$REGION" \
   --description="Kamutan images (deploy by digest)"
@@ -217,6 +311,11 @@ gcloud artifacts repositories add-iam-policy-binding kamutan --location="$REGION
 gcloud run services add-iam-policy-binding kamutan-worker --region="$REGION" \
   --member="serviceAccount:$DEPLOY_SA" --role=roles/run.developer
 gcloud iam service-accounts add-iam-policy-binding "$WORKER_SA" \
+  --member="serviceAccount:$DEPLOY_SA" --role=roles/iam.serviceAccountUser
+# Purge job image updates (§3b; run after the job exists). jobs update keeps the job's SA, but still needs actAs.
+gcloud run jobs add-iam-policy-binding kamutan-offboard-purge --region="$REGION" \
+  --member="serviceAccount:$DEPLOY_SA" --role=roles/run.developer
+gcloud iam service-accounts add-iam-policy-binding "$PURGE_SA" \
   --member="serviceAccount:$DEPLOY_SA" --role=roles/iam.serviceAccountUser
 ```
 
@@ -287,7 +386,7 @@ do not create new ones; nothing in CI or runtime should need it (ADC / WIF only)
 ```bash
 gcloud storage buckets get-iam-policy "gs://$BUCKET" --format=json | jq '.bindings[] | select(.condition != null)'
 gcloud projects get-iam-policy "$PROJECT" --flatten=bindings[].members \
-  --filter="bindings.members:(kamutan-worker OR kamutan-api OR kamutan-deploy OR kamutan-pubsub-push)" \
+  --filter="bindings.members:(kamutan-worker OR kamutan-api OR kamutan-deploy OR kamutan-pubsub-push OR kamutan-purge OR kamutan-scheduler)" \
   --format="table(bindings.role, bindings.members)"
 # The worker must be DENIED on quarantine and ALLOWED on artifacts:
 gcloud policy-intelligence troubleshoot-policy iam \
@@ -298,4 +397,14 @@ gcloud policy-intelligence troubleshoot-policy iam \
   --principal-email="$WORKER_SA" --permission=storage.objects.create
 gcloud pubsub subscriptions describe ingest-worker-push \
   --format="yaml(pushConfig, deadLetterPolicy, retryPolicy, ackDeadlineSeconds)"
+# Sprint 5: all three functions run as kamutan-api (R-A8); the API may revoke sessions; purge job identity + schedule.
+for FN in api apiJobs reprocessDependents; do
+  gcloud functions describe "$FN" --gen2 --region="$REGION" --format='value(name,serviceConfig.serviceAccountEmail)'
+done
+gcloud policy-intelligence troubleshoot-policy iam "//cloudresourcemanager.googleapis.com/projects/$PROJECT" \
+  --principal-email="$API_SA" --permission=firebaseauth.users.update
+gcloud pubsub topics get-iam-policy api-jobs
+gcloud run jobs describe kamutan-offboard-purge --region="$REGION" --format='value(template.template.serviceAccount)'
+gcloud scheduler jobs describe kamutan-offboard-purge-daily --location="$REGION" --format='value(schedule,state)'
+gcloud run jobs execute kamutan-offboard-purge --region="$REGION" --args=--dry-run --wait   # as Owner: lists due orgs only
 ```

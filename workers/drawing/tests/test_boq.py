@@ -306,7 +306,11 @@ def test_confirmed_floors_remove_uncertainty():
         )
     )["4.00"]
     assert conf.by_floor == {"basement": 1, "first": 1}
-    assert R.R_FLOOR_UNSURE not in conf.reasons and conf.reasons == ["פריטים חופפים"]
+    # Sprint 5 (Worker-Cal): an item whose only chip was the floor goes back to green *through the calibration
+    # table* — in conservative mode socket_single may not be green, so it stays yellow with the conservative chip
+    from kamutan_drawing.calibration import R_CONSERVATIVE
+
+    assert R.R_FLOOR_UNSURE not in conf.reasons and conf.reasons == [R_CONSERVATIVE, "פריטים חופפים"]
 
 
 # ----------------------------------------------------------------------------- de-dup

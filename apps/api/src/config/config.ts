@@ -39,6 +39,23 @@ export const EnvSchema = z
 
     /** Lifetime of signed artifact read URLs (tiles, thumbnail). 15 minutes per the Sprint 1 brief. */
     SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
+
+    // --- Sprint 5 ---
+    /** Topic of the API's own background jobs (offboarding export), consumed by the `apiJobs` function. */
+    API_JOBS_TOPIC: z.string().min(1).default('api-jobs'),
+    /** Origin of the web app (share URLs `{origin}/s/{token}`). */
+    PUBLIC_APP_ORIGIN: z.string().url().default('https://kamutan-fba67.web.app'),
+    /** Public share API: requests per minute per IP and per token (SEC-29), tiles excluded. */
+    SHARE_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(60),
+    /** Public share tiles: requests per minute per IP and per token (a viewport is dozens of tiles). */
+    SHARE_TILE_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(600),
+    /** Unknown-token hits per minute per IP before the IP is locked out of the public share API. */
+    SHARE_UNKNOWN_TOKEN_LIMIT: z.coerce.number().int().positive().default(10),
+    SHARE_LOCKOUT_MS: z.coerce.number().int().positive().default(15 * 60_000),
+    /** Offboarding (export + offboard) requires an MFA session in addition to a recent sign-in (SEC-07). */
+    OFFBOARDING_REQUIRE_MFA: bool.default('true'),
+    /** TTF/OTF with Hebrew glyphs for share watermarks (default: bundled assets/fonts/DejaVuSans.ttf). */
+    WATERMARK_FONT_FILE: z.string().min(1).optional(),
   })
   .superRefine((env, ctx) => {
     const req = (cond: boolean, path: string, message: string) => {
@@ -50,6 +67,8 @@ export const EnvSchema = z
       req(env.DATA_DRIVER === 'firestore', 'DATA_DRIVER', 'memory driver is not allowed in production');
       req(env.STORAGE_DRIVER === 'firebase', 'STORAGE_DRIVER', 'memory storage is not allowed in production');
       req(env.QUEUE_DRIVER === 'pubsub', 'QUEUE_DRIVER', 'memory queue is not allowed in production');
+      // R-A7: SEC-02 / SEC-52 — the MFA requirement of offboarding cannot be switched off in production.
+      req(env.OFFBOARDING_REQUIRE_MFA, 'OFFBOARDING_REQUIRE_MFA', 'must be true in production');
     }
   });
 

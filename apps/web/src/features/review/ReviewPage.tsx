@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpenCheck, ChevronLeft, ChevronRight, Download, Search, Share2, Sparkles } from "lucide-react";
+import { BookOpenCheck, ChevronLeft, ChevronRight, Download, History, Search, Share2, Sparkles } from "lucide-react";
 import type { AreaResult, CalibrationResult, CountResult, LassoResult, LengthResult, LinkResult, MoveResult, PointToolEvent, Vec2, ViewerTool } from "@kamutan/viewer";
 import type { BoqChapter, BoqLine, CreateCorrectionRequest, Detection, ReviewQueueItem, RoomSettings, SheetRow, SimilarCandidate, SimilarSearch, UnknownCluster } from "@/api/types";
 import { useApi } from "@/api/client";
@@ -22,6 +22,9 @@ import { BoqPanel, type PanelTab } from "@/features/boq/BoqPanel";
 import { OverrideDialog } from "@/features/boq/OverrideDialog";
 import { ExportDialog } from "@/features/boq/ExportDialog";
 import { ReceiptGroups } from "@/features/boq/ReceiptGroups";
+import { CalibrationBadge, cappedLines, resolveCalibration } from "@/features/calibration/CalibrationBadge";
+import { LineHistoryDialog } from "@/features/history/LineHistoryDialog";
+import { ShareDialog } from "@/features/share/ShareDialog";
 import {
   canEditQty,
   evidenceBySheet,
@@ -197,12 +200,22 @@ export function ReviewPage() {
   const [hoverLineId, setHoverLineId] = useState<string | null>(null);
   const [editLine, setEditLine] = useState<BoqLine | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [historyLine, setHistoryLine] = useState<BoqLine | null>(null);
   const patchLine = usePatchBoqLine(projectId);
   const evidence = useLineEvidence(projectId, selectedLineId, buildId);
   const sheetEvidence = useSheetEvidence(projectId, tab === "boq" ? (row?.sheet.id ?? null) : null, row?.version?.id ?? null, buildId);
   const detToLines = sheetEvidence.data?.detections;
   const lineToDets = useMemo(() => detectionsByLine(sheetEvidence.data?.detections ?? {}), [sheetEvidence.data]);
   const selectedLine = allLines.find((l) => l.id === selectedLineId) ?? null;
+  /* ---------- Sprint 5: calibration badge (header + BOQ panel) ---------- */
+  const calibration = useMemo(() => resolveCalibration(linesQ.data?.calibration ?? build.data?.stats?.calibration, ready), [linesQ.data, build.data, ready]);
+  const capped = useMemo(() => cappedLines(allLines), [allLines]);
+  const greenThreshold = org?.settings?.greenThreshold ?? null;
+  const panelBadge = useMemo(
+    () => <CalibrationBadge calibration={calibration} capped={capped} greenThreshold={greenThreshold} size="sm" />,
+    [calibration, capped, greenThreshold],
+  );
 
   // Build finished → refresh lines, links (overlay) and evidence; toast.
   const lastBuildStatus = useRef<string | null>(null);
@@ -1189,6 +1202,7 @@ export function ReviewPage() {
   /* ---------- stable props for the memoised panes (keyboard loop < 100 ms) ---------- */
   const fn = useLatestFns({
     setTab,
+    openHistory: (l: BoqLine) => setHistoryLine(l),
     onBuild: () => void onBuild(),
     selectClassFromCounts: (c: string | null) => {
       setSelectedLineId(null);
@@ -1436,6 +1450,7 @@ export function ReviewPage() {
             <span className="flex-1 text-start">{t("review.search")}</span>
             <Kbd>⌘K</Kbd>
           </button>
+          <CalibrationBadge calibration={calibration} capped={capped} greenThreshold={greenThreshold} />
           {dets.length || allLines.length ? (
             <div className="hidden w-48 flex-col gap-1 lg:flex">
               <div className="flex items-center justify-between text-meta">
@@ -1458,7 +1473,7 @@ export function ReviewPage() {
               {t("legend.title")}
             </Link>
           </Button>
-          <Button size="sm" variant="secondary" onClick={notYet}>
+          <Button size="sm" variant="secondary" onClick={() => setShareOpen(true)}>
             <Share2 aria-hidden />
             {t("review.share")}
           </Button>
@@ -1509,6 +1524,8 @@ export function ReviewPage() {
           onStatusFilter={setStatusFilter}
           filtered={isFiltered(filters) || statusFilter !== "all"}
           onClearFilters={fn.clearAllFilters}
+          onHistory={fn.openHistory}
+          calibrationBadge={panelBadge}
         />
         <section id="drawing-panel" tabIndex={-1} aria-label={t("review.drawingPanel")} className="flex min-h-0 flex-col border-x border-border">
           <ReviewDrawing
@@ -1618,6 +1635,12 @@ export function ReviewPage() {
             <Kbd>[</Kbd>
             <Kbd>]</Kbd>
           </div>
+        ) : null}
+        {selectedLine ? (
+          <Button size="sm" variant="ghost" onClick={() => setHistoryLine(selectedLine)}>
+            <History aria-hidden />
+            {t("history.open")}
+          </Button>
         ) : null}
         <span className="sr-only" aria-live="polite" data-testid="live-msg">
           {liveMsg}
@@ -1742,8 +1765,12 @@ export function ReviewPage() {
         onSave={saveOverride}
         saving={patchLine.isPending}
       />
+      <LineHistoryDialog projectId={projectId} line={historyLine} open={historyLine !== null} onOpenChange={(o) => !o && setHistoryLine(null)} />
+      <ShareDialog projectId={projectId} open={shareOpen} onOpenChange={setShareOpen} canManage={role === "admin" || role === "editor"} />
       <ExportDialog
         projectId={projectId}
+        sheets={ready}
+        canMarkedPdf={role === "admin" || role === "editor"}
         open={exportOpen}
         onOpenChange={setExportOpen}
         lines={allLines}

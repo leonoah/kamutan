@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 from scipy.spatial import cKDTree
+from scipy.spatial.distance import cdist
 
 from ..ingest.pdf_vector import VectorSheet
 from ..legend.parse import LegendEntry
@@ -40,16 +41,59 @@ def _glyph_points(segs: np.ndarray, center: np.ndarray, h: float, rot: int = 0) 
 class GlyphLibrary:
     def __init__(self) -> None:
         self.samples: dict[str, list[tuple[np.ndarray, cKDTree]]] = defaultdict(list)
+        # Sprint 5 (perf): flattened samples for one batched reverse query per read, the sheet's segment arrays
+        # and pair readings memoised across the sockets of a sheet (identical inputs → identical results)
+        self._flat: list[tuple[str, np.ndarray, cKDTree, int, int]] | None = None
+        self._all: np.ndarray | None = None
+        self._offsets: np.ndarray = np.zeros(0, dtype=np.intp)
+        self.sheet_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+        self.pair_memo: dict[tuple[bytes, bytes], tuple[float, str, str, float, float] | None] = {}
 
     def add(self, label: str, pts: np.ndarray) -> None:
         if len(pts) >= 6 and len(self.samples[label]) < 6:
             self.samples[label].append((pts, cKDTree(pts)))
+            self._flat = self._all = None
+            self.pair_memo.clear()
 
     @property
     def labels(self) -> set[str]:
         return set(self.samples)
 
+    def _flatten(self) -> tuple[list[tuple[str, np.ndarray, cKDTree, int, int]], np.ndarray]:
+        if self._flat is None or self._all is None:
+            flat: list[tuple[str, np.ndarray, cKDTree, int, int]] = []
+            off = 0
+            for lab, lst in self.samples.items():
+                for sp, st in lst:
+                    flat.append((lab, sp, st, off, off + len(sp)))
+                    off += len(sp)
+            self._flat = flat
+            self._all = np.concatenate([f[1] for f in flat]) if flat else np.zeros((0, 2))
+            self._offsets = np.array([f[3] for f in flat], dtype=np.intp)
+        return self._flat, self._all
+
     def read(self, pts: np.ndarray) -> tuple[str | None, float]:
+        """Nearest library glyph by the symmetric mean chamfer distance (same order / ties as one query per
+        sample: the reverse distances of all samples come from one batched query on the glyph's tree)."""
+        if len(pts) == 0 or not self.samples:
+            return None, 1.0
+        flat, all_pts = self._flatten()
+        # one dense distance matrix glyph × all samples (≈ 150 × 10k) instead of a KD query per sample
+        dm = cdist(np.asarray(pts, dtype=np.float64), all_pts)
+        rev = dm.min(axis=0)
+        # per-sample nearest distances of the glyph's points (rows of a contiguous (samples, n) array, so each mean
+        # is the same pairwise sum as the 1-D mean of one KD query)
+        fwd = np.ascontiguousarray(np.minimum.reduceat(dm, self._offsets, axis=1).T)
+        fmean = fwd.mean(axis=1)
+        best: tuple[float, str | None] = (1.0, None)
+        for k, (lab, _sp, _st, a, b) in enumerate(flat):
+            d = float((fmean[k] + rev[a:b].mean()) / 2)
+            if d < best[0]:
+                best = (d, lab)
+        return best[1], best[0]
+
+    def read_kd(self, pts: np.ndarray) -> tuple[str | None, float]:
+        """Reference implementation (one KD query per sample) — tests compare :meth:`read` against it."""
         if len(pts) == 0 or not self.samples:
             return None, 1.0
         tp = cKDTree(pts)
@@ -60,6 +104,16 @@ class GlyphLibrary:
                 if d < best[0]:
                     best = (d, lab)
         return best[1], best[0]
+
+    def sheet_arrays(self, vs: VectorSheet) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """``(segs float64, mid x, mid y, lengths)`` of the sheet, computed once per sheet."""
+        key = id(vs.segs)
+        got = self.sheet_cache.get(key)
+        if got is None:
+            s = vs.segs.astype(np.float64)
+            got = (s, (s[:, 0] + s[:, 2]) / 2, (s[:, 1] + s[:, 3]) / 2, seg_lengths(s))
+            self.sheet_cache = {key: got}
+        return got
 
 
 def _local_groups(segs: np.ndarray, idx: np.ndarray) -> list[Group]:
@@ -122,10 +176,9 @@ def read_marks_near(
     X-like word whose digit could not be read."""
     if "X" not in lib.labels:
         return []
-    s = vs.segs.astype(np.float64)
-    mx, my = (s[:, 0] + s[:, 2]) / 2, (s[:, 1] + s[:, 3]) / 2
+    s, mx, my, lens = lib.sheet_arrays(vs)
     sel = (mx >= box[0] - reach) & (mx <= box[2] + reach) & (my >= box[1] - reach) & (my <= box[3] + reach)
-    sel &= seg_lengths(s) <= MAX_GLYPH_MM
+    sel &= lens <= MAX_GLYPH_MM
     if exclude is not None:
         sel &= ~((mx >= exclude[0]) & (mx <= exclude[2]) & (my >= exclude[1]) & (my <= exclude[3]))
     idx = np.where(sel)[0]
@@ -143,31 +196,13 @@ def read_marks_near(
             if math.hypot(dx, dy) > 1.9 * h:
                 continue
             # the word's baseline may be at any angle (walls at 45°): read along it, both directions,
-            # keep the better reading of the two
-            theta = math.atan2(dy, dx)
-            best: tuple[float, str, str, float, float] | None = None
-            for flip in (0.0, math.pi):
-                t = theta + flip
-                c_, s_ = math.cos(-t), math.sin(-t)
-                rot = np.array([[c_, -s_], [s_, c_]])
-                ra = (resample(s[a.segs], 0.03)[0] - np.array([a.cx, a.cy])) @ rot.T
-                rb = (resample(s[b.segs], 0.03)[0] - np.array([b.cx, b.cy])) @ rot.T
-                gh = max(float(np.ptp(ra[:, 1])), float(np.ptp(rb[:, 1])))
-                if gh < 0.6:
-                    continue
-                pa, pb = ra / gh, rb / gh
-                pa -= (pa.max(axis=0) + pa.min(axis=0)) / 2
-                pb -= (pb.max(axis=0) + pb.min(axis=0)) / 2
-                la, da = lib.read(pa)
-                lb, db = lib.read(pb)
-                if la is None or lb is None:
-                    continue
-                xa = float((np.array([a.cx, a.cy]) @ rot.T)[0])
-                xb = float((np.array([b.cx, b.cy]) @ rot.T)[0])
-                word = la + lb if xa <= xb else lb + la
-                d = max(da, db)
-                if best is None or d < best[0]:
-                    best = (d, word, la if da <= db else lb, min(da, db), d)
+            # keep the better reading of the two (memoised: neighbouring sockets see the same glyph pairs)
+            mkey = (a.segs.tobytes(), b.segs.tobytes())
+            if mkey in lib.pair_memo:
+                best = lib.pair_memo[mkey]
+            else:
+                best = _read_pair(s, a, b, dx, dy, lib)
+                lib.pair_memo[mkey] = best
             if best is None:
                 continue
             d, word, _, dmin, _ = best
@@ -178,6 +213,37 @@ def read_marks_near(
             elif "X" in word and dmin <= 0.6 * ACCEPT:
                 found.append((0, d, centre))  # n = 0: an X next to an unreadable glyph
     return found
+
+
+def _read_pair(
+    s: np.ndarray, a: Group, b: Group, dx: float, dy: float, lib: GlyphLibrary
+) -> tuple[float, str, str, float, float] | None:
+    """Best two-glyph reading of (a, b) along their baseline, both directions."""
+    theta = math.atan2(dy, dx)
+    best: tuple[float, str, str, float, float] | None = None
+    for flip in (0.0, math.pi):
+        t = theta + flip
+        c_, s_ = math.cos(-t), math.sin(-t)
+        rot = np.array([[c_, -s_], [s_, c_]])
+        ra = (resample(s[a.segs], 0.03)[0] - np.array([a.cx, a.cy])) @ rot.T
+        rb = (resample(s[b.segs], 0.03)[0] - np.array([b.cx, b.cy])) @ rot.T
+        gh = max(float(np.ptp(ra[:, 1])), float(np.ptp(rb[:, 1])))
+        if gh < 0.6:
+            continue
+        pa, pb = ra / gh, rb / gh
+        pa -= (pa.max(axis=0) + pa.min(axis=0)) / 2
+        pb -= (pb.max(axis=0) + pb.min(axis=0)) / 2
+        la, da = lib.read(pa)
+        lb, db = lib.read(pb)
+        if la is None or lb is None:
+            continue
+        xa = float((np.array([a.cx, a.cy]) @ rot.T)[0])
+        xb = float((np.array([b.cx, b.cy]) @ rot.T)[0])
+        word = la + lb if xa <= xb else lb + la
+        d = max(da, db)
+        if best is None or d < best[0]:
+            best = (d, word, la if da <= db else lb, min(da, db), d)
+    return best
 
 
 # ------------------------------------------------------------------ symbol qualifiers (BEZEK / TV / TEL / רשת)

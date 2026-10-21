@@ -62,7 +62,7 @@ WORKDIR /work
 USER 10001:10001
 # Fail the build early if heb/eng traineddata are missing.
 RUN tesseract --list-langs 2>&1 | grep -qx heb && tesseract --list-langs 2>&1 | grep -qx eng \
- && python -c "import kamutan_drawing, pypdfium2, uvicorn"
+ && python -c "import kamutan_drawing, pypdfium2, pypdf, reportlab, uvicorn"
 EXPOSE 8080
 ENTRYPOINT ["/usr/bin/tini", "--"]
 # Cloud Run injects $PORT (default 8080). Single process; concurrency is set on the service (1 for cpu-heavy).

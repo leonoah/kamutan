@@ -160,6 +160,28 @@
                             "unmapped": {
                               "type": "integer",
                               "minimum": 0
+                            },
+                            "calibration": {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "conservative",
+                                    "full"
+                                  ]
+                                },
+                                "version": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "version"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [

@@ -15,6 +15,11 @@ import { ARTIFACT_READER, InMemoryArtifactReader } from '../../src/understanding
 import { InMemoryObjectStorage } from '../../src/uploads/storage/in-memory.storage';
 import { OBJECT_STORAGE } from '../../src/uploads/storage/object-storage';
 import { FakeIdTokenVerifier } from './fake-verifier';
+import { GOVERNANCE_REPOSITORY } from '../../src/db/governance-repository';
+import type { InMemoryGovernanceRepository } from '../../src/db/governance-memory.repository';
+import { API_JOBS_QUEUE, type InMemoryApiJobsQueue } from '../../src/governance/api-jobs-queue';
+import { AUTH_ADMIN, type InMemoryAuthAdmin } from '../../src/governance/auth-admin';
+import { GOVERNANCE_STORAGE, type InMemoryGovernanceStorage } from '../../src/governance/governance-storage';
 
 export interface TestApp {
   app: NestExpressApplication;
@@ -28,6 +33,11 @@ export interface TestApp {
   /** Sprint 3 */
   boq: InMemoryBoqRepository;
   boqStorage: InMemoryBoqStorage;
+  /** Sprint 5 */
+  gov: InMemoryGovernanceRepository;
+  govStorage: InMemoryGovernanceStorage;
+  apiJobs: InMemoryApiJobsQueue;
+  authAdmin: InMemoryAuthAdmin;
 }
 
 /** Boots the real AppModule with in-memory Firestore/Storage/PubSub and a fake ID-token verifier. */
@@ -55,5 +65,20 @@ export async function createTestApp(cfg: AppConfig): Promise<TestApp> {
   const app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false, logger: false });
   configureApp(app, cfg);
   await app.init();
-  return { app, repo, queue, storage, signer, artifacts, auth, cfg, boq: app.get(BOQ_REPOSITORY), boqStorage: app.get(BOQ_STORAGE) };
+  return {
+    app,
+    repo,
+    queue,
+    storage,
+    signer,
+    artifacts,
+    auth,
+    cfg,
+    boq: app.get(BOQ_REPOSITORY),
+    boqStorage: app.get(BOQ_STORAGE),
+    gov: app.get(GOVERNANCE_REPOSITORY),
+    govStorage: app.get(GOVERNANCE_STORAGE, { strict: false }),
+    apiJobs: app.get(API_JOBS_QUEUE, { strict: false }),
+    authAdmin: app.get(AUTH_ADMIN, { strict: false }),
+  };
 }

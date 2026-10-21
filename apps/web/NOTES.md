@@ -411,3 +411,118 @@ real props (React dev calls components without props to print warning stacks).
 ### Sprint 4 follow-up (after the integration round)
 - Detection markers stay sized in paper mm, but their screen size is clamped to 12–28 px (`MARKER_MIN_PX` / `MARKER_MAX_PX`, deck.gl `sizeMinPixels` / `sizeMaxPixels`). The selection / focus halo is clamped to 8–18 px so its ring still surrounds a clamped icon. Before this, zooming to 199% blew markers up over the drawing.
 - Mock `authoritativeRooms`: the duplicate-room check now only compares rooms across sheets. Two similar rooms on one sheet (first-floor bathrooms r_5 5.04 m² and r_10 4.86 m²) are separate rooms.
+
+---
+
+# Sprint 5: confidence and readiness (web + viewer)
+
+Shapes come from `docs/agents/SPRINT5_BRIEF.md` §1–§5. They were aligned at the end of the sprint with the API agent's contracts (`packages/contracts/src/{share,audit,exports,offboarding,org,sheets}.ts`) and `apps/api/NOTES.md`. They are still mirrored by hand in `src/api/types.ts`. `src/api/http.ts` adapts the contract DTOs to the app DTOs.
+
+## Screens
+- **Calibration badge "כיול שמרני"** (`features/calibration/CalibrationBadge.tsx`):
+  - Persistent in the review header and in the BOQ panel header.
+  - Opens a popover in plain Hebrew: what it means, the "200 items with no error" rule, the ceilings (raster / scale conflict), "what this means for you", the number of capped lines, the org green threshold and the calibration table version.
+  - Calibration source: the build summary, falling back to `stats.calibration` on the version. When unknown, it shows conservative (the honest default). Nothing is shown in `full` mode.
+  - The worker reason "כיול שמרני: אין מספיק נתוני אמת לסוג זה" renders as the chip "כיול שמרני" (dashed), with the rest of the reason as its hint.
+  - Item cards show "ביטחון מכויל 0.83 · לפני כיול 0.91" (`score` / `scoreRaw`).
+- **Line history** (`features/history/LineHistoryDialog.tsx`):
+  - Opened from the ⟲ icon on a BOQ row (on hover or when selected) or from "היסטוריה" in the footer.
+  - Newest first. Each entry shows the Hebrew action label (שינוי סטטוס / שינוי כמות ידני / הערה / חישוב מהשרטוטים / תיקון על השרטוט), before (struck through) → after, who and when, and the reason.
+  - When an override reopens an approved line it is noted ("חזרה ל'נבדק'"). This is the Sprint-3 decision; E2E-11's "טיוטה" wording is the QA agent's to fix.
+  - Accepts both the contract's primitive before/after values and the mock's objects.
+- **Audit log** `/settings/audit` (admin, `features/settings/AuditLogPage.tsx`):
+  - Entity and action filters use the API vocabulary (entity + verb, e.g. `shareLinks · view`), with cursor paging ("טען עוד").
+  - Chain indicator from `GET …/audit/verify`: OK with a count, or "שבר בשרשרת" with the id. `actorKind = share_link` is shown as "צופה חיצוני".
+- **Export dialog** (`features/boq/ExportDialog.tsx`):
+  - New format toggle: אקסל | PDF מסומן. The Excel path is unchanged and stays the default.
+  - PDF options: one page per floor, hide title block, all sheets or a subset (with a validation message).
+  - Flow: `POST …/boq/export/marked-pdf {sheetIds, options}`, then poll `GET …/exports/:id` (`ready` is mapped to `succeeded`), then a "הורד PDF" link (signed URL, `rel=noreferrer`, "בתוקף 15 דקות").
+  - Editor and admin only. The org's red-line block applies here too.
+- **Share dialog** (`features/share/ShareDialog.tsx`, header "שתף"):
+  - Defaults: days 1–90 (default 14, quick buttons 7/14/30/90, expiry date preview), label (required, ≤ 100), optional recipient (used in the watermark), hide title block ON, allow PDF OFF.
+  - The created URL is shown once in a read-only LTR field with a copy button and a "זו הפעם היחידה" warning. It is dropped when the dialog closes or on "צור קישור נוסף".
+  - List: label, state chip (פעיל / פג תוקף / בוטל), recipient, expiry or revoke date, views and last view.
+  - Revoke goes through the spec's AlertDialog copy. Reviewer and viewer roles see the list only.
+- **External viewer `/s/:token`** (`features/share/SharedViewerPage.tsx` + `SharedDrawing.tsx`, lazy):
+  - Sits outside `AuthProvider`. In real mode it gets `createPublicOnlyBackend()`, which contains only the GET-only public client. Every member API, upload or realtime call throws, and Firebase is never initialised.
+  - Header: org · project, label, version date, "בתוקף עד", "לקריאה בלבד", and "הורד PDF מסומן" when the per-link PDF is ready.
+  - BOQ table, read-only: chapters, LTR codes, ●▲◆ indicator, no reasons or scores. Selecting a row focuses its evidence and switches to the sheet that holds it ("עברת לגיליון …"). Clicking a marker selects its row.
+  - The drawing is select-only: no tool rail and no correction callbacks. It uses API-proxied tiles and has the watermark overlay.
+  - `<meta robots noindex,nofollow>` and `<meta referrer no-referrer>`. Requests use `credentials: omit` and `referrerPolicy: no-referrer`.
+  - Error screens: 410 with `x-share-state: expired` → "הקישור פג תוקף"; 410 with `x-share-state: revoked` → "הקישור בוטל"; 404 → "הקישור לא נמצא"; 429 → "יותר מדי ניסיונות".
+- **Org settings** `/settings` (admin; the "הגדרות" nav link is shown only to admins):
+  - Green threshold slider 0.9–0.995.
+  - Switches: block export on red, external LLM, training opt-in.
+  - Saving sends a PATCH with only the changed fields ("נרשם ביומן"). Reset and an unsaved-changes notice are available.
+- **Offboarding** `/settings/offboarding` (admin):
+  1. Full ZIP export with progress and a 24 h download link.
+  2. Four Hebrew warnings, a "you have not downloaded the export" nudge, the typed confirmation and an "I understand" checkbox.
+  - If `auth_time` is older than 10 min (`hasRecentLogin`), or the API answers `recent_auth_required`, the page asks for re-authentication: a Google popup (`reauthenticateWithPopup`), a password (`reauthenticateWithCredential`), or "sign in again" for email-link users. After re-authenticating it retries automatically.
+  - `mfa_required` shows a separate explanation.
+  - An org in `offboarding` (from `/me`, or any `403 org_offboarding` through the global QueryCache handler) is blocked by `<RequireOrg>`. Only the admin's export page stays reachable.
+  - **The confirmation is the org name**, as in contracts `OffboardOrgRequest` and the API NOTES ("`confirm` = org name"). The brief and a coordinator message said "slug"; the shipped API wins.
+- **Viewer package:** new `watermark` prop on `DrawingViewer` (exported `Watermark`). It draws diagonal tiled text with a corner chip carrying the text once, pointer-events off, and also renders over the no-WebGL fallback.
+- `apps/web/public/.well-known/security.txt` (R-WEB2): RFC 9116, placeholder `Contact`, `Expires` 2027-10-01. **The owner must fill in the Contact line.**
+
+## Mock (`src/api/mockSprint5.ts`, wired in `mock.ts`)
+- **Audit:** append-only, hash-chained (FNV stand-in for SHA-256), seeded with 42 events so two pages exist; verify detects tampering (`auditBroken` option). Uses API vocabulary and `actorKind`.
+- **Line history:** built from the audit, corrections on the line's evidence, and the `computedAt` rebuild.
+- **Marked PDF:** queued → running → succeeded after about 6 ticks; resolves to a real, small, multi-page PDF blob URL.
+- **Share links:**
+  - 256-bit base64url token, returned only in the create response.
+  - Demo links on `p-noah`: `/s/demo-noah` (active, PDF allowed, 3 views), `/s/demo-expired`, `/s/demo-revoked`.
+  - The public API returns 404 / 410 with the same message. Each view is counted and audited `shareLinks · view` with an IP prefix. No address and no reasons are exposed.
+- **Org settings:** validated, only the 4 fields, each change audited, and fed back into `/me`. `blockExportOnRed` now comes from the settings.
+- **Offboarding:** ZIP (empty valid zip blob). Confirming with the org name moves the org to `offboarding` + `deleteAfter` +30 d and revokes all its links; later writes get 403 `org_offboarding`.
+- **Calibration:** `calibration: {mode: conservative}` on lines and builds. Yellow lines carry the conservative reason.
+- **BOQ override:** an override on an approved line reopens it as `reviewed`.
+- **Dev URL flags:** `?mockAuthAge=3600` (session an hour old, to show the re-authentication flow). `/s/…` in mock mode prebuilds the BOQ.
+
+## CSP check (enforced policy in firebase.json, docs/security/csp.md)
+- `dist/index.html` has exactly one `<script type="module" src="/assets/…">`: no inline script and no inline style attribute.
+- In `dist/assets/*.js` the only `eval(` match is Firebase's internal `.eval()` method (Firestore matcher), not global eval. There is no `new Function` anywhere.
+- Styles: Radix injects a `<style>` while a dialog or popover is open. This is covered by `style-src 'unsafe-inline'`. The new Popover uses the same Radix portal.
+- The share viewer under the stricter `/s/**` policy (`default-src 'none'`, `connect-src 'self'`, `img-src 'self' data: blob:`):
+  - All data and tiles go through same-origin `/api/v1/public/share/…`.
+  - The watermark is DOM text, not an image.
+  - The PDF link is a top-level navigation (302 → signed URL), which `connect-src` does not govern.
+- DevOps' `csp-verify.mjs` reported 0 enforced violations on both builds, including `/s/demo-noah`, the expired link and the unknown token.
+
+## Requests to DevOps
+- **`hosting.ignore` contains `"**/.*"`.** This drops `apps/web/dist/.well-known/security.txt` from the deploy. Add `"!.well-known/**"` (or an explicit allow), and check that the SPA rewrite does not shadow it.
+- **Hosts the app needs, already in the enforced policy:**
+  - `connect-src`: `'self'` (API incl. `/api/v1/public/share/**`), identitytoolkit, securetoken, firestore, firebasestorage and storage.googleapis.com (signed artifact fetches).
+  - `img-src`: `'self' data: blob:` plus storage.googleapis.com and firebasestorage.googleapis.com (signed tiles and crops) and `*.googleusercontent.com`.
+  - `frame-src`: the auth domain plus accounts.google.com and apis.google.com (popup sign-in and `reauthenticateWithPopup`).
+  - `/s/**`: `'self'` only. Nothing new was added.
+- Please keep `blob:` in `img-src` / `worker-src`.
+- **Download links** of the marked PDF and offboarding ZIP are mock `blob:` URLs. Production uses signed URLs as top-level navigations, so no CSP change is needed.
+
+## Contract / API notes
+- `PublicShareMeta.pdf.status` drives the viewer's PDF button: it appears only when `ready`.
+- Public rooms come with `bboxMm` only; the viewer draws boxes. A polygon would be nicer and is optional.
+- The org slug is not in `MyOrg`. The UI uses `org.name` for the confirmation, per the API.
+
+## Tests (Sprint 5 additions; web 247 total (was 201), viewer 62 (+2 watermark))
+- `api/mockSprint5.test.ts` (12): calibration, history/audit/E2E-11, paging/filter/verify/broken chain/roles, marked PDF job + PDF bytes, share create/list/public meta/boq/overlay/404/410, settings, offboarding.
+- `api/http.sprint5.test.ts` (10): routes and bodies, the public client (GET only, no Authorization or cookies or referrer, no write methods), 410 state header, contract adapters (meta / overlay / audit / export `ready` / history primitives), and the share-viewer backend refusing every member call.
+- `features/share/share.test.tsx` (10): dialog defaults and validation, create → URL once → copy → list → revoke with confirm (then 410), roles, axe. Viewer:
+  - no sign-in, and a spy on every member API method shows 0 calls
+  - no edit affordances; viewer callbacks undefined
+  - watermark; noindex/no-referrer meta
+  - row ↔ drawing highlighting
+  - expired / revoked / not-found screens + axe
+- `features/settings/settings.test.tsx` (8): role gating, settings save diff + audit, audit paging/filters/verify/broken + axe, offboarding happy path, re-authentication (wrong then right password), blocked app for admin and editor.
+- `features/history/sprint5-ui.test.tsx` (6): badge + popover + axe + full mode hidden, reason chip / score text, history dialog E2E-11 + axe, `describeChange`, marked-PDF export options → download + axe, validation, roles and org block.
+- `authService.firebase.test.ts` (+4): `auth_time`, Google / password re-authentication, email-link users.
+- `sheets.test.tsx` was hardened: the lazy viewer chunk is preloaded in `beforeAll` and waits were raised. It was flaky under the bigger parallel run.
+
+Command: `pnpm turbo run lint typecheck test build --filter=@kamutan/web --filter=@kamutan/viewer --concurrency=2`, which is 8/8 green (ran twice with `--force`).
+
+Screenshots (mock dev with the real Noah artifacts, Chromium 1194, 1440×900): `/home/claude/kamutan-data/debug/s5/` 01–16 (badge, history, export options and ready, share dialog / created / revoke, external viewer + line focus, expired / revoked / not found, settings, audit, offboarding, re-authentication).
+
+## Known gaps
+- Mock tiles in the viewer are not title-block-masked or watermarked. The server burns both in, and the client overlay watermark is always on.
+- The share viewer has no floor / room filter or receipt tooltips yet (spec S15 "זמין"). It has row ↔ drawing highlighting and a per-floor breakdown on the selected row.
+- The audit "details" column shows raw `after` JSON (admin evidence view). There is no per-action Hebrew rendering yet.
+- The real Google re-authentication popup and MFA are not testable in the sandbox. Firebase calls are covered by unit tests with mocks.

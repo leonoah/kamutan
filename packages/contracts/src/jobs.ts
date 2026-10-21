@@ -1,12 +1,17 @@
 import { z } from 'zod';
 import { Sha256HexSchema, TimestampSchema } from './common.js';
-import { LIBRARY_IMPORT_PATH_RE, PROJECT_UPLOAD_PATH_RE, SOURCE_PATH_RE } from './firestore.js';
+import { LIBRARY_IMPORT_PATH_RE, MARKED_PDF_PATH_RE, PROJECT_UPLOAD_PATH_RE, SOURCE_PATH_RE } from './firestore.js';
+import { MarkedPdfOptionsSchema } from './exports.js';
 import { SimilarExemplarSchema, SimilarScopeSchema, SIMILAR_MAX_CANDIDATES } from './corrections.js';
 import { DocIdSchema } from './org.js';
 import { FileKindSchema, ProcessingErrorSchema } from './sheets.js';
 
 /** Pub/Sub topics (ADR 0008). */
-export const TOPICS = Object.freeze({ ingest: 'ingest' } as const);
+export const TOPICS = Object.freeze({
+  ingest: 'ingest',
+  /** Sprint 5: jobs run by the API's own Pub/Sub-triggered function (`apiJobs`), e.g. `offboarding.export`. */
+  apiJobs: 'api-jobs',
+} as const);
 
 export const JOB_TYPES = Object.freeze({
   ingestSheetVersion: 'ingest.sheet_version',
@@ -16,6 +21,10 @@ export const JOB_TYPES = Object.freeze({
   libraryImport: 'library.import',
   /** Sprint 4: "learn from correction" — find symbols similar to an exemplar (Worker-A). */
   findSimilar: 'symbols.find_similar',
+  /** Sprint 5: marked PDF coloured by BOQ line (Worker-Export). */
+  exportMarkedPdf: 'export.marked_pdf',
+  /** Sprint 5: org offboarding ZIP (topic `api-jobs`, run by the API function, NOT the drawing worker). */
+  offboardingExport: 'offboarding.export',
 } as const);
 export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES];
 
@@ -166,12 +175,63 @@ export const FindSimilarJobSchema = z
   .strict();
 export type FindSimilarJob = z.infer<typeof FindSimilarJobSchema>;
 
+export const MARKED_PDF_JOB_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Topic `ingest`, type `export.marked_pdf` (Sprint 5, Worker-Export). The worker loads jobs/{jobId} (orgId must
+ * match) and orgs/{orgId}/projects/{projectId}/exports/{exportId}; for each sheet (`sheetIds`, null = every current
+ * ready sheet with BOQ evidence; `versionIds[sheetId]` pins a version — share links — else the sheet's current version)
+ * overlays every detection that is evidence of a BOQ line (latest build), coloured by line, + legend, confidence glyphs,
+ * optional diagonal `watermark` and title-block mask; writes the PDF to `storagePath` and the export doc
+ * (`status: running → ready | failed`, `pageCount`, `sizeBytes`, `finishedAt`, `error`).
+ */
+export const MarkedPdfJobSchema = z
+  .object({
+    schemaVersion: z.literal(MARKED_PDF_JOB_SCHEMA_VERSION),
+    type: z.literal(JOB_TYPES.exportMarkedPdf),
+    jobId: DocIdSchema,
+    orgId: DocIdSchema,
+    projectId: DocIdSchema,
+    exportId: DocIdSchema,
+    sheetIds: z.array(DocIdSchema).min(1).max(200).nullable(),
+    /** sheetId → versionId to render (share links: the locked versions); null = current versions. */
+    versionIds: z.record(DocIdSchema, DocIdSchema).nullable(),
+    options: MarkedPdfOptionsSchema,
+    /** orgs/{orgId}/projects/{projectId}/exports/{exportId}/marked.pdf */
+    storagePath: z.string().regex(MARKED_PDF_PATH_RE, 'invalid marked pdf path'),
+    traceparent: TraceparentSchema.nullable(),
+  })
+  .strict()
+  .refine((j) => j.storagePath === `orgs/${j.orgId}/projects/${j.projectId}/exports/${j.exportId}/marked.pdf`, {
+    message: 'storagePath must be the marked PDF of the job org/project/export',
+    path: ['storagePath'],
+  });
+export type MarkedPdfJob = z.infer<typeof MarkedPdfJobSchema>;
+
 /**
  * Every message on topic `ingest` (discriminate on `type`; attribute `type` carries it too). Python: validate with
  * json-schema/IngestTopicJob.json (anyOf) and dispatch on `type`.
  */
-export const IngestTopicJobSchema = z.union([IngestSheetVersionJobSchema, BoqBuildJobSchema, LibraryImportJobSchema, FindSimilarJobSchema]);
+export const IngestTopicJobSchema = z.union([IngestSheetVersionJobSchema, BoqBuildJobSchema, LibraryImportJobSchema, FindSimilarJobSchema, MarkedPdfJobSchema]);
 export type IngestTopicJob = z.infer<typeof IngestTopicJobSchema>;
+
+export const OFFBOARDING_EXPORT_JOB_SCHEMA_VERSION = 1 as const;
+
+/** Topic `api-jobs`, type `offboarding.export` — consumed by the API's `apiJobs` function (never the drawing worker). */
+export const OffboardingExportJobSchema = z
+  .object({
+    schemaVersion: z.literal(OFFBOARDING_EXPORT_JOB_SCHEMA_VERSION),
+    type: z.literal(JOB_TYPES.offboardingExport),
+    jobId: DocIdSchema,
+    orgId: DocIdSchema,
+    exportId: DocIdSchema,
+    includeSources: z.boolean(),
+    traceparent: TraceparentSchema.nullable(),
+  })
+  .strict();
+export type OffboardingExportJob = z.infer<typeof OffboardingExportJobSchema>;
+export const ApiTopicJobSchema = OffboardingExportJobSchema;
+export type ApiTopicJob = OffboardingExportJob;
 
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const;
 export const JobStatusSchema = z.enum(JOB_STATUSES);
@@ -201,6 +261,8 @@ export const JobSchema = z.object({
   importId: z.string().uuid().optional(),
   /** `symbols.find_similar`: similarSearches/{searchId}. */
   searchId: DocIdSchema.optional(),
+  /** Sprint 5 `export.marked_pdf`: exports/{exportId}; `offboarding.export`: offboardingExports/{exportId}. */
+  exportId: DocIdSchema.optional(),
   /** null for an initial ingest (all pages); the sheet for a reprocess. */
   sheetId: DocIdSchema.nullable().optional(),
   versionId: DocIdSchema.optional(),

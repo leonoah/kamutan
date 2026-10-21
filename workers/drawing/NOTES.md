@@ -1015,3 +1015,406 @@ cleaning); `test_rooms_v4.py` validates the extended rooms document against `Roo
   emitted — niche sub-rooms are not segmented yet (Worker-B gap; 5.01 / 5.02 remain geometry-limited).
 * Re-run (ingest 15/15 in 254 s, max 39 s/sheet): every kbench number identical to the table above (03 11/11 exact,
   05 3/8 ΣAE 22.9 / 5/8 ΣAE 9.8 with demo corrections, 04+9.01 12/22).
+
+## Sprint 5 — laundry niches, master-bath window, upload-order dependency (Worker-B)
+
+Brief: `docs/agents/SPRINT5_BRIEF.md` §8. Owned code: `rooms/`, `fixtures/` (unchanged), `lifecycle/`; plus the two
+Sprint-5 fields on the shared `types_sprint2.Room` (`niche`, `parent_room_id`). No change in `pipeline/` /
+`service/`: understand already writes `Room.to_json(extended=True)` and calls `apply_fixtures`, which carry the niches.
+
+### 1. Laundry niches as sub-rooms (`rooms/niches.py`, `segment._niches`, `geometry.room_geometry`)
+* **Root cause of the Sprint-4 gap**: a washing-machine niche's mouth (0.76 / 0.83 m on Noah) is narrower than the
+  0.9 m closing gap of `segment._faces`, so the closing filled the whole niche: its floor belonged to no room and its
+  mouth was a wall face of the bathroom.
+* **Candidates** = free space that only the closing filled (`(region − walls − bridges) ∩ closing`), cleaned by a 5 cm
+  opening; niche-shaped when 0.3–2.5 m², ≥ 0.45 m wide, 0.4–1.4 m deep (area / mouth), touching exactly one kept room
+  along a 0.5–1.6 m mouth, rest of the outline ≥ 85 % wall, no door / window bridge on it.
+* **Evidence**: washing-machine shape inside (`fixtures.shapes.detect_shapes` on the candidate's box), laundry label
+  inside ("כביסה", "מ.כ" / 'מ"כ', "מייבש"), or a parent that is wet by its name (bathroom / WC / laundry room).
+  A candidate holding another sanitary shape (WC, basin, bath, shower tray, sink) is rejected (WC / shower alcove).
+  Machine or label → 0.85–0.9 (green); wet parent only → 0.7 + `גומחה לפי צורה בלבד` (yellow). `apply_fixtures`:
+  a washer detected in the niche (plumbing sheets) removes that reason; a WC / basin / bath / shower in it adds
+  `כלים סניטריים בגומחה` (yellow, 0.6). Niches keep `type: "niche"`; their `wet` follows the parent.
+* **Output** (`rooms.json.gz`, contract fields already added by the API agent in this tree): niche room
+  `{id: "<parentId>_n<k>", type: "niche", niche: true, parentRoomId, polygonMm, areaM2, perimeterM, walls,
+  openings: [], externalCorners: 0, floor: parent's}`; ids of the other rooms are unchanged (niche ids hang off the
+  parent's, so `roomSettings` keys stay valid). The mouth is a wall `open: true` in **both** rooms (only open walls
+  carry the key; `exterior` is false on them).
+* **Semantics** (for API / BOQ / web): the parent's `areaM2` does **not** include the niche (the niche's floor counts
+  through its own row, BOQ `includeNiches`); `perimeterM` of both rooms **excludes** open walls (there is no wall
+  face to clad) — consumers must not subtract open walls again; the parent's `externalCorners` are counted on
+  parent ∪ niches (the end of a niche side wall at the mouth is an outside corner of the bathroom's tiling).
+* Noah: one niche per laundry recess on every plan sheet — basement bath (0.71 m², ad257a1c / 6fa88f92 / c054fd3a /
+  24ab0ea0 / 1bbe4113) and first-floor general bath (0.61 m², 8099ab2c / 6fa88f92 (0.5: demolished wall) /
+  c054fd3a / 2a308827 / 1bbe4113); green where the plumbing / electrical sheet draws the machine or "כביסה", yellow
+  (shape only) on construction / master plans. No other room of the 15 sheets gets a niche (dry-parent recesses
+  such as the basement bedroom's triangle are rejected for lack of evidence).
+
+### 2. Master-bath window missed → room not closed (`rooms/walls._add_windows`)
+* **Root cause** (Noah construction plan 8099ab2c, also 2a308827 / c054fd3a / 1bbe4113 which borrow it): the window
+  in the east wall is a straight glass line jamb-to-jamb (20 mm) plus an outer frame drawn as a **"U" polyline** (1 mm
+  out, 22 mm along, 1 mm back). Glazing lines were paired by *path length* (±15 %): 24 vs 20 mm failed, the window had
+  a single line, no bridge → the 1.0 m gap leaked and the master bath **and** master bedroom were `חדר לא סגור`. On the
+  master sheet the same glass line is drawn twice (two layers), so it paired with itself by accident and "worked".
+  The jamb test (`_in_wall_line`) also probed along the U's 1 mm end jog instead of along the window.
+* **Fix (general)**: lines are compared by their **chord** when nearly straight (vertices ≤ 15 cm from the chord, path
+  ≤ 1.35 × chord; bent bay-window glazing keeps its path length); the jamb probe uses the direction to the first vertex
+  ≥ 15 cm from the end (skips jogs); the window width is the **shortest** line of the group (the glass spans the wall
+  gap; frames overlap the jambs).
+* Effect on all 15 sheets (rooms with reference walls, before → after): master bath + master bedroom closed on
+  8099ab2c / 2a308827 / c054fd3a / 1bbe4113 (bath 4.7–4.8 m², window 1.00 m); 6 demolition-plan rooms of af849ec4
+  closed; bedroom windows 1.40 → 1.20 m (= the wall gap; the old value was the frame's path); 4 double-detected
+  windows merged (08222cb2 ×2, 6fa88f92, b2046277); no room area changed elsewhere, no room got "not closed".
+* Regression tests: synthetic room whose window has a jogged outer frame (`tests/test_rooms_s5.py`; fails on the
+  Sprint-4 code: no window, room not closed) + the Noah sheet (local artifacts).
+
+### 3. Upload-order dependency (`lifecycle/dependents.py`)
+Pure decisions + one service hook; the requests are turned into reprocess jobs by the API (contract request below).
+* `borrows_from(dep, src)`: wall-source rank construction 0 < architecture 1 < master 2 < everything else; a sheet
+  borrows from strictly better ranks; construction borrows from nobody. Every edge raises the rank → **no loops**
+  (a reprocessed MEP sheet is never a source; a reprocessed master sheet only triggers MEP sheets).
+* `dependents_to_reprocess(source, sheets)`: ready wall source → the project's other sheets that borrow from it,
+  floors overlapping (unknown floors overlap; *unconfirmed* sheets are always included — their region floors are
+  inferred from every floor's walls), current version not failed, and not already processed with this source
+  version (`referenceSources` on the version doc; unknown → not used).
+* `merge_request(existing, dep, source, now)` → `reprocessRequests/{sheetId}` `{sheetId, status: "pending",
+  dependentVersionId, sources: ["sheetId/versionId"…], reason: "reference_walls", firstRequestedAt, notBefore,
+  updatedAt}` (epoch s). **Idempotent** (same source version again → no write), **debounced** (`notBefore` = now +
+  120 s, never later than first + 900 s), a newer version of the same source replaces the older one.
+* `due_requests(requests, sheets, now)` → `{sheetId: fire | wait | drop}`: wait while the dependent is queued /
+  processing; drop when the sheet is gone or was reprocessed meanwhile with every requested source; else fire.
+  `reprocess_reason(req)` → `{kind: "reference_walls", sources, message: "תוכנית קירות של אותה קומה עודכנה — הגיליון
+  עובד מחדש"}` for the new version.
+* Hook: `schedule_dependents(docs, project_path, sheet_id, *, now) -> [sheetIds written]` (reads `sheets/*` + their
+  current versions via `DocStore.list_docs/get`).
+
+#### Service snippet for Worker-Cal (single call site in `service/pipeline.py`; exact text)
+1. In `_run`, inside the page loop, right after `outcomes.append(out)`:
+```python
+        if out.status == "ready":
+            _schedule_dependents(job, docs, sid)
+```
+2. New helper (anywhere in the module, e.g. after `_result`):
+```python
+def _schedule_dependents(job: IngestSheetVersionJob, docs: DocStore, sid: str) -> None:
+    """Sprint 5 (Worker-B, lifecycle.dependents): a construction / architecture / master version became ready →
+    debounced, idempotent reprocess requests (``reprocessRequests/{sheetId}``) for the sheets of its floor that were
+    processed without it. Best effort: never fails the page."""
+    try:
+        from ..lifecycle.dependents import schedule_dependents
+
+        written = schedule_dependents(docs, job.project_path, sid, now=time.time())
+        if written:
+            log.info("job %s: reprocess requested for %d dependent sheet(s)", job.jobId, len(written))
+    except Exception:  # noqa: BLE001 - scheduling is advisory; the page is ready either way
+        log.warning("job %s: scheduling dependent reprocess failed", job.jobId, exc_info=True)
+```
+3. (makes `drop` / "already used" exact; needs the SheetVersion contract field below) record the wall sources a
+   version used — `_reference_walls_files(..., used: list[str] | None = None)`: after `out.append(rel)` add
+   `if used is not None: used.append(f"{osid}/{vid}")`; in `_understand` create `ref_sources: list[str] = []`, pass
+   `used=ref_sources` in the `"referenceWalls"` call and return `"referenceSources": ref_sources` in the result dict;
+   in `_process_page`, inside `if understanding is not None:` add
+   `vfields["referenceSources"] = list(understanding.get("referenceSources") or [])[:16]`.
+Without (3) the hook still works (an unknown `referenceSources` counts as "not used": at worst one extra reprocess).
+
+### Contract requests (API agent)
+* `RoomsArtifact` — already in this tree (`type: "niche"`, `parentRoomId`, `walls[].open`), thank you. Please make the
+  doc comments match the semantics above: `parentRoomId` — "its floor is tiled with the parent's (BOQ
+  `includeNiches`); the parent's `areaM2` does NOT include it"; `perimeterM` — "inner face incl. door / window
+  openings, excl. `open` walls"; `walls[].open` — "already excluded from `perimeterM`".
+* `SheetVersion` (additive, optional): `referenceSources: string[]` (≤ 16, `"{sheetId}/{versionId}"` of the wall sources
+  the understanding used) and `reprocessReason: {kind: "reference_walls" | "manual", sources: string[] (≤ 32),
+  message: string (≤ 200)} | null`.
+* New collection `orgs/{o}/projects/{p}/reprocessRequests/{sheetId}` (shape in §3; written only by the worker's
+  service account; firestore rules: no client access). **Consumer** (API, scheduled every minute — the worker has no
+  queue publisher): for each pending request apply `due_requests` (mirror the Python, 20 lines): `fire` →
+  `repo.createReprocessVersion(org, project, sheetId, 'system:dependents', ingest)` with
+  `reprocessReason = reprocess_reason(req)` on the new version, publish the ingest job, then set the request
+  `{status: "fired", firedAt, versionId}`; `drop` → `{status: "dropped"}`; `wait` → leave it; a
+  `RepoConflictError(in_progress)` = wait. Show `reprocessReason.message` in the sheet's history panel.
+* Requests to the BOQ owner (`boq/` is read-only for me): (a) `includeNiches` should count a niche only when its
+  parent (`parentRoomId`) passes the rule's `roomTypes` (today any niche is floor-tiled, e.g. a laundry niche of a
+  corridor would be); (b) `boq/spaces.ROOM_TYPES` lacks `"niche"` (inferred as `other` — harmless, the `niche` flag
+  drives the rules); (c) never subtract `open` walls from `perimeterM` again.
+* Data/QA: `eval-tiling-rooms` compares the GT bathroom polygon (which includes the laundry niche) with the parent room
+  only — compare GT with parent ∪ its `parentRoomId` children (area, union perimeter) and the niche with
+  `sub_polygons_mm.laundry_niche`. GT master-bath window: `0.8 m "east wall frame 328.56-344.57"` is the shutter
+  pocket; the opening in the wall (glass line jamb to jamb) is 344.57–364.55 = 1.0 m — please review.
+
+### Results (Noah; `ingest_local.py --force` into a scratch root, 15/15 in 403 s on the shared box; `boq_local.py
+--no-corrections` with the built-in demo room settings; kbench `eval-boq` / `eval-tiling-rooms`)
+| line / metric | sample BOQ | GT rule | before (Sprint-4 final) | after |
+| --- | --- | --- | --- | --- |
+| 5.01 wall cladding m² | 57 | 57.63 | 62.79 (PE +10.2 %) | **56.30 (−1.2 %, within tol)** |
+| 5.02 floor tiling m² | 18.1 | 18.11 | 16.02 (−11.5 %) | **17.06 (−5.7 %)** — niches 0.71 + 0.61 added |
+| 5.03 corner trim m' | 15.6 | 17.0 | 12.60 | 12.20 — corners basement 1→2, first bath 2→3 (GT 3/3), master 2→0 (GT 1, was a leak artefact) |
+| chapter 03+05 gated | | | exact 14/19, within tol 14/19, ΣAE 22.87 | exact 14/19, **within tol 15/19, ΣAE 17.14** |
+| chapter 03 | | | 15/15 lines = sample | **unchanged** (identical quantities) |
+| chapter 04 + 9.01 gated | | | exact 12/22, ΣAE 19.0 | **unchanged** (12/22, ΣAE 19.0) |
+| rooms: master bath closed (8099ab2c) | | | no (`חדר לא סגור`) | yes, window 1.00 m |
+Every detection (class, position, floor, room) is identical before/after on all 15 sheets. 4.10 / 9.01 `byFloor`
+moved one item between floors in the after-run — from the in-progress `links/` changes of this sprint (links do not
+read rooms), quantities identical. Per wet room (after): basement bath 3.73 + niche 0.71 m², P 7.74 m (mouth 0.76
+open); first bath 5.04 + niche 0.61, P 8.79 (mouth 0.83 open); master bath 4.76, P 8.74, window 1.00.
+
+### Tests / commands
+`tests/test_rooms_s5.py` (9: synthetic bathroom niche — sub-room, open walls, parent perimeter / corners / area,
+contract validation; dry parent needs a label or a drawn washer; `apply_fixtures` confirm / flag; evidence + labels;
+window with a jogged frame (straight and U); Noah niches on ad257a1c / 8099ab2c; Noah master bath closed),
+`tests/test_dependents.py` (10: rank DAG / no loops, dependents selection, master → MEP only, idempotent + debounced +
+max wait, due decisions, hook on `InMemoryDocStore`, MEP sources never trigger).
+```bash
+uv run python -m kamutan_drawing.rooms.debug --v4 ad257a1c 8099ab2c   # niches + open walls (red) in rooms_v4_*.png
+KAMUTAN_DEV_ARTIFACTS=/tmp/x uv run python scripts/ingest_local.py --force && uv run python scripts/boq_local.py --root /tmp/x --no-corrections
+```
+
+### Gaps
+* Niches whose mouth is ≥ 0.9 m are not cut by the closing and stay inside the parent (not split, walls clad).
+* Construction / master plans draw no machine in the niche: those niches are shape-only (yellow) until a plumbing
+  sheet's washer confirms them — in the BOQ the canonical rooms come from the construction plan, so 5.02's niche rows
+  stay yellow; a fixture → canonical-room confirmation would need the BOQ to map washers onto canonical niches.
+* 5.03: corners near door jambs are excluded at 30 cm (the master bath's diagonal-wall corner is 15 cm from the door
+  jamb; GT counts it) — a convention question for the owner (GT-D-008), not changed.
+* 5.02 remaining −1.0 m²: wall faces are detected a few cm inside the GT faces (basement 3.73 vs 3.90 without niche,
+  master bath 4.76 vs 5.25).
+* The dependency requests need the API consumer (and the service snippet) to actually re-run anything; until then they
+  accumulate as `pending` docs (bounded: one per sheet).
+
+## Sprint 5 — marked PDF `export.marked_pdf` (Worker-Export)
+FR-29 / E2E-13 / MK-01–02. Package `src/kamutan_drawing/export/` (+ `scripts/export_local.py`, `tests/test_export.py`).
+
+### Flow
+```
+Pub/Sub push ─► app.py (type export.marked_pdf) ─► export.job.run_marked_pdf          (orchestrator: identity, docs, storage)
+  1 jobs/{jobId} (org/project match) + exports/{exportId} (kind marked_pdf) must exist, else invalid_payload (nothing written);
+    export already ready → redelivery no-op
+  2 export + job → running; latest build (project boq.latestBuildId → boqBuilds/{id} → evidenceRef under …/boq/),
+    boqLines, corrections; per sheet (sheetIds | every sheet with evidence; versionIds[sheetId] | currentVersionId, ready)
+    the version's detections / links / rooms JSON (paths under the version prefix)  → export.plan.build_plan (pure)
+  3 backgrounds: sheetSet upload (fileKind pdf, uploads/{set}/source.pdf, sha256 == version.sourceSha256) else the
+    tile level closest to 150 dpi (PNG/JPEG/DXF, or a changed/missing source); hideTitleBlock → + primitives/text
+  4 sandbox task `export_marked` (export.render): chunks of 8 pages → parts, then `assemble` (parts + legend pages)
+  5 output (%PDF, ≤ 512 MB) → job.storagePath = orgs/{o}/projects/{p}/exports/{exportId}/marked.pdf (application/pdf)
+    export doc {status ready, storagePath, pageCount, sizeBytes, versionIds, error null, finishedAt}; job succeeded + result
+```
+Errors: same semantics as the other jobs (retryable → export/job `queued` + HTTP 500 until 5 attempts; else `failed`
++ `error {code, message}` + HTTP 200). No build → `invalid_payload`; missing evidence file → `source_not_found`; any
+pypdf / pdfium / Pillow failure on the customer file → `parse_crashed` (typed, inside the sandbox).
+
+### What a page shows
+* **Background**: the ORIGINAL vector page for PDF sources — pypdf `merge_transformed_page` into a fresh page of the
+  display size; the ctm (`render.display_matrix`) normalises crop box + clockwise /Rotate exactly like
+  `ingest.pdf_vector._page_to_mm`, so overlay mm = ingest mm (unit-tested for 0/90/180/270 with an offset crop box;
+  Noah's /Rotate 270 sheets line up). Source /Annots and /AA are dropped; merged content streams are re-compressed.
+  Raster / DXF sheets: the stitched tile level (Pillow).
+* **Overlay** (reportlab, vector, on top): every evidence item of the latest build on the exported version —
+  detections as a tinted box + outline in the line colour (concentric outlines when one item is evidence of several
+  lines, e.g. a luminaire in 4.09 and 9.01), the line code as text above it (white halo), and the item's level glyph as
+  a vector shape (● מאומת ▲ סביר ◆ לבדיקה, blue ● for verified / manual) — colour is never the only cue. Rooms
+  (tiling lines) → hatch clipped to the polygon (angle varies per line on the same room) + dashed outline + code tag;
+  link groups → thin dashed arcs (luminaire chain + each switch to its nearest luminaire) in the group's line colour;
+  manual corrections (count points / measure polygon / anchor) from `corrections/{id}`. Evidence of another version
+  of the sheet is not drawn (`result.stale`).
+* **Palette** (`export/palette.py`): 12 colours, Okabe-Ito + Tol muted, no pure red; colour = f(code)
+  (`(minor + 7·chapter) % 12`) → stable across exports; 12 consecutive codes of a chapter never collide.
+* **Legend**: final page(s) (A4; landscape with > 2 floors): colour · סעיף · תיאור · כמות (qtyOverride wins, ✎) ·
+  יחידה · ביטחון (shape + word) · סימונים (marks in this PDF, "—" for lines without drawing evidence) and, with
+  `floorSplit`, one column per floor (byFloor). `floorSplit` also orders the pages by floor (else by discipline).
+  Page tag top-right: floors · sheet title · number of marks (title omitted when hideTitleBlock).
+* **Watermark**: diagonal (page diagonal angle), 20 % grey, on every page incl. the legend.
+* **hideTitleBlock** = real redaction: the page is rendered by pdfium at 200 dpi and the title block painted white in
+  the pixels (a white box over vectors would leave the text in the content stream); overlay stays vector; the sheet's
+  compact legend is drawn into the freed box. Title block: `version.titleBlock.bboxMm` when present (contract request
+  below), else searched in the sandbox on the stored primitives + text (`titleblock.read_title_block`, Noah 10/10
+  found), else the band under the drawing regions (≤ 30 % of the page), else none; `result.titleBlock` reports which.
+* **Hebrew**: `export/bidi.py` — UAX #9 subset for one RTL line (numbers with separators, Latin runs, neutrals,
+  mirrored brackets, nikud kept on its base), pure Python (python-bidi is LGPL). Hebrew needs no shaping. pdfium's
+  text extraction of our pages returns the logical strings (asserted in the tests).
+
+### Untrusted input (SEC-17)
+Everything that touches customer bytes runs in the parser sandbox (`run_task("export_marked")`, same Limits as the
+other jobs): pypdf opening + merging the original page (merging is parsing), pdfium rendering for redaction, Pillow
+decoding tiles, msgpack primitives for the title-block search. The orchestrator only reads worker-made JSON
+(evidence, detections, links, rooms — as `boq.build` does), copies the upload/tiles into the workdir, validates the
+child output (`safe_output_path`, `%PDF-`, size, page count) and uploads it. Document-level objects of the source
+(OpenAction / JS / embedded files / outlines / metadata) never reach the output: only page content + resources are
+merged into fresh pages; page /Annots and /AA are removed.
+
+### Edits outside `export/` (both minimal, additive)
+* `service/app.py` (Worker-Cal owns the rest): 2 imports, `MARKED_PDF_TYPE: MarkedPdfJob` in the type→model map,
+  one `elif isinstance(job, MarkedPdfJob)` branch calling `run_marked_pdf(limits, workdir_root)`, docstring line.
+* `sandbox/tasks.py`: new task `export_marked` (3-line delegate to `export.render.run`) + its `TASKS` entry — the
+  sandbox child only dispatches tasks from this table, so sandboxing the PDF merge needs this one registration.
+
+### Dependencies (pyproject + uv.lock)
+`pypdf>=6.20.1` (BSD-3-Clause), `reportlab>=5.0.1` (BSD; moved from the dev group to runtime; pulls
+`charset-normalizer` MIT), dev `types-reportlab` (Apache-2.0, typeshed). No PyMuPDF.
+**Font**: `export/fonts/DejaVuSans-heb.ttf` + `DejaVuSans-Bold-heb.ttf` (107 KB each) — DejaVu Sans from the OS
+(`fonts-dejavu-core`), subset with fontTools to Latin-1 + Hebrew + punctuation + arrows + geometric shapes + dingbats;
+license `export/fonts/LICENSE-DejaVu.txt` (Bitstream Vera terms + DejaVu changes public domain; modified copies may
+not be named "Bitstream"/"Vera" — they are not). Bundled in the package: `uv build` includes it in the wheel (checked),
+so the worker image needs **no Dockerfile change**; nothing is fetched at runtime.
+
+### Local run (`scripts/export_local.py`)
+Reads the production layout under `/home/claude/kamutan-data/artifacts` (+ uploads mapped to `sample-noah/{name}`),
+writes nothing there (overlay stores), saves the PDF + PNGs of the first / legend pages.
+| run | sheets | pages | size (sources 1.23 MB) | time | marks / arcs / areas |
+| --- | --- | --- | --- | --- | --- |
+| default (`debug/marked_noah.pdf`) | 10 with evidence | 10 + 2 legend | 1.27 MB (vector) | 9–20 s (shared box) | 189 / 39 / 17, stale 0, unresolved 0 |
+| `--hide-title-block --floor-split --watermark …` (`debug/marked_noah_share.pdf`) | 10 | 12 | 7.96 MB (200-dpi raster) | 17–27 s | same; title block detected 10/10 |
+Checked visually (`debug/marked_noah_p1.png`, `_p1_zoom.png`, `_p4.png`, `_p10_zoom.png`, `_p12.png`,
+`marked_noah_share_p1.png`, `_share_p12.png`): marks sit on the symbols (incl. the /Rotate 270 sheets), codes and
+glyphs readable, arcs on the lighting sheets, hatches in the wet rooms, legend Hebrew correct RTL, mask + sheet legend
++ watermark on the share variant.
+
+### Tests / commands
+`uv run pytest -q tests/test_export.py` — 29 tests, ~17 s: bidi cases, palette, display matrix vs the ingest frame
+(4 rotations, offset crop box), plan (shared items, arcs, areas, manual geometry, stale evidence), end to end in the
+sandbox on synthetic PDFs (rot 0/90: vectors kept, pixel colours at marks / labels / hatches, white paper elsewhere,
+legend text), redaction (no text of the title block left, pixels white) + watermark, fallback band, tiles background +
+floor-split legend, stale evidence, redelivery / foreign job / no build / xlsx doc, hostile source → `parse_crashed`,
+changed source → blank page, payload validation, contract mirror vs `json-schema/MarkedPdfJob.json`, app routing.
+
+### Contract notes / requests (API agent)
+* Mirrors `MarkedPdfJobSchema` as generated (incl. `versionIds`, `storagePath`, `options.legend: true`, watermark ≤
+  200). Export doc: the worker writes `status` `running` → `ready` | `failed` (contracts `ExportStatus`; the brief's
+  "succeeded" is `ready`), `storagePath`, `pageCount`, `sizeBytes`, `versionIds`, `error`, `finishedAt`, plus
+  bookkeeping `startedAt` (please keep `ExportRecordSchema` non-strict or add `startedAt`). Job `result` carries
+  the stats (marks, arcs, areas, stale, unresolved, backgrounds, rendered, titleBlock, bytes, durationMs).
+* Request (ingest / pipeline owner): persist the title block found during classification on the version doc,
+  additive `SheetVersion.titleBlock = {bboxMm: [x0, y0, x1, y1]}` (paper mm, y down) — the export (and the share tile
+  masking) then needs no title-block search; the export already reads it when present.
+
+### Requests to DevOps
+None required (font ships inside the wheel). Optional: extend the image smoke check to
+`python -c "import kamutan_drawing, pypdfium2, pypdf, reportlab, uvicorn"`.
+
+### Gaps
+* Dense clusters: code labels of adjacent items overlap (no label placement / collision avoidance yet).
+* Redacted (hideTitleBlock) PDFs are large: ~0.8 MB per A3 page at 200 dpi (Flate RGB). MK-02's "< 1.5× source"
+  holds for the vector export (1.03×), not for redacted share PDFs; options: 150 dpi, palette images, or redacting the
+  content stream (needs a content-stream editor that clips text/paths — not license-clean today without PyMuPDF).
+* Pinned versions (share links) older than the latest build's evidence show no marks (`result.stale`) — a share link
+  should be paired with the build of its locked versions.
+* Raster / DXF sheets use the tile pyramid at ~150 dpi (not the original PNG / a fresh DXF render).
+* The fallback band (no title block found) is a heuristic; with no regions nothing is masked (reported as `none`).
+* Run on 2026-10-15 alongside other agents: `tests/test_sandbox.py::test_fork_bomb…` flaked (peak 51 > 49 processes,
+  load avg 9 on 2 vCPU); the links / rooms / understand failures in the full suite are in modules other agents were
+  editing at the time; `ruff format --check` flagged `tests/test_calibration.py` and mypy `rooms/segment.py` then `ocr/glyphs.py` (not ours).
+* CI run (21.10): ruff / format / mypy / bandit clean; pytest 496 passed, 11 failed — none in rooms / fixtures /
+  lifecycle code: green→yellow expectations under the in-progress conservative calibration (test_understand_fixtures ×2,
+  test_links ×5, test_boq confirmed floors, test_calibration link groups, test_legend_symbols spotting) and the
+  sandbox fork-bomb test (box-dependent). Sprint-4 sample tests updated for niches (`test_rooms.py` min area,
+  `test_rooms_v4.py` basement / wet rooms count niches separately).
+
+## Sprint 5 — calibration (worker side), per-stage timings, performance (Worker-Cal)
+
+Brief: `docs/agents/SPRINT5_BRIEF.md` §1 / §6.
+
+### Calibration (`kamutan_drawing/calibration/`)
+* `table.json` (`kamutan.calibration/1`, validated against `schema.json` + semantic rules: tp + fp = n, monotone
+  `scoreMap`, conservative rule n ≥ 200 & fp = 0 for `greenAllowed`). **Produced by Data/QA's `kbench calibrate`
+  from DEV only** (current `cal-gt-v0.4.1-draft-…`, conservative, no class allowed green — the largest class has
+  n = 29). Class statistics only. `scripts/calibration_table.py` is a stopgap that now *refuses* to write the
+  committed table (`--out` required).
+* Loading: once per process (`default_table()`), `KAMUTAN_CALIBRATION_TABLE` overrides the path; a missing / invalid
+  table logs an error and **fails closed** (empty conservative table, nothing green, version `fallback-empty`).
+* `calibrate(class, raw_score, reasons, *, level=, raster=, human=, green_threshold=) -> (score, level, reasons)`
+  (also `CalibrationTable.calibrate` → `Calibrated`), the shared helper for every producer of a level:
+  score = class `scoreMap`, else the class's **domain** map (Data/QA's request; `domain_of`), else identity; level =
+  min(heuristic level, level of the calibrated score — `ביטחון נמוך לאחר כיול` when it lowers it); raster / `רסטר`
+  → never green; green on a class without `greenAllowed` → yellow + `כיול שמרני: אין מספיק נתוני אמת לסוג זה`;
+  org `greenThreshold` (0.9–0.995) above the class Wilson LB → yellow + `כיול: מתחת לסף הירוק של הארגון`;
+  `human=True` → green `אושר ידנית`. Never more permissive than the input level (property test, 2000 cases).
+  Class keys: detection classes, `link:<kind>`, `room`.
+* Applied in: `symbols.detect.score_detection` (vector + raster; `Detection.score_raw` → `scoreRaw` in
+  `detections.json.gz`), fixtures (`understand._fixture_detection`, Worker-B's score = raw; `fixtures.json.gz` gets
+  `score`/`scoreRaw` too), rooms (`understand._calibrate_rooms`, key `room`; **scale-conflict sheet → every room
+  red** `קנה מידה סותר` — task arg `scaleConflict` from the page classification, unless the sheet is confirmed),
+  link groups (`links.graph`, level only: `confidence` stays raw because contracts `LinkGroup` is strict — see
+  requests), `links.floors.apply_confirmed_floors` (an item whose only chip was the floor goes back to green
+  *through the table*, so confirmed floors no longer bypass the cap). Human accept / corrections stay green: they
+  are applied by `boq/corrections.py` (`אושר ידנית`, not routed through the table).
+* Service: `orgs/{o}.settings.greenThreshold` → task arg `greenThreshold`; `stats.calibration = {mode, version}` on
+  every understood version (orchestrator's own table copy).
+
+### Timings + other service work
+* `stats.timingsMs = {render, primitives, ocr, legend, symbols, rooms, fixtures, links, artifacts, total}` (ms):
+  page task (ingest → primitives, ocr + classify + regions → ocr, write), understand task (detect → symbols,
+  fixtures + lifecycle → fixtures, crops + write + orchestrator uploads → artifacts), total = page wall clock in the
+  orchestrator (sandbox start-up only in total). Sanitised (`stage_timings_ms`).
+* `titleBlockMm {x,y,w,h}` **and** `titleBlock {bboxMm: [x0,y0,x1,y1]}` on the version doc when classification found
+  the title block (page task `titleBlockMm`, checked to lie inside the page) — share tiles / marked PDF mask it.
+* Worker-B's dependents hook wired exactly as specified (`_schedule_dependents` after each ready page;
+  `referenceSources` recorded on the version from the wall files passed to `understand`).
+* R-W1: `service/logging_setup.py` — JSON lines on stdout (`severity`, `message`, `time`, `logger`, sourceLocation,
+  allow-listed extras `jobId/orgId/projectId/sheetId/versionId/code/llm`, messages capped), installed in
+  `app_from_env` (`KAMUTAN_LOG_LEVEL`, default INFO). Message texts unchanged (alert filters).
+
+### Performance
+`scripts/perf_local.py --out DIR --repeats 3` (also driven by `kbench perf --run`): real pipeline per sheet, one org,
+construction plans first; P50/P95 per stage, wall + CPU, peak RSS of the process tree. Hot spots fixed (all
+**output-identical** — verified by hashing `text.json.gz` / primitives / glyph delta / classification on 5 sheets warm
+and cold, and diffing understand artifacts on 5 sheets: every non-calibration field identical, the only diffs are
+Worker-B's new niche rooms):
+* OCR (`ocr/glyphs.py`, `ocr/shapes.py`): vectorised densify (`_linspace_t`, bit-identical to per-segment
+  `linspace`), vectorised pair tests in `_link_lines` (applied in the set's order), vectorised glyph bitmap,
+  stacked stroke arrays + broadcast cost matrix + exact bound-pruning in `shape_distance` lookups. Page CPU 8.8 → 4.9 s
+  (1bbe4113), 8.9 → 4.8 s (c054fd3a), 4.5 → 2.3 s (24ab0ea0).
+* Symbols: `marks.GlyphLibrary.read` one dense distance matrix per glyph (`cdist` + `minimum.reduceat`; equality vs
+  the KD reference asserted on 1584 reads), pair readings memoised per sheet, sheet arrays cached;
+  `_panels_from_labels` KD-tree partner search (was O(n²), 7.6 s on c054fd3a); `suggest_class` memoised. c054fd3a
+  detect 30.2 → 12.8 s in-process.
+* Thumbnails: `understand.BatchRender` renders clustered regions once instead of one pdfium call (~0.2 s fixed) per
+  crop; crops are timed apart (`crops` → `artifacts`), so `links` is now the link graph only (10.5 → 0.9 s max).
+
+| stage (s, 15 sheets × 3, single worker, shared 2-vCPU box) | before P50 / P95 / max | after P50 / P95 / max |
+| --- | --- | --- |
+| render | 2.68 / 4.84 / 6.25 | 3.21 / 5.43 / 7.14 |
+| primitives | 0.81 / 2.24 / 2.86 | 0.98 / 2.63 / 3.13 |
+| ocr | 5.91 / 18.88 / 21.81 | 5.02 / 13.08 / 15.10 |
+| legend | 0.05 / 0.27 / 0.40 | 0.07 / 0.30 / 0.42 |
+| symbols | 0.01 / 16.58 / 27.91 | 0.00 / 8.03 / 8.84 |
+| rooms | 0.96 / 2.32 / 3.10 | 1.07 / 2.80 / 5.67 (Worker-B niches) |
+| fixtures | 0.24 / 0.61 / 0.71 | 0.31 / 0.86 / 1.91 |
+| links (before: incl. crops) | 0.00 / 4.83 / 10.55 | 0.00 / 0.88 / 0.97 |
+| artifacts (after: incl. crops) | 0.03 / 0.09 / 0.12 | 0.61 / 6.89 / 7.30 |
+| **page total** | 16.41 / **46.13** / 71.10 | 16.35 / **41.04** / 47.30 |
+| page wall (incl. sandbox start) | 16.61 / 47.12 / 72.52 | 16.65 / 41.98 / 48.15 |
+| peak RSS (tree) / set per repeat | 668 MB / 321 s | 631 MB / 307 s |
+Both runs were on a box shared with other agents (load 4–8), so wall clock is noisy; the in-process CPU numbers
+above are the reliable before/after. **A3 P95 41 s < 60 s, set 307 s < 600 s.** Rendering crops (~0.15 s per
+cluster) and OCR remain the top stages; Tesseract (2 workers, OMP 1) is ~1/3 of OCR.
+
+### Accuracy (kbench eval / eval-links on the perf roots, gt-v0.4.1-draft)
+| | before | after |
+| --- | --- | --- |
+| semantic micro-F1 / items correct | 0.8472 / 0.7965 | 0.8472 / 0.7965 (identical) |
+| green items (precision) | 20 (1.00, LB 0.84) | **0** (conservative: no class allowed) |
+| review burden | 0.904 | 1.000 |
+| ECE (score) | 0.104 | 0.056 |
+| links exact R / P | 0.933 / 0.966 | 0.933 / 0.966 |
+Burden 100 % is the honest consequence of conservative mode on one DEV project (≥ 200 items per class are needed).
+
+### Tests / commands
+`tests/test_calibration.py` (29: committed table, fail-closed loading, schema/semantic rejections, caps / ceilings /
+human / org threshold, scoreMap + domain fallback, never-more-permissive property, isotonic, Wilson, build_table,
+score_detection, floor confirmation through the table, rooms + scale conflict, fixtures, timings mapping, org
+threshold, title block), `tests/test_logging_setup.py`, assertions in `test_understand_pipeline.py`
+(`stats.calibration`, `timingsMs`, no green). Tests of the *heuristic* levels (test_links ×5, test_legend_symbols
+spotting, test_understand_fixtures) use the `allow_green` fixture (`tests/calib_util.AllowAll`) and additionally
+assert the conservative cap; `test_boq::test_confirmed_floors_remove_uncertainty` now expects the conservative chip.
+CI sequence (`uv sync --locked --all-groups --all-extras && ruff check && ruff format --check && mypy==2.4.0 src &&
+bandit -ll && pytest -q`): all green, 510 tests.
+
+### Contract requests (API agent)
+* `LinkGroup.confidenceRaw` (optional, 0..1) — then `confidence` can carry the calibrated value (today raw, level
+  calibrated) without a strict-schema violation.
+* Already merged, thank you: `Detection.scoreRaw`, `VersionStats.calibration` / `timingsMs`, `SheetVersion.titleBlockMm`
+  / `titleBlock` / `referenceSources`.
+
+### Requests / open
+* BOQ owner (`boq/` read-only for me): (a) write a `rebuild` audit marker per build (skipped here — it belongs in
+  `boq/build.py`); (b) `boq.build` should copy `stats.calibration` of the sheets into the build `stats`.
+* Rooms have no score map (tiling domain has none); rooms are capped like every class.
+* Cross-check with Data/QA: `kbench calibrate --fail-on-disallowed-green` on a fresh run must report 0 greens.

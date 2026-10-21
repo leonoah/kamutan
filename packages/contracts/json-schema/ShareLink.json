@@ -50,6 +50,95 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "versionLockBySheet": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "recipient": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hideTitleBlock": {
+          "type": "boolean"
+        },
+        "viewCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastViewedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedBy": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokeReason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "user",
+                "offboarding",
+                "project_deleted"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pdfExportId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

@@ -62,7 +62,7 @@ export const SHEET_VERSION_STATUSES = ['uploaded', 'queued', 'processing', 'read
 export type SheetVersionStatus = (typeof SHEET_VERSION_STATUSES)[number];
 
 export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'cancelled'] as const;
-export const JOB_TYPES = ['ingest.sheet_version', 'boq.build', 'library.import', 'symbols.find_similar'] as const;
+export const JOB_TYPES = ['ingest.sheet_version', 'boq.build', 'library.import', 'symbols.find_similar', 'export.marked_pdf', 'offboarding.export'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export const LIFECYCLES = ['existing', 'new', 'demolish'] as const;
@@ -467,7 +467,7 @@ export interface LibraryImport {
   error: { code: string; message: string } | null;
 }
 
-/** orgs/{orgId}/projects/{projectId}/shareLinks/{linkId} — API-only; token stored as SHA-256 hex only. */
+/** orgs/{orgId}/projects/{projectId}/shareLinks/{linkId} — API-only (Sprint 5: not client-readable); SHA-256 only. */
 export interface ShareLink {
   tokenHash: string;
   versionLock: string[]; // sheet version ids
@@ -476,6 +476,16 @@ export interface ShareLink {
   allowPdfDownload: boolean;
   createdBy: string;
   createdAt: FsTimestamp;
+  // Sprint 5 (additive)
+  versionLockBySheet?: Record<string, string>;
+  label?: string;
+  recipient?: string | null;
+  hideTitleBlock?: boolean;
+  viewCount?: number;
+  lastViewedAt?: FsTimestamp | null;
+  revokedBy?: string | null;
+  revokeReason?: 'user' | 'offboarding' | 'project_deleted' | null;
+  pdfExportId?: string | null;
 }
 
 /** orgs/{orgId}/itemLibrary/{itemId} — API (manual) / worker (library.import). itemId = itemIdFor(code, description). */
@@ -611,6 +621,15 @@ export const paths = {
   libraryImportObject: (o: string, uuid: string, ext: 'xls' | 'xlsx') => `orgs/${o}/imports/${uuid}.${ext}`,
   /** Sprint 4: find_similar candidate crops (worker writes; API signs; never client-readable). */
   similarThumb: (o: string, p: string, searchId: string, candidateId: string) => `orgs/${o}/projects/${p}/similar/${searchId}/${candidateId}.webp`,
+  /** Sprint 5 Firestore docs (no client access unless stated). */
+  shareToken: (tokenHash: string) => `shareTokens/${tokenHash}`,
+  offboardingCertificate: (orgId: string) => `offboardingCertificates/${orgId}`,
+  auditHead: (o: string) => `orgs/${o}/auditMeta/head`,
+  offboardingExport: (o: string, id: string) => `orgs/${o}/offboardingExports/${id}`, // admin read
+  reprocessRequest: (o: string, p: string, sheetId: string) => `orgs/${o}/projects/${p}/reprocessRequests/${sheetId}`,
+  /** Sprint 5 Storage objects — none client-readable. */
+  markedPdf: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}/marked.pdf`,
+  offboardingZip: (o: string, exportId: string) => `orgs/${o}/offboarding/${exportId}.zip`,
 } as const;
 
 /** Storage prefixes a client may READ directly. Empty by design: every read is a signed URL (SEC-20). */
@@ -624,5 +643,7 @@ export const COLLECTIONS = [
   'boqBuilds', 'exports', 'boqRules', 'libraryImports',
   // Sprint 4
   'correctionBatches', 'roomSettings', 'similarSearches',
+  // Sprint 5
+  'shareTokens', 'offboardingCertificates', 'auditMeta', 'offboardingExports', 'reprocessRequests',
 ] as const;
 export type CollectionId = (typeof COLLECTIONS)[number];

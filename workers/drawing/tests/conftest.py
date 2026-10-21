@@ -13,3 +13,18 @@ def sample_dir() -> Path:
     if not DATA_DIR.is_dir() or not list(DATA_DIR.glob("sheet_*.pdf")):
         pytest.skip("sample data not available (set KAMUTAN_DATA_DIR)")
     return DATA_DIR
+
+
+# ----------------------------------------------------------------------------- Sprint 5 calibration
+@pytest.fixture
+def allow_green():
+    """Install a permissive calibration table for one test (restored afterwards)."""
+    from kamutan_drawing import calibration as C
+
+    from .calib_util import AllowAll
+
+    C.set_default_table(AllowAll())
+    try:
+        yield C.default_table()
+    finally:
+        C.set_default_table(None)

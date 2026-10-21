@@ -101,6 +101,7 @@ TYPE_COLORS = {
     "balcony": (150, 220, 200),
     "courtyard": (120, 220, 120),
     "other": (220, 180, 220),
+    "niche": (0, 90, 200),
 }
 
 
@@ -144,6 +145,9 @@ def render_v4(
         d.polygon([P(x, y) for x, y in r.polygon_mm], fill=(*c, 110 if r.wet else 55), outline=(*c, 255))
         for wl in r.walls:
             a, b = wl["aMm"], wl["bMm"]
+            if wl.get("open"):  # Sprint 5: a niche mouth (open side, not clad)
+                d.line([P(a["x"], a["y"]), P(b["x"], b["y"])], fill=(230, 0, 0, 255), width=3)
+                continue
             d.line(
                 [P(a["x"], a["y"]), P(b["x"], b["y"])],
                 fill=(0, 0, 0, 255) if wl["exterior"] else (90, 90, 90, 255),

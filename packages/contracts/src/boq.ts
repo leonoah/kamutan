@@ -208,6 +208,8 @@ export const BoqBuildStatsSchema = z
     duplicatesRemoved: z.number().int().nonnegative().optional(),
     /** Detections no enabled rule mapped to an item. */
     unmapped: z.number().int().nonnegative().optional(),
+    /** Sprint 5: calibration table the build's levels were capped with. */
+    calibration: z.object({ mode: z.enum(["conservative", "full"]), version: z.string().min(1).max(64) }).optional(),
   })
   .passthrough();
 export type BoqBuildStats = z.infer<typeof BoqBuildStatsSchema>;
@@ -450,6 +452,7 @@ export const LinkGroupSchema = z
     luminaireIds: z.array(z.string().min(1).max(128)).max(256),
     kind: LinkGroupKindSchema,
     confidence: z.number().min(0).max(1),
+    /** Raw (pre-calibration) confidence; since Sprint 5 only `level` is capped by the calibration table. */
     level: ConfidenceLevelSchema,
     reasons: ReasonsSchema,
   })
@@ -587,6 +590,10 @@ export type ExportBoqResponse = z.infer<typeof ExportBoqResponseSchema>;
 /** orgs/{o}/projects/{p}/exports/{exportId} — API-written record of an export (members read). */
 export const BoqExportSchema = z.object({
   id: DocIdSchema,
+  /** Sprint 5 (optional; absent on Sprint-3 docs): always `xlsx` here — marked PDFs use exports.ts `ExportRecord`. */
+  kind: z.literal('xlsx').optional(),
+  /** Sprint 5 (optional): xlsx exports are written synchronously → `ready`. */
+  status: z.literal('ready').optional(),
   templateId: DocIdSchema.nullable(),
   split: ExportSplitSchema,
   markDraft: z.boolean(),

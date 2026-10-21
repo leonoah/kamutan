@@ -3,14 +3,17 @@
 # Order (worker first, so the consumer is ready before the API starts publishing new job payloads):
 #   1. [production only, optional] Firestore export (backup)
 #   2. Build the drawing-worker image, Trivy gate (SEC-45), push to Artifact Registry, update Cloud Run by digest (SEC-46)
-#   3. `firebase deploy` of firestore rules/indexes, storage rules, function `api`, hosting
+#   3. Build + push the API batch-jobs image, update Cloud Run job `kamutan-offboard-purge` by digest (SEC-52)
+#   4. `firebase deploy` of firestore rules/indexes, storage rules, the `api` codebase functions
+#      (`api` HTTP, `apiJobs` on topic `api-jobs`, `reprocessDependents` every minute), hosting
 #
 # Security (SEC-48, SEC-49, SEC-53):
 # - Google Cloud auth = Workload Identity Federation (OIDC). No key files, no secrets: everything comes from
 #   *Environment variables*, which GitHub only releases after the environment's required reviewer approves.
 # - Every cloud step skips with a notice while the environment is not configured yet.
-# - The Cloud Run service is only UPDATED here (`services update`), never created: the first creation is a manual
-#   Owner step with the hardened flags from infra/IAM.md §1. CI can therefore never create an open service.
+# - The Cloud Run service and job are only UPDATED here (`services update` / `jobs update`), never created: the first
+#   creation is a manual Owner step with the hardened flags from infra/IAM.md §1 / §3b. CI can therefore never create
+#   an open service or a job running as an unexpected identity.
 # - Actions are pinned to full commit SHAs (tag in a trailing comment).
 #
 # Environment variables (Settings → Environments → <env> → Variables):
@@ -221,16 +224,70 @@ jobs:
           fi
           echo "worker_revision=$READY" >> "$GITHUB_ENV"
 
-      # ---- 3. Firebase (rules, indexes, function api, hosting) -----------------------------------------------
+      # ---- 3. API batch jobs (Cloud Run job: offboarding purge, SEC-52) -------------------------------------
+      - name: Build API jobs image (local, for the scan)
+        if: steps.cfg.outputs.ready == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: infra/docker/api-jobs.Dockerfile
+          push: false
+          load: true
+          tags: kamutan/api-jobs:deploy
+          cache-from: type=gha,scope=api-jobs
+          cache-to: type=gha,mode=max,scope=api-jobs
+      - name: Trivy API jobs image (block on fixable CRITICAL/HIGH, SEC-45)
+        if: steps.cfg.outputs.ready == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: kamutan/api-jobs:deploy
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Push API jobs image
+        id: push-jobs
+        if: steps.cfg.outputs.ready == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: infra/docker/api-jobs.Dockerfile
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.cfg.outputs.registry }}/api-jobs:${{ steps.cfg.outputs.tag }}
+          cache-from: type=gha,scope=api-jobs
+      - name: Update Cloud Run job kamutan-offboard-purge (by digest)
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          PROJECT: ${{ steps.cfg.outputs.project }}
+          REGION: ${{ steps.cfg.outputs.region }}
+          REGISTRY: ${{ steps.cfg.outputs.registry }}
+          DIGEST: ${{ steps.push-jobs.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then echo "::error::No image digest from the API jobs push."; exit 1; fi
+          if ! gcloud run jobs describe kamutan-offboard-purge --region "$REGION" --project "$PROJECT" --format='value(metadata.name)' >/dev/null 2>&1; then
+            echo "::warning::Cloud Run job kamutan-offboard-purge does not exist in $PROJECT — offboarded orgs are NOT purged. Create it once as Owner (infra/IAM.md §3b)."
+            exit 0
+          fi
+          gcloud run jobs update kamutan-offboard-purge --region "$REGION" --project "$PROJECT" \
+            --image "${REGISTRY}/api-jobs@${DIGEST}"
+          echo "purge_image=${DIGEST}" >> "$GITHUB_ENV"
+
+      # ---- 4. Firebase (rules, indexes, `api` codebase functions, hosting) ------------------------------------
       - name: Firebase deploy
         if: steps.cfg.outputs.ready == 'true'
         env:
           PROJECT: ${{ steps.cfg.outputs.project }}
+          # Explicit list (codebase:function) so a new export in function.ts is never deployed unreviewed.
+          # apiJobs = Pub/Sub trigger on topic `api-jobs` (created by the Owner, infra/IAM.md §2b);
+          # reprocessDependents = onSchedule every minute (Cloud Scheduler job created by firebase deploy).
+          FUNCTIONS: functions:api:api,functions:api:apiJobs,functions:api:reprocessDependents
         # predeploy hooks in firebase.json build contracts, api and web (VITE_* from the step above).
         run: |
           pnpm dlx "firebase-tools@${FIREBASE_TOOLS_VERSION}" deploy \
             --project "$PROJECT" --non-interactive \
-            --only firestore:rules,firestore:indexes,storage,functions:api,hosting
+            --only "firestore:rules,firestore:indexes,storage,${FUNCTIONS},hosting"
 
       - name: Summary
         if: steps.cfg.outputs.ready == 'true'
@@ -245,4 +302,6 @@ jobs:
             echo "- Project: \`${PROJECT}\`"
             echo "- Commit: \`${DEPLOY_SHA}\`"
             echo "- Worker image: \`${DIGEST}\` (revision \`${worker_revision:-unknown}\`)"
+            echo "- Purge job image: \`${purge_image:-not updated (job missing)}\`"
+            echo "- Functions: api, apiJobs (topic api-jobs), reprocessDependents (every minute)"
           } >> "$GITHUB_STEP_SUMMARY"

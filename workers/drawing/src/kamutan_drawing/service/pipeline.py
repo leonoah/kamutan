@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import os
 import re
 import shutil
@@ -42,6 +43,7 @@ from typing import Any
 
 from .. import __version__
 from .. import errors as E
+from ..calibration import clean_green_threshold, default_table
 from ..errors import IngestError
 from ..formats import CONTENT_TYPES, compatible, detect_kind
 from ..ocr.shapes import GlyphStore, StoreDelta
@@ -379,6 +381,8 @@ def _run(
             docs.set(paths.version(sid), {"status": "failed", "error": _err(e), "updatedAt": SERVER_TIMESTAMP})
             out = PageOutcome(i, sid, "failed", error=_err(e), seconds=round(time.monotonic() - t0, 2))
         outcomes.append(out)
+        if out.status == "ready":
+            _schedule_dependents(job, docs, sid)
         if on_page is not None:
             on_page(out)
 
@@ -424,6 +428,20 @@ def _result(job: IngestSheetVersionJob, outcomes: list[PageOutcome]) -> dict[str
     }
 
 
+def _schedule_dependents(job: IngestSheetVersionJob, docs: DocStore, sid: str) -> None:
+    """Sprint 5 (Worker-B, lifecycle.dependents): a construction / architecture / master version became ready →
+    debounced, idempotent reprocess requests (``reprocessRequests/{sheetId}``) for the sheets of its floor that were
+    processed without it. Best effort: never fails the page."""
+    try:
+        from ..lifecycle.dependents import schedule_dependents
+
+        written = schedule_dependents(docs, job.project_path, sid, now=time.time())
+        if written:
+            log.info("job %s: reprocess requested for %d dependent sheet(s)", job.jobId, len(written))
+    except Exception:  # scheduling is advisory; the page is ready either way
+        log.warning("job %s: scheduling dependent reprocess failed", job.jobId, exc_info=True)
+
+
 def _load_glyph_store(blobs: BlobStore, org_id: str) -> bytes | None:
     data, _ = blobs.read_versioned(glyph_store_path(org_id))
     return data
@@ -459,6 +477,7 @@ def _process_page(
     n_done: int,
     vdoc: dict[str, Any],
 ) -> PageOutcome:
+    t_page = time.monotonic()
     prog.page(n_done, sid, "ingest", 0)
     out_rel = f"out/p{index}"
     args: dict[str, Any] = {
@@ -483,12 +502,14 @@ def _process_page(
     files.append((f"{out_dir}/{res['thumbnail']}", pre + "thumbnail.webp", "image/webp"))
     files.append((f"{out_dir}/primitives.msgpack.gz", pre + "primitives.msgpack.gz", "application/gzip"))
     files.append((f"{out_dir}/text.json.gz", pre + "text.json.gz", "application/gzip"))
+    t_upload = time.monotonic()
     for rel, dest, ctype in files:
         if not (dest.startswith(pre) and dest.endswith((".webp", ".gz"))):
             raise IngestError(E.PARSE_CRASHED, "parser reported an invalid artifact name")
         blobs.write(dest, Path(safe_output_path(workdir, rel)).read_bytes(), ctype, cache_control=IMMUTABLE)
     if opts.glyph_store:
         _merge_glyph_delta(blobs, job.orgId, res.get("glyphDelta"))
+    upload_s = time.monotonic() - t_upload
 
     understanding: dict[str, Any] | None = None
     if opts.understand:
@@ -521,11 +542,22 @@ def _process_page(
         "jobId": job.jobId,
         "updatedAt": SERVER_TIMESTAMP,
     }
+    tb = _clean_title_block(res.get("titleBlockMm"), page)
+    if tb is not None:  # Sprint 5: share tiles / marked PDF mask it (both contract shapes)
+        vfields["titleBlockMm"] = tb
+        vfields["titleBlock"] = {"bboxMm": [tb["x"], tb["y"], round(tb["x"] + tb["w"], 2), round(tb["y"] + tb["h"], 2)]}
     region_floors: dict[str, str] = {}
     if understanding is not None:
         vfields["artifacts"].update(understanding["artifacts"])
         stats.update(understanding["stats"])
         region_floors = understanding.get("regionFloors") or {}
+        upload_s += float(understanding.get("uploadSeconds") or 0.0)
+        vfields["referenceSources"] = list(understanding.get("referenceSources") or [])[:16]
+    # Sprint 5: per-stage timings (ms) of this page — sandbox task timings + orchestrator uploads; total = wall clock
+    # of the page in the orchestrator up to the version write (sandbox start-up included only in total)
+    stats["timingsMs"] = stage_timings_ms(
+        res.get("timings"), (understanding or {}).get("timings"), upload_s, time.monotonic() - t_page
+    )
     # reprocess: the API copied the user's regions from the previous version — keep them
     if not (job.is_reprocess and vdoc.get("regions")):
         vfields["regions"] = [
@@ -639,6 +671,7 @@ def _understand(
     discipline = sheet.get("discipline") if sheet.get("confirmed") else cls.get("discipline")
     scale = _scale(sheet.get("scaleDenominator")) if sheet.get("confirmed") else _scale(page_res.get("scaleDenominator"))
     out_rel = f"out/u{index}"
+    ref_sources: list[str] = []  # "{sheetId}/{versionId}" of the wall sources passed (SheetVersion.referenceSources)
     args: dict[str, Any] = {
         "kind": kind,
         "path": src,
@@ -655,7 +688,12 @@ def _understand(
         # Sprint 3: the owner's confirmation makes the regions' floors authoritative (no "קומה לא ודאית")
         "floorsConfirmed": bool(sheet.get("confirmed")),
         # Sprint 4: walls of the project's construction / architecture plans (wall borrowing + floor inference)
-        "referenceWalls": _reference_walls_files(job, blobs, docs, sid, discipline, workdir, f"refs/u{index}"),
+        "referenceWalls": _reference_walls_files(job, blobs, docs, sid, discipline, workdir, f"refs/u{index}", used=ref_sources),
+        # Sprint 5: org greenThreshold (checked against the calibration table's Wilson LB, never more permissive)
+        "greenThreshold": org_green_threshold(docs, job.orgId),
+        # Sprint 5 hard ceiling: declared scale contradicts the dimensions (and the owner did not confirm one) →
+        # area items red
+        "scaleConflict": (not sheet.get("confirmed")) and R_SCALE_CONFLICT in (cls.get("reasons") or []),
     }
     try:
         res = run_task(
@@ -668,6 +706,7 @@ def _understand(
         return None
     pre = paths.artifacts(sid)
     out_dir = str(res["outDir"])
+    t_up = time.monotonic()
     for f in res.get("files") or []:
         rel = str(f.get("path", ""))
         if not _UNDERSTAND_FILE.match(rel):
@@ -683,6 +722,8 @@ def _understand(
         "detections": _clean_det_stats(res.get("detectionStats") or {}),
         "rooms": max(0, int(res.get("rooms") or 0)),
         "legendEntries": max(0, int(res.get("legendEntries") or 0)),
+        # Sprint 5: the table this worker applied (the orchestrator's own copy — the sandbox result is not trusted)
+        "calibration": default_table().stats(),
     }
     artifacts = {"legend": pre + "legend.json.gz", "detections": pre + "detections.json.gz", "rooms": pre + "rooms.json.gz"}
     # Sprint 3 (Worker-A): switch↔luminaire link graph, reported under its own key on lighting sheets
@@ -715,6 +756,9 @@ def _understand(
             artifacts["walls"] = pre + WALLS_FILE
     region_floors = _clean_region_floors(res.get("regionFloors"), regions)
     return {
+        "referenceSources": ref_sources,
+        "uploadSeconds": time.monotonic() - t_up,
+        "timings": res.get("timings"),
         "regionFloors": region_floors,
         "artifacts": artifacts,
         "stats": stats,
@@ -811,7 +855,14 @@ _FLOOR = re.compile(r"^[^\x00-\x1f\x7f]{1,32}$")
 
 
 def _reference_walls_files(
-    job: IngestSheetVersionJob, blobs: BlobStore, docs: DocStore, sid: str, discipline: Any, workdir: str, rel_dir: str
+    job: IngestSheetVersionJob,
+    blobs: BlobStore,
+    docs: DocStore,
+    sid: str,
+    discipline: Any,
+    workdir: str,
+    rel_dir: str,
+    used: list[str] | None = None,
 ) -> list[str]:
     """Copy ``walls.json.gz`` of the project's other current construction / architecture versions into the workdir
     (construction first); returns the relative paths for the ``understand`` task. Construction sheets borrow from
@@ -841,7 +892,74 @@ def _reference_walls_files(
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
         out.append(rel)
+        if used is not None:
+            used.append(f"{osid}/{vid}")
     return out
+
+
+R_SCALE_CONFLICT = "קנה מידה סותר"  # classify.sheet.R_SCALE_CONFLICT (kept local: the orchestrator never parses)
+TIMING_STAGES = ("render", "primitives", "ocr", "legend", "symbols", "rooms", "fixtures", "links", "artifacts", "total")
+MAX_STAGE_MS = 24 * 3600 * 1000
+
+
+def stage_timings_ms(page: Any, understand: Any, upload_s: float, total_s: float) -> dict[str, int]:
+    """``stats.timingsMs`` from the ``page`` / ``understand`` task timings (seconds, untrusted sandbox output)::
+
+    render ← page.render · primitives ← page.ingest (vector extraction) · ocr ← page.ocr + classify + regions
+    legend · symbols ← understand.detect · rooms · fixtures ← understand.fixtures + lifecycle · links
+    artifacts ← page.write + understand.write + orchestrator uploads · total = page wall clock
+    """
+
+    def sec(src: Any, *keys: str) -> float:
+        if not isinstance(src, dict):
+            return 0.0
+        out = 0.0
+        for k in keys:
+            v = src.get(k)
+            if isinstance(v, int | float) and not isinstance(v, bool) and not math.isnan(v) and v > 0:
+                out += float(v)
+        return out
+
+    raw = {
+        "render": sec(page, "render"),
+        "primitives": sec(page, "ingest"),
+        "ocr": sec(page, "ocr", "classify", "regions"),
+        "legend": sec(understand, "legend"),
+        "symbols": sec(understand, "detect"),
+        "rooms": sec(understand, "rooms"),
+        "fixtures": sec(understand, "fixtures", "lifecycle"),
+        "links": sec(understand, "links"),
+        "artifacts": sec(page, "write") + sec(understand, "crops", "write") + max(0.0, upload_s),
+        "total": max(0.0, total_s),
+    }
+    return {k: min(MAX_STAGE_MS, round(raw[k] * 1000)) for k in TIMING_STAGES}
+
+
+def _clean_title_block(raw: Any, page: Any) -> dict[str, float] | None:
+    """``titleBlockMm`` from the sandbox (untrusted): finite, non-negative size, inside the page (± 1 mm)."""
+    if not isinstance(raw, dict) or not isinstance(page, dict):
+        return None
+    try:
+        x, y, w, h = (float(raw[k]) for k in ("x", "y", "w", "h"))
+        pw, ph = float(page["widthMm"]), float(page["heightMm"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(v) for v in (x, y, w, h)) or w <= 0 or h <= 0:
+        return None
+    if x < -1 or y < -1 or x + w > pw + 1 or y + h > ph + 1:
+        return None
+    return {"x": round(x, 2), "y": round(y, 2), "w": round(w, 2), "h": round(h, 2)}
+
+
+def org_green_threshold(docs: DocStore, org_id: str) -> float | None:
+    """``orgs/{orgId}.settings.greenThreshold`` (0.9–0.995) or None; a read failure = table rule only."""
+    try:
+        org = docs.get(f"orgs/{org_id}") or {}
+    except Exception:  # a setting must never fail a page
+        log.warning("org settings read failed", exc_info=True)
+        return None
+    settings = org.get("settings") if isinstance(org, dict) else None
+    return clean_green_threshold(settings.get("greenThreshold")) if isinstance(settings, dict) else None
 
 
 def _clean_region_floors(raw: Any, regions: list[dict[str, Any]]) -> dict[str, str]:

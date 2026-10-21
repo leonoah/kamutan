@@ -4,6 +4,16 @@ import type { Params } from 'nestjs-pino';
 import type { AppConfig } from '../config/config';
 
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{8,128}$/;
+const SHARE_PATH_RE = /^(\/api\/v1\/public\/share\/)[^/?#]*/;
+
+/**
+ * Sprint 5 (R-A1, SEC-26): the raw share token is a bearer secret — never log it. The token segment of
+ * /api/v1/public/share/:token/… is replaced by `<redacted>`; the query string is always dropped.
+ */
+export function logPath(url: unknown): string | undefined {
+  if (typeof url !== 'string') return undefined;
+  return url.split('?')[0]?.replace(SHARE_PATH_RE, '$1<redacted>');
+}
 
 /** Accept a well-formed upstream X-Request-Id, otherwise mint one; echo it back. */
 export function genReqId(req: IncomingMessage, res: ServerResponse): string {
@@ -28,7 +38,7 @@ export function loggerParams(cfg: AppConfig): Params {
         req: (req: { id?: unknown; method?: string; url?: string }) => ({
           id: req.id,
           method: req.method,
-          path: typeof req.url === 'string' ? req.url.split('?')[0] : undefined,
+          path: logPath(req.url),
         }),
         res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
       },

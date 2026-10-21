@@ -130,3 +130,51 @@ docker compose -f infra/docker/docker-compose.dev.yml up --build
 - `prettier` לא נמצא ב-devDependencies של השורש — ה-hook `prettier-check` ייכשל עד שיתווסף (קובץ של המתזמר).
 - osv.dev ו-semgrep.dev חסומים מסביבת הסוכנים; osv-scanner אומת שהוא מפענח את שלושת ה-lockfiles (669 + 17 + 19 חבילות) אבל השאילתה ל-osv.dev נחסמה; חוקי ה-registry של Semgrep ירוצו רק ב-CI.
 - Trivy ב-CI חוסם על Critical/High שיש להם תיקון; SBOM (Syft) — ב-deploy, ספרינט 1.
+
+---
+
+## Sprint 5 — readiness (DevOps/Security)
+
+| קובץ | תוכן |
+| --- | --- |
+| `firebase.json` | CSP **enforce** (אפליקציה + מדיניות קשוחה יותר ל-`/s/**`), Report-Only למועמדת קשוחה יותר, HSTS שנתיים, `Permissions-Policy`, `Referrer-Policy`, `X-Robots-Tag` + `no-store` ל-`/s/**`, `no-cache` לנתיבי SPA, CSP גם על `/assets/**`, בלי כפילויות מפתחות בין בלוקים, `**/*.map` לא נפרסים, `.well-known/` נפרס (רשימת dotfiles מפורשת ב-`hosting.ignore` במקום `**/.*`). פירוט: `docs/security/csp.md`. |
+| `infra/scripts/check-hosting-headers.mjs` | בדיקה סטטית של הכותרות (CI job `node`). |
+| `infra/scripts/csp-verify.mjs` | שרת HTTPS עם הכותרות של `firebase.json` + Chromium; נכשל על הפרת CSP אכיפה. |
+| `.github/workflows/dast.yml`, `.zap/rules.tsv`, `infra/scripts/zap_gate.py` | DAST לילי + ידני: Hosting emulator + API בזיכרון, ZAP baseline (web, API) + ZAP API scan, שער 0 High, דוחות כ-artifact. |
+| `infra/scripts/setup-backups.sh`, `infra/scripts/restore-drill.sh`, `infra/scripts/lib/common.sh` | גיבויים כ-IaC (gcloud) ותרגיל שחזור עם `--dry-run`; runbook: `docs/runbooks/restore-drill.md`. |
+| `infra/monitoring/setup-alerts.sh`, `infra/monitoring/README.md` | התראות SEC-43 כקוד (8 מטריקות, 13 מדיניות). |
+| `.github/workflows/ci.yml` | job חדש `infra-scripts` (shellcheck, dry-runs, self-test לשער ZAP) בתוך `ci-gate`; בדיקת כותרות ב-job `node`. |
+| `.github/CODEOWNERS` | `firebase.json`, `.firebaserc`, `firebase/`, `.zap/`, `docs/security/`, `docs/runbooks/`, קוד share/public/offboarding ב-API. |
+| `docs/security/` | `pentest-scope.md`, `beta-checklist.md`, `csp.md`, `sprint-5-requests.md` (בקשות לסוכני API/Worker/Web). |
+
+הרצה מקומית:
+
+```bash
+node infra/scripts/check-hosting-headers.mjs
+NODE_PATH=/opt/npm-tools/node_modules PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
+  node infra/scripts/csp-verify.mjs --dist apps/web/dist            # או --mock עם build של VITE_USE_MOCKS=true
+bash infra/scripts/restore-drill.sh --project kamutan-fba67 --scratch-project kamutan-drill \
+  --backup-bucket kamutan-fba67-firestore-backup-eu --dry-run
+bash infra/scripts/setup-backups.sh --project kamutan-fba67 --backup-project kamutan-backup-eu --dry-run
+bash infra/monitoring/setup-alerts.sh --project kamutan-fba67 --notification-email security@example.com --dry-run
+python3 infra/scripts/zap_gate_selftest.py
+uvx --from actionlint-py actionlint .github/workflows/*.yml
+```
+
+פערים: תמונת ZAP לפי `:stable` (ghcr חסום מכאן; ה-digest נרשם ב-summary של כל ריצה — לקבע אחרי הריצה הראשונה);
+DAST לא מאומת (משתמשים) עד שיש staging; `deploy.yml` עדיין stub עד WIF; תרגיל השחזור וההתראות לא הורצו מול GCP.
+
+### Sprint 5 follow-up (21.10.2026)
+
+| קובץ | תוכן |
+| --- | --- |
+| `.github/workflows/_deploy-env.yml`, `deploy.yml` | build + Trivy + push של `api-jobs`, `gcloud run jobs update kamutan-offboard-purge` לפי digest (רק update; אם ה-job לא קיים — warning); `firebase deploy --only functions:api:api,functions:api:apiJobs,functions:api:reprocessDependents` (רשימה מפורשת). |
+| `infra/docker/api-jobs.Dockerfile` (+ `.dockerignore`) | תמונת Node 22 slim, non-root, prod deps בלבד, `ENTRYPOINT node dist/scripts/offboard-purge.js`. נבנית גם ב-CI (matrix `docker`). |
+| `infra/scripts/setup-api-jobs.sh` | topic `api-jobs` + publisher ל-API, role מותאם `kamutanAuthRevoke` (revokeRefreshTokens), run.invoker לפונקציות, SA `kamutan-purge@`/`kamutan-scheduler@`, Cloud Run job + Scheduler יומי 03:07 UTC, הרשאות deploy. `--dry-run` רץ ב-CI (`infra-scripts`). |
+| `infra/IAM.md` | §2b, §3 (תוספות Sprint 5), §3b (purge), §4 (הרשאות deploy), §7 (אימות). |
+| `infra/monitoring/setup-alerts.sh` | התראות purge נכשל / שגיאות apiJobs+reprocessDependents (15 מדיניות). |
+| `docs/runbooks/offboarding-purge.md`, `docs/security/licence-inventory.md` | runbook ל-purge; מלאי רישוי. |
+| `firebase.json` | `hosting.ignore` מפורש (dotfiles) כדי ש-`.well-known/security.txt` של ה-web ייפרס; ה-rewrite הישן הוסר. |
+
+לא אומת מכאן: build של התמונה (Docker Hub חסום) — ה-job `docker` ב-CI הוא הבדיקה הראשונה; הרשאות ה-deploy ל-onSchedule/Eventarc
+(`cloudscheduler.admin`, `pubsub.viewer`, `eventarc.developer`) — לאמת בפריסה הראשונה ולצמצם אם אפשר.

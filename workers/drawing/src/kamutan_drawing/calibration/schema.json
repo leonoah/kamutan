@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "kamutan.calibration/1",
+  "title": "Kamutan calibration table (class statistics only, no customer data)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "mode", "generatedAt", "gtVersion", "classes", "domains"],
+  "properties": {
+    "schema": { "const": "kamutan.calibration/1" },
+    "version": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$" },
+    "mode": { "enum": ["conservative", "full"] },
+    "generatedAt": { "type": "string", "minLength": 10, "maxLength": 40 },
+    "gtVersion": { "type": ["string", "null"], "maxLength": 64 },
+    "source": { "type": "string", "maxLength": 300 },
+    "rule": { "type": "string", "maxLength": 500 },
+    "notes": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 500 } },
+    "classes": {
+      "type": "object",
+      "maxProperties": 512,
+      "propertyNames": { "pattern": "^[a-z0-9_:]{1,64}$" },
+      "additionalProperties": { "$ref": "#/definitions/stats" }
+    },
+    "domains": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "pattern": "^[a-z0-9_]{1,32}$" },
+      "additionalProperties": { "$ref": "#/definitions/stats" }
+    }
+  },
+  "definitions": {
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "tp", "fp", "precision", "wilsonLb", "greenAllowed", "scoreMap"],
+      "properties": {
+        "n": { "type": "integer", "minimum": 0 },
+        "tp": { "type": "integer", "minimum": 0 },
+        "fp": { "type": "integer", "minimum": 0 },
+        "precision": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "wilsonLb": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "greenAllowed": { "type": "boolean" },
+        "scoreMap": {
+          "type": ["array", "null"],
+          "minItems": 2,
+          "maxItems": 256,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    }
+  }
+}

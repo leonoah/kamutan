@@ -243,6 +243,23 @@ export const LinkStatsSchema = z
   .strict();
 export type LinkStats = z.infer<typeof LinkStatsSchema>;
 
+/** Sprint 5 (FR-20): `conservative` until 30 GT projects exist (only table classes with greenAllowed may be green). */
+export const CALIBRATION_MODES = ['conservative', 'full'] as const;
+export const CalibrationModeSchema = z.enum(CALIBRATION_MODES);
+export type CalibrationMode = z.infer<typeof CalibrationModeSchema>;
+export const CalibrationStatsSchema = z.object({ mode: CalibrationModeSchema, version: z.string().min(1).max(64) });
+export type CalibrationStats = z.infer<typeof CalibrationStatsSchema>;
+/** Stage name → milliseconds (≤ 64 stages). */
+export const TimingsMsSchema = z
+  .record(z.string().min(1).max(64), z.number().finite().nonnegative())
+  .refine((r) => Object.keys(r).length <= 64, { message: 'too many stages' });
+export type TimingsMs = z.infer<typeof TimingsMsSchema>;
+
+/** Paper-mm rectangle (same shape as understanding `BBoxMm`; repeated here to avoid an import cycle). */
+export const TitleBlockMmSchema = z
+  .object({ x: z.number().finite(), y: z.number().finite(), w: z.number().finite().nonnegative(), h: z.number().finite().nonnegative() })
+  .strict();
+
 export const VersionStatsSchema = z.object({
   paths: count,
   segments: count,
@@ -254,6 +271,10 @@ export const VersionStatsSchema = z.object({
   legendEntries: count.optional(),
   /** Sprint 3 (lighting sheets with links.json.gz). */
   links: LinkStatsSchema.optional(),
+  /** Sprint 5 (Worker-Cal): calibration table used for this version's scores / green caps. */
+  calibration: CalibrationStatsSchema.optional(),
+  /** Sprint 5 (Worker-Cal): wall-clock milliseconds per pipeline stage (e.g. `{render: 4100, detect: 9800}`). */
+  timingsMs: TimingsMsSchema.optional(),
 });
 export type VersionStats = z.infer<typeof VersionStatsSchema>;
 
@@ -270,6 +291,23 @@ export const SheetVersionSchema = z.object({
   artifacts: VersionArtifactsSchema,
   regions: z.array(RegionSchema).max(MAX_REGIONS),
   stats: VersionStatsSchema.nullable(),
+  /**
+   * Sprint 5 (worker, optional): the title block's rectangle in paper mm. Share links with `hideTitleBlock` mask it on
+   * proxied tiles / the marked PDF; when absent the API masks a conservative bottom strip (see share NOTES).
+   */
+  titleBlockMm: TitleBlockMmSchema.nullable().optional(),
+  /**
+   * Sprint 5 (Worker-Export request, written by ingest/classification): `{bboxMm: [x0, y0, x1, y1]}` paper mm, y down.
+   * The API derives `titleBlockMm` from it when `titleBlockMm` is absent.
+   */
+  titleBlock: z.object({ bboxMm: z.tuple([z.number().finite(), z.number().finite(), z.number().finite(), z.number().finite()]) }).nullable().optional(),
+  /** Sprint 5 (Worker-B, optional): wall sources the understanding used, `"{sheetId}/{versionId}"` (≤ 16). */
+  referenceSources: z.array(z.string().max(300)).max(16).optional(),
+  /** Sprint 5 (Worker-B, optional): why this version was (re)processed automatically. */
+  reprocessReason: z
+    .object({ kind: z.enum(['reference_walls', 'manual']), sources: z.array(z.string().max(300)).max(32), message: z.string().max(200) })
+    .nullable()
+    .optional(),
   workerVersion: z.string().max(64).nullable(),
   /** jobs/{jobId} that produces this version. */
   jobId: DocIdSchema.nullable().optional(),
@@ -353,3 +391,36 @@ export const FloorRegionSchema = z.object({
   source: z.enum(['auto', 'manual']),
 });
 export type FloorRegion = z.infer<typeof FloorRegionSchema>;
+
+// ---------------------------------------------------------------------------
+// Sprint 5 (Worker-B): automatic re-processing of dependent sheets (reference walls)
+// ---------------------------------------------------------------------------
+
+/** Debounce / cap of a dependent re-process request (seconds; the worker computes `notBefore` within them). */
+export const REPROCESS_REQUEST_DEBOUNCE_S = 120;
+export const REPROCESS_REQUEST_MAX_WAIT_S = 900;
+export const REPROCESS_REQUEST_STATUSES = ['pending', 'firing', 'fired', 'dropped'] as const;
+export const ReprocessRequestStatusSchema = z.enum(REPROCESS_REQUEST_STATUSES);
+
+/**
+ * orgs/{o}/projects/{p}/reprocessRequests/{sheetId} — written by the worker (`pending`, epoch-second timestamps),
+ * consumed by the API's scheduled `reprocessDependents` function: due (`notBefore` ≤ now, capped at
+ * `firstRequestedAt + REPROCESS_REQUEST_MAX_WAIT_S`) → `firing` (claim) → new version + ingest job → `fired`
+ * (`firedAt`, `versionId`) | `dropped`. No client access.
+ */
+export const ReprocessRequestSchema = z.object({
+  sheetId: DocIdSchema,
+  status: ReprocessRequestStatusSchema,
+  dependentVersionId: DocIdSchema.nullable().optional(),
+  sources: z.array(z.string().max(300)).max(32),
+  reason: z.string().max(64),
+  firstRequestedAt: z.number().finite().nonnegative(),
+  notBefore: z.number().finite().nonnegative(),
+  updatedAt: z.number().finite().nonnegative(),
+  claimedAt: z.number().finite().nonnegative().nullable().optional(),
+  firedAt: z.number().finite().nonnegative().nullable().optional(),
+  versionId: DocIdSchema.nullable().optional(),
+  dropReason: z.string().max(64).nullable().optional(),
+});
+export type ReprocessRequest = z.infer<typeof ReprocessRequestSchema>;
+export const REPROCESS_REASON_MESSAGE = 'תוכנית קירות של אותה קומה עודכנה — הגיליון עובד מחדש';

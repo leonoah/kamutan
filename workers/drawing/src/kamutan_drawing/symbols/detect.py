@@ -19,6 +19,7 @@ Pipeline (all paper mm):
 
 from __future__ import annotations
 
+import functools
 import math
 import re
 from collections import defaultdict
@@ -28,8 +29,10 @@ from typing import Any
 import numpy as np
 from scipy.spatial import cKDTree
 
+from ..calibration import CalibrationTable, default_table
 from ..ingest.pdf_vector import SEG_BEZIER, VectorSheet
-from ..legend.classes import apply_multiplicity, multiplicity, suggest_class
+from ..legend.classes import apply_multiplicity, multiplicity
+from ..legend.classes import suggest_class as _suggest_class
 from ..legend.parse import LegendEntry, LegendResult, clean_qualifier
 from ..ocr.dictionary import TextSpan
 from ..ocr.textutil import levenshtein, normalize
@@ -81,6 +84,14 @@ WARNING_REASONS = {
     R_NOTE,
 }
 OVERLAP_MM = 4.0
+
+
+@functools.lru_cache(maxsize=16384)
+def suggest_class(label: str, label_conf: float = 1.0) -> tuple[str | None, float]:
+    """``legend.classes.suggest_class`` memoised (pure; the same span text is classified by several passes)."""
+    return _suggest_class(label, label_conf)
+
+
 # stroke-wise reading of the symbol's own text (BEZEK / TV / TEL / רשת) — measured on the Noah GT it
 # picked the wrong sub-type more often than the plain fallback (tv 1/4 vs 4/8), so it is off until the
 # qualifier strokes are segmented better; the class stays yellow "דומה לסמל אחר" either way.
@@ -131,6 +142,7 @@ class Detection:
     in_region: bool = True
     id: str = ""
     signature: str | None = None  # stroke signature (Sprint 4: review clusters, re-match tie-break)
+    score_raw: float | None = None  # Sprint 5: heuristic score before calibration (``score`` = calibrated)
 
     def to_json(self, sheet_id: str) -> dict[str, Any]:
         e = self.type_entry or self.entry
@@ -142,6 +154,7 @@ class Detection:
             "bboxMm": bbox_dict(self.bbox),
             "angleDeg": int(self.angle) % 360,
             "score": round(float(self.score), 3),
+            "scoreRaw": round(float(self.score if self.score_raw is None else self.score_raw), 3),
             "level": self.level,
             "reasons": list(dict.fromkeys(self.reasons)),
             "roomId": self.room_id,
@@ -248,10 +261,21 @@ def _qualifier_near(q: str, texts: list[str]) -> bool:
 
 
 # --------------------------------------------------------------------------------- scoring
-def score_detection(d: Detection, *, raster: bool, scale_uncertain: bool, confirmed: bool) -> None:
-    """Heuristic score (calibration comes in Sprint 5 — conservative on purpose).
+def score_detection(
+    d: Detection,
+    *,
+    raster: bool,
+    scale_uncertain: bool,
+    confirmed: bool,
+    green_threshold: float | None = None,
+    table: CalibrationTable | None = None,
+) -> None:
+    """Heuristic raw score + level, then the calibration table (Sprint 5, :mod:`kamutan_drawing.calibration`).
 
-    score = geometric quality × margin factor × class confidence factor × scale/region factors.
+    raw = geometric quality × margin factor × class confidence factor × scale/region factors; the heuristic level
+    is the Sprint-2 rule below. ``d.score_raw`` keeps the raw score, ``d.score`` is the calibrated one, and the
+    level is never more permissive than the heuristic (conservative mode: classes without enough DEV truth are
+    capped at yellow with ``כיול שמרני…``; rasters are never green).
     """
     reasons = list(d.reasons)
     q = d.quality
@@ -286,7 +310,10 @@ def score_detection(d: Detection, *, raster: bool, scale_uncertain: bool, confir
         level = "yellow"
     if level != "green" and not reasons:
         reasons.append(R_LOW)
-    d.score, d.level, d.reasons = s, level, list(dict.fromkeys(reasons))
+    cal = (table or default_table()).calibrate(
+        d.cls, s, list(dict.fromkeys(reasons)), level=level, raster=raster, green_threshold=green_threshold
+    )
+    d.score_raw, d.score, d.level, d.reasons = s, cal.score, cal.level, cal.reasons
 
 
 # ------------------------------------------------------------------------------- assembly
@@ -352,6 +379,7 @@ def detect_symbols(
     mappings: dict[str, dict[str, Any]] | None = None,
     text_paths: set[int] | None = None,
     unknown: bool = True,
+    green_threshold: float | None = None,
 ) -> DetectResult:
     res = DetectResult()
     regions = regions or []
@@ -463,7 +491,13 @@ def detect_symbols(
         d.in_region = r is not None or not regions
         d.floor = (r or {}).get("floor") if r else None
         confirmed = bool(d.entry is not None and d.entry.signature in mappings)
-        score_detection(d, raster=False, scale_uncertain=scale_uncertain and d.source == "vector", confirmed=confirmed)
+        score_detection(
+            d,
+            raster=False,
+            scale_uncertain=scale_uncertain and d.source == "vector",
+            confirmed=confirmed,
+            green_threshold=green_threshold,
+        )
     dets.sort(key=lambda d: (round(d.center[1] / 20), d.center[0]))
     for i, d in enumerate(dets):
         d.id = f"d_{i}"
@@ -561,7 +595,7 @@ def _note_items(markers: list[tuple[Candidate, LegendEntry]], tix: TextIndex, de
 def _panels_from_labels(vs: VectorSheet, exclude: list[BBox], tix: TextIndex, dets: list[Detection]) -> list[Detection]:
     """Panels ("לוח חשמל", "לוח תקשורת"): a rectangle crossed by both diagonals (the hatch of a panel)
     within reach of the label. The legend often shows the home-run arrow, not the panel itself."""
-    labels = [s for s in tix.spans if suggest_class(s.text, s.conf)[0] == "panel" and len(s.text) <= 40]
+    labels = [s for s in tix.spans if len(s.text) <= 40 and suggest_class(s.text, s.conf)[0] == "panel"]
     if not labels or vs.n_segs == 0:
         return []
     s = vs.segs.astype(np.float64)
@@ -577,12 +611,14 @@ def _panels_from_labels(vs: VectorSheet, exclude: list[BBox], tix: TextIndex, de
     mids = np.column_stack([(s[idx, 0] + s[idx, 2]) / 2, (s[idx, 1] + s[idx, 3]) / 2]) if len(idx) else np.zeros((0, 2))
     out: list[Detection] = []
     used: set[int] = set()
+    # Sprint 5 (perf): partners by KD-tree instead of an O(n²) scan — same candidates, same (ascending) order
+    mtree = cKDTree(mids) if len(idx) else None
     for i in range(len(idx)):
-        if int(idx[i]) in used:
+        if int(idx[i]) in used or mtree is None:
             continue
         a = s[idx[i]]
         # its crossing partner: same midpoint, the other diagonal direction
-        for j in range(i + 1, len(idx)):
+        for j in sorted(int(k) for k in mtree.query_ball_point(mids[i], 0.3 + 1e-9) if k > i):
             bseg = s[idx[j]]
             if np.hypot(*(mids[i] - mids[j])) > 0.3 or np.sign(dx[idx[i]] * dy[idx[i]]) == np.sign(dx[idx[j]] * dy[idx[j]]):
                 continue

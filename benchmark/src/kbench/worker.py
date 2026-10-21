@@ -121,6 +121,8 @@ def detections_to_features(obj: dict[str, Any], sheet_id: str) -> list[Feature]:
             "room_id": d.get("roomId"),
             "legend_entry": d.get("legendEntryId"),
             "confidence": d.get("score"),
+            # Sprint 5: the worker stores the uncalibrated score as scoreRaw next to the calibrated score
+            "score_raw": d.get("scoreRaw", d.get("score")),
             "level": d.get("level"),
             "reasons": d.get("reasons", []),
             "annotations": d.get("annotations", []),
@@ -159,6 +161,7 @@ def rooms_to_features(obj: dict[str, Any], sheet_id: str) -> list[Feature]:
             "external_corners": r.get("externalCorners"),
             "walls": r.get("walls") or [],
             "confidence": r.get("confidence"),
+            "score_raw": r.get("confidenceRaw", r.get("scoreRaw", r.get("confidence"))),
             "level": r.get("level"),
             "reasons": r.get("reasons", []),
             "lifecycle": "new",

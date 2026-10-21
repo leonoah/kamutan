@@ -1,0 +1,201 @@
+# Kamutan DAST — OWASP ZAP against a CI-local stack (06_security "DAST": 0 High; CSP + HSTS headers OK).
+#
+# Stack (no cloud, no secrets, synthetic data only):
+#   - web: the production build of apps/web served by the Firebase Hosting emulator, i.e. with the exact
+#     firebase.json headers/rewrites that production uses (CSP, HSTS, Permissions-Policy, /s/** rules);
+#   - api: apps/api (NestJS) in in-memory mode (DATA/STORAGE/QUEUE_DRIVER=memory, NODE_ENV=development —
+#     the config refuses memory drivers in production), demo project id, OpenAPI document enabled.
+# Scans:
+#   1. ZAP baseline (passive, traditional + AJAX spider) on the web app;
+#   2. ZAP baseline on the API;
+#   3. ZAP API scan (OpenAPI import + active scan) on the API — only CI-local, never against a real env.
+# Plus: static header check (infra/scripts/check-hosting-headers.mjs) and a headless-Chromium CSP check of
+# the real and the mock build (infra/scripts/csp-verify.mjs) that fails on any enforced CSP violation.
+# Gate: infra/scripts/zap_gate.py with .zap/rules.tsv — any High not IGNOREd, or any alert of a FAIL rule,
+# fails the run. Reports (HTML/JSON/MD) are uploaded as the `dast-reports` artifact.
+#
+# Security notes (SEC-44..SEC-50): read-only token, no pull_request_target, actions pinned to commit SHAs,
+# ZAP actions run with allow_issue_writing=false (no issues: write permission needed).
+# Authenticated scanning with two users (06_security) needs a staging environment + test accounts: see
+# docs/security/pentest-scope.md §test accounts; until then the API is scanned unauthenticated (all
+# protected routes must answer 401 with the contract error shape).
+
+name: DAST
+
+on:
+  schedule:
+    - cron: "43 2 * * *" # 02:43 UTC nightly, after the 01:17 nightly fuzz run starts
+  workflow_dispatch:
+    inputs:
+      active_api_scan:
+        description: "Run the active ZAP API scan (OpenAPI) in addition to the baselines"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dast-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  FIREBASE_TOOLS_VERSION: "15.33.0"
+  FIREBASE_CLI_DISABLE_UPDATE_CHECK: "true"
+  PLAYWRIGHT_VERSION: "1.56.0"
+  TURBO_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+  # Floating tag on purpose: ZAP rules update with it. The resolved digest is recorded in the job summary.
+  ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:stable
+  WEB_URL: http://127.0.0.1:5000
+  API_URL: http://127.0.0.1:3001
+
+jobs:
+  zap:
+    name: ZAP (web + API, CI-local)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen lockfile, SEC-44)
+        run: pnpm install --frozen-lockfile
+
+      - name: Static check of firebase.json security headers
+        run: node infra/scripts/check-hosting-headers.mjs firebase.json
+
+      - name: Build web (production config) + API
+        run: |
+          set -euo pipefail
+          pnpm turbo run build --filter=@kamutan/web --filter=@kamutan/api
+          test -f apps/web/dist/index.html
+          test -f apps/api/dist/main.js
+          # Mock build for the CSP browser check of authenticated screens (no backend needed).
+          VITE_USE_MOCKS=true pnpm --filter @kamutan/web exec vite build --outDir "$RUNNER_TEMP/web-mock" --emptyOutDir
+
+      - name: Start API (in-memory mode)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dast"
+          # Throwaway HMAC secret for this run only (the config requires >= 32 chars).
+          UPLOAD_TOKEN_SECRET="$(openssl rand -hex 32)"
+          export UPLOAD_TOKEN_SECRET
+          NODE_ENV=development PORT=3001 LOG_LEVEL=warn SWAGGER_ENABLED=true \
+          DATA_DRIVER=memory STORAGE_DRIVER=memory QUEUE_DRIVER=memory \
+          GOOGLE_CLOUD_PROJECT=demo-kamutan FIREBASE_STORAGE_BUCKET=demo-kamutan.appspot.com \
+            nohup node apps/api/dist/main.js > "$RUNNER_TEMP/dast/api.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS "$API_URL/api/v1/health" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS "$API_URL/api/v1/health"
+          curl -fsS -o "$RUNNER_TEMP/dast/openapi.json" "$API_URL/api/docs/openapi.json"
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$API_URL/api/v1/me")
+          [ "$code" = "401" ] || { echo "::error::/api/v1/me without a token returned $code (expected 401)"; exit 1; }
+
+      - name: Start web (Firebase Hosting emulator with firebase.json headers)
+        run: |
+          set -euo pipefail
+          nohup npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION}" emulators:start \
+            --only hosting --project demo-kamutan > "$RUNNER_TEMP/dast/hosting.log" 2>&1 &
+          for _ in $(seq 1 90); do
+            curl -fsS "$WEB_URL/login" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -o /dev/null "$WEB_URL/login"
+          # Served headers (as Hosting would send them) — evidence for "CSP and HSTS headers OK".
+          for p in /login /projects /s/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA; do
+            echo "### headers $p"
+            curl -s -o /dev/null -D - "$WEB_URL$p" | grep -iE '^(content-security-policy|strict-transport-security|referrer-policy|x-robots-tag|permissions-policy|x-frame-options|x-content-type-options):'
+          done | tee "$RUNNER_TEMP/dast/served-headers.txt"
+          grep -qi '^content-security-policy: ' "$RUNNER_TEMP/dast/served-headers.txt"
+          grep -qi '^strict-transport-security: max-age=' "$RUNNER_TEMP/dast/served-headers.txt"
+
+      - name: CSP browser check (headless Chromium, real + mock build)
+        run: |
+          set -euo pipefail
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" "playwright@${PLAYWRIGHT_VERSION}"
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+          export NODE_PATH="$RUNNER_TEMP/pw/node_modules"
+          node infra/scripts/csp-verify.mjs --dist apps/web/dist --report "$RUNNER_TEMP/dast/csp-real.json"
+          node infra/scripts/csp-verify.mjs --dist "$RUNNER_TEMP/web-mock" --mock --report "$RUNNER_TEMP/dast/csp-mock.json"
+
+      - name: Record ZAP image digest
+        run: |
+          docker pull -q "$ZAP_IMAGE"
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$ZAP_IMAGE")
+          echo "ZAP image: \`$digest\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ZAP baseline — web
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ env.WEB_URL }}
+          docker_name: ${{ env.ZAP_IMAGE }}
+          rules_file_name: .zap/rules.tsv
+          # -a alpha passive rules, -j AJAX spider (SPA routes), -m spider minutes, -T passive-scan wait.
+          cmd_options: "-a -j -m 5 -T 15"
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: zap-web
+      - name: Keep web reports
+        run: mkdir -p "$RUNNER_TEMP/dast/web" && mv report_json.json report_md.md report_html.html "$RUNNER_TEMP/dast/web/"
+
+      - name: ZAP baseline — API
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ env.API_URL }}/api/v1/health
+          docker_name: ${{ env.ZAP_IMAGE }}
+          rules_file_name: .zap/rules.tsv
+          cmd_options: "-a -m 1 -T 10"
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: zap-api-baseline
+      - name: Keep API baseline reports
+        run: mkdir -p "$RUNNER_TEMP/dast/api-baseline" && mv report_json.json report_md.md report_html.html "$RUNNER_TEMP/dast/api-baseline/"
+
+      - name: ZAP API scan (OpenAPI, active) — API
+        if: github.event_name == 'schedule' || inputs.active_api_scan
+        uses: zaproxy/action-api-scan@5158fe4d9d8fcc75ea204db81317cce7f9e5453d # v0.10.0
+        with:
+          target: ${{ env.API_URL }}/api/docs/openapi.json
+          format: openapi
+          docker_name: ${{ env.ZAP_IMAGE }}
+          rules_file_name: .zap/rules.tsv
+          cmd_options: "-a -T 10 -O ${{ env.API_URL }}"
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: zap-api-scan
+      - name: Keep API scan reports
+        if: github.event_name == 'schedule' || inputs.active_api_scan
+        run: mkdir -p "$RUNNER_TEMP/dast/api-scan" && mv report_json.json report_md.md report_html.html "$RUNNER_TEMP/dast/api-scan/"
+
+      - name: Gate — 0 High (not ignored) and no FAIL-rule alerts
+        env:
+          ACTIVE: ${{ github.event_name == 'schedule' || inputs.active_api_scan }}
+        run: |
+          set -euo pipefail
+          reports=("$RUNNER_TEMP/dast/web/report_json.json" "$RUNNER_TEMP/dast/api-baseline/report_json.json")
+          if [ "$ACTIVE" = "true" ]; then reports+=("$RUNNER_TEMP/dast/api-scan/report_json.json"); fi
+          python3 infra/scripts/zap_gate.py --rules .zap/rules.tsv "${reports[@]}"
+
+      - name: Server logs (tail, synthetic data only)
+        if: always()
+        run: |
+          tail -n 50 "$RUNNER_TEMP/dast/api.log" || true
+          tail -n 20 "$RUNNER_TEMP/dast/hosting.log" || true
+
+      - name: Upload DAST reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dast-reports-${{ github.run_id }}
+          path: ${{ runner.temp }}/dast
+          retention-days: 30
+          if-no-files-found: warn

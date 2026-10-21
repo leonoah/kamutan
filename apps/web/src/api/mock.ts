@@ -16,6 +16,7 @@ import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, row
 import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
 import { createReviewMock } from "./mockReview";
+import { createSprint5Mock } from "./mockSprint5";
 
 export interface MockOptions {
   /** Seed projects. Defaults to two demo projects. Pass [] to see the empty state. */
@@ -49,6 +50,10 @@ export interface MockOptions {
   boqEngineOnly?: boolean;
   /** Sprint 4: delay of the mock find-similar job (ms). Default 600 (0 in tests → done at once). */
   similarMs?: number;
+  /** Sprint 5: seed the demo share links on p-noah (default true). */
+  seedShareLinks?: boolean;
+  /** Sprint 5 (tests): start with a broken audit hash chain. */
+  auditBroken?: boolean;
 }
 
 export const DEMO_ORG_ID = "org-demo";
@@ -170,7 +175,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     emit: () => emit(),
     role: () => orgs[0]?.role ?? "viewer",
     tickMs: opts.boqTickMs ?? jobTick,
-    blockExportOnRed: opts.blockExportOnRed ?? false,
+    blockExportOnRed: () => s5.blockExportOnRed(orgs[0]?.id ?? DEMO_ORG_ID),
     devBase: useDevIndex ? DEV_ARTIFACTS_BASE : null,
     engineOnly: opts.boqEngineOnly ?? false,
     rooms: async (row) => (await understanding.artifacts(row)).rooms,
@@ -184,6 +189,27 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     emit: () => emit(),
     similarMs: opts.similarMs ?? (latency > 0 ? 600 : 0),
   });
+  const s5 = createSprint5Mock({
+    projects: () => projects,
+    rows: (projectId) => sheets.get(projectId) ?? [],
+    boq: {
+      listLines: (projectId) => boq.listLines(projectId),
+      state: (projectId) => boq.state(projectId),
+      evidence: (projectId, lineId) => boq.evidence(projectId, lineId),
+      sheetEvidence: (projectId, sheetId, versionId) => boq.sheetEvidence(projectId, sheetId, versionId),
+      links: (projectId, sheetId) => boq.links(projectId, sheetId),
+    },
+    artifacts: (row) => understanding.artifacts(row),
+    corrections: (projectId) => review.active(projectId),
+    orgs: () => orgs,
+    role: () => orgs[0]?.role ?? "viewer",
+    emit: () => emit(),
+    tickMs: opts.boqTickMs ?? jobTick,
+    devBase: DEV_ARTIFACTS_BASE,
+    seedLinks: opts.seedShareLinks ?? true,
+    auditBroken: opts.auditBroken ?? false,
+  });
+  if (opts.blockExportOnRed) s5.setBlockExportOnRed(orgs[0]?.id ?? DEMO_ORG_ID, true);
   if (opts.boqPrebuilt && sheets.has("p-noah")) queueMicrotask(() => boq.buildBoq("p-noah"));
   const jobs: Job[] = [];
   const tokens = new Map<string, { projectId: string; filename: string; kind: SheetSet["fileKind"]; uploaded: boolean }>();
@@ -299,7 +325,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         delay({
           uid: "mock-user",
           mfa: false,
-          orgs: orgs.map((o) => ({ ...o, settings: { blockExportOnRed: opts.blockExportOnRed ?? false } })),
+          orgs: orgs.map((o) => ({ ...o, ...s5.orgPatch(o.id) })),
         }),
       listProjects: (orgId) =>
         delay(
@@ -504,7 +530,13 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         mustGet(projectId);
         return delay(boq.listLines(projectId));
       },
-      patchBoqLine: async (projectId, lineId, req) => delay(boq.patchLine(projectId, lineId, req, "mock-user")),
+      patchBoqLine: async (projectId, lineId, req) => {
+        s5.assertProjectActive(projectId);
+        const before = boq.listLines(projectId).items.find((l) => l.id === lineId);
+        const after = boq.patchLine(projectId, lineId, req, "mock-user");
+        if (before) s5.recordLinePatch(projectId, before, after, req);
+        return delay(after);
+      },
       getBoqLineEvidence: async (projectId, lineId) => delay(boq.evidence(projectId, lineId)),
       getBoqSheetEvidence: async (projectId, sheetId, versionId) => delay(boq.sheetEvidence(projectId, sheetId, versionId)),
       exportBoq: async (projectId, req) => delay(boq.exportBoq(projectId, req)),
@@ -525,7 +557,9 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       listCorrections: async (projectId, q = {}) => delay(await review.listCorrections(projectId, q.sheetId)),
       createCorrection: async (projectId, req) => {
         mustGet(projectId);
-        return delay(await review.create(projectId, req));
+        const c = await review.create(projectId, req);
+        s5.recordCorrection(projectId, req);
+        return delay(c);
       },
       createCorrectionsBatch: async (projectId, req) => {
         mustGet(projectId);
@@ -541,6 +575,34 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       putRoomSettings: async (projectId, sheetId, roomId, req) => delay(await review.putRoomSettings(projectId, sheetId, roomId, req)),
       findSimilar: async (projectId, req) => delay(await review.findSimilar(projectId, req)),
       getSimilarSearch: async (projectId, id) => delay(await review.getSimilar(projectId, id)),
+
+      /* ---------- Sprint 5 ---------- */
+      getLineHistory: async (projectId, lineId) => delay(s5.lineHistory(projectId, lineId)),
+      listAudit: async (orgId, q) => delay(s5.listAudit(orgId, q)),
+      verifyAudit: async (orgId) => delay(s5.verifyAudit(orgId)),
+      exportMarkedPdf: async (projectId, req) => {
+        mustGet(projectId);
+        return delay(s5.exportMarkedPdf(projectId, req));
+      },
+      getExport: async (projectId, exportId) => delay(s5.getExport(projectId, exportId)),
+      createShareLink: async (projectId, req) => {
+        mustGet(projectId);
+        return delay(s5.createShareLink(projectId, req, typeof location !== "undefined" ? location.origin : "https://kamutan.app"));
+      },
+      listShareLinks: async (projectId) => delay(s5.listShareLinks(projectId)),
+      revokeShareLink: async (projectId, linkId) => delay(s5.revokeShareLink(projectId, linkId)),
+      patchOrgSettings: async (orgId, req) => delay(s5.patchOrgSettings(orgId, req)),
+      startOffboardingExport: async (orgId) => delay(s5.startOffboardingExport(orgId)),
+      getOffboardingExport: async (orgId, id) => delay(s5.getOffboardingExport(orgId, id)),
+      offboardOrg: async (orgId, req) => delay(s5.offboardOrg(orgId, req.confirm)),
+    },
+
+    publicShare: {
+      getMeta: async (token) => delay(await s5.publicShare.getMeta(token)),
+      getBoq: async (token) => delay(await s5.publicShare.getBoq(token)),
+      getOverlay: async (token, sheetId) => delay(await s5.publicShare.getOverlay(token, sheetId)),
+      tileUrl: (token, sheetId, z, x, y) => s5.publicShare.tileUrl(token, sheetId, z, x, y),
+      pdfUrl: (token) => s5.publicShare.pdfUrl(token),
     },
 
     uploads: {

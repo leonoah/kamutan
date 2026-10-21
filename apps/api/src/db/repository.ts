@@ -170,6 +170,8 @@ export interface ReprocessResult {
 
 export interface AuditInput {
   actorId: string | null;
+  /** Sprint 5: `user` (default), `share_link` (public share views), `system` (scripts / purge). Part of the hashed body. */
+  actorKind?: 'user' | 'share_link' | 'system';
   entity: string;
   entityId: string | null;
   action: string;

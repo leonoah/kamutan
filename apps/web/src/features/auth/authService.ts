@@ -1,6 +1,10 @@
 import {
+  EmailAuthProvider,
   GoogleAuthProvider,
+  getIdTokenResult,
   isSignInWithEmailLink,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
   onAuthStateChanged,
   sendSignInLinkToEmail,
   signInWithEmailAndPassword,
@@ -53,6 +57,19 @@ export interface AuthService {
   onChange(cb: (session: AuthSession | null) => void): () => void;
   /** Fresh Firebase ID token for `Authorization: Bearer` (null when signed out). */
   getIdToken(): Promise<string | null>;
+  /** Sprint 5: when the user last actually signed in (ID token `auth_time`, ms epoch); null when signed out. */
+  getAuthTime(): Promise<number | null>;
+  /** How this user can re-authenticate here: Google popup, password, or (email-link users) sign out + in. */
+  reauthMethod(): "google" | "password" | "signin";
+  /** Re-authenticates the current user (refreshes `auth_time`) and forces a fresh ID token. */
+  reauthenticate(password?: string): Promise<void>;
+}
+
+/** Sensitive admin actions (offboarding) need a sign-in from the last 10 minutes (brief §5; API checks auth_time). */
+export const RECENT_LOGIN_MS = 10 * 60_000;
+export async function hasRecentLogin(service: AuthService, now = Date.now(), marginMs = 60_000): Promise<boolean> {
+  const t = await service.getAuthTime();
+  return t !== null && now - t < RECENT_LOGIN_MS - marginMs;
 }
 
 export const EMAIL_FOR_SIGN_IN_KEY = "kamutan.emailForSignIn";
@@ -145,6 +162,34 @@ export function createFirebaseAuth(auth: Auth, origin = window.location.origin):
     signOut: () => signOut(auth),
     onChange: (cb) => onAuthStateChanged(auth, (u) => cb(toSession(u))),
     getIdToken: async () => (auth.currentUser ? auth.currentUser.getIdToken() : null),
+    getAuthTime: async () => {
+      const u = auth.currentUser;
+      if (!u) return null;
+      const r = await getIdTokenResult(u);
+      const t = Date.parse(r.authTime);
+      return Number.isFinite(t) ? t : null;
+    },
+    reauthMethod: () => {
+      const providers = auth.currentUser?.providerData.map((p) => p.providerId) ?? [];
+      if (providers.includes("google.com")) return "google";
+      if (providers.includes("password")) return "password";
+      return "signin";
+    },
+    reauthenticate: (password) =>
+      wrap(async () => {
+        const u = auth.currentUser;
+        if (!u) throw new AuthError("invalid_credentials");
+        const providers = u.providerData.map((p) => p.providerId);
+        if (providers.includes("google.com")) {
+          const provider = new GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account", ...(u.email ? { login_hint: u.email } : {}) });
+          await reauthenticateWithPopup(u, provider);
+        } else {
+          if (!u.email || !password) throw new AuthError("invalid_credentials");
+          await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password));
+        }
+        await u.getIdToken(true);
+      }),
   };
 }
 
@@ -153,9 +198,11 @@ export function createFirebaseAuth(auth: Auth, origin = window.location.origin):
 const MOCK_KEY = "kamutan.mock-session";
 export const MOCK_EMAIL_LINK = "/auth/complete?mode=signIn&oobCode=mock-oob-code";
 
-export function createMockAuth(opts: { persist?: boolean; latencyMs?: number } = {}): AuthService {
+export function createMockAuth(opts: { persist?: boolean; latencyMs?: number; authAgeMs?: number } = {}): AuthService {
   const persist = opts.persist ?? true;
   const latency = opts.latencyMs ?? 300;
+  /** Mock `auth_time` (demo: `?mockAuthAge=3600` makes the session look an hour old). */
+  let authAt = Date.now() - (opts.authAgeMs ?? 0);
   const listeners = new Set<(s: AuthSession | null) => void>();
   let current: AuthSession | null = null;
   if (persist) {
@@ -169,6 +216,7 @@ export function createMockAuth(opts: { persist?: boolean; latencyMs?: number } =
   const wait = () => (latency > 0 ? new Promise((r) => setTimeout(r, latency)) : Promise.resolve());
   const set = (s: AuthSession | null) => {
     current = s;
+    if (s) authAt = Date.now() - (opts.authAgeMs ?? 0);
     if (persist) {
       try {
         if (s) sessionStorage.setItem(MOCK_KEY, JSON.stringify(s));
@@ -226,6 +274,14 @@ export function createMockAuth(opts: { persist?: boolean; latencyMs?: number } =
       return () => listeners.delete(cb);
     },
     getIdToken: async () => (current ? `mock-id-token.${current.uid}` : null),
+    getAuthTime: async () => (current ? authAt : null),
+    reauthMethod: () => (current?.email.endsWith("@gmail.com") ? "google" : "password"),
+    async reauthenticate(password) {
+      await wait();
+      if (!current) throw new AuthError("invalid_credentials");
+      if (!current.email.endsWith("@gmail.com") && (password ?? "").length < 10) throw new AuthError("invalid_credentials");
+      authAt = Date.now();
+    },
   };
 }
 
@@ -234,7 +290,10 @@ export function createMockAuth(opts: { persist?: boolean; latencyMs?: number } =
 let active: AuthService | null = null;
 
 export function getAuthService(): AuthService {
-  if (!active) active = env.useMocks ? createMockAuth() : createFirebaseAuth(getFirebase().auth);
+  if (!active) {
+    const age = typeof location !== "undefined" ? Number(new URLSearchParams(location.search).get("mockAuthAge")) : 0;
+    active = env.useMocks ? createMockAuth(age > 0 ? { authAgeMs: age * 1000 } : {}) : createFirebaseAuth(getFirebase().auth);
+  }
   return active;
 }
 

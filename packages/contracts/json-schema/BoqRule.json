@@ -1241,7 +1241,8 @@
                       "courtyard",
                       "storage",
                       "stairs",
-                      "other"
+                      "other",
+                      "niche"
                     ]
                   },
                   "maxItems": 16
@@ -1418,7 +1419,8 @@
                       "courtyard",
                       "storage",
                       "stairs",
-                      "other"
+                      "other",
+                      "niche"
                     ]
                   },
                   "maxItems": 16
@@ -1579,7 +1581,8 @@
                       "courtyard",
                       "storage",
                       "stairs",
-                      "other"
+                      "other",
+                      "niche"
                     ]
                   },
                   "maxItems": 16
@@ -1771,7 +1774,8 @@
                       "courtyard",
                       "storage",
                       "stairs",
-                      "other"
+                      "other",
+                      "niche"
                     ]
                   },
                   "maxItems": 16
@@ -1923,7 +1927,8 @@
                       "courtyard",
                       "storage",
                       "stairs",
-                      "other"
+                      "other",
+                      "niche"
                     ]
                   },
                   "maxItems": 16
@@ -2211,7 +2216,8 @@
                       "courtyard",
                       "storage",
                       "stairs",
-                      "other"
+                      "other",
+                      "niche"
                     ]
                   },
                   "maxItems": 16

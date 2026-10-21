@@ -34,4 +34,15 @@ describe('Cloud Functions entry (src/function.ts)', () => {
     const res = await request(server).post('/api/v1/orgs').send({ name: 'x' }).expect(401);
     expect(res.body.error.code).toBe('unauthorized');
   });
+
+  it('R-A8: api, apiJobs and reprocessDependents run as the API_SERVICE_ACCOUNT param (default kamutan-api@)', async () => {
+    const mod = await import('../../src/function');
+    for (const fn of [mod.api, mod.apiJobs, mod.reprocessDependents]) {
+      const ep = (fn as unknown as { __endpoint: { serviceAccountEmail?: unknown } }).__endpoint;
+      // A param expression (resolved by the Firebase CLI at deploy), never unset → never the default compute SA.
+      expect(ep.serviceAccountEmail).toBe(mod.API_SERVICE_ACCOUNT);
+    }
+    expect(mod.API_SERVICE_ACCOUNT.name).toBe('API_SERVICE_ACCOUNT');
+    expect((mod.API_SERVICE_ACCOUNT as unknown as { options: { default: string } }).options.default).toBe('kamutan-api@');
+  });
 });

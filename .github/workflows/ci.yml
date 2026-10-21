@@ -59,6 +59,9 @@ jobs:
             docker:
               - 'infra/docker/**'
               - 'workers/drawing/**'
+              - 'apps/api/**'
+              - 'packages/contracts/**'
+              - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
             python:
               - 'workers/**'
@@ -87,6 +90,9 @@ jobs:
           cache: pnpm
       - name: Install (frozen lockfile, SEC-44)
         run: pnpm install --frozen-lockfile
+      - name: Hosting security headers (firebase.json, SEC-40)
+        # Static invariants; the browser-level CSP check runs nightly in dast.yml.
+        run: node infra/scripts/check-hosting-headers.mjs firebase.json
       - name: Lint
         run: pnpm turbo run lint
       - name: Typecheck
@@ -201,6 +207,39 @@ jobs:
         run: |
           uv run --locked --with "hypothesis==${HYPOTHESIS_VERSION}" \
             pytest -m fuzz tests/fuzz -q -s -p no:cacheprovider --junitxml="$RUNNER_TEMP/fuzz.xml"
+
+  # ---------------------------------------------------------------------------
+  # Infra scripts: shellcheck + dry-runs of the backup / restore-drill tooling (SEC-36..38),
+  # ZAP gate unit check. No cloud access: --dry-run only prints the gcloud commands.
+  # ---------------------------------------------------------------------------
+  infra-scripts:
+    name: Infra scripts (shellcheck, dry-runs)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        run: shellcheck -x infra/scripts/*.sh infra/scripts/lib/*.sh
+      - name: Backup setup dry-run
+        run: bash infra/scripts/setup-backups.sh --project kamutan-fba67 --backup-project kamutan-backup-eu --dry-run
+      - name: Restore drill dry-runs (export + backup modes)
+        run: |
+          set -euo pipefail
+          bash infra/scripts/restore-drill.sh --project kamutan-fba67 --scratch-project kamutan-drill \
+            --backup-bucket kamutan-fba67-firestore-backup-eu --storage-backup-bucket kamutan-fba67-storage-backup-eu \
+            --dry-run --out "$RUNNER_TEMP/drill-export"
+          bash infra/scripts/restore-drill.sh --mode backup --dry-run --out "$RUNNER_TEMP/drill-backup"
+          jq -e '.dryRun and .passed' "$RUNNER_TEMP/drill-export/results.json" "$RUNNER_TEMP/drill-backup/results.json"
+      - name: API jobs / purge IAM setup dry-run
+        run: |
+          bash infra/scripts/setup-api-jobs.sh --project kamutan-fba67 --dry-run \
+            --purge-image "europe-west1-docker.pkg.dev/kamutan-fba67/kamutan/api-jobs@sha256:$(printf '0%.0s' $(seq 64))"
+      - name: Monitoring setup dry-run
+        run: bash infra/monitoring/setup-alerts.sh --project kamutan-fba67 --notification-email security@example.com --dry-run
+      - name: ZAP gate self-test
+        run: python3 infra/scripts/zap_gate_selftest.py
 
   # ---------------------------------------------------------------------------
   # DB: Firestore/Storage security rules + API integration on the Firebase Emulator Suite
@@ -393,11 +432,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The API ships as a Cloud Function (ADR-0008) — only the drawing worker has an image.
+        # The API ships as Cloud Functions (ADR-0008); its batch jobs (offboarding purge) ship as a Cloud Run job image.
         include:
           - image: worker-drawing
             dockerfile: infra/docker/worker-drawing.Dockerfile
             requires: workers/drawing/pyproject.toml
+          - image: api-jobs
+            dockerfile: infra/docker/api-jobs.Dockerfile
+            requires: apps/api/src/scripts/offboard-purge.ts
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -495,7 +537,7 @@ jobs:
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, node, python, fuzz, db, secrets-scan, semgrep, osv, docker, benchmark]
+    needs: [changes, node, python, fuzz, infra-scripts, db, secrets-scan, semgrep, osv, docker, benchmark]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

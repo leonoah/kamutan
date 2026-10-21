@@ -82,6 +82,7 @@ export function UserMenu() {
 
 export function TopBar({ children, className }: { children?: ReactNode; className?: string }) {
   const { t } = useTranslation();
+  const { org } = useCurrentOrg();
   return (
     <header className={cn("sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur", className)}>
       <div className="flex h-14 items-center gap-4 px-4 sm:px-6">
@@ -92,6 +93,7 @@ export function TopBar({ children, className }: { children?: ReactNode; classNam
           {[
             { to: "/projects", label: t("projects.title") },
             { to: "/library", label: t("library.nav") },
+            ...(org?.role === "admin" ? [{ to: "/settings", label: t("settings.nav") }] : []),
           ].map((l) => (
             <NavLink
               key={l.to}

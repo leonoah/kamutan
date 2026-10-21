@@ -45,7 +45,7 @@ export class RolesGuard implements CanActivate {
       }
     }
     const id = typeof raw === 'string' ? raw : '';
-    const opts = { requireMfa: reqmt.requireMfa };
+    const opts = { requireMfa: reqmt.requireMfa, allowOffboarding: reqmt.allowOffboarding };
     req.orgAccess =
       reqmt.org.from === 'project-param'
         ? await this.access.requireProjectRole(req.auth, id, reqmt.minRole, opts)

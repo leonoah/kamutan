@@ -136,7 +136,10 @@ export const DetectionSchema = z.object({
   centerMm: PointMmSchema,
   bboxMm: BBoxMmSchema,
   angleDeg: z.number().finite().min(-360).max(360),
+  /** Calibrated score (Sprint 5: isotonic map of `scoreRaw` from the calibration table; = raw when unmapped). */
   score: conf01,
+  /** Sprint 5 (optional): the matcher's raw score before calibration. */
+  scoreRaw: conf01.optional(),
   level: ConfidenceLevelSchema,
   reasons: ReasonsSchema,
   roomId: RoomIdSchema.nullable(),
@@ -189,7 +192,7 @@ export type DetectionsArtifact = z.infer<typeof DetectionsArtifactSchema>;
 // ---------------------------------------------------------------------------
 
 /** Sprint 4: room types (Worker-B classifies from the room name + fixtures). */
-export const ROOM_TYPES = ['bathroom', 'wc', 'kitchen', 'bedroom', 'living', 'corridor', 'balcony', 'courtyard', 'storage', 'stairs', 'other'] as const;
+export const ROOM_TYPES = ['bathroom', 'wc', 'kitchen', 'bedroom', 'living', 'corridor', 'balcony', 'courtyard', 'storage', 'stairs', 'other', 'niche'] as const;
 export const RoomTypeSchema = z.enum(ROOM_TYPES);
 export type RoomType = z.infer<typeof RoomTypeSchema>;
 /** Room types that are wet by default (tiling / waterproofing defaults). */
@@ -207,6 +210,8 @@ export const RoomWallSchema = z
     lengthM: z.number().finite().nonnegative(),
     /** true = faces outside the room's building envelope (not shared with another room). */
     exterior: z.boolean(),
+    /** Sprint 5 (optional): open side (no wall, e.g. a niche towards its parent room) — never cladded; already excluded from `perimeterM`. */
+    open: z.boolean().optional(),
   })
   .strict();
 export type RoomWall = z.infer<typeof RoomWallSchema>;
@@ -254,6 +259,12 @@ export const RoomSchema = z.object({
   ceilingHeightM: z.number().finite().positive().max(10).nullable().optional(),
   /** Niche (washing-machine alcove …): floor tiled with its room, walls NOT clad. */
   niche: z.boolean().optional(),
+  /**
+   * Sprint 5 (optional): sub-room (niche) → the room it opens into. Its floor is tiled with the parent's (BOQ
+   * `includeNiches`); the parent's `areaM2` does NOT include it. (`perimeterM` = inner face incl. door / window
+   * openings, excl. `open` walls.)
+   */
+  parentRoomId: RoomIdSchema.nullable().optional(),
 });
 export type Room = z.infer<typeof RoomSchema>;
 

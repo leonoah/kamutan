@@ -166,6 +166,9 @@ class Room:
     external_corners: int = 0
     external_corners_mm: list[tuple[float, float]] = field(default_factory=list)
     ceiling_height_m: float | None = None  # from a level mark "-2.55 H=220" inside the room (understand)
+    # Sprint 5 (Worker-B): laundry niche sub-rooms (rooms/niches.py) — type "niche", the room it opens onto
+    niche: bool = False
+    parent_room_id: str | None = None
 
     def to_json(self, *, extended: bool = False, extras: bool = False) -> dict[str, Any]:
         """``kamutan.rooms/1`` room object.
@@ -186,6 +189,10 @@ class Room:
             )
             if self.ceiling_height_m:
                 d["ceilingHeightM"] = round(float(self.ceiling_height_m), 2)
+            if self.niche:
+                # contracts Room.niche (exists) + parentRoomId / type "niche" / walls[].open (Sprint-5 requests)
+                d["niche"] = True
+                d["parentRoomId"] = self.parent_room_id
         if extras:
             d.update(
                 {

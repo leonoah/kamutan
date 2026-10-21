@@ -17,7 +17,9 @@ dependencies = [
     "openpyxl>=3.1.5",
     "pillow>=12.3.0",
     "pydantic>=2.14.1",
+    "pypdf>=6.20.1",
     "pypdfium2>=5.14.0",
+    "reportlab>=5.0.1",
     "scipy>=1.18.1",
     "shapely>=2.2.0",
     "xlrd>=2.0.2",
@@ -44,11 +46,11 @@ dev = [
     "jsonschema>=4.26.0",
     "mypy>=2.4.0",
     "pytest>=9.1.1",
-    "reportlab>=5.0.1",
     "ruff>=0.17.0",
     "scipy-stubs>=1.18.1.1",
     "types-jsonschema>=4.26.0.20261006",
     "types-openpyxl>=3.1.5.20260827",
+    "types-reportlab>=5.0.0.20261008",
     "types-shapely>=2.1.0.20260728",
 ]
 

@@ -20,7 +20,7 @@ import {
   type SheetVersion,
   type SymbolMapping,
 } from '@kamutan/contracts';
-import { auditHash } from './audit-chain';
+import { auditHash, logAuditEvent } from './audit-chain';
 import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
 import { toJob, toLegendEntry, toMember, toOrg, toProject, toSheet, toSheetSet, toSymbolMapping, toVersion, versionSummary, type Doc } from './mappers';
 import {
@@ -579,14 +579,18 @@ export class InMemoryRepository implements Repository {
     const at = this.now();
     const body = {
       actorId: event.actorId,
-      actorKind: 'user',
+      actorKind: event.actorKind ?? 'user',
       entity: event.entity,
       entityId: event.entityId,
       action: event.action,
       after: event.after ?? null,
       at: at.toISOString(),
     };
-    this.docs.set(fsPaths.auditEvent(orgId, autoId()), { ...body, at, prevHash, hash: auditHash(prevHash, body) });
+    logAuditEvent(orgId, event);
+    const hash = auditHash(prevHash, body);
+    this.docs.set(fsPaths.auditEvent(orgId, autoId()), { ...body, at, prevHash, hash });
+    const head = this.docs.get(fsPaths.auditHead(orgId));
+    this.docs.set(fsPaths.auditHead(orgId), { hash, at, count: ((head?.count as number | undefined) ?? log.length) + 1 });
   }
 
   async ping(): Promise<void> {}

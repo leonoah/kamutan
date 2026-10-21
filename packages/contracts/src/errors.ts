@@ -16,6 +16,14 @@ export const API_ERROR_CODES = [
   'not_ready',
   /** Sprint 3: org setting blockExportOnRed and red lines exist. */
   'export_blocked',
+  /** Sprint 5: the org is being offboarded — every access is blocked except the offboarding export download (SEC-52). */
+  'org_offboarding',
+  /** Sprint 5: the action needs a sign-in within the last 10 minutes (ID token `auth_time`); re-authenticate. */
+  'recent_auth_required',
+  /** Sprint 5: public share link unknown (404) / expired or revoked (410) — identical body for both statuses. */
+  'share_unavailable',
+  /** Sprint 5: non-GET on the public share API (405). */
+  'method_not_allowed',
   'internal_error',
   'service_unavailable',
 ] as const;

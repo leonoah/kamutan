@@ -299,3 +299,164 @@ width within 5 cm).
 - Lighting and electrical counts in `draft_counts.md` come from visual inspection by an agent. The switch counts are low confidence.
 - `4.00` (xls 4.0) is an ambiguous code reconstruction and needs owner confirmation. So does the chapter-number vs code-major mismatch in chapters 06–08.
 - Class names like `socket_box_6`, `socket_prep` and `heater_feed` were added to `classes.json` for Noah. They are provisional until the taxonomy owner signs off.
+
+## Sprint 5: conservative calibration, performance, eval of chapters 03/04/05 + 9.01
+
+New modules: `calibrate.py` (`kbench calibrate`) and `perf.py` (`kbench perf`). `worker.py` now passes `scoreRaw`
+(detections) and `confidenceRaw`/`scoreRaw` (rooms) through as `score_raw`; when absent it falls back to `score` /
+`confidence`. Tests: `tests/test_sprint5.py` (synthetic only, 19 tests including a Hypothesis property test).
+
+```bash
+# calibration table (DEV only) + report; the table goes to the worker, the reports stay outside git
+uv run kbench calibrate --truth $GT --pred-detections $ARTIFACTS \
+    [--splits $KAMUTAN_DATA_DIR/gt/splits.json] \
+    --table ../workers/drawing/src/kamutan_drawing/calibration/table.json \
+    --out $GT/eval/sprint5_calibration.json --report $GT/eval/sprint5_calibration.md \
+    [--min-map-n 30] [--generated-at ISO] [--schema PATH|none] [--fail-on-disallowed-green]
+# performance: runs Worker-Cal's workers/drawing/scripts/perf_local.py in the worker env (sync it first), or analyses raw rows
+uv run kbench perf --run --repeats 3 [--only id,id] [--root DIR --keep-root] --raw-out raw.json \
+    --out perf.json --report perf.md [--gate --a3-p95-s 60 --set-s 600 --baseline old_perf.json]
+uv run kbench perf --raw raw.json --out perf.json --report perf.md --gate
+```
+
+### Split (stage A) — `gt/splits.json` (outside git, `kamutan.gt-splits/1`)
+- Noah is **DEV**; the holdout list is empty, and its sha256 is locked in the file.
+- Holdout = future partner projects, with at least one whole partner office (test plan).
+- `calibrate` refuses a project that is holdout, unlisted or on another split (exit 2). It also refuses a holdout list
+  whose hash does not match. The split lives next to the project folders because a split spans projects.
+  `GT_FREEZE.json` is untouched.
+
+### `kbench calibrate`
+- **Items.** One item per prediction, before review, in the GT scope:
+  - every symbol on electrical/lighting truth sheets;
+  - plumbing + hvac classes on plumbing/architecture sheets (other classes are not annotated there);
+  - every room on architecture sheets (`room`, domain tiling);
+  - every link group on link-truth sheets (`link:<kind>`, domain lighting). Groups touching a disputed truth group are
+    excluded.
+- **Correct.** Uses the test-plan item definition:
+  - symbols: centre ≤ 3 mm, class, lifecycle, floor;
+  - rooms: IoU ≥ 0.5, area PE ≤ 2%, floor;
+  - groups: exact switch and luminaire sets.
+  Detection-correct is reported next to it. This is stricter than Worker-Cal's stopgap
+  `scripts/calibration_table.py`, which counts detection-correct.
+- **Stats per class and per domain.** Domains are electrical, lighting, plumbing (hvac/AC pooled in) and tiling.
+  Each gets n/tp/fp/precision, the two-sided Wilson LB95 (z = 1.96), and 10 equal-mass reliability buckets.
+  ECE/MCE/Brier are given three ways: on the raw score, calibrated in-sample, and calibrated **leave-one-sheet-out**
+  (honest).
+- **scoreMap.** Isotonic PAV (numpy), fitted per class/domain when there are ≥ `--min-map-n` (30) scored items and
+  ≥ 2 knots. It is a list of block-end knots, applied by linear interpolation, flat outside. The worker applies the
+  same rule (`ClassStats.map_score`).
+- **greenAllowed.** Conservative mode applies while the split file holds < 30 projects: n ≥ 200 AND precision 1.0.
+  Full mode: Wilson LB ≥ 0.98.
+- **Hard failures (exit 1).**
+  - Ceiling rules over **every** predicted sheet: a green item on a raster sheet (classification reason `רסטר`,
+    `inputType: raster`, or a `רסטר` detection reason); a non-red room on a scale-conflict sheet
+    (`קנה מידה סותר` / `scaleConflict`).
+  - The table fails the worker's `schema.json` (read from the repo; `--schema none` skips it) or a semantic check:
+    tp + fp = n, monotone maps in [0, 1], the green rule.
+  - With `--fail-on-disallowed-green`: any green in a class without `greenAllowed`.
+- **Table content.** Class statistics only: no project names, ids, coordinates or text.
+  `version = cal-<gtVersion>-<sha12 of the stats>` (stable when the stats do not change).
+
+**Result (DEV = Noah, final tree 21.10 15:04, `gt-v0.4.1-draft`; table `cal-gt-v0.4.1-draft-f1db4789463d`, the same
+stats hash as the first run on 15.10).**
+- 253 items, item precision 0.818 (Wilson LB 0.766), detection-correct 0.885.
+- **No class is greenAllowed.** The largest class is switch_single, n = 29, far below 200. Even an error-free class
+  would need ≥ 189 items to reach LB 0.98.
+- No class reaches 30 scored items, so every class `scoreMap` is null and score = raw. Domain maps exist for
+  electrical, lighting and plumbing.
+- ECE raw 0.116 / MCE 0.314 / Brier 0.158.
+- With domain-map fallback (not what the worker does today): leave-one-sheet-out ECE 0.102 (in-sample 0.051).
+- Ceiling rules PASS (15 sheets, none raster or scale-conflict).
+- 0 greens in the predictions: the worker's cap is live. Full tables: `gt/noah/eval/sprint5_calibration.md`.
+
+### `kbench perf`
+- **Raw rows.** `perf_local.py` writes `{fileId, repeat, status, wallS, cpuS, timingsMs, peakRssMb}`. `timingsMs` is
+  the worker's `stats.timingsMs`, mapped from task timings on older workers. Rows without it fall back to wall-clock
+  (`timing_source`).
+- **Summary.** P50/P95/max/mean per stage (nearest rank), page wall-clock and CPU, per sheet, peak RSS (process tree),
+  set seconds per repeat.
+- **Gate.** No failed page; page P95 (wall) < 60 s (every Noah sheet is A3); slowest repeat of the set < 600 s;
+  `--baseline`: page P95 rise ≤ 20%.
+- `--run` without `--root` uses a temp root and deletes it.
+- **Result** (21.10, final tree, 15 sheets × 3, 2 vCPU shared, load 5–7): 45/45 pages ok.
+  - page wall-clock P50 15.8 s, **P95 47.0 s** (< 60 s), max 50.9 s;
+  - page CPU P50 10.2 s, P95 24.1 s;
+  - set per repeat 327 / 288 / 343 s (< 600 s);
+  - peak RSS 623 MB;
+  - **gate PASS**.
+
+  Stage P95 (s): render 6.1, primitives 2.6, ocr 15.2, legend 0.3, symbols 9.0, rooms 2.6, fixtures 0.8, links 0.8,
+  artifacts 7.1. OCR is the slowest stage on 10/15 sheets, render on the other 5. The slowest sheets are
+  electrical/lighting: c054fd3a 50.9 s max, b2046277 48.3 s, eb8be8a3 47.0 s, 1bbe4113 46.0 s.
+
+  An earlier run on 15.10, mid-edit under load 9, gave P95 62.2 s with 1 failed page. That run is superseded.
+  Report: `gt/noah/eval/sprint5_perf.md`.
+
+### Eval chapters 03/04/05 + 9.01 (final tree, before review; `gt/noah/eval_sprint5.md`)
+- **03 + 05 gated: 14/19 within tolerance, ΣAE 17.14.**
+  - Chapter 03 is 15/15 (3.01 = 9 is fixed, was 13–14).
+  - 5.01: 56.30 vs 57 (PE 1.2%, within 3%; Sprint 4 had +10.4%).
+  - 5.02: 17.06 vs 18.1 (PE 5.7%).
+  - 5.03: 12.2 vs 15.6.
+  - 5.04 and 5.08 are not proposed (not derivable).
+- **04 + 9.01 gated: 12/22 exact, ΣAE 19.** No change from Sprint 4. The same 8 lines are never proposed.
+  9.01 = 43 exact (disputed).
+- **Dispute handling.** GT-D-001..004 lines are excluded from gating. GT-D-006/007/008 carry no lines, so they stay
+  gated and are flagged as information.
+- **Review burden.**
+  - Item burden is 1.0 (0 greens: the conservative cap is live).
+  - Line burden is 1.0 (all proposed lines yellow/red).
+  - Green precision is n/a. Sprint 4 had 25/25 greens correct.
+- **Tiling rooms.**
+  - type accuracy 1.0, wet F1 0.80 (FP 4);
+  - openings recall 0.86, opening width within 5 cm only 0.33;
+  - wet-room area median PE 0.118 (Sprint 4 0.108), perimeter 0.134 (0.087), corners exact 3/8; the English yard is still unmatched.
+
+
+### Requests to DevOps (`.github/workflows/nightly.yml`, job `data`, suite `kbench`)
+The dataset tarball must also contain `gt/splits.json`. Raise the job `timeout-minutes` to 90 (3 × 15 sheets ≈ 15–25
+min on a 4-vCPU runner). Add after the existing `kbench` step:
+
+```yaml
+      - name: System packages for the worker pipeline (Tesseract heb+eng)
+        if: steps.data.outputs.available == 'true' && matrix.suite == 'kbench'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-heb tesseract-ocr-eng
+      - name: kbench perf + calibrate (15 Noah sheets x 3, DEV split only)
+        if: steps.data.outputs.available == 'true' && matrix.suite == 'kbench'
+        working-directory: benchmark
+        run: |
+          set -euo pipefail
+          (cd ../workers/drawing && uv sync --locked)
+          uv sync --locked
+          root="$RUNNER_TEMP/perf-root"
+          uv run kbench perf --run --repeats 3 --root "$root" --keep-root \
+            --raw-out "$RUNNER_TEMP/perf.raw.json" --out "$RUNNER_TEMP/perf.json" --report "$RUNNER_TEMP/perf.md" --gate
+          uv run kbench calibrate --truth "$KAMUTAN_DATA_DIR/gt/noah" --pred-detections "$root" \
+            --splits "$KAMUTAN_DATA_DIR/gt/splits.json" --report "$RUNNER_TEMP/calibration.md" --fail-on-disallowed-green
+      - name: kbench perf + calibrate summary
+        if: always() && steps.data.outputs.available == 'true' && matrix.suite == 'kbench'
+        run: |
+          # sheet ids, stage timings and class statistics only (no drawing content); never upload perf-root
+          for f in perf.md calibration.md; do [ -f "$RUNNER_TEMP/$f" ] && cat "$RUNNER_TEMP/$f" >> "$GITHUB_STEP_SUMMARY"; done || true
+```
+Also add `"$RUNNER_TEMP/perf-root"` to the `rm -rf` of the "Wipe dataset" step. The nightly calibrate run only
+checks; it never writes `table.json` (no `--table`). Table updates are a reviewed PR.
+
+### Requests to Worker-Cal
+- When a class has no `scoreMap`, fall back to `domains[<domain of the class>].scoreMap`. Today all class maps are
+  null on Noah, so score = raw. The domain fallback lowers leave-one-sheet-out ECE 0.116 → 0.102.
+- `scripts/calibration_table.py` is superseded by `kbench calibrate`. Please don't let it overwrite `table.json`.
+
+### Known gaps (Sprint 5)
+- One DEV project. All Wilson bounds are wide, and the green target is unprovable until stage C (stated in every
+  report). Holdout = none yet.
+- Room correctness uses the 2% flooring tolerance on frozen polygon areas, so 1/15 rooms are correct. The truth
+  polygons have their own `uncertainty_mm`; a per-room tolerance from that uncertainty would be fairer. Pending a QA
+  decision; nothing is tuned on it.
+- Noah has no raster or scale-conflict sheet, so the ceiling rules are exercised only by synthetic tests.
+- `perf.py` per-sheet "slowest stage" used a leaked loop variable (always the last row); fixed and tested on 21.10.
+- Perf runs on a 2-vCPU box shared with the other agents (load avg 5–9). Wall-clock numbers are an upper bound; CPU
+  seconds are reported alongside. The test plan asks for 5 repeats on a production-size worker; the nightly default is 3.

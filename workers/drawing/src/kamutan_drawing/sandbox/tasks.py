@@ -68,6 +68,13 @@ def find_similar(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     return run(args, progress)
 
 
+def export_marked(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
+    """Sprint 5 (Worker-Export): marked PDF pages / assembly (original page + overlay), see ``export/render.py``."""
+    from ..export.render import run
+
+    return run(args, progress)
+
+
 def boq_parse(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     """Sprint 3 (Worker-BOQ): parse a past BOQ workbook (.xls / .xlsx) → ``kamutan.boq-import/1``."""
     from ..library_import.parse import parse_workbook
@@ -244,6 +251,7 @@ TASKS: dict[str, Callable[[dict[str, Any], Progress], Any]] = {
     "understand": understand,
     "boq_parse": boq_parse,
     "find_similar": find_similar,
+    "export_marked": export_marked,
     "parse_pdf": parse_pdf,
     "parse_dxf": parse_dxf,
     "parse_raster": parse_raster,

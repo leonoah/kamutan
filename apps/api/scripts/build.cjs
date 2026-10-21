@@ -26,7 +26,12 @@ execFileSync(process.execPath, [require.resolve('typescript/bin/tsc'), '-p', 'ts
 
 esbuild.buildSync({
   absWorkingDir: root,
-  entryPoints: { function: 'build/function.js', main: 'build/main.js', 'scripts/export-openapi': 'build/scripts/export-openapi.js' },
+  entryPoints: {
+    function: 'build/function.js',
+    main: 'build/main.js',
+    'scripts/export-openapi': 'build/scripts/export-openapi.js',
+    'scripts/offboard-purge': 'build/scripts/offboard-purge.js',
+  },
   outdir: 'dist',
   bundle: true,
   platform: 'node',

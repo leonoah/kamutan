@@ -1,0 +1,19 @@
+# ZAP rules for .github/workflows/dast.yml (zap-baseline.py / zap-api-scan.py -c format).
+# Columns are TAB-separated: <plugin id> <IGNORE|WARN|FAIL> <reason>. Unlisted rules default to WARN.
+# Gate (dast.yml): any High (riskcode 3) alert that is not IGNOREd here fails the run, and so does any alert of a rule
+# marked FAIL below (header regressions). Every IGNORE needs a justification and an owner review each quarter (SEC-38 cadence).
+# Never IGNORE a High without a linked issue + compensating control.
+10020	FAIL	Anti-clickjacking header missing - firebase.json sets X-Frame-Options DENY + frame-ancestors 'none' (SEC-40)
+10021	FAIL	X-Content-Type-Options missing - nosniff is set globally in firebase.json and by helmet in the API
+10038	FAIL	Content Security Policy header not set - enforced CSP on every app path, /s/** and the API (SEC-40)
+10063	FAIL	Permissions-Policy header not set - set globally in firebase.json
+10098	FAIL	Cross-Domain Misconfiguration (CORS) - API is same-origin by default, explicit allowlist only (SEC-41)
+10035	WARN	HSTS not set - only meaningful over HTTPS; the CI stack is plain HTTP. firebase.json sends max-age=2y; includeSubDomains; preload
+10055	WARN	CSP issues - style-src keeps 'unsafe-inline' (Radix react-remove-scroll injects <style>). Stricter Report-Only candidate tracks removal (docs/security/csp.md)
+90004	WARN	Insufficient site isolation (COEP/CORP) - COEP require-corp would break the Google sign-in popup; COOP same-origin-allow-popups is set
+10202	IGNORE	Absence of anti-CSRF tokens - no cookies; every API call is authenticated with a Bearer ID token (SEC-41), so CSRF does not apply
+10096	IGNORE	Timestamp disclosure - numeric literals in minified, hashed vendor bundles; no server timestamps
+10027	IGNORE	Suspicious comments - license/vendor comments in minified third-party bundles; app source maps are not deployed
+10109	IGNORE	Modern web application - informational (SPA detected)
+10049	IGNORE	Storable/non-storable content - informational; cache policy is set explicitly per path in firebase.json
+10015	IGNORE	Re-examine Cache-control directives - informational; /assets/** are content-hashed and immutable by design

@@ -38,6 +38,7 @@ from typing import Any, Protocol
 import numpy as np
 from scipy.spatial import cKDTree
 
+from ..calibration import default_table, link_key
 from ..ingest.pdf_vector import VectorSheet
 from ..symbols.geometry import resample, segment_components
 from ..types_sprint2 import level_for
@@ -98,6 +99,7 @@ class LinkParams:
     base_conf: float = 0.92
     distinct_glyph_mm: float = 1.0  # arc ends on one switch box but glyphs this far apart = 2 switches
     wire_colours: tuple[tuple[int, int, int], ...] = ()  # empty = learn from chains with both ends attached
+    green_threshold: float | None = None  # org setting greenThreshold (Sprint 5), checked against the table's wilsonLb
 
 
 @dataclass
@@ -581,6 +583,15 @@ def build_links(
         conf = max(0.0, min(1.0, conf))
         reasons = list(dict.fromkeys(reasons))
         level = level_for(conf, reasons, warn=any(r not in INFO_REASONS for r in reasons))
+        # Sprint 5: the calibration table (conservative mode caps a link kind without enough DEV truth at yellow)
+        cal = default_table().calibrate(
+            link_key(kind),
+            conf,
+            reasons,
+            level=level,
+            warn=any(r not in INFO_REASONS for r in reasons),
+            green_threshold=prm.green_threshold,
+        )
         groups.append(
             {
                 "id": "",
@@ -588,9 +599,11 @@ def build_links(
                 "switchIds": [dets[i]["id"] for i in s_ids],
                 "pointIds": pids,
                 "luminaireIds": [dets[i]["id"] for i in l_ids],
+                # raw: contracts LinkGroup is strict (no `confidenceRaw` yet — NOTES.md "Contract requests"), so the
+                # table only sets the level; keeping the raw value avoids mapping twice on floor confirmation
                 "confidence": round(conf, 3),
-                "level": level,
-                "reasons": reasons,
+                "level": cal.level,
+                "reasons": cal.reasons,
                 "floor": floors.most_common(1)[0][0] if floors else None,
                 "fan": bool(fan),
                 "inferredSwitches": n_v,

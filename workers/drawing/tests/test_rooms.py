@@ -236,7 +236,7 @@ def _check_sane(rooms):
             assert 7.5 <= r.area_m2 <= 17.0, (r.name, r.area_m2)
         assert r.level in ("green", "yellow", "red")
         assert r.level == "green" or r.reasons
-        assert math.isfinite(r.area_m2) and r.area_m2 >= 1.0
+        assert math.isfinite(r.area_m2) and r.area_m2 >= (0.3 if r.niche else 1.0)  # Sprint 5: laundry niches
 
 
 def test_sample_architecture_basement_and_floor(sample_dir):

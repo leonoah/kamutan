@@ -12,6 +12,8 @@ import { useToastStore } from "@/components/ui/toast";
 export interface RenderAppOptions extends MockOptions {
   signedIn?: boolean;
   auth?: AuthService;
+  /** Called with the mock backend before the first render (e.g. to spy on API methods). */
+  onBackend?: (b: ReturnType<typeof createMockBackend>) => void;
 }
 
 export async function renderApp(path: string, opts: RenderAppOptions = {}) {
@@ -24,6 +26,7 @@ export async function renderApp(path: string, opts: RenderAppOptions = {}) {
   useToastStore.setState({ items: [] });
 
   const backend = createMockBackend({ latencyMs: 0, uploadTickMs: 5, jobTickMs: 5, ...opts });
+  opts.onBackend?.(backend);
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   let utils!: ReturnType<typeof render>;
   // Flush AuthProvider's async session hydration inside act().

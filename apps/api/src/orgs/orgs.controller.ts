@@ -46,7 +46,7 @@ export class OrgsController {
   }
 
   @Get('orgs/:orgId')
-  @RequireRole('viewer', { from: 'param', key: 'orgId' })
+  @RequireRole('viewer', { from: 'param', key: 'orgId' }, { allowOffboarding: true })
   @ApiZodResponse(200, MyOrgSchema)
   @ApiErrors(401, 404)
   get(@Param('orgId') orgId: string, @CurrentUser() user: AuthContext): Promise<MyOrg> {

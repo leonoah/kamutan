@@ -65,6 +65,16 @@ class Shape:
     sig: Sig
     groups: dict[tuple[bool, int], list[np.ndarray]]
     width: float  # glyph bbox width in normalised units
+    # Sprint 5 (perf): per group, strokes stacked (n, v, 2) and their reversed copies — built lazily
+    _stacked: dict[tuple[bool, int], tuple[np.ndarray, np.ndarray]] = field(default_factory=dict, repr=False, compare=False)
+
+    def stacked(self, k: tuple[bool, int]) -> tuple[np.ndarray, np.ndarray]:
+        got = self._stacked.get(k)
+        if got is None:
+            st = np.stack(self.groups[k])
+            got = (st, st[:, ::-1])
+            self._stacked[k] = got
+        return got
 
     def strokes(self) -> list[tuple[bool, np.ndarray]]:
         return [(c, s) for (c, _), lst in sorted(self.groups.items()) for s in lst]
@@ -109,8 +119,14 @@ def _stroke_dist(a: np.ndarray, b: np.ndarray) -> float:
     return float(min(np.abs(a - b).max(), np.abs(a - b[::-1]).max()))
 
 
-def shape_distance(a: Shape, b: Shape) -> float:
-    """Max vertex distance after optimal stroke assignment; inf if topologies differ."""
+def shape_distance(a: Shape, b: Shape, bound: float | None = None) -> float:
+    """Max vertex distance after optimal stroke assignment; inf if topologies differ.
+
+    ``bound`` (lookups: the best distance so far): the result is only compared ``<= bound``, so as soon as the
+    distance provably exceeds it a value ``> bound`` is returned without finishing the assignment (a lower bound
+    of the group's assignment cost = the worst stroke's nearest partner). Without ``bound`` the exact distance
+    (up to the > 1.0 early exit) is returned, as before. The cost matrix is computed with numpy broadcasting —
+    the same element-wise operations as :func:`_stroke_dist`, so the values are identical."""
     if a.sig != b.sig:
         return float("inf")
     worst = 0.0
@@ -121,11 +137,19 @@ def shape_distance(a: Shape, b: Shape) -> float:
         if len(la) == 1:
             d = _stroke_dist(la[0], lb[0])
         else:
-            cost = np.array([[_stroke_dist(x, y) for y in lb] for x in la])
+            sa, _ = a.stacked(k)
+            sb, rb = b.stacked(k)
+            fwd = np.abs(sa[:, None] - sb[None]).max(axis=(2, 3))
+            rev = np.abs(sa[:, None] - rb[None]).max(axis=(2, 3))
+            cost = np.minimum(fwd, rev)
+            if bound is not None:
+                lb_cost = float(cost.min(axis=1).max())
+                if lb_cost > bound:
+                    return lb_cost
             r, c = linear_sum_assignment(cost)
             d = float(cost[r, c].max())
         worst = max(worst, d)
-        if worst > 1.0:
+        if worst > 1.0 or (bound is not None and worst > bound):
             break
     return worst
 
@@ -249,7 +273,7 @@ class GlyphStore:
             return eid
         best, best_d = None, tol
         for cid in self._by_sig.get(shape.sig, ()):
-            d = shape_distance(shape, self.entries[cid].shape)
+            d = shape_distance(shape, self.entries[cid].shape, bound=best_d)
             if d <= best_d:
                 best, best_d = cid, d
         return best
@@ -258,7 +282,7 @@ class GlyphStore:
         best, best_d = None, tol
         for cid in self._by_sig.get(wn_shape.sig, ()):
             e = self.entries[cid]
-            d = shape_distance(wn_shape, e.width_norm())
+            d = shape_distance(wn_shape, e.width_norm(), bound=best_d)
             if d <= best_d:
                 best, best_d = e, d
         return best

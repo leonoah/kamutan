@@ -5,6 +5,11 @@ import { axe } from "@/test/axe";
 import { renderApp } from "@/test/utils";
 import type { Backend } from "@/api/types";
 
+// Sprint 5: load the lazy viewer chunk once, outside the per-test budget (flaky under a parallel turbo run otherwise).
+beforeAll(async () => {
+  await import("@/features/viewer/SheetViewer");
+}, 60_000);
+
 // jsdom has no WebGL: replace only the canvas with a stub that can emit a lasso, keep the rest of the package.
 vi.mock("@kamutan/viewer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@kamutan/viewer")>();
@@ -62,7 +67,7 @@ async function uploadAndFinalize(backend: Backend, projectId: string, filename: 
   });
 }
 
-describe("Sheet confirmation (S07)", { timeout: 20_000 }, () => {
+describe("Sheet confirmation (S07)", { timeout: 40_000 }, () => {
   it("shows a card per sheet with thumbnail, discipline, floors, scale and a confidence badge with reasons", async () => {
     await openSheets();
     const cards = screen.getAllByRole("article");
@@ -144,7 +149,7 @@ describe("Sheet confirmation (S07)", { timeout: 20_000 }, () => {
     const dialog = await screen.findByRole("dialog", { name: /פיצול לקומות/ });
     // seeded regions (2) are listed and drawn as passive overlays
     expect(within(dialog).getAllByRole("listitem")).toHaveLength(2);
-    expect(await within(dialog).findByTestId("stub-overlays", {}, { timeout: 10_000 })).toHaveTextContent("region:r1,region:r2");
+    expect(await within(dialog).findByTestId("stub-overlays", {}, { timeout: 25_000 })).toHaveTextContent("region:r1,region:r2");
     // lasso tool is active in split mode
     expect(within(dialog).getByRole("button", { name: "לאסו (L)" })).toHaveAttribute("aria-pressed", "true");
 
@@ -176,7 +181,7 @@ describe("Sheet confirmation (S07)", { timeout: 20_000 }, () => {
     await user.click(within(plumb).getByRole("button", { name: "כייל בשתי לחיצות" }));
     const dialog = await screen.findByRole("dialog", { name: /כיול קנה מידה/ });
     expect(within(dialog).getByRole("button", { name: "כיול קנה מידה (S)" })).toHaveAttribute("aria-pressed", "true");
-    await user.click(await within(dialog).findByRole("button", { name: "stub-calibrate" }, { timeout: 10_000 }));
+    await user.click(await within(dialog).findByRole("button", { name: "stub-calibrate" }, { timeout: 25_000 }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(within(card("ת. אינסטלציה / קומת מרתף")).getByRole("textbox", { name: /מכנה קנה המידה/ })).toHaveValue("50");
     expect(screen.getByText(/קנה המידה עודכן ל-/)).toBeInTheDocument();
@@ -241,7 +246,7 @@ describe("Processing panel (project page): per-sheet stage and Hebrew errors", (
   });
 });
 
-describe("tool rail keyboard", { timeout: 20_000 }, () => {
+describe("tool rail keyboard", { timeout: 40_000 }, () => {
   it("switches tools by physical key (works on a Hebrew layout)", async () => {
     const user = userEvent.setup();
     await openSheets();

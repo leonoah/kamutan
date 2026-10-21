@@ -433,6 +433,143 @@
             "traceparent"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "type": "number",
+              "const": 1
+            },
+            "type": {
+              "type": "string",
+              "const": "export.marked_pdf"
+            },
+            "jobId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "orgId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "exportId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "sheetIds": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "minItems": 1,
+                  "maxItems": 200
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "versionIds": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "propertyNames": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "options": {
+              "type": "object",
+              "properties": {
+                "legend": {
+                  "type": "boolean",
+                  "const": true,
+                  "default": true
+                },
+                "floorSplit": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "watermark": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "hideTitleBlock": {
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "storagePath": {
+              "type": "string",
+              "pattern": "^orgs\\/([A-Za-z0-9_-]{1,128})\\/projects\\/([A-Za-z0-9_-]{1,128})\\/exports\\/([A-Za-z0-9_-]{1,128})\\/marked\\.pdf$"
+            },
+            "traceparent": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "type",
+            "jobId",
+            "orgId",
+            "projectId",
+            "exportId",
+            "sheetIds",
+            "versionIds",
+            "options",
+            "storagePath",
+            "traceparent"
+          ],
+          "additionalProperties": false
         }
       ]
     }

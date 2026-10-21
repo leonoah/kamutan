@@ -160,3 +160,22 @@ export function usePatchRule(orgId: string) {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["boq-rules", orgId] }),
   });
 }
+
+/* ---------------- Sprint 5: marked PDF export (job → poll → signed URL) ---------------- */
+
+export function useExportMarkedPdf(projectId: string) {
+  const api = useApi();
+  return useMutation({ mutationFn: (req: import("@/api/types").MarkedPdfExportRequest) => api.exportMarkedPdf(projectId, req) });
+}
+
+/** Polls the export doc until it succeeds / fails (the signed URL arrives with `succeeded`). */
+export function useExportDoc(projectId: string, exportId: string | null, intervalMs = 700) {
+  const api = useApi();
+  return useQuery({
+    queryKey: ["export", projectId, exportId],
+    queryFn: () => api.getExport(projectId, exportId!),
+    enabled: Boolean(exportId),
+    refetchInterval: (q) => (q.state.data?.status === "succeeded" || q.state.data?.status === "failed" ? false : intervalMs),
+    staleTime: 0,
+  });
+}

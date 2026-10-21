@@ -228,16 +228,23 @@ def test_sample_mep_basement_split_with_reference(sample_dir):
     vs_c, _, e_c = _load_artifacts("ad257a1c")
     refs = reference_walls(vs_c, e_c["regions"], 50, sheet_id="ad257a1c")
     rooms = segment(vs, text, e["regions"], 50, reference_walls=refs)
-    base = sorted(round(r.area_m2, 1) for r in rooms if r.floor == "basement")
+    base = sorted(round(r.area_m2, 1) for r in rooms if r.floor == "basement" and not r.niche)
     assert len(base) == 3, base  # bedroom / living+kitchen / bathroom (Sprint 2: bedroom+living merged 41.9)
+    # Sprint 5: + the bathroom's laundry niche as a sub-room
+    assert [r.parent_room_id for r in rooms if r.floor == "basement" and r.niche] == [
+        next(r.id for r in rooms if r.floor == "basement" and r.type == "bathroom")
+    ]
     assert any(13.5 <= a <= 16.5 for a in base) and any(23.0 <= a <= 27.0 for a in base)
 
 
 def test_sample_wet_rooms_geometry(sample_dir):
     vs, text, e = _load_artifacts("6fa88f92")
     rooms = segment(vs, text, e["regions"], 50)
-    wet = [r for r in rooms if r.wet]
+    wet = [r for r in rooms if r.wet and not r.niche]
     assert len(wet) == 3
+    # Sprint 5: the basement and first-floor general baths each get their laundry niche (sub-room, wet like its parent)
+    niches = [r for r in rooms if r.niche]
+    assert len(niches) == 2 and {n.parent_room_id for n in niches} <= {r.id for r in wet}
     for r in wet:
         assert r.type == "bathroom"
         assert 3.0 <= r.area_m2 <= 6.5

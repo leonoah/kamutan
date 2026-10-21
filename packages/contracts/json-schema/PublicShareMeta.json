@@ -1,0 +1,225 @@
+{
+  "$ref": "#/definitions/PublicShareMeta",
+  "definitions": {
+    "PublicShareMeta": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": "object",
+          "properties": {
+            "shortId": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "recipient": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "hideTitleBlock": {
+              "type": "boolean"
+            },
+            "allowPdfDownload": {
+              "type": "boolean"
+            },
+            "watermark": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "shortId",
+            "label",
+            "recipient",
+            "expiresAt",
+            "createdAt",
+            "hideTitleBlock",
+            "allowPdfDownload",
+            "watermark"
+          ],
+          "additionalProperties": false
+        },
+        "project": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "address": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "name",
+            "address"
+          ],
+          "additionalProperties": false
+        },
+        "sheets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sheetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "versionId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "discipline": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "floors": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              },
+              "page": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "widthMm": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "heightMm": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "widthMm",
+                      "heightMm"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tiles": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "tileSize": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "dpi": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "levels": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "widthPx": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "heightPx": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "tileSize",
+                      "dpi",
+                      "levels",
+                      "widthPx",
+                      "heightPx"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "sheetId",
+              "versionId",
+              "title",
+              "discipline",
+              "floors",
+              "page",
+              "tiles"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "pdf": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "running",
+                    "ready",
+                    "failed"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "link",
+        "project",
+        "sheets",
+        "pdf"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/PublicShareMeta.json"
+}

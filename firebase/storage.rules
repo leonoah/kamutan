@@ -38,6 +38,8 @@ rules_version = '2';
 //                                                  The API checks magic bytes (OLE CFB / OOXML zip) on finalize.
 //   orgs/{orgId}/projects/{projectId}/exports/**   Sprint 3 Excel exports — API only; 2-minute signed URL (SEC-20).
 //   orgs/{orgId}/projects/{projectId}/boq/**       Sprint 3 build evidence (evidence.json.gz) — worker only; API reads.
+//   orgs/{orgId}/projects/{projectId}/exports/{id}/marked.pdf  Sprint 5 marked PDF — worker writes; API signs (15 min).
+//   orgs/{orgId}/offboarding/{id}.zip              Sprint 5 offboarding export — API only; 24 h signed URL.
 //   orgs/{orgId}/llm-cache/**                      Sprint 2 LLM gateway cache (SEC-23, per org) — worker only, never
 //                                                  client-readable, never signed by the API.
 //   orgs/{orgId}/projects/{projectId}/derived/**,
@@ -153,6 +155,11 @@ service firebase.storage {
 
     // Sprint-0 artifact prefix — kept explicit so nobody re-opens it by accident.
     match /orgs/{orgId}/derived/{rest=**} {
+      allow read, write: if false;
+    }
+
+    // Sprint 5: offboarding ZIP (whole-org export) — API only, signed URL.
+    match /orgs/{orgId}/offboarding/{rest=**} {
       allow read, write: if false;
     }
 

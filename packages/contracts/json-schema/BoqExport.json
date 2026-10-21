@@ -10,6 +10,14 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9_-]+$"
         },
+        "kind": {
+          "type": "string",
+          "const": "xlsx"
+        },
+        "status": {
+          "type": "string",
+          "const": "ready"
+        },
         "templateId": {
           "anyOf": [
             {

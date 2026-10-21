@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .. import errors as E
+from ..calibration import default_table
 from ..errors import IngestError
 from ..pipeline.artifacts import version_prefix
 from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
@@ -336,6 +337,7 @@ def build_project(org_id: str, project_id: str, build_id: str, blobs: BlobStore,
         "skippedSheets": inp.skipped_sheets,
         "writes": counts,
         "durationMs": int((time.monotonic() - t0) * 1000),
+        "calibration": default_table().stats(),
     }
     return BuildOutcome("succeeded", res, stats, ev_path, written)
 

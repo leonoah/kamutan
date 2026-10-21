@@ -1,5 +1,6 @@
 import {
   ApiError,
+  CONSERVATIVE_REASON,
   type Detection,
   type BoqBuild,
   type BoqEvidenceArtifact,
@@ -47,13 +48,22 @@ import { DEFAULT_TEMPLATE, SECOND_TEMPLATE, defaultRules, libraryItems } from "@
  * The dev index is polled; otherwise (and always in tests) the mock engine aggregates the overlay detections.
  */
 
+
+/** Sprint 5: calibration reported by the mock worker (conservative until 30 GT projects exist). */
+export const MOCK_CALIBRATION = { mode: "conservative", version: "cal-2026.10-mock" } as const;
+/** Yellow lines carry the conservative-calibration reason (the real worker writes it on capped items). */
+function withConservative(l: BoqLine): string[] {
+  const r = l.reasons ?? [];
+  return l.level === "yellow" && !r.includes(CONSERVATIVE_REASON) ? [...r, CONSERVATIVE_REASON] : [...r];
+}
+
 export interface BoqMockDeps {
   rows(projectId: string): SheetRow[];
   detections(row: SheetRow): Promise<DetectionsArtifact | null>;
   emit(): void;
   role(): Role;
   tickMs: number;
-  blockExportOnRed: boolean;
+  blockExportOnRed: boolean | (() => boolean);
   /** dev only: poll /dev-artifacts for Worker-BOQ lines + Worker-A links. */
   devBase: string | null;
   /** dev only: ignore Worker-BOQ's lines and always use the mock engine (`?mockBoq=engine`). */
@@ -119,6 +129,7 @@ export function normalizeLine(raw: Record<string, unknown>, i: number): BoqLine 
 }
 
 export function createBoqMock(deps: BoqMockDeps) {
+  const blockOnRed = () => (typeof deps.blockExportOnRed === "function" ? deps.blockExportOnRed() : deps.blockExportOnRed);
   const projects = new Map<string, ProjectBoq>();
   const library = new Map(libraryItems().map((i) => [i.id, i]));
   const templates = new Map<string, BoqTemplate>([DEFAULT_TEMPLATE, SECOND_TEMPLATE].map((t) => [t.id, structuredClone(t)]));
@@ -275,7 +286,7 @@ export function createBoqMock(deps: BoqMockDeps) {
           status: "succeeded",
           progress: 100,
           finishedAt: now(),
-          stats: { lines: p.lines.size, evidence: Object.values(p.evidence).reduce((s, e) => s + e.length, 0), sheets: deps.rows(projectId).length, groups: [...p.links.values()].reduce((s, l) => s + l.groups.length, 0) },
+          stats: { lines: p.lines.size, evidence: Object.values(p.evidence).reduce((s, e) => s + e.length, 0), sheets: deps.rows(projectId).length, groups: [...p.links.values()].reduce((s, l) => s + l.groups.length, 0), calibration: { ...MOCK_CALIBRATION } },
         });
         p.state = { latestBuildId: build.id, builtAt: build.finishedAt, stale: false };
       } catch (e) {
@@ -417,10 +428,12 @@ export function createBoqMock(deps: BoqMockDeps) {
     listLines(projectId: string): BoqLinesResponse {
       const p = proj(projectId);
       return {
-        items: [...p.lines.values()].map((l) => ({ ...l, byFloor: { ...l.byFloor } })),
+        items: [...p.lines.values()].map((l) => ({ ...l, byFloor: { ...l.byFloor }, reasons: withConservative(l) })),
         boq: p.state ? { ...p.state } : null,
         chapters: (templates.get([...templates.values()].find((t) => t.default)?.id ?? "") ?? DEFAULT_TEMPLATE).chapters,
-        blockExportOnRed: deps.blockExportOnRed,
+        blockExportOnRed: blockOnRed(),
+        // Sprint 5: the mock runs the conservative calibration like the worker (brief §1).
+        calibration: p.state ? MOCK_CALIBRATION : null,
       };
     },
     patchLine(projectId: string, lineId: string, req: PatchBoqLineRequest, uid: string): BoqLine {
@@ -441,6 +454,8 @@ export function createBoqMock(deps: BoqMockDeps) {
         if (req.qtyOverride !== null && (!Number.isFinite(req.qtyOverride) || req.qtyOverride < 0)) throw new ApiError(400, "validation_failed", "qtyOverride");
         if (req.qtyOverride !== null && !req.reason?.trim()) throw new ApiError(400, "validation_failed", "a reason is required to override a quantity");
         l.qtyOverride = req.qtyOverride;
+        // Sprint-3 decision (kept in Sprint 5): an override on an approved line re-opens it as "נבדק".
+        if (l.status === "approved") Object.assign(l, { status: "reviewed", approvedBy: null, approvedAt: null });
         Object.assign(l, req.qtyOverride === null ? { qtyOverrideReason: null, qtyOverrideBy: null, qtyOverrideAt: null } : { qtyOverrideReason: req.reason!.trim(), qtyOverrideBy: uid, qtyOverrideAt: now() });
       } else if (req.reason !== undefined) throw new ApiError(400, "validation_failed", "reason is only allowed with qtyOverride");
       if (req.note !== undefined) l.note = req.note;
@@ -472,7 +487,7 @@ export function createBoqMock(deps: BoqMockDeps) {
       const p = proj(projectId);
       if (!p.state) throw new ApiError(409, "boq_not_built", "Build the BOQ first");
       const reds = [...p.lines.values()].filter((l) => l.level === "red" && l.status !== "approved").length;
-      if (deps.blockExportOnRed && reds > 0) throw new ApiError(409, "export_blocked", `${reds} red lines`);
+      if (blockOnRed() && reds > 0) throw new ApiError(409, "export_blocked", `${reds} red lines`);
       const filename = `boq-${projectId}-${req.split}.xlsx`;
       return { url: `mock://exports/${filename}`, filename, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
     },

@@ -37,6 +37,9 @@ function serverObjects(f: OrgFx): string[] {
     paths.libraryImportObject(f.org, '1a2b3c4d-0000-4000-8000-000000000001', 'xlsx'),
     // Sprint 4: find_similar candidate crops
     paths.similarThumb(f.org, f.project, 'ss1', 'c_1'),
+    // Sprint 5: marked PDF + offboarding ZIP
+    paths.markedPdf(f.org, f.project, 'mp1'),
+    paths.offboardingZip(f.org, 'ox1'),
   ];
 }
 

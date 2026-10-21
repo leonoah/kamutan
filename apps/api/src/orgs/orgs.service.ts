@@ -40,7 +40,7 @@ export class OrgsService {
   }
 
   async get(user: AuthContext, orgId: string): Promise<MyOrg> {
-    const { role } = await this.access.requireRole(user, orgId, 'viewer');
+    const { role } = await this.access.requireRole(user, orgId, 'viewer', { allowOffboarding: true });
     const org = await this.repo.getOrg(orgId);
     if (!org) throw notFound('org');
     return { ...org, role };

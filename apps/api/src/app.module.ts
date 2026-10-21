@@ -12,6 +12,7 @@ import { loggerParams } from './common/logging';
 import type { AppConfig } from './config/config';
 import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './db/database.module';
+import { GovernanceModule } from './governance/governance.module';
 import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
 import { OrgsModule } from './orgs/orgs.module';
@@ -43,6 +44,7 @@ export class AppModule {
         UnderstandingModule,
         BoqModule,
         ReviewModule,
+        GovernanceModule,
         JobsModule,
       ],
       providers: [

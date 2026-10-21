@@ -6,6 +6,8 @@ interface FakeOpts {
   mfa?: boolean;
   provider?: string;
   email?: string;
+  /** Sprint 5: `auth_time` (seconds since epoch); default = now (a fresh sign-in). */
+  authTime?: number;
 }
 
 /**
@@ -19,6 +21,7 @@ export class FakeIdTokenVerifier implements IdTokenVerifier {
     const token = `fake.${randomBytes(12).toString('base64url')}.${uid.replace(/[^A-Za-z0-9_-]/g, '')}`;
     this.issued.set(token, {
       uid,
+      auth_time: opts.authTime ?? Math.floor(Date.now() / 1000),
       email: opts.email ?? `${uid}@example.test`,
       firebase: {
         sign_in_provider: opts.provider ?? 'password',
@@ -32,6 +35,11 @@ export class FakeIdTokenVerifier implements IdTokenVerifier {
     this.issued.delete(token);
   }
 
+  /** Emulates revokeRefreshTokens: every token of `uid` stops verifying. */
+  revokeUser(uid: string): void {
+    for (const [t, c] of [...this.issued.entries()]) if (c.uid === uid) this.issued.delete(t);
+  }
+
   async verify(token: string): Promise<AuthContext> {
     const claims = this.issued.get(token);
     if (!claims) throw new InvalidTokenError('id-token-revoked-or-invalid');
@@ -42,6 +50,7 @@ export class FakeIdTokenVerifier implements IdTokenVerifier {
 export function user(uid: string, opts: FakeOpts = {}): AuthContext {
   return principalFromClaims({
     uid,
+    auth_time: opts.authTime ?? Math.floor(Date.now() / 1000),
     email: `${uid}@example.test`,
     firebase: { sign_in_provider: opts.provider ?? 'password', ...(opts.mfa ? { sign_in_second_factor: 'totp' } : {}) },
   });

@@ -1,0 +1,6 @@
+# Kamutan security contact (RFC 9116).
+# PLACEHOLDER — the owner must replace the Contact line (and re-sign Expires) before the beta.
+Contact: mailto:security@REPLACE-ME.example
+Expires: 2027-10-01T00:00:00.000Z
+Preferred-Languages: he, en
+Canonical: https://kamutan-fba67.web.app/.well-known/security.txt

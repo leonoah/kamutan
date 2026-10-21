@@ -77,6 +77,13 @@ export function docPaths(f: OrgFx) {
     correctionBatch: `${p}/correctionBatches/cb1`,
     roomSettings: `${p}/roomSettings/sheet1__r_1`,
     similarSearch: `${p}/similarSearches/ss1`,
+    // Sprint 5
+    markedPdfExport: `${p}/exports/mp1`,
+    offboardingExport: `orgs/${f.org}/offboardingExports/ox1`,
+    auditHead: `orgs/${f.org}/auditMeta/head`,
+    reprocessRequest: `${p}/reprocessRequests/sheet1`,
+    shareToken: `shareTokens/${f.org === 'org-a' ? 'a' : 'b'}${'1'.repeat(63)}`,
+    certificate: `offboardingCertificates/${f.org}`,
   };
 }
 
@@ -134,6 +141,13 @@ export async function seed(env: RulesTestEnvironment): Promise<void> {
       await db.doc(d.boqRule).set({ kind: 'class_to_item', match: { classes: ['socket_single'] }, itemCode: '4.00', priority: 100, enabled: true, source: 'default', updatedAt: ts() });
       await db.doc(d.libraryImport).set({ orgId: f.org, projectId: null, sourceKind: 'xlsx', storagePath: `orgs/${f.org}/imports/x.xlsx`, originalName: 'a.xlsx', sizeBytes: 10, status: 'queued', jobId: null, createdBy: f.users.editor, createdAt: ts(), expiresAt: ts(), finalizedAt: ts(), stats: null, error: null });
       await db.doc(d.boqBuild).set({ status: 'succeeded', jobId: null, requestedBy: f.users.editor, createdAt: ts(), startedAt: ts(), finishedAt: ts(), stats: null, error: null });
+      // Sprint 5
+      await db.doc(d.markedPdfExport).set({ kind: 'marked_pdf', status: 'ready', storagePath: `${d.project}/exports/mp1/marked.pdf`, pageCount: 3, createdBy: f.users.editor, createdAt: ts() });
+      await db.doc(d.offboardingExport).set({ status: 'ready', storagePath: `orgs/${f.org}/offboarding/ox1.zip`, createdBy: f.users.admin, createdAt: ts() });
+      await db.doc(d.auditHead).set({ hash: 'd'.repeat(64), at: ts(), count: 1 });
+      await db.doc(d.reprocessRequest).set({ sheetId: 'sheet1', status: 'pending', sources: [], reason: 'reference_walls' });
+      await db.doc(d.shareToken).set({ orgId: f.org, projectId: f.project, linkId: 'sl1', createdAt: ts() });
+      await db.doc(d.certificate).set({ schema: 'kamutan.deletion-certificate/1', orgId: f.org });
       await db.doc(d.boqExport).set({ templateId: 'tpl_default', split: 'summed', markDraft: false, storagePath: `${d.project}/exports/e1.xlsx`, buildId: 'b1', counts: {}, sha256: 'e'.repeat(64), sizeBytes: 1, createdBy: f.users.editor, createdAt: ts() });
     }
   });

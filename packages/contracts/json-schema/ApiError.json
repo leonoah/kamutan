@@ -24,6 +24,10 @@
                 "rate_limited",
                 "not_ready",
                 "export_blocked",
+                "org_offboarding",
+                "recent_auth_required",
+                "share_unavailable",
+                "method_not_allowed",
                 "internal_error",
                 "service_unavailable"
               ]

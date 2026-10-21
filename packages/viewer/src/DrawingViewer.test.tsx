@@ -488,4 +488,23 @@ describe("DrawingViewer overlay layers (Sprint 2)", () => {
     expect(onBackgroundClick.mock.calls[0]![0][1]).toBeCloseTo(30);
     expect(container.querySelector("[data-point-label]")).toHaveTextContent("3");
   });
+
+  it("Sprint 5: draws the share watermark over the canvas without taking pointer events", () => {
+    const { app, container } = setup({ watermark: "שותף עם יוסי • 15.10.2026 • ab12cd" });
+    const wm = container.querySelector<HTMLElement>("[data-watermark]")!;
+    expect(wm).toBeTruthy();
+    expect(app.contains(wm)).toBe(true);
+    expect(wm.style.pointerEvents).toBe("none");
+    // Tiled diagonal copies are decorative; the corner chip carries the text once, RTL.
+    expect(wm.querySelector("[aria-hidden]")!.children.length).toBeGreaterThan(8);
+    const chip = [...wm.querySelectorAll(":scope > span")].at(-1)!;
+    expect(chip).toHaveAttribute("dir", "rtl");
+    expect(chip).toHaveTextContent("שותף עם יוסי • 15.10.2026 • ab12cd");
+  });
+
+  it("Sprint 5: no watermark layer unless asked", () => {
+    const { container } = setup();
+    expect(container.querySelector("[data-watermark]")).toBeNull();
+  });
 });
+

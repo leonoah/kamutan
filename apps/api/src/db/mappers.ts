@@ -15,6 +15,10 @@ import {
   TilesArtifactSchema,
   VERSION_STAGES,
   VersionStatsSchema,
+  SheetVersionSchema,
+  CalibrationStatsSchema,
+  TimingsMsSchema,
+  TitleBlockMmSchema,
   type Job,
   type JobProgress,
   type LegendEntry,
@@ -64,7 +68,17 @@ function processingError(v: unknown): ProcessingError | null {
 }
 
 export function toOrg(id: string, d: Doc): Org {
-  return { id, name: String(d.name), settings: d.settings as Org['settings'], createdAt: iso(d.createdAt) };
+  return {
+    id,
+    name: String(d.name),
+    settings: d.settings as Org['settings'],
+    createdAt: iso(d.createdAt),
+    // Sprint 5 (SEC-52): only present once an org has been offboarded.
+    ...(d.status === 'offboarding' ? { status: 'offboarding' as const } : d.status === 'active' ? { status: 'active' as const } : {}),
+    ...(d.deleteAfter !== undefined ? { deleteAfter: isoOrNull(d.deleteAfter) } : {}),
+    ...(d.offboardingRequestedAt !== undefined ? { offboardingRequestedAt: isoOrNull(d.offboardingRequestedAt) } : {}),
+    ...(typeof d.offboardingRequestedBy === 'string' ? { offboardingRequestedBy: d.offboardingRequestedBy } : {}),
+  };
 }
 
 export function toMember(d: Doc): Member {
@@ -72,6 +86,7 @@ export function toMember(d: Doc): Member {
     uid: String(d.uid),
     role: d.role as Role,
     ...(d.email ? { email: String(d.email) } : {}),
+    ...(typeof d.displayName === 'string' && d.displayName ? { displayName: d.displayName.slice(0, 200) } : {}),
     ...(d.addedBy ? { addedBy: String(d.addedBy) } : {}),
     createdAt: iso(d.createdAt),
   };
@@ -203,13 +218,36 @@ function toStats(v: unknown): SheetVersion['stats'] {
   const rooms = nonNegInt(o.rooms);
   const legendEntries = nonNegInt(o.legendEntries);
   const links = LinkStatsSchema.safeParse(o.links);
+  // Sprint 5 (Worker-Cal): calibration mode/version + per-stage timings, kept when well-formed.
+  const calibration = CalibrationStatsSchema.safeParse(o.calibration);
+  const timings = TimingsMsSchema.safeParse(o.timingsMs);
   return {
     ...base.data,
     ...(det.success ? { detections: det.data } : {}),
     ...(rooms !== undefined ? { rooms } : {}),
     ...(legendEntries !== undefined ? { legendEntries } : {}),
     ...(links.success ? { links: links.data } : {}),
+    ...(calibration.success ? { calibration: { mode: calibration.data.mode, version: calibration.data.version } } : {}),
+    ...(timings.success ? { timingsMs: timings.data } : {}),
   };
+}
+
+function titleBlock(v: unknown): SheetVersion['titleBlockMm'] {
+  const r = TitleBlockMmSchema.safeParse(v);
+  return r.success ? r.data : null;
+}
+
+function reprocessReasonOf(v: unknown): SheetVersion['reprocessReason'] {
+  const r = SheetVersionSchema.shape.reprocessReason.safeParse(v);
+  return r.success ? (r.data ?? null) : null;
+}
+
+/** Worker form `{bboxMm: [x0, y0, x1, y1]}` → `{x, y, w, h}`. */
+function titleBlockFromBbox(v: unknown): SheetVersion['titleBlockMm'] {
+  const b = v && typeof v === 'object' ? (v as { bboxMm?: unknown }).bboxMm : null;
+  if (!Array.isArray(b) || b.length !== 4 || !b.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  const [x0, y0, x1, y1] = b as [number, number, number, number];
+  return titleBlock({ x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) });
 }
 
 export function toVersion(sheetId: string, id: string, d: Doc): SheetVersion {
@@ -227,6 +265,13 @@ export function toVersion(sheetId: string, id: string, d: Doc): SheetVersion {
     artifacts: toArtifacts(d.artifacts),
     regions: toRegions(d.regions),
     stats: toStats(d.stats),
+    ...(d.titleBlockMm !== undefined
+      ? { titleBlockMm: titleBlock(d.titleBlockMm) }
+      : d.titleBlock !== undefined
+        ? { titleBlockMm: titleBlockFromBbox(d.titleBlock) }
+        : {}),
+    ...(Array.isArray(d.referenceSources) ? { referenceSources: (d.referenceSources as unknown[]).filter((x): x is string => typeof x === 'string' && x.length <= 300).slice(0, 16) } : {}),
+    ...(d.reprocessReason !== undefined ? { reprocessReason: reprocessReasonOf(d.reprocessReason) } : {}),
     workerVersion: str(d.workerVersion),
     ...(typeof d.jobId === 'string' ? { jobId: d.jobId } : {}),
     ...(d.createdAt !== undefined ? { createdAt: isoOrNull(d.createdAt) } : {}),
@@ -256,6 +301,7 @@ export function toJob(id: string, d: Doc): Job {
     ...(d.sheetSetId !== undefined ? { sheetSetId: str(d.sheetSetId) } : {}),
     ...(typeof d.buildId === 'string' ? { buildId: d.buildId } : {}),
     ...(typeof d.importId === 'string' ? { importId: d.importId } : {}),
+    ...(typeof d.exportId === 'string' ? { exportId: d.exportId } : {}),
     ...(d.sheetId !== undefined ? { sheetId: str(d.sheetId) } : {}),
     ...(typeof d.versionId === 'string' ? { versionId: d.versionId } : {}),
     type: String(d.type),

@@ -1,0 +1,133 @@
+{
+  "$ref": "#/definitions/PublicShareBoq",
+  "definitions": {
+    "PublicShareBoq": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "chapter": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "qty": {
+                "type": "number"
+              },
+              "overridden": {
+                "type": "boolean"
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "green",
+                  "yellow",
+                  "red"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "reviewed",
+                  "approved"
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "floor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "byFloor": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "chapter",
+              "code",
+              "description",
+              "unit",
+              "qty",
+              "overridden",
+              "level",
+              "status",
+              "reasons",
+              "floor",
+              "byFloor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "floors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "lines": {
+              "type": "integer"
+            },
+            "green": {
+              "type": "integer"
+            },
+            "yellow": {
+              "type": "integer"
+            },
+            "red": {
+              "type": "integer"
+            },
+            "approved": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "lines",
+            "green",
+            "yellow",
+            "red",
+            "approved"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "lines",
+        "floors",
+        "counts"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/PublicShareBoq.json"
+}

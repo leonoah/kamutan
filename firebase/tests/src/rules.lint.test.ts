@@ -68,7 +68,7 @@ describe('firestore.rules (static)', () => {
     expect(stripComments(FIRESTORE_RULES)).not.toMatch(/if\s+true\b/);
     for (const a of fs.allows) {
       if (isDenyAll(a.condition)) continue;
-      expect(a.condition, `line ${a.line}`).toMatch(/signedIn\(\)|isMember|roleIn|isAdmin|canEditShare|canCorrect/);
+      expect(a.condition, `line ${a.line}`).toMatch(/signedIn\(\)|isMember|roleIn|isAdmin|canCorrect/);
     }
   });
 
@@ -105,6 +105,17 @@ describe('firestore.rules (static)', () => {
     }
     expect(fs.allows.find((a) => a.path.endsWith('auditLog/{eventId}') && a.methods.includes('read'))?.condition)
       .toBe('isAdmin(orgId)');
+  });
+
+  it('Sprint 5: shareLinks / shareTokens / offboardingCertificates / auditMeta / reprocessRequests are deny-all; exports member-read; offboardingExports admin-read', () => {
+    for (const seg of ['shareLinks/{linkId}', 'shareTokens/{tokenHash}', 'offboardingCertificates/{orgId}', 'auditMeta/{docId}', 'reprocessRequests/{sheetId}']) {
+      const allows = fs.allows.filter((a) => a.path.endsWith(seg));
+      expect(allows.length, seg).toBeGreaterThan(0);
+      for (const a of allows) expect(isDenyAll(a.condition), seg).toBe(true);
+    }
+    expect(fs.allows.find((a) => a.path.endsWith('/exports/{exportId}') && a.methods.includes('read'))?.condition).toBe('isMember(orgId)');
+    expect(fs.allows.find((a) => a.path.endsWith('offboardingExports/{exportId}') && a.methods.includes('read'))?.condition).toBe('isAdmin(orgId)');
+    expect(stripComments(FIRESTORE_RULES)).not.toContain('canEditShare');
   });
 
   it('jobs are read by membership of resource.data.orgId', () => {
@@ -336,7 +347,7 @@ describe('Sprint 3 — BOQ, library, rules, imports, exports (static)', () => {
   });
 
   it('job types include boq.build, library.import and (Sprint 4) symbols.find_similar', () => {
-    expect(JOB_TYPES).toEqual(['ingest.sheet_version', 'boq.build', 'library.import', 'symbols.find_similar']);
+    expect(JOB_TYPES).toEqual(['ingest.sheet_version', 'boq.build', 'library.import', 'symbols.find_similar', 'export.marked_pdf', 'offboarding.export']);
   });
 
   it('import slot name check mirrors LIBRARY_IMPORT_PATH_RE; export/evidence/links objects land in deny-all matches', () => {

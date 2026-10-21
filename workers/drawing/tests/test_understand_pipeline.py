@@ -56,6 +56,17 @@ def test_version_doc_gets_artifacts_and_stats(run):
         "switch_single": 4,
     }
     assert st["detections"]["green"] + st["detections"]["yellow"] + st["detections"]["red"] == st["detections"]["total"]
+    # Sprint 5 (Worker-Cal): calibration + per-stage timings on the version; conservative table → no green
+    from kamutan_drawing.calibration import default_table
+    from kamutan_drawing.service.pipeline import TIMING_STAGES
+
+    assert st["calibration"] == default_table().stats() and st["calibration"]["mode"] == "conservative"
+    assert tuple(st["timingsMs"]) == TIMING_STAGES and st["timingsMs"]["total"] >= st["timingsMs"]["symbols"] > 0
+    assert st["detections"]["green"] == 0
+    if v.get("titleBlock") is not None:
+        x0, y0, x1, y1 = v["titleBlock"]["bboxMm"]
+        tb = v["titleBlockMm"]
+        assert (x0, y0) == (tb["x"], tb["y"]) and x1 > x0 and y1 > y0
     det = _gz(blobs, v["artifacts"]["detections"])
     validate("DetectionsArtifact", det)
     validate("LegendArtifact", _gz(blobs, v["artifacts"]["legend"]))

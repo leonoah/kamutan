@@ -11,6 +11,26 @@ import type { AppConfig } from './config/config';
 /** All routes live under /api/v1/... (Hosting rewrite `/api/**` → function `api`). */
 export const GLOBAL_PREFIX = 'api';
 
+/** Path prefix of the public (unauthenticated, read-only) share API. */
+export const PUBLIC_SHARE_PREFIX = `/${GLOBAL_PREFIX}/v1/public/`;
+
+type MiniReq = { path?: string; method?: string };
+type MiniRes = { setHeader: (k: string, v: string) => void; status: (n: number) => { json: (b: unknown) => void } };
+
+/** Headers on every public response + 405 for anything but GET/HEAD (before routing, so no handler ever sees a write). */
+export function publicShareMiddleware(req: MiniReq, res: MiniRes, next: () => void): void {
+  if (!req.path?.startsWith(PUBLIC_SHARE_PREFIX)) return next();
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD');
+    res.status(405).json({ error: { code: 'method_not_allowed', message: 'the share API is read-only', requestId: null } });
+    return;
+  }
+  next();
+}
+
 /** Applies HTTP hardening shared by main.ts, function.ts and e2e tests. */
 export function configureApp(app: NestExpressApplication, cfg: AppConfig): void {
   app.disable('x-powered-by');
@@ -24,9 +44,11 @@ export function configureApp(app: NestExpressApplication, cfg: AppConfig): void 
     hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
   };
   // JSON API: lock everything down (SEC-40).
+  // R-A5: no helmet CSP defaults on JSON responses (they add font-src/style-src … that a JSON API never needs).
   const apiHelmet = helmet({
     ...common,
-    contentSecurityPolicy: { directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+    contentSecurityPolicy: { useDefaults: false, directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'none'"] } },
+    xFrameOptions: { action: 'deny' },
   });
   // Swagger UI (non-production only) needs its own scripts/styles.
   const docsHelmet = helmet({
@@ -48,6 +70,8 @@ export function configureApp(app: NestExpressApplication, cfg: AppConfig): void 
     res.setHeader('Cache-Control', 'no-store');
     next();
   });
+  // Sprint 5 (SEC-29): public share API — never indexed, never leaks the URL (token) as a referrer, read-only (405).
+  app.use(publicShareMiddleware);
   // Same-origin by default (ADR 0008). CORS only when origins are explicitly allow-listed (e.g. local Vite).
   if (cfg.CORS_ORIGINS.length > 0) {
     app.enableCors({

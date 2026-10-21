@@ -1,0 +1,45 @@
+{
+  "$ref": "#/definitions/OffboardOrgResponse",
+  "definitions": {
+    "OffboardOrgResponse": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "offboarding"
+          ]
+        },
+        "deleteAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revokedShareLinks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revokedSessions": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "orgId",
+        "status",
+        "deleteAfter",
+        "revokedShareLinks",
+        "revokedSessions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/OffboardOrgResponse.json"
+}

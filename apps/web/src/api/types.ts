@@ -11,7 +11,12 @@ export interface MyOrg {
   name: string;
   role: Role;
   /** Sprint 3 (optional in the /me DTO): org policy, e.g. block export while "לבדיקה" lines remain. */
-  settings?: { blockExportOnRed?: boolean };
+  settings?: Partial<OrgSettings>;
+  /** Sprint 5: short url-safe org name typed to confirm offboarding (falls back to the id). */
+  slug?: string;
+  /** Sprint 5: `offboarding` blocks everything except the export download (SEC-52). */
+  status?: OrgStatus;
+  deleteAfter?: string | null;
 }
 export interface MeResponse {
   uid: string;
@@ -255,6 +260,10 @@ export interface VersionStats {
   detections?: DetectionStats;
   rooms?: number;
   legendEntries?: number;
+  /** Sprint 5: calibration table the worker scored this version with. */
+  calibration?: CalibrationStats;
+  /** Sprint 5: per-stage worker timings. */
+  timingsMs?: Record<string, number>;
 }
 
 /** Axis-aligned box in paper mm (x, y = top-left). */
@@ -299,7 +308,10 @@ export interface Detection {
   centerMm: PointMm;
   bboxMm: BBoxMm;
   angleDeg: number;
+  /** Calibrated score (Sprint 5: isotonic map of `scoreRaw`; equal to it when the class has no map). */
   score: number;
+  /** Sprint 5: the detector's raw score before calibration (additive). */
+  scoreRaw?: number;
   level: DbLevel;
   /** Hebrew reason chips (or known reason codes). */
   reasons: string[];
@@ -549,7 +561,7 @@ export interface BoqBuild {
   finishedAt: string | null;
   /** Optional progress 0..100 (worker may report it). */
   progress?: number;
-  stats?: { lines?: number; evidence?: number; sheets?: number; groups?: number } | null;
+  stats?: { lines?: number; evidence?: number; sheets?: number; groups?: number; calibration?: CalibrationStats } | null;
   error?: { code: string; message: string } | null;
 }
 
@@ -561,6 +573,8 @@ export interface BoqLinesResponse {
   chapters?: BoqChapter[];
   /** Org setting (contracts BoqSummary.blockExportOnRed). */
   blockExportOnRed?: boolean;
+  /** Sprint 5: calibration of the latest build (summary.calibration / build stats). */
+  calibration?: CalibrationStats | null;
 }
 /** PATCH /v1/projects/:pid/boq/lines/:lineId */
 export interface PatchBoqLineRequest {
@@ -955,6 +969,225 @@ export class ApiError extends Error {
   }
 }
 
+/* ---------- Sprint 5: calibration, history, audit, marked PDF, share links, org settings, offboarding ----------
+ * docs/agents/SPRINT5_BRIEF.md §1–§5; hand-kept mirror of the API agent's contracts (see NOTES.md Sprint 5).
+ */
+export type CalibrationMode = "conservative" | "full";
+/** `stats.calibration` on version docs and builds. */
+export interface CalibrationStats {
+  mode: CalibrationMode;
+  version: string;
+}
+/** Hebrew reason the worker writes on items capped at yellow by the conservative calibration (brief §1). */
+export const CONSERVATIVE_REASON = "כיול שמרני: אין מספיק נתוני אמת לסוג זה";
+export const CONSERVATIVE_REASON_CODE = "CONSERVATIVE_CALIBRATION";
+
+export type OrgStatus = "active" | "offboarding" | "deleted";
+/** contracts OrgSettingsSchema (orgs/{orgId}.settings). */
+export interface OrgSettings {
+  llmEnabled: boolean;
+  blockExportOnRed: boolean;
+  /** 0.9–0.995 (reported against the calibration table's Wilson LB). */
+  greenThreshold: number;
+  trainingOptIn: boolean;
+  llmMonthlyBudgetUsd?: number;
+  vatRate?: number;
+  autoRebuild?: boolean;
+}
+export type PatchOrgSettingsRequest = Partial<Pick<OrgSettings, "greenThreshold" | "blockExportOnRed" | "llmEnabled" | "trainingOptIn">>;
+export const GREEN_THRESHOLD_MIN = 0.9;
+export const GREEN_THRESHOLD_MAX = 0.995;
+export const GREEN_THRESHOLD_DEFAULT = 0.98;
+
+export interface ActorRef {
+  uid: string;
+  displayName: string | null;
+}
+export type LineHistoryAction = "status" | "qtyOverride" | "note" | "rebuild" | "correction";
+/** GET /v1/projects/:pid/boq/lines/:lineId/history — newest first. */
+export interface LineHistoryItem {
+  at: string;
+  by: ActorRef | null;
+  action: LineHistoryAction;
+  before: unknown;
+  after: unknown;
+  reason: string | null;
+}
+export interface LineHistoryResponse {
+  items: LineHistoryItem[];
+}
+
+/** One audit-log row (append-only, hash-chained; SEC-35). */
+export interface AuditEvent {
+  id: string;
+  at: string;
+  actor: ActorRef | null;
+  /** contracts `actorKind`: user | share_link (external viewer) | system. */
+  actorKind?: string;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  projectId?: string | null;
+  before?: unknown;
+  after?: unknown;
+  meta?: Record<string, unknown> | null;
+  hash?: string | null;
+  prevHash?: string | null;
+}
+export interface AuditQuery {
+  cursor?: string | null;
+  entity?: string | null;
+  action?: string | null;
+  limit?: number;
+}
+export interface AuditPage {
+  items: AuditEvent[];
+  nextCursor: string | null;
+}
+/** GET /v1/orgs/:orgId/audit/verify */
+export interface AuditVerifyResult {
+  ok: boolean;
+  checked: number;
+  brokenAt: string | null;
+}
+
+/** POST /v1/projects/:pid/boq/export/marked-pdf (legend is always on; watermark is the server's for share links). */
+export interface MarkedPdfExportRequest {
+  sheetIds: string[] | null;
+  floorSplit: boolean;
+  hideTitleBlock: boolean;
+}
+export type ExportKind = "xlsx" | "marked_pdf";
+export type ExportStatus = "queued" | "running" | "succeeded" | "failed";
+/** GET /v1/projects/:pid/exports/:id — `url` (15-min signed) once succeeded. */
+export interface ExportDoc {
+  id: string;
+  kind: ExportKind;
+  status: ExportStatus;
+  progress?: number | null;
+  pageCount: number | null;
+  createdBy: string | null;
+  createdAt: string;
+  error: { code: string; message: string } | null;
+  url: string | null;
+  filename: string | null;
+  expiresAt: string | null;
+}
+
+/** Share link as returned to members (contracts ShareLinkSchema without tokenHash). */
+export interface ShareLink {
+  id: string;
+  label: string;
+  recipient: string | null;
+  versionLock: string[];
+  expiresAt: string;
+  revokedAt: string | null;
+  hideTitleBlock: boolean;
+  allowPdfDownload: boolean;
+  viewCount: number;
+  lastViewedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+export const SHARE_LINK_DEFAULT_DAYS = 14;
+export const SHARE_LINK_MAX_DAYS = 90;
+export interface CreateShareLinkRequest {
+  days: number;
+  label: string;
+  recipient?: string | null;
+  hideTitleBlock?: boolean;
+  allowPdfDownload?: boolean;
+}
+/** The raw token is in `url` ONCE (never stored by the server). */
+export interface CreateShareLinkResponse {
+  link: ShareLink;
+  url: string;
+}
+
+/** Public (unauthenticated) share API `/v1/public/share/:token/…` — read-only by construction. */
+export interface PublicShareSheet {
+  id: string;
+  versionId: string;
+  title: string | null;
+  discipline: string | null;
+  floors: string[];
+  page: { widthMm: number; heightMm: number } | null;
+  tiles: { tileSize: number; dpi: number; levels: number; widthPx: number; heightPx: number } | null;
+}
+export interface PublicShareMeta {
+  linkId: string;
+  projectName: string;
+  orgName: string | null;
+  label: string;
+  expiresAt: string;
+  /** Date of the locked version (newest sheet version of the lock). */
+  versionDate: string | null;
+  hideTitleBlock: boolean;
+  allowPdfDownload: boolean;
+  /** Owner opted to show the confidence column (●▲◆ + word only, never scores or reasons). */
+  showConfidence: boolean;
+  /** "שותף עם {recipient|label} • {date} • {linkId-short}" (also burned into tiles + PDF by the server). */
+  watermark: string;
+  sheets: PublicShareSheet[];
+}
+/** Public BOQ line: no internal names, scores, reasons, notes or override authors. */
+export interface PublicBoqLine {
+  id: string;
+  chapter: string;
+  chapterTitle?: string | null;
+  code: string;
+  description: string;
+  unit: string;
+  qty: number;
+  level: DbLevel | null;
+  status: BoqLineStatus;
+  byFloor: Record<string, number>;
+  order?: number;
+}
+export interface PublicShareBoq {
+  lines: PublicBoqLine[];
+  chapters?: { code: string; title: string }[];
+}
+/** One locked sheet version's overlay (no raw text layer). `evidence`: line id → detection ids on this sheet. */
+export interface PublicShareOverlay {
+  sheetId: string;
+  versionId: string;
+  detections: Pick<Detection, "id" | "class" | "centerMm" | "bboxMm" | "level" | "lifecycle" | "floor" | "roomId">[];
+  rooms: Pick<Room, "id" | "name" | "floor" | "polygonMm" | "areaM2">[];
+  linkGroups: Pick<LinkGroup, "id" | "switchIds" | "luminaireIds" | "pointIds" | "level">[];
+  evidence: Record<string, string[]>;
+}
+export type ShareErrorKind = "expired" | "revoked" | "not_found" | "rate_limited" | "error";
+export interface PublicShareClient {
+  getMeta(token: string): Promise<PublicShareMeta>;
+  getBoq(token: string): Promise<PublicShareBoq>;
+  getOverlay(token: string, sheetId: string): Promise<PublicShareOverlay>;
+  /** Same-origin, API-proxied tile URL (watermarked + title block masked by the server). */
+  tileUrl(token: string, sheetId: string, z: number, x: number, y: number): string;
+  /** Watermarked marked PDF (only when the owner allowed it). */
+  pdfUrl(token: string): string;
+}
+
+/** Offboarding (SEC-52). */
+export interface OffboardingExport {
+  id: string;
+  status: ExportStatus;
+  progress?: number | null;
+  url: string | null;
+  expiresAt: string | null;
+  error: { code: string; message: string } | null;
+  createdAt: string;
+}
+export interface OffboardRequest {
+  /** The org slug typed by the admin. */
+  confirm: string;
+}
+export interface OffboardResponse {
+  status: OrgStatus;
+  deleteAfter: string;
+  revokedShareLinks?: number;
+}
+
 export interface ApiClient {
   getMe(): Promise<MeResponse>;
   listProjects(orgId: string): Promise<Project[]>;
@@ -1009,6 +1242,20 @@ export interface ApiClient {
   putRoomSettings(projectId: string, sheetId: string, roomId: string, req: RoomSettings): Promise<RoomSettingsResponse>;
   findSimilar(projectId: string, req: FindSimilarRequest): Promise<SimilarSearch>;
   getSimilarSearch(projectId: string, searchId: string): Promise<SimilarSearch>;
+
+  /* Sprint 5 — history, audit, marked PDF, share links, org settings, offboarding */
+  getLineHistory(projectId: string, lineId: string): Promise<LineHistoryResponse>;
+  listAudit(orgId: string, q?: AuditQuery): Promise<AuditPage>;
+  verifyAudit(orgId: string): Promise<AuditVerifyResult>;
+  exportMarkedPdf(projectId: string, req: MarkedPdfExportRequest): Promise<{ exportId: string }>;
+  getExport(projectId: string, exportId: string): Promise<ExportDoc>;
+  createShareLink(projectId: string, req: CreateShareLinkRequest): Promise<CreateShareLinkResponse>;
+  listShareLinks(projectId: string): Promise<ShareLink[]>;
+  revokeShareLink(projectId: string, linkId: string): Promise<ShareLink | null>;
+  patchOrgSettings(orgId: string, req: PatchOrgSettingsRequest): Promise<OrgSettings>;
+  startOffboardingExport(orgId: string): Promise<OffboardingExport>;
+  getOffboardingExport(orgId: string, exportId: string): Promise<OffboardingExport>;
+  offboardOrg(orgId: string, req: OffboardRequest): Promise<OffboardResponse>;
 }
 
 /* ---------- Storage (resumable uploads) ---------- */
@@ -1063,6 +1310,8 @@ export interface RealtimeSource {
 
 export interface Backend {
   api: ApiClient;
+  /** Sprint 5: unauthenticated, GET-only client of the share viewer (`/s/:token`). */
+  publicShare: PublicShareClient;
   uploads: UploadTransport;
   realtime: RealtimeSource;
 }

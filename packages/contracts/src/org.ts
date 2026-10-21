@@ -39,12 +39,42 @@ export const DEFAULT_ORG_SETTINGS: Readonly<OrgSettings> = Object.freeze({
   autoRebuild: true,
 });
 
+/**
+ * Sprint 5 (FR-31): what `PATCH /v1/orgs/:orgId/settings` (admin, audited) may change. Ranges are validated here;
+ * the stored `OrgSettingsSchema` stays wider for backwards compatibility.
+ */
+export const GREEN_THRESHOLD_MIN = 0.9;
+export const GREEN_THRESHOLD_MAX = 0.995;
+export const PatchOrgSettingsRequestSchema = z
+  .object({
+    /** Reported against the calibration table's Wilson lower bound; never makes green MORE permissive than the table. */
+    greenThreshold: z.number().finite().min(GREEN_THRESHOLD_MIN).max(GREEN_THRESHOLD_MAX).optional(),
+    blockExportOnRed: z.boolean().optional(),
+    llmEnabled: z.boolean().optional(),
+    /** Opt-in: corrections may be used to train models (SEC: never without opt-in). */
+    trainingOptIn: z.boolean().optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: 'at least one setting is required' });
+export type PatchOrgSettingsRequest = z.infer<typeof PatchOrgSettingsRequestSchema>;
+
+/** Sprint 5 (SEC-52): `offboarding` = every access blocked except the offboarding export download; hard delete at `deleteAfter`. */
+export const ORG_STATUSES = ['active', 'offboarding'] as const;
+export const OrgStatusSchema = z.enum(ORG_STATUSES);
+export type OrgStatus = z.infer<typeof OrgStatusSchema>;
+
 /** orgs/{orgId} (DTO: doc fields + id; timestamps as ISO strings). */
 export const OrgSchema = z.object({
   id: DocIdSchema,
   name: z.string().min(1).max(200),
   settings: OrgSettingsSchema,
   createdAt: TimestampSchema,
+  /** Sprint 5 (absent = `active`). */
+  status: OrgStatusSchema.optional(),
+  /** Sprint 5: offboarding requested → hard delete after this time (requestedAt + 30 days). */
+  deleteAfter: TimestampSchema.nullable().optional(),
+  offboardingRequestedAt: TimestampSchema.nullable().optional(),
+  offboardingRequestedBy: UidSchema.nullable().optional(),
 });
 export type Org = z.infer<typeof OrgSchema>;
 
@@ -65,6 +95,9 @@ export type Member = z.infer<typeof MemberSchema>;
 /** An org as seen by the current user (with their role). */
 export const MyOrgSchema = OrgSchema.extend({ role: RoleSchema });
 export type MyOrg = z.infer<typeof MyOrgSchema>;
+
+export const PatchOrgSettingsResponseSchema = z.object({ settings: OrgSettingsSchema });
+export type PatchOrgSettingsResponse = z.infer<typeof PatchOrgSettingsResponseSchema>;
 
 export const MeResponseSchema = z.object({
   uid: UidSchema,

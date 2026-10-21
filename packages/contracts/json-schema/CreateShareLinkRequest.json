@@ -1,0 +1,46 @@
+{
+  "$ref": "#/definitions/CreateShareLinkRequest",
+  "definitions": {
+    "CreateShareLinkRequest": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 90,
+          "default": 14
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "recipient": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hideTitleBlock": {
+          "type": "boolean",
+          "default": true
+        },
+        "allowPdfDownload": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/CreateShareLinkRequest.json"
+}

@@ -18,7 +18,7 @@ import {
   type SymbolMapping,
 } from '@kamutan/contracts';
 import { FieldPath, FieldValue, Timestamp, type DocumentData, type Firestore, type Query, type Transaction } from 'firebase-admin/firestore';
-import { auditHash } from './audit-chain';
+import { auditHash, logAuditEvent } from './audit-chain';
 import { confirmAudit, newVersionDoc, regionsAudit } from './in-memory.repository';
 import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
 import { mappers, versionSummary } from './mappers';
@@ -32,6 +32,9 @@ import {
   type Repository,
   type ResolveClusterInput,
 } from './repository';
+
+/** Per-transaction audit chain state (head read in this tx + events written so far). */
+const auditTxState = new WeakMap<Transaction, Map<string, { hash: string | null; count: number | null; writes: number }>>();
 
 /** Firestore Timestamp → Date (top level and one nested level), so mappers see plain values. */
 function plain(d: DocumentData | undefined): Record<string, unknown> | null {
@@ -458,25 +461,48 @@ export class FirestoreRepository implements Repository {
   }
 
   // --- audit -------------------------------------------------------------------------
-  /** @internal shared with FirestoreBoqRepository */
+  /**
+   * @internal shared with the other Firestore repositories.
+   * Sprint 5: reads the chain head doc `orgs/{o}/auditMeta/head` inside the transaction, so two concurrent appends
+   * conflict on that document and one of them retries (a query read alone does not lock "the next" document, which
+   * could fork the chain). Falls back to the newest event for logs written before the head doc existed.
+   */
   async auditHead(tx: Transaction, orgId: string): Promise<string | null> {
-    const snap = await tx.get(this.db.collection(`orgs/${orgId}/auditLog`).orderBy('at', 'desc').limit(1));
-    return (snap.docs[0]?.get('hash') as string | undefined) ?? null;
+    const headSnap = await tx.get(this.db.doc(fsPaths.auditHead(orgId)));
+    const fromHead = headSnap.exists ? (headSnap.get('hash') as string | undefined) : undefined;
+    let head: string | null = fromHead ?? null;
+    let count: number | null = headSnap.exists ? ((headSnap.get('count') as number | undefined) ?? null) : null;
+    if (!headSnap.exists) {
+      const snap = await tx.get(this.db.collection(`orgs/${orgId}/auditLog`).orderBy('at', 'desc').limit(1));
+      head = (snap.docs[0]?.get('hash') as string | undefined) ?? null;
+      count = null;
+    }
+    auditTxState.set(tx, new Map([[orgId, { hash: head, count, writes: 0 }]]));
+    return head;
   }
 
-  /** @internal */
-  writeAudit(tx: Transaction, orgId: string, prevHash: string | null, event: AuditInput): void {
+  /** @internal Several events in one transaction chain onto each other (per-transaction state). */
+  writeAudit(tx: Transaction, orgId: string, prevHash0: string | null, event: AuditInput): void {
+    const state = auditTxState.get(tx)?.get(orgId);
+    const prevHash = state && state.writes > 0 ? state.hash : prevHash0;
     const at = Timestamp.now();
     const body = {
       actorId: event.actorId,
-      actorKind: 'user',
+      actorKind: event.actorKind ?? 'user',
       entity: event.entity,
       entityId: event.entityId,
       action: event.action,
       after: event.after ?? null,
       at: at.toDate().toISOString(),
     };
-    tx.create(this.db.collection(`orgs/${orgId}/auditLog`).doc(), { ...body, at, prevHash, hash: auditHash(prevHash, body) });
+    logAuditEvent(orgId, event);
+    const hash = auditHash(prevHash, body);
+    tx.create(this.db.collection(`orgs/${orgId}/auditLog`).doc(), { ...body, at, prevHash, hash });
+    const writes = (state?.writes ?? 0) + 1;
+    const count = state?.count ?? null;
+    tx.set(this.db.doc(fsPaths.auditHead(orgId)), { hash, at, ...(count !== null ? { count: count + writes } : {}) }, { merge: true });
+    if (state) Object.assign(state, { hash, writes });
+    else auditTxState.set(tx, new Map([[orgId, { hash, count: null, writes }]]));
   }
 
   async appendAudit(orgId: string, event: AuditInput): Promise<void> {

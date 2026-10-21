@@ -12,6 +12,11 @@ import { LibraryPage } from "@/features/library/LibraryPage";
 import { NotFoundPage } from "./NotFoundPage";
 
 export const routes: RouteObject[] = [
+  // Sprint 5: external read-only share viewer — OUTSIDE AuthProvider (no Firebase Auth, no member API).
+  {
+    path: "/s/:token",
+    lazy: async () => ({ Component: (await import("@/features/share/SharedViewerPage")).SharedViewerPage }),
+  },
   {
     element: (
       <AuthProvider>
@@ -38,6 +43,15 @@ export const routes: RouteObject[] = [
               { path: "/projects/:projectId/sheets", element: <SheetsPage /> },
               { path: "/projects/:projectId/legend", element: <LegendPage /> },
               { path: "/library", element: <LibraryPage /> },
+              {
+                path: "/settings",
+                lazy: async () => ({ Component: (await import("@/features/settings/SettingsLayout")).SettingsLayout }),
+                children: [
+                  { index: true, lazy: async () => ({ Component: (await import("@/features/settings/OrgSettingsPage")).OrgSettingsPage }) },
+                  { path: "audit", lazy: async () => ({ Component: (await import("@/features/settings/AuditLogPage")).AuditLogPage }) },
+                  { path: "offboarding", lazy: async () => ({ Component: (await import("@/features/settings/OffboardingPage")).OffboardingPage }) },
+                ],
+              },
             ],
           },
           // Review workspace has its own full-bleed chrome

@@ -1,0 +1,25 @@
+{
+  "$ref": "#/definitions/OffboardOrgRequest",
+  "definitions": {
+    "OffboardOrgRequest": {
+      "type": "object",
+      "properties": {
+        "confirm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "confirm"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/OffboardOrgRequest.json"
+}

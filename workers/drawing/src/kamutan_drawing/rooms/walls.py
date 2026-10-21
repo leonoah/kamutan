@@ -36,6 +36,8 @@ DOOR_SWEEP_DEG = (60.0, 180.0)  # a door in a 45° wall swings up to 135°; pivo
 JAMB_SEARCH_R = (0.6, 2.0)  # other jamb of an open / pivot door, in door radii from the hinge
 WINDOW_MAX_M = 3.0
 WINDOW_JAMB_M = 0.3  # wall continuing past each end of a window, real metres
+WINDOW_STRAIGHT_M = 0.15  # a frame / glass polyline stays within this of its chord (jogs at the ends), real metres
+WINDOW_PATH_RATIO = 1.35  # … and its path is at most this × its chord
 WALL_T_M = (0.06, 0.6)  # wall thickness range, real metres
 BORROW_TOL_MM = 1.0  # reference walls closer than this to own walls are the same wall (alignment noise)
 
@@ -448,6 +450,14 @@ def _add_windows(vs: VectorSheet, mask: np.ndarray, ws: WallSet, mm_per_m: float
 
     Windows, sliding doors and bay windows are drawn as 2–3 parallel frame / glass lines between
     two wall ends; the pair requirement keeps single furniture or dimension lines out.
+
+    Lines are compared by their **chord** (end point to end point), not their path length: a frame line is often a
+    polyline with small jogs at its ends (the outer frame of the master-bath window on the Noah construction plan is
+    a "U": 1 mm out, 22 mm along the wall, 1 mm back — path 24 mm vs the 20 mm glass line, so a path-length match
+    rejected the pair and the room leaked). A line is "straight" when every vertex is within ``WINDOW_STRAIGHT_M`` of
+    its chord and its path ≤ ``WINDOW_PATH_RATIO`` × chord; bent glazing (bay windows) keeps its path length. The
+    window width is the shortest line of the group (the glass / inner frame spans the wall gap; outer frames overlap
+    the jambs).
     """
     walls = ws.walls
     idx = np.where(mask & vs.path_stroked & np.array([len(d) == 0 for d in vs.path_dash], bool))[0]
@@ -459,15 +469,18 @@ def _add_windows(vs: VectorSheet, mask: np.ndarray, ws: WallSet, mm_per_m: float
     cands: list[tuple[np.ndarray, float]] = []
     for i in idx:
         for r in path_lines(vs, int(i)):
-            if np.hypot(*(r[0] - r[-1])) < 0.3 * mm_per_m:
+            chord = float(np.hypot(*(r[0] - r[-1])))
+            if chord < 0.3 * mm_per_m:
                 continue  # closed / tiny
-            ln = float(np.hypot(*np.diff(r, axis=0).T).sum())
+            path = float(np.hypot(*np.diff(r, axis=0).T).sum())
+            straight = path <= WINDOW_PATH_RATIO * chord and _max_offset(r) <= WINDOW_STRAIGHT_M * mm_per_m
+            ln = chord if straight else path  # bay windows (bent glazing) keep their path length
             if not (0.4 * mm_per_m <= ln <= WINDOW_MAX_M * 2 * mm_per_m):
                 continue
             if not (wb.contains(shapely.Point(r[0])) and wb.contains(shapely.Point(r[-1]))):
                 continue
             ls = LineString(r)
-            if ls.difference(walls.buffer(0.05)).length < 0.5 * ln:
+            if ls.difference(walls.buffer(0.05)).length < 0.5 * path:
                 continue  # runs inside the walls: an outline, not a gap closure
             cands.append((r, ln))
     tmax = WALL_T_M[1] * mm_per_m
@@ -499,9 +512,32 @@ def _add_windows(vs: VectorSheet, mask: np.ndarray, ws: WallSet, mm_per_m: float
                     stops.append(r[0])
             wa = np.mean(starts, axis=0)
             wb_ = np.mean(stops, axis=0)
+            width = min(cands[g][1] for g in group)
             ws.openings.append(
-                Opening("window", (float(wa[0]), float(wa[1])), (float(wb_[0]), float(wb_[1])), float(la), "glazing")
+                Opening("window", (float(wa[0]), float(wa[1])), (float(wb_[0]), float(wb_[1])), float(width), "glazing")
             )
+
+
+def _inner_vertex(r: np.ndarray, end: int, min_len: float) -> np.ndarray:
+    """The first vertex at least ``min_len`` away from the polyline's end ``end`` (0 / -1), walking inwards: the
+    direction of the line at that end ignoring short jogs (a frame line's 1 mm return); the other end if none."""
+    pts = r if end == 0 else r[::-1]
+    for q in pts[1:]:
+        if float(np.hypot(*(q - pts[0]))) >= min_len:
+            return np.asarray(q)
+    return np.asarray(pts[-1])
+
+
+def _max_offset(r: np.ndarray) -> float:
+    """Largest distance of a polyline's vertices from its chord (paper mm)."""
+    if len(r) <= 2:
+        return 0.0
+    a, b = r[0], r[-1]
+    d = b - a
+    n = float(np.hypot(*d))
+    if n < 1e-9:
+        return float(np.hypot(*(r - a).T).max())
+    return float(np.abs((r[:, 0] - a[0]) * d[1] - (r[:, 1] - a[1]) * d[0]).max() / n)
 
 
 def _in_wall_line(lines: list[np.ndarray], walls: BaseGeometry, mm_per_m: float) -> bool:
@@ -513,7 +549,7 @@ def _in_wall_line(lines: list[np.ndarray], walls: BaseGeometry, mm_per_m: float)
         cover = 0.0
         for r in lines:
             p = r[end]
-            q = r[1] if end == 0 else r[-2]
+            q = _inner_vertex(r, end, WINDOW_STRAIGHT_M * mm_per_m)  # skip a short sideways jog at the end
             d = p - q
             n = float(np.hypot(*d))
             if n < 1e-6:

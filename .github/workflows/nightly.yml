@@ -90,7 +90,7 @@ jobs:
   data:
     name: kbench + golden (${{ matrix.suite }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -148,6 +148,28 @@ jobs:
           uv sync --locked
           uv run kbench validate "$KAMUTAN_DATA_DIR/gt/noah"
           # TODO(sprint-2): kbench eval/compare against the main baseline once detections exist.
+      - name: System packages for the worker pipeline (Tesseract heb+eng)
+        if: steps.data.outputs.available == 'true' && matrix.suite == 'kbench'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-heb tesseract-ocr-eng
+      - name: kbench perf + calibrate (15 Noah sheets x 3, DEV split only)
+        if: steps.data.outputs.available == 'true' && matrix.suite == 'kbench'
+        working-directory: benchmark
+        run: |
+          set -euo pipefail
+          (cd ../workers/drawing && uv sync --locked)
+          uv sync --locked
+          root="$RUNNER_TEMP/perf-root"
+          uv run kbench perf --run --repeats 3 --root "$root" --keep-root \
+            --raw-out "$RUNNER_TEMP/perf.raw.json" --out "$RUNNER_TEMP/perf.json" --report "$RUNNER_TEMP/perf.md" --gate
+          uv run kbench calibrate --truth "$KAMUTAN_DATA_DIR/gt/noah" --pred-detections "$root" \
+            --splits "$KAMUTAN_DATA_DIR/gt/splits.json" --report "$RUNNER_TEMP/calibration.md" --fail-on-disallowed-green
+      - name: kbench perf + calibrate summary
+        if: always() && steps.data.outputs.available == 'true' && matrix.suite == 'kbench'
+        run: |
+          # sheet ids, stage timings and class statistics only (no drawing content); never upload perf-root
+          for f in perf.md calibration.md; do [ -f "$RUNNER_TEMP/$f" ] && cat "$RUNNER_TEMP/$f" >> "$GITHUB_STEP_SUMMARY"; done || true
       - name: Ingest the sample set (worker CLI)
         if: steps.data.outputs.available == 'true' && matrix.suite == 'golden'
         working-directory: workers/drawing
@@ -174,4 +196,4 @@ jobs:
           [ -f "$RUNNER_TEMP/golden.md" ] && cat "$RUNNER_TEMP/golden.md" >> "$GITHUB_STEP_SUMMARY" || true
       - name: Wipe dataset
         if: always() && steps.data.outputs.available == 'true'
-        run: rm -rf "$RUNNER_TEMP/kamutan-data" "$RUNNER_TEMP/data.tar.age" "$RUNNER_TEMP/ingest-out"
+        run: rm -rf "$RUNNER_TEMP/kamutan-data" "$RUNNER_TEMP/data.tar.age" "$RUNNER_TEMP/ingest-out" "$RUNNER_TEMP/perf-root"

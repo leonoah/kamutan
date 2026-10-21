@@ -40,7 +40,19 @@ export const fsPaths = Object.freeze({
   boqRule: (o: string, id: string) => `orgs/${o}/boqRules/${id}`,
   libraryImport: (o: string, id: string) => `orgs/${o}/libraryImports/${id}`,
   shareLink: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/shareLinks/${id}`,
+  /** Sprint 5: share links of a project (API-only; never client-readable). */
+  shareLinks: (o: string, p: string) => `orgs/${o}/projects/${p}/shareLinks`,
+  /** Sprint 5: top-level token index `shareTokens/{sha256(token)}` → {orgId, projectId, linkId} (API-only). */
+  shareToken: (tokenHash: string) => `shareTokens/${tokenHash}`,
   auditEvent: (o: string, id: string) => `orgs/${o}/auditLog/${id}`,
+  /** Sprint 5: head of the org's audit hash chain `{hash, at, count}` (serializes appends; API-only). */
+  auditHead: (o: string) => `orgs/${o}/auditMeta/head`,
+  /** Sprint 5: offboarding ZIP exports (API-only). */
+  offboardingExport: (o: string, id: string) => `orgs/${o}/offboardingExports/${id}`,
+  /** Sprint 5: deletion certificate / tombstone kept after the purge (top level, API/script-only). */
+  offboardingCertificate: (orgId: string) => `offboardingCertificates/${orgId}`,
+  /** Sprint 5 (Worker-B): dependent re-process requests (worker writes, API scheduled consumer). */
+  reprocessRequest: (o: string, p: string, sheetId: string) => `orgs/${o}/projects/${p}/reprocessRequests/${sheetId}`,
   job: (id: string) => `jobs/${id}`,
 });
 
@@ -91,6 +103,10 @@ export const storagePaths = Object.freeze({
   boqEvidence: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/evidence.json.gz`,
   /** Sprint 3: Excel export (API writes; signed URL only, 2 min). */
   boqExportFile: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}.xlsx`,
+  /** Sprint 5: marked PDF (worker writes; API signs 15 min / redirects share viewers). */
+  markedPdf: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}/marked.pdf`,
+  /** Sprint 5: offboarding ZIP (API writes; 24 h signed URL). Deleted with the org by the purge. */
+  offboardingZip: (o: string, exportId: string) => `orgs/${o}/offboarding/${exportId}.zip`,
   /** Sprint 4: find_similar candidate crop (worker; API signs, never client-readable). */
   similarThumb: (o: string, p: string, searchId: string, candidateId: string) => `orgs/${o}/projects/${p}/similar/${searchId}/${candidateId}.webp`,
   /** Sprint 3: past-BOQ upload slot (client create-only; API verifies magic bytes). */
@@ -118,6 +134,12 @@ export const ARTIFACT_PATH_RE = new RegExp(
 export const BOQ_EVIDENCE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/boq/(${ID})/evidence\\.json\\.gz$`);
 /** Sprint 3: Excel export object. */
 export const BOQ_EXPORT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/exports/(${ID})\\.xlsx$`);
+/** Sprint 5: marked PDF object. */
+export const MARKED_PDF_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/exports/(${ID})/marked\\.pdf$`);
+/** Sprint 5: offboarding ZIP object. */
+export const OFFBOARDING_ZIP_PATH_RE = new RegExp(`^orgs/(${ID})/offboarding/(${ID})\\.zip$`);
+/** Sprint 5: one tile of a sheet version (what the share proxy may read). */
+export const TILE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/tiles/(\\d{1,2})/(\\d{1,5})_(\\d{1,5})\\.webp$`);
 /** Sprint 4: find_similar candidate crops. */
 export const SIMILAR_THUMB_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/similar/(${ID})/(c_[A-Za-z0-9_-]{1,64})\\.webp$`);
 /** Sprint 3: past-BOQ upload slot. */

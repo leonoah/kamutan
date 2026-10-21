@@ -20,6 +20,8 @@ export interface RoleRequirement {
   org: OrgSource;
   /** Require an MFA session (firebase.sign_in_second_factor) — admin-level actions (SEC-02). */
   requireMfa?: boolean;
+  /** Sprint 5: allowed while the org is offboarding (SEC-52). */
+  allowOffboarding?: boolean;
 }
 
 export const ROLE_REQUIREMENT = 'kamutan:roleRequirement';
@@ -28,8 +30,8 @@ export const ROLE_REQUIREMENT = 'kamutan:roleRequirement';
  * Route-level role check (early 403/404). Services re-check through
  * AccessService, so a missing decorator can never expose another org's data.
  */
-export const RequireRole = (minRole: Role, org: OrgSource, opts: { requireMfa?: boolean } = {}) =>
-  SetMetadata(ROLE_REQUIREMENT, { minRole, org, requireMfa: opts.requireMfa } satisfies RoleRequirement);
+export const RequireRole = (minRole: Role, org: OrgSource, opts: { requireMfa?: boolean; allowOffboarding?: boolean } = {}) =>
+  SetMetadata(ROLE_REQUIREMENT, { minRole, org, requireMfa: opts.requireMfa, allowOffboarding: opts.allowOffboarding } satisfies RoleRequirement);
 
 export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext): AuthContext => {
   const req = ctx.switchToHttp().getRequest<Request>();

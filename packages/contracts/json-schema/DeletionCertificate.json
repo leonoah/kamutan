@@ -1,0 +1,138 @@
+{
+  "$ref": "#/definitions/DeletionCertificate",
+  "definitions": {
+    "DeletionCertificate": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "kamutan.deletion-certificate/1"
+        },
+        "orgId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "requestedBy": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deleteAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "purgedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "firestoreDocs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "storageObjects": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "jobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "shareTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "members": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "projects": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "firestoreDocs",
+            "storageObjects",
+            "jobs",
+            "shareTokens",
+            "members",
+            "projects"
+          ],
+          "additionalProperties": false
+        },
+        "hashes": {
+          "type": "object",
+          "properties": {
+            "auditHead": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "firestoreInventory": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "storageInventory": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "auditHead",
+            "firestoreInventory",
+            "storageInventory"
+          ],
+          "additionalProperties": false
+        },
+        "certificateSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "schema",
+        "orgId",
+        "requestedBy",
+        "requestedAt",
+        "deleteAfter",
+        "purgedAt",
+        "counts",
+        "hashes",
+        "certificateSha256"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/DeletionCertificate.json"
+}

@@ -15,11 +15,24 @@
 /.semgrep.yml                                 @leonoah
 /.pre-commit-config.yaml                      @leonoah
 /SECURITY.md                                  @leonoah
+/.zap/                                        @leonoah
+
+# --- Firebase platform (ADR 0008): hosting headers/CSP, security rules ------
+/firebase.json                                @leonoah
+/.firebaserc                                  @leonoah
+/firebase/                                    @leonoah
+
+# --- Security & DR documentation (pentest scope, restore drill, alerts) -------
+/docs/security/                               @leonoah
+/docs/runbooks/                               @leonoah
 
 # --- Auth and privileged access in the API (SEC-08) ---------------------------
 /apps/api/src/auth/                           @leonoah
 /apps/api/src/privileged/                     @leonoah
 /apps/api/src/**/storage/                     @leonoah
+/apps/api/src/**/share*/                      @leonoah
+/apps/api/src/**/public*/                     @leonoah
+/apps/api/src/**/offboarding*/                @leonoah
 
 # --- Drawing worker: LLM gateway + parsing sandbox (SEC-17, SEC-30..34) -------
 /workers/drawing/**/llm_gateway/              @leonoah

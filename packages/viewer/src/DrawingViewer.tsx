@@ -120,6 +120,12 @@ export interface DrawingViewerProps {
   style?: CSSProperties;
   /** Rendered instead of the canvas when WebGL is unavailable (tests, old browsers). */
   fallback?: ReactNode;
+  /**
+   * Sprint 5 (share viewer, SEC-28): a dynamic watermark text drawn diagonally over the whole canvas and in the corner
+   * (pointer-events: none, never mirrored text-wise: the text itself is RTL Hebrew). The server burns it into the tiles
+   * too; this layer is what a screenshot of the vector overlay carries.
+   */
+  watermark?: string | null;
 }
 
 export interface DrawingViewerHandle {
@@ -198,6 +204,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
     className,
     style,
     fallback,
+    watermark = null,
   } = props;
   const labels = useMemo(() => ({ ...defaultLabels, ...props.labels }), [props.labels]);
   const [webgl] = useState(canUseWebGL);
@@ -1132,6 +1139,7 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
         data-viewer-fallback
       >
         {fallback ?? null}
+        {watermark ? <Watermark text={watermark} /> : null}
       </div>
     );
   }
@@ -1358,9 +1366,67 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           onCenter={(w) => setView((v) => (v ? { ...v, target: [w[0], w[1], 0] } : v))}
         />
       ) : null}
+      {watermark ? <Watermark text={watermark} /> : null}
     </div>
   );
 });
+
+/** Diagonal tiled watermark + a corner chip. Purely visual (aria-hidden pattern; the chip carries the text once). */
+export function Watermark({ text }: { text: string }) {
+  const cells = Array.from({ length: 24 }, (_, i) => i);
+  return (
+    <div data-watermark={text} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 4 }}>
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: "-50%",
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          alignContent: "space-around",
+          rowGap: "120px",
+          transform: "rotate(-28deg)",
+        }}
+      >
+        {cells.map((i) => (
+          <span
+            key={i}
+            dir="rtl"
+            style={{
+              whiteSpace: "nowrap",
+              justifySelf: "center",
+              font: "600 15px Heebo, system-ui, sans-serif",
+              color: "rgba(28, 25, 23, 0.13)",
+              userSelect: "none",
+            }}
+          >
+            {text}
+          </span>
+        ))}
+      </div>
+      <span
+        dir="rtl"
+        style={{
+          position: "absolute",
+          left: 8,
+          top: 8,
+          maxWidth: "70%",
+          padding: "2px 8px",
+          borderRadius: 4,
+          background: "rgba(255, 255, 255, 0.85)",
+          border: "1px solid rgba(28, 25, 23, 0.15)",
+          font: "500 12px Heebo, system-ui, sans-serif",
+          color: "#57534E",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {text}
+      </span>
+    </div>
+  );
+}
 
 const EMPTY: readonly OverlayFeature[] = [];
 const MARKER_MAPPING = markerIconMapping();

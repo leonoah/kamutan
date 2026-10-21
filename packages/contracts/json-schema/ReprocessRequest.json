@@ -1,0 +1,120 @@
+{
+  "$ref": "#/definitions/ReprocessRequest",
+  "definitions": {
+    "ReprocessRequest": {
+      "type": "object",
+      "properties": {
+        "sheetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "firing",
+            "fired",
+            "dropped"
+          ]
+        },
+        "dependentVersionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "maxItems": 32
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "firstRequestedAt": {
+          "type": "number",
+          "minimum": 0
+        },
+        "notBefore": {
+          "type": "number",
+          "minimum": 0
+        },
+        "updatedAt": {
+          "type": "number",
+          "minimum": 0
+        },
+        "claimedAt": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "firedAt": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "versionId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dropReason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sheetId",
+        "status",
+        "sources",
+        "reason",
+        "firstRequestedAt",
+        "notBefore",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ReprocessRequest.json"
+}

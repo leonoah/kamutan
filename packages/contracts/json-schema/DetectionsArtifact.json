@@ -138,6 +138,11 @@
                 "minimum": 0,
                 "maximum": 1
               },
+              "scoreRaw": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
               "level": {
                 "type": "string",
                 "enum": [

@@ -44,7 +44,7 @@ describe('config', () => {
 });
 
 describe('OpenAPI', () => {
-  it('documents the Sprint 0 + 1 + 2 + 3 + 4 endpoints under /api/v1', async () => {
+  it('documents the Sprint 0 + 1 + 2 + 3 + 4 + 5 endpoints under /api/v1', async () => {
     const t = await createTestApp(testConfig());
     try {
       const doc = buildOpenApi(t.app);
@@ -95,6 +95,23 @@ describe('OpenAPI', () => {
           '/api/v1/projects/{projectId}/rooms/{sheetId}/{roomId}/settings',
           '/api/v1/projects/{projectId}/similar-searches',
           '/api/v1/projects/{projectId}/similar-searches/{searchId}',
+          // Sprint 5
+          '/api/v1/orgs/{orgId}/audit',
+          '/api/v1/orgs/{orgId}/audit/verify',
+          '/api/v1/orgs/{orgId}/settings',
+          '/api/v1/orgs/{orgId}/offboarding',
+          '/api/v1/orgs/{orgId}/offboarding/export',
+          '/api/v1/orgs/{orgId}/offboarding/export/{exportId}',
+          '/api/v1/projects/{projectId}/boq/lines/{lineId}/history',
+          '/api/v1/projects/{projectId}/boq/export/marked-pdf',
+          '/api/v1/projects/{projectId}/exports/{exportId}',
+          '/api/v1/projects/{projectId}/share-links',
+          '/api/v1/projects/{projectId}/share-links/{linkId}',
+          '/api/v1/public/share/{token}/meta',
+          '/api/v1/public/share/{token}/boq',
+          '/api/v1/public/share/{token}/pdf',
+          '/api/v1/public/share/{token}/sheets/{sheetId}/overlay',
+          '/api/v1/public/share/{token}/sheets/{sheetId}/tiles/{z}/{x}/{y}',
         ].sort(),
       );
       const tiles = doc.paths['/api/v1/projects/{projectId}/sheets/{sheetId}/versions/{versionId}/tiles-manifest']?.get;
@@ -112,6 +129,13 @@ describe('OpenAPI', () => {
       expect(doc.paths['/api/v1/projects/{projectId}/corrections']?.post).toBeDefined();
       expect(doc.paths['/api/v1/projects/{projectId}/corrections']?.get).toBeDefined();
       expect(doc.paths['/api/v1/projects/{projectId}/rooms/{sheetId}/{roomId}/settings']?.put).toBeDefined();
+      // Sprint 5
+      const audit = doc.paths['/api/v1/orgs/{orgId}/audit']?.get;
+      expect((audit?.parameters ?? []).map((p) => ('name' in p ? p.name : ''))).toEqual(expect.arrayContaining(['cursor', 'limit', 'entity', 'action', 'entityId']));
+      expect(doc.paths['/api/v1/orgs/{orgId}/settings']?.patch).toBeDefined();
+      expect(doc.paths['/api/v1/projects/{projectId}/share-links/{linkId}']?.delete).toBeDefined();
+      expect(doc.paths['/api/v1/projects/{projectId}/share-links']?.post).toBeDefined();
+      expect(doc.paths['/api/v1/public/share/{token}/meta']?.post).toBeUndefined();
     } finally {
       await t.app.close();
     }

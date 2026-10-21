@@ -7,8 +7,25 @@ import { cn } from "@/lib/utils";
  * text would be parsed as namespace / nesting).
  */
 const CODE = /^[A-Z][A-Z0-9_]*$/;
+/** Sprint 5: the worker writes "כיול שמרני: אין מספיק נתוני אמת לסוג זה" — chip "כיול שמרני", the rest as the hint. */
+const CONSERVATIVE = /^כיול שמרני(?::\s*(.*))?$/;
 export function ReasonChip({ code, className }: { code: string; className?: string }) {
   const { t } = useTranslation();
+  const cons = code === "CONSERVATIVE_CALIBRATION" ? [code, null] : CONSERVATIVE.exec(code);
+  if (cons) {
+    return (
+      <span
+        data-reason="CONSERVATIVE_CALIBRATION"
+        title={cons[1] ?? t("reasonHints.CONSERVATIVE_CALIBRATION")}
+        className={cn(
+          "inline-flex h-5 items-center rounded-sm border border-dashed border-conf-mid/60 bg-surface-sunken px-1.5 text-meta text-muted-foreground",
+          className,
+        )}
+      >
+        {t("reasons.CONSERVATIVE_CALIBRATION")}
+      </span>
+    );
+  }
   return (
     <span
       data-reason={code}

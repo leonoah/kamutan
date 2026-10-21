@@ -1,0 +1,43 @@
+{
+  "$ref": "#/definitions/AuditVerifyResponse",
+  "definitions": {
+    "AuditVerifyResponse": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "checked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "brokenAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ok",
+        "checked",
+        "brokenAt",
+        "headHash"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/AuditVerifyResponse.json"
+}

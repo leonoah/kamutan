@@ -1,0 +1,659 @@
+{
+  "schema": "kamutan.calibration/1",
+  "version": "cal-gt-v0.4.1-draft-f1db4789463d",
+  "mode": "conservative",
+  "generatedAt": "2026-10-21T12:10:42Z",
+  "gtVersion": "gt-v0.4.1-draft",
+  "source": "kbench calibrate 0.1.0: DEV split only, 1 project(s), 253 predicted items",
+  "rule": "conservative: greenAllowed only for classes with >= 200 DEV items and precision 1.0; correct = test-plan item definition; scoreMap = isotonic P(correct | raw) on DEV, >= 30 scored items",
+  "notes": [
+    "symbols: centre distance <= 3 mm paper, right class, lifecycle and floor; rooms: IoU >= 0.5, area PE <= 2%, floor",
+    "domains: hvac (AC drain points) is pooled into plumbing; a class missing here is never green"
+  ],
+  "classes": {
+    "ac_unit": {
+      "n": 16,
+      "tp": 15,
+      "fp": 1,
+      "precision": 0.9375,
+      "wilsonLb": 0.716707,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "bezek_point": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "breaker": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "ceiling_fan": {
+      "n": 6,
+      "tp": 5,
+      "fp": 1,
+      "precision": 0.8333333333333334,
+      "wilsonLb": 0.436491,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "conduit_cobra": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "data_point": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "doorbell": {
+      "n": 1,
+      "tp": 0,
+      "fp": 1,
+      "precision": 0.0,
+      "wilsonLb": 0.0,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "faucet_basin": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "faucet_wall": {
+      "n": 3,
+      "tp": 3,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.438494,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "fixture_basin": {
+      "n": 9,
+      "tp": 9,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.700847,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "fixture_bath": {
+      "n": 2,
+      "tp": 2,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.342372,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "fixture_kitchen_sink": {
+      "n": 4,
+      "tp": 4,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.5101,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "fixture_shower": {
+      "n": 4,
+      "tp": 4,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.5101,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "fixture_washing_machine": {
+      "n": 2,
+      "tp": 2,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.342372,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "fixture_wc_concealed": {
+      "n": 7,
+      "tp": 6,
+      "fp": 1,
+      "precision": 0.8571428571428571,
+      "wilsonLb": 0.486865,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "fixture_wc_monoblock": {
+      "n": 1,
+      "tp": 1,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.206543,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "floor_tiling": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "garden_tap": {
+      "n": 2,
+      "tp": 2,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.342372,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "heater_feed": {
+      "n": 4,
+      "tp": 3,
+      "fp": 1,
+      "precision": 0.75,
+      "wilsonLb": 0.300636,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "intercom": {
+      "n": 1,
+      "tp": 0,
+      "fp": 1,
+      "precision": 0.0,
+      "wilsonLb": 0.0,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "link:add_to_existing": {
+      "n": 3,
+      "tp": 3,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.438494,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "link:sensor": {
+      "n": 1,
+      "tp": 1,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.206543,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "link:shared": {
+      "n": 7,
+      "tp": 7,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.645661,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "link:single": {
+      "n": 16,
+      "tp": 15,
+      "fp": 1,
+      "precision": 0.9375,
+      "wilsonLb": 0.716707,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "link:two_way": {
+      "n": 2,
+      "tp": 2,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.342372,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "luminaire_ceiling": {
+      "n": 24,
+      "tp": 18,
+      "fp": 6,
+      "precision": 0.75,
+      "wilsonLb": 0.551002,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "luminaire_outdoor": {
+      "n": 11,
+      "tp": 11,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.74116,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "luminaire_pendant": {
+      "n": 2,
+      "tp": 2,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.342372,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "luminaire_strip": {
+      "n": 3,
+      "tp": 0,
+      "fp": 3,
+      "precision": 0.0,
+      "wilsonLb": 0.0,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "luminaire_wall": {
+      "n": 4,
+      "tp": 2,
+      "fp": 2,
+      "precision": 0.5,
+      "wilsonLb": 0.150036,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "panel": {
+      "n": 1,
+      "tp": 1,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.206543,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "phone_point": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "room": {
+      "n": 15,
+      "tp": 1,
+      "fp": 14,
+      "precision": 0.06666666666666667,
+      "wilsonLb": 0.011867,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "socket_3phase": {
+      "n": 3,
+      "tp": 3,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.438494,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "socket_box_6": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "socket_double": {
+      "n": 15,
+      "tp": 15,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.796111,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "socket_power": {
+      "n": 7,
+      "tp": 7,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.645661,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "socket_power_double": {
+      "n": 1,
+      "tp": 1,
+      "fp": 0,
+      "precision": 1.0,
+      "wilsonLb": 0.206543,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "socket_prep": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "socket_single": {
+      "n": 22,
+      "tp": 21,
+      "fp": 1,
+      "precision": 0.9545454545454546,
+      "wilsonLb": 0.782015,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "socket_triple": {
+      "n": 6,
+      "tp": 5,
+      "fp": 1,
+      "precision": 0.8333333333333334,
+      "wilsonLb": 0.436491,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "speaker": {
+      "n": 3,
+      "tp": 2,
+      "fp": 1,
+      "precision": 0.6666666666666666,
+      "wilsonLb": 0.207655,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "switch_2way": {
+      "n": 8,
+      "tp": 7,
+      "fp": 1,
+      "precision": 0.875,
+      "wilsonLb": 0.529105,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "switch_cross": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "switch_fan": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "switch_shutter": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "switch_single": {
+      "n": 29,
+      "tp": 23,
+      "fp": 6,
+      "precision": 0.7931034482758621,
+      "wilsonLb": 0.616096,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "tv_point": {
+      "n": 8,
+      "tp": 4,
+      "fp": 4,
+      "precision": 0.5,
+      "wilsonLb": 0.215213,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "wall_cladding": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "water_heater_feed": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    },
+    "waterproof_marker": {
+      "n": 0,
+      "tp": 0,
+      "fp": 0,
+      "precision": null,
+      "wilsonLb": null,
+      "greenAllowed": false,
+      "scoreMap": null
+    }
+  },
+  "domains": {
+    "electrical": {
+      "n": 72,
+      "tp": 62,
+      "fp": 10,
+      "precision": 0.8611111111111112,
+      "wilsonLb": 0.762866,
+      "greenAllowed": false,
+      "scoreMap": [
+        [
+          0.647,
+          0.777778
+        ],
+        [
+          0.757,
+          0.777778
+        ],
+        [
+          0.758,
+          0.864865
+        ],
+        [
+          0.884,
+          0.864865
+        ],
+        [
+          0.887,
+          0.909091
+        ],
+        [
+          0.918,
+          0.909091
+        ],
+        [
+          0.92,
+          1.0
+        ],
+        [
+          0.921,
+          1.0
+        ],
+        [
+          0.925,
+          1.0
+        ],
+        [
+          0.928,
+          1.0
+        ],
+        [
+          0.948,
+          1.0
+        ],
+        [
+          0.993,
+          1.0
+        ]
+      ]
+    },
+    "lighting": {
+      "n": 116,
+      "tp": 96,
+      "fp": 20,
+      "precision": 0.8275862068965517,
+      "wilsonLb": 0.748644,
+      "greenAllowed": false,
+      "scoreMap": [
+        [
+          0.573,
+          0.583333
+        ],
+        [
+          0.621,
+          0.583333
+        ],
+        [
+          0.623,
+          0.727273
+        ],
+        [
+          0.696,
+          0.727273
+        ],
+        [
+          0.697,
+          0.785714
+        ],
+        [
+          0.723,
+          0.785714
+        ],
+        [
+          0.736,
+          0.83871
+        ],
+        [
+          0.804,
+          0.83871
+        ],
+        [
+          0.805,
+          0.9
+        ],
+        [
+          0.862,
+          0.9
+        ],
+        [
+          0.873,
+          1.0
+        ],
+        [
+          0.886,
+          1.0
+        ],
+        [
+          0.889,
+          1.0
+        ],
+        [
+          0.92,
+          1.0
+        ]
+      ]
+    },
+    "plumbing": {
+      "n": 50,
+      "tp": 48,
+      "fp": 2,
+      "precision": 0.96,
+      "wilsonLb": 0.865397,
+      "greenAllowed": false,
+      "scoreMap": [
+        [
+          0.55,
+          0.5
+        ],
+        [
+          0.6,
+          0.9375
+        ],
+        [
+          0.66,
+          0.9375
+        ],
+        [
+          0.7,
+          1.0
+        ],
+        [
+          0.72,
+          1.0
+        ],
+        [
+          0.75,
+          1.0
+        ],
+        [
+          0.8,
+          1.0
+        ],
+        [
+          0.85,
+          1.0
+        ],
+        [
+          0.88,
+          1.0
+        ],
+        [
+          0.9,
+          1.0
+        ]
+      ]
+    },
+    "tiling": {
+      "n": 15,
+      "tp": 1,
+      "fp": 14,
+      "precision": 0.06666666666666667,
+      "wilsonLb": 0.011867,
+      "greenAllowed": false,
+      "scoreMap": null
+    }
+  }
+}

@@ -7,7 +7,8 @@
 #
 # The per-environment work lives in _deploy-env.yml (one implementation for both environments):
 #   - `gcloud run services update kamutan-worker` (image infra/docker/worker-drawing.Dockerfile, by digest)
-#   - `firebase deploy --only firestore:rules,firestore:indexes,storage,functions:api,hosting`
+#   - `gcloud run jobs update kamutan-offboard-purge` (image infra/docker/api-jobs.Dockerfile, by digest)
+#   - `firebase deploy --only firestore:rules,firestore:indexes,storage,functions:api:{api,apiJobs,reprocessDependents},hosting`
 #
 # Rules (SEC-48, SEC-49, SEC-53):
 # - No secrets inline and no service-account key files. Auth to Google Cloud uses Workload Identity

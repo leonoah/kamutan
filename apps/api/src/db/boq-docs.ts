@@ -203,6 +203,9 @@ export function planLinePatch(projectId: string, cur: BoqLine, req0: PatchBoqLin
     audit.qty = cur.qty;
     audit.prevQtyOverride = cur.qtyOverride ?? null;
     audit.qtyOverride = req.qtyOverride;
+    // Sprint 5 (FR-26 history "before/after + reason"): the override's justification is part of the record. The free
+    // text NOTE never is (noteChanged only).
+    audit.reason = req.qtyOverride !== null ? (req.reason ?? null) : null;
   }
   if (req.note !== undefined) {
     patch.note = req.note;

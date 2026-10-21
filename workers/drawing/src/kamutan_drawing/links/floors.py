@@ -5,8 +5,9 @@ regions with their floors) are authoritative: detections, rooms and link groups 
 the confirmed region they lie in (a single confirmed floor applies to the whole sheet) and lose the
 ``קומה לא ודאית`` chip. Their level is re-derived: an item whose *only* warning was the floor
 question goes back to green (a non-green detection / room always carries ≥ 1 reason, and the floor
-rule only ever demoted green → yellow), a link group is re-levelled from its confidence and the
-remaining reasons.
+rule only ever demoted green → yellow) — subject to the calibration table (Sprint 5: a class that may not be
+green stays yellow with ``כיול שמרני…``) — a link group is re-levelled from its (raw) confidence and the
+remaining reasons, then calibrated.
 
 Used by the ``understand`` stage on reprocess (the orchestrator passes ``floorsConfirmed``) and by
 Worker-BOQ's ``boq.build`` on stored artifacts, without re-parsing the sheet.
@@ -19,6 +20,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from ..calibration import ROOM_KEY, default_table, link_key
 from ..types_sprint2 import level_for
 
 R_FLOOR = "קומה לא ודאית"
@@ -53,12 +55,17 @@ def floor_resolver(sheet_doc: Mapping[str, Any], regions: Sequence[Mapping[str, 
     return at
 
 
-def _drop_floor(item: dict[str, Any]) -> None:
+def _drop_floor(item: dict[str, Any], key: str) -> None:
+    """Remove the floor chip; an item left without any reason was green before the floor rule demoted it — it goes
+    back to green *through the calibration table* (conservative mode keeps a class without enough truth yellow,
+    also on artifacts written before Sprint 5)."""
     reasons = [r for r in (item.get("reasons") or []) if r != R_FLOOR]
     if len(reasons) != len(item.get("reasons") or []):
         item["reasons"] = reasons
         if item.get("level") == "yellow" and not reasons:
-            item["level"] = "green"
+            raw = item.get("scoreRaw", item.get("score", item.get("confidence", 1.0)))
+            c = default_table().calibrate(key, float(raw if raw is not None else 1.0), [], level="green")
+            item["level"], item["reasons"] = c.level, c.reasons
 
 
 def apply_confirmed_floors(
@@ -79,7 +86,7 @@ def apply_confirmed_floors(
         fl = at(float(c.get("x", 0.0)), float(c.get("y", 0.0)))
         if fl is not None:
             d["floor"] = fl
-        _drop_floor(d)
+        _drop_floor(d, str(d.get("class") or "unknown"))
         det_floor[str(d.get("id"))] = d.get("floor")
     for r in (out.get("rooms") or {}).get("rooms") or []:
         pts = r.get("polygonMm") or []
@@ -87,7 +94,7 @@ def apply_confirmed_floors(
             fl = _room_floor(pts, at)
             if fl is not None:
                 r["floor"] = fl
-        _drop_floor(r)
+        _drop_floor(r, ROOM_KEY)
     for g in (out.get("links") or {}).get("groups") or []:
         members = [det_floor.get(i) for i in list(g.get("switchIds") or []) + list(g.get("luminaireIds") or [])]
         fl = Counter(f for f in members if f).most_common(1)
@@ -95,7 +102,11 @@ def apply_confirmed_floors(
             g["floor"] = fl[0][0]
         if R_FLOOR in (g.get("reasons") or []):
             g["reasons"] = [r for r in g["reasons"] if r != R_FLOOR]
-            g["level"] = level_for(float(g.get("confidence", 0.0)), g["reasons"])
+            # re-levelled from the raw confidence when the group carries it (Sprint 5); never adds keys (the BOQ
+            # mirror of LinkGroup is strict)
+            raw = float(g.get("confidenceRaw", g.get("confidence", 0.0)))
+            c = default_table().calibrate(link_key(g.get("kind")), raw, g["reasons"], level=level_for(raw, g["reasons"]))
+            g["level"], g["reasons"] = c.level, c.reasons
     return out
 
 

@@ -14,7 +14,9 @@ rules_version = '2';
 //    PATCH /v1/projects/:pid/boq/lines/:id (role per field, transition check, audit hash chain). One write path
 //    means one place for the state machine, the audit event and the "approved = locked" rule.
 //    Everything else is written by the API / worker with firebase-admin (bypasses rules).
-//  * shareLinks (hash only) readable by admin/editor; auditLog readable by admin only.
+//  * Sprint 5: shareLinks are NEVER client-readable (they carry tokenHash; the API lists them without it);
+//    auditLog readable by admin only; offboardingExports admin-read; shareTokens / offboardingCertificates /
+//    auditMeta / reprocessRequests have no client access at all.
 //  * External share viewers never touch Firestore (API only).
 //  * Default deny.
 
@@ -35,7 +37,6 @@ service cloud.firestore {
       return isMember(orgId) && get(memberDoc(orgId)).data.role in roles;
     }
     function isAdmin(orgId)     { return roleIn(orgId, ['admin']); }
-    function canEditShare(orgId){ return roleIn(orgId, ['admin', 'editor']); }
     function canCorrect(orgId)  { return roleIn(orgId, ['admin', 'editor', 'reviewer']); }
 
     function str(v, maxLen) {
@@ -64,6 +65,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Sprint 5: share-token index (sha256 → link) and deletion certificates — API / purge script only.
+    match /shareTokens/{tokenHash} {
+      allow read, write: if false;
+    }
+    match /offboardingCertificates/{orgId} {
+      allow read, write: if false;
+    }
+
     // "Which orgs am I in?" — collection-group query on members where uid == me.
     match /{path=**}/members/{memberId} {
       allow read: if signedIn() && resource.data.uid == request.auth.uid;
@@ -82,6 +91,15 @@ service cloud.firestore {
       match /auditLog/{eventId} {
         allow read: if isAdmin(orgId);
         allow write: if false;                     // append-only, server-written (create/update/delete denied)
+      }
+      // Sprint 5: head of the audit hash chain (serializes appends) — API only.
+      match /auditMeta/{docId} {
+        allow read, write: if false;
+      }
+      // Sprint 5: offboarding ZIP exports (status for the admin screen); created/updated by the API only.
+      match /offboardingExports/{exportId} {
+        allow read: if isAdmin(orgId);
+        allow write: if false;
       }
 
       match /itemLibrary/{itemId} {
@@ -145,10 +163,14 @@ service cloud.firestore {
           allow write: if false;
         }
 
-        // Share links: token stored as SHA-256 only; created/revoked via API.
+        // Share links: token stored as SHA-256 only; created / listed / revoked via the API (editor+), which never
+        // returns tokenHash. Sprint 5: NOT client-readable (a hash + the public API = an offline guessing oracle).
         match /shareLinks/{linkId} {
-          allow read: if canEditShare(orgId);
-          allow write: if false;
+          allow read, write: if false;
+        }
+        // Sprint 5 (Worker-B): automatic dependent-reprocess requests — worker SA writes, API consumes. No client access.
+        match /reprocessRequests/{sheetId} {
+          allow read, write: if false;
         }
 
         // -------------------------------------------------------------- corrections (Sprint 4: API only)
@@ -206,8 +228,9 @@ service cloud.firestore {
           allow write: if false;
         }
 
-        // Sprint 3: aggregation runs (API creates `queued` + job; worker runs) and Excel export records (API).
-        // The export FILE lives in Storage and is only reachable through a 2-minute signed URL.
+        // Sprint 3: aggregation runs (API creates `queued` + job; worker runs) and export records (API; Sprint 5 also
+        // marked PDFs, worker updates status). Readable by project members (= org members); the FILES live in Storage
+        // and are only reachable through API-signed URLs (xlsx 2 min, marked PDF 15 min).
         match /boqBuilds/{buildId} {
           allow read: if isMember(orgId);
           allow write: if false;

@@ -827,7 +827,9 @@ dependencies = [
     { name = "openpyxl" },
     { name = "pillow" },
     { name = "pydantic" },
+    { name = "pypdf" },
     { name = "pypdfium2" },
+    { name = "reportlab" },
     { name = "scipy" },
     { name = "shapely" },
     { name = "xlrd" },
@@ -850,11 +852,11 @@ dev = [
     { name = "jsonschema" },
     { name = "mypy" },
     { name = "pytest" },
-    { name = "reportlab" },
     { name = "ruff" },
     { name = "scipy-stubs" },
     { name = "types-jsonschema" },
     { name = "types-openpyxl" },
+    { name = "types-reportlab" },
     { name = "types-shapely" },
 ]
 
@@ -872,7 +874,9 @@ requires-dist = [
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pydantic", specifier = ">=2.14.1" },
+    { name = "pypdf", specifier = ">=6.20.1" },
     { name = "pypdfium2", specifier = ">=5.14.0" },
+    { name = "reportlab", specifier = ">=5.0.1" },
     { name = "requests", marker = "extra == 'gcp'", specifier = ">=2.34.2" },
     { name = "scipy", specifier = ">=1.18.1" },
     { name = "shapely", specifier = ">=2.2.0" },
@@ -887,11 +891,11 @@ dev = [
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "mypy", specifier = ">=2.4.0" },
     { name = "pytest", specifier = ">=9.1.1" },
-    { name = "reportlab", specifier = ">=5.0.1" },
     { name = "ruff", specifier = ">=0.17.0" },
     { name = "scipy-stubs", specifier = ">=1.18.1.1" },
     { name = "types-jsonschema", specifier = ">=4.26.0.20261006" },
     { name = "types-openpyxl", specifier = ">=3.1.5.20260827" },
+    { name = "types-reportlab", specifier = ">=5.0.0.20261008" },
     { name = "types-shapely", specifier = ">=2.1.0.20260728" },
 ]
 
@@ -1558,6 +1562,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pypdf"
+version = "6.20.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/c1/da25a099164cf4b210d63b957c902ad687139f4b8c12c20aec7953a4a266/pypdf-6.20.1.tar.gz", hash = "sha256:28f5a9d2fdc2749264612d94e6a58de54c11d730d9f0cabf8ad34117c4942b45", size = 7075352, upload-time = "2026-10-12T16:14:24.784Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/f8/4cbd09988b4b158260b7e0df38bf16f19e998bf0e257a18661a8da04280e/pypdf-6.20.1-py3-none-any.whl", hash = "sha256:aa5a55ddcffdc5e5ab291d5decb23f6383f4e56f8e3263dc39af41fff03885ad", size = 402665, upload-time = "2026-10-12T16:14:22.556Z" },
+]
+
+[[package]]
 name = "pypdfium2"
 version = "5.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1958,6 +1971,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8e/6b/ce650ce7754a2bce3ca1dfbce7f7441df092e2dc6047d00e04f840c2b56e/types_openpyxl-3.1.5.20260827.tar.gz", hash = "sha256:be8b605fb99cfd7d5f5576d4a508e8ec44be2dd15b85157c559080de6384be34", size = 101985, upload-time = "2026-08-27T12:06:18.927Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/12/23/9708c0895d237205ab2b31c06f97d72294f69789ff9923ff7f4aa2126d6b/types_openpyxl-3.1.5.20260827-py3-none-any.whl", hash = "sha256:94e176d871d12e3cbc34f8fb03dc14db2a4245a6690791daf16fc7b08fd67869", size = 165885, upload-time = "2026-08-27T12:06:17.88Z" },
+]
+
+[[package]]
+name = "types-reportlab"
+version = "5.0.0.20261008"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/55/28/ea9ed246af4bfc37fa05e0df6e201c3099cba529dd7a09909ac84a781567/types_reportlab-5.0.0.20261008.tar.gz", hash = "sha256:d34b4d9147eed7facb04594fbae59ba3d49294f8b4267ff05bcefcce0c07f499", size = 73094, upload-time = "2026-10-08T08:06:32.478Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/d1/5c6c28a4ea82b9bc30e9b4e103537251f180515e9d3775086fb1419a405e/types_reportlab-5.0.0.20261008-py3-none-any.whl", hash = "sha256:736b2edf636a624bd0989e058cbdee9575604cc80371549488fff40e27bb3b32", size = 113268, upload-time = "2026-10-08T08:06:31.446Z" },
 ]
 
 [[package]]

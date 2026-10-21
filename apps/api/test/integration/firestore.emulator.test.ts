@@ -17,6 +17,8 @@ import { auditHash } from '../../src/db/audit-chain';
 import { FirestoreRepository } from '../../src/db/firestore.repository';
 import { FirestoreBoqRepository } from '../../src/db/boq-firestore.repository';
 import { FirestoreReviewRepository } from '../../src/db/review-firestore.repository';
+import { FirestoreGovernanceRepository } from '../../src/db/governance-firestore.repository';
+import { verifyChain } from '../../src/governance/audit.service';
 import { RepoConflictError } from '../../src/db/repository';
 import { JobsService } from '../../src/jobs/jobs.service';
 import { InMemoryIngestQueue, PubSubIngestQueue } from '../../src/queue/ingest-queue';
@@ -382,6 +384,72 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
       await db.doc(fsPaths.boqBuild(orgA, pid, a?.build?.id as string)).update({ status: 'succeeded' });
       expect((await rev.scheduleAutoBuild(orgA, pid, { reason: 'room', actorUid: uid('aEditor'), jobType: JOB_TYPES.boqBuild, nowMs: now + 2000, debounceMs: 5000 }))?.outcome).toBe('off');
       await db.doc(fsPaths.org(orgA)).update({ 'settings.autoRebuild': true });
+    });
+  });
+
+  describe('Sprint 5: governance repository (audit head, verify, share links, exports, settings, offboarding, purge)', () => {
+    let gov: FirestoreGovernanceRepository;
+    let pid: string;
+    let orgC: string;
+    beforeAll(async () => {
+      gov = new FirestoreGovernanceRepository(repo);
+      pid = (await repo.createProject(orgA, { name: 'Share' }, uid('aEditor'))).id;
+      orgC = (await repo.createOrgWithAdmin('Org C', { uid: uid('cAdmin') })).id;
+    });
+
+    it('concurrent appends serialize on the head doc: the chain verifies, no forks; list filters + cursor', async () => {
+      await Promise.all(Array.from({ length: 12 }, (_, i) => repo.appendAudit(orgA, { actorId: uid('aEditor'), entity: 'boqLines', entityId: `l${i % 3}`, action: 'update', after: { i } })));
+      const res = verifyChain(await gov.auditForVerify(orgA));
+      expect(res).toMatchObject({ ok: true, brokenAt: null });
+      expect((await db.doc(fsPaths.auditHead(orgA)).get()).get('hash')).toBe(res.headHash);
+      const p1 = await gov.listAudit(orgA, { limit: 5, entity: 'boqLines' });
+      expect(p1.items).toHaveLength(5);
+      expect(p1.items.every((e) => e.entity === 'boqLines')).toBe(true);
+      const p2 = await gov.listAudit(orgA, { limit: 5, entity: 'boqLines', cursor: p1.nextCursor as string });
+      expect(p2.items.map((e) => e.id)).not.toContain(p1.items[0]?.id);
+      expect((await gov.auditForEntity(orgA, 'boqLines', 'l1')).length).toBe(4);
+    });
+
+    it('share link: create (link + token index + audit, per-link PDF export + job), lookup, view count, revoke', async () => {
+      const now = new Date();
+      const r = await gov.createShareLink(
+        orgA,
+        pid,
+        { id: `L${run}`, tokenHash: 'b'.repeat(64), versionLock: ['v1'], versionLockBySheet: { s1: 'v1' }, expiresAt: new Date(now.getTime() + 86_400_000).toISOString(), revokedAt: null, allowPdfDownload: true, createdBy: uid('aEditor'), createdAt: now.toISOString(), label: 'L', recipient: null, hideTitleBlock: true },
+        { options: { legend: true, floorSplit: false, watermark: 'w', hideTitleBlock: true }, versionIds: { s1: 'v1' }, jobType: JOB_TYPES.exportMarkedPdf },
+      );
+      expect(r.link).toMatchObject({ id: `L${run}`, pdfExportId: r.pdf?.exportId, viewCount: 0 });
+      expect(await gov.lookupShareToken('b'.repeat(64))).toMatchObject({ orgId: orgA, projectId: pid, linkId: `L${run}` });
+      expect(await gov.lookupShareToken('c'.repeat(64))).toBeNull();
+      expect((await db.doc(fsPaths.job(r.pdf?.jobId as string)).get()).data()).toMatchObject({ type: 'export.marked_pdf', exportId: r.pdf?.exportId, orgId: orgA });
+      expect(await gov.getExport(orgA, pid, r.pdf?.exportId as string)).toMatchObject({ kind: 'marked_pdf', status: 'queued', shareLinkId: `L${run}` });
+      await gov.recordShareView(orgA, pid, `L${run}`, { count: true, audit: { actorId: `L${run}`, actorKind: 'share_link', entity: 'shareLinks', entityId: `L${run}`, action: 'view', after: { ipPrefix: '10.0.0.0/24' } } });
+      expect((await gov.getShareLink(orgA, pid, `L${run}`))?.viewCount).toBe(1);
+      expect((await gov.revokeShareLink(orgA, pid, `L${run}`, uid('aEditor')))?.changed).toBe(true);
+      expect((await gov.revokeShareLink(orgA, pid, `L${run}`, uid('aEditor')))?.changed).toBe(false);
+      expect(verifyChain(await gov.auditForVerify(orgA)).ok).toBe(true);
+    });
+
+    it('settings patch (diff audit); offboarding export doc + job; offboard; due list; purge + certificate', async () => {
+      expect(await gov.patchOrgSettings(orgC, { greenThreshold: 0.95 }, uid('cAdmin'))).toMatchObject({ greenThreshold: 0.95 });
+      const ex = await gov.createOffboardingExport(orgC, true, uid('cAdmin'), JOB_TYPES.offboardingExport);
+      await gov.updateOffboardingExport(orgC, ex.export.id, { status: 'ready', sizeBytes: 10, sha256: 'd'.repeat(64), counts: { projects: 0, sources: 0, files: 1 }, finishedAt: new Date().toISOString() });
+      expect(await gov.getOffboardingExport(orgC, ex.export.id)).toMatchObject({ status: 'ready', sizeBytes: 10 });
+      expect((await db.doc(fsPaths.job(ex.jobId)).get()).get('status')).toBe('succeeded');
+      const due = new Date(Date.now() - 1000);
+      const s = await gov.startOffboarding(orgC, uid('cAdmin'), due, null);
+      expect(s).toMatchObject({ already: false, org: { status: 'offboarding' } });
+      expect((await gov.startOffboarding(orgC, uid('cAdmin'), due, null))?.already).toBe(true);
+      expect(await gov.revokeAllShareLinks(orgC, uid('cAdmin'))).toBe(0);
+      expect(await gov.listOrgsDueForPurge(new Date())).toContain(orgC);
+      const res = await gov.purgeOrg(orgC);
+      expect(res.members).toBe(1);
+      expect(res.jobs).toBeGreaterThanOrEqual(1);
+      expect(res.docPaths).toContain(fsPaths.org(orgC));
+      expect((await db.doc(fsPaths.org(orgC)).get()).exists).toBe(false);
+      expect((await db.collection(`orgs/${orgC}/auditLog`).get()).size).toBe(0);
+      expect((await db.collection('jobs').where('orgId', '==', orgC).get()).size).toBe(0);
+      expect((await db.doc(fsPaths.org(orgA)).get()).exists).toBe(true);
     });
   });
 

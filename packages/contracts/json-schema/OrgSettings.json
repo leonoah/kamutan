@@ -1,0 +1,44 @@
+{
+  "$ref": "#/definitions/OrgSettings",
+  "definitions": {
+    "OrgSettings": {
+      "type": "object",
+      "properties": {
+        "llmEnabled": {
+          "type": "boolean"
+        },
+        "blockExportOnRed": {
+          "type": "boolean"
+        },
+        "greenThreshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "trainingOptIn": {
+          "type": "boolean"
+        },
+        "llmMonthlyBudgetUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "vatRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "autoRebuild": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "llmEnabled",
+        "blockExportOnRed",
+        "greenThreshold"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/OrgSettings.json"
+}

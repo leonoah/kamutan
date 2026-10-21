@@ -178,7 +178,7 @@ def test_irregular_strokes_do_not_form_a_chain():
     assert extract_chains(extract_pdf(make_pdf(draw))[0]) == []
 
 
-def test_single_shared_and_pass_through():
+def test_single_shared_and_pass_through(allow_green):  # heuristic levels; the conservative cap: test_calibration.py
     s1, s2 = (40.0, 150.0), (42.3, 150.0)
     l1, l2, l3, l4 = (80.0, 110.0), (130.0, 110.0), (180.0, 110.0), (60.0, 60.0)
 
@@ -210,7 +210,7 @@ def test_single_shared_and_pass_through():
     assert len(doc["points"]) == 4 and all(len(a["polylineMm"]) >= 2 for a in doc["arcs"])
 
 
-def test_two_way_and_arc_ending_short_of_symbol():
+def test_two_way_and_arc_ending_short_of_symbol(allow_green):  # heuristic levels; the conservative cap: test_calibration.py
     a, b, lum = (40.0, 150.0), (160.0, 150.0), (100.0, 90.0)
 
     def draw(c, ps):
@@ -364,7 +364,7 @@ def test_existing_point_fan_switch_and_sensor_rules():
     assert stats["byKind"] == {"add_to_existing": 2, "sensor": 1}
 
 
-def test_sensor_from_fixture_table_notes_column():
+def test_sensor_from_fixture_table_notes_column(allow_green):  # heuristic levels; the conservative cap: test_calibration.py
     legend = {
         "legends": [{"id": "lg1", "bboxMm": {"x": 10, "y": 200, "w": 150, "h": 40}}],
         "entries": [
@@ -388,7 +388,7 @@ def test_sensor_from_fixture_table_notes_column():
     assert doc["unlinkedLuminaireIds"] == ["d_2"]
 
 
-def test_floor_reason_is_carried_to_groups():
+def test_floor_reason_is_carried_to_groups(allow_green):  # heuristic levels; the conservative cap: test_calibration.py
     a, lum = (40.0, 150.0), (100.0, 90.0)
 
     def draw(c, ps):
@@ -414,7 +414,7 @@ def _square(x0, y0, x1, y1):
     return [{"x": x0, "y": y0}, {"x": x1, "y": y0}, {"x": x1, "y": y1}, {"x": x0, "y": y1}]
 
 
-def test_apply_confirmed_floors_regions_and_levels():
+def test_apply_confirmed_floors_regions_and_levels(allow_green):  # heuristic levels; the conservative cap: test_calibration.py
     dets = {
         "schema": "kamutan.detections/1",
         "detections": [

@@ -105,6 +105,20 @@ create was removed. The only client write left in Firestore is `reviewItems` (st
 + `CorrectionBatch`, `RoomSettings`, `SimilarSearch`, `paths.correctionBatch/roomSettings/similarSearch/similarThumb`.
 No new composite index: the API queries corrections with one equality filter and sorts in memory.
 
+### Sprint 5 — share links locked down, exports, offboarding, token index
+
+| Path | Client read | Client write |
+| --- | --- | --- |
+| `.../projects/*/shareLinks/{id}` | **none** (was admin/editor; carries `tokenHash` → API list only) | none |
+| `shareTokens/{sha256}`, `offboardingCertificates/{orgId}`, `orgs/*/auditMeta/{doc}`, `.../reprocessRequests/{sheetId}` | none | none |
+| `orgs/*/offboardingExports/{id}` | admin | none |
+| `.../projects/*/exports/{id}` (xlsx + marked PDF records) | members | none |
+| Storage `.../exports/{id}/marked.pdf`, `orgs/*/offboarding/**` | none (API-signed URLs) | none |
+
+`canEditShare()` removed. Indexes: auditLog (entity|action|entityId combos + at↓ + __name__↓), orgs (status,
+deleteAfter), reprocessRequests collection group (status, notBefore) / (status, claimedAt). Tests: Sprint 5 block in
+`firestore.rules.test.ts`, storage serverObjects + 2 paths, lint for the deny-all matches. Emulator: CI only.
+
 ## Running
 
 ```bash

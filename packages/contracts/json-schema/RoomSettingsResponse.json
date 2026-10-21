@@ -114,7 +114,8 @@
                     "courtyard",
                     "storage",
                     "stairs",
-                    "other"
+                    "other",
+                    "niche"
                   ]
                 },
                 {
@@ -220,7 +221,8 @@
                         "courtyard",
                         "storage",
                         "stairs",
-                        "other"
+                        "other",
+                        "niche"
                       ]
                     },
                     {

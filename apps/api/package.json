@@ -24,6 +24,7 @@
     "@nestjs/throttler": "^6.4.0",
     "exceljs": "4.4.0",
     "express": "^5.2.1",
+    "fflate": "0.8.3",
     "firebase-admin": "^13.10.0",
     "firebase-functions": "^7.4.0",
     "helmet": "^8.0.0",
@@ -32,6 +33,7 @@
     "pino-http": "^10.3.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "0.34.5",
     "zod": "^3.25.28",
     "zod-to-json-schema": "^3.25.2"
   },

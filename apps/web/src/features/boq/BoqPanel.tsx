@@ -1,6 +1,6 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ChevronDown, Hammer, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, Hammer, History, RefreshCw } from "lucide-react";
 import type { BoqBuild, BoqChapter, BoqLine, ProjectBoqState } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -50,6 +50,10 @@ export interface BoqPanelProps {
   onStatusFilter: (s: StatusFilter) => void;
   filtered: boolean;
   onClearFilters: () => void;
+  /** Sprint 5: open the line's change history (S13). */
+  onHistory?: (line: BoqLine) => void;
+  /** Sprint 5: the calibration badge ("כיול שמרני"), shown in the panel header. */
+  calibrationBadge?: ReactNode;
 }
 
 const stripe = { green: "bg-transparent", yellow: "bg-conf-mid", red: "bg-conf-low" } as const;
@@ -93,8 +97,9 @@ export const BoqPanel = memo(function BoqPanel(p: BoqPanelProps) {
             </button>
           ))}
         </div>
+        {p.calibrationBadge ? <span className="ms-auto">{p.calibrationBadge}</span> : null}
         {p.tab === "boq" && p.state?.latestBuildId && p.canBuild ? (
-          <Button size="sm" variant="ghost" className="ms-auto" onClick={p.onBuild} disabled={building}>
+          <Button size="sm" variant="ghost" className={p.calibrationBadge ? undefined : "ms-auto"} onClick={p.onBuild} disabled={building}>
             <RefreshCw aria-hidden className={cn(building && "animate-spin")} />
             {t("boq.rebuild")}
           </Button>
@@ -365,6 +370,7 @@ function BoqTable(p: BoqPanelProps) {
                       onSelect={() => p.onSelectLine(p.selectedLineId === l.id ? null : l.id)}
                       onHover={(h) => p.onHoverLine?.(h ? l.id : null)}
                       receiptExtra={p.renderReceiptExtra}
+                      onHistory={p.onHistory}
                       rowRef={(el) => {
                         if (el) rowRefs.current.set(l.id, el);
                         else rowRefs.current.delete(l.id);
@@ -390,9 +396,11 @@ function LineRow({
   onSelect,
   onHover,
   receiptExtra,
+  onHistory,
   rowRef,
 }: {
   receiptExtra?: ((line: BoqLine) => ReactNode) | undefined;
+  onHistory?: ((line: BoqLine) => void) | undefined;
   line: BoqLine;
   floors: string[];
   order: boolean;
@@ -468,7 +476,27 @@ function LineRow({
         </td>
       ) : null}
       <td className={cn(cell, "pe-3 pt-1.5")}>
-        <StatusPill status={l.status} compact={floors.length > 0} />
+        <span className="flex items-center gap-0.5">
+          <StatusPill status={l.status} compact={floors.length > 0} />
+          {onHistory ? (
+            <button
+              type="button"
+              data-history-for={l.id}
+              aria-label={t("history.openFor", { code: l.code })}
+              title={t("history.open")}
+              onClick={(e) => {
+                e.stopPropagation();
+                onHistory(l);
+              }}
+              className={cn(
+                "rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100",
+                selected ? "opacity-100" : "opacity-0",
+              )}
+            >
+              <History className="size-3.5" aria-hidden />
+            </button>
+          ) : null}
+        </span>
       </td>
     </tr>
   );

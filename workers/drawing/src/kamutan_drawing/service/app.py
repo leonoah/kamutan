@@ -6,7 +6,8 @@ POST /pubsub/ingest  body = Pub/Sub push envelope:
 
 The job is routed on its ``type``: ``boq.build`` → :func:`kamutan_drawing.boq.build.run_boq_build`,
 ``library.import`` → :func:`kamutan_drawing.library_import.importer.run_library_import`,
-``symbols.find_similar`` → :func:`kamutan_drawing.service.similar.run_find_similar`, anything else
+``symbols.find_similar`` → :func:`kamutan_drawing.service.similar.run_find_similar`,
+``export.marked_pdf`` → :func:`kamutan_drawing.export.job.run_marked_pdf` (Sprint 5), anything else
 (``ingest.sheet_version``) → :func:`process_sheet_version` exactly as before.
 
 Response semantics (Pub/Sub retries on any non-2xx):
@@ -37,6 +38,8 @@ from pydantic import ValidationError
 from ..boq.build import run_boq_build
 from ..boq.contracts import BOQ_BUILD_TYPE, LIBRARY_IMPORT_TYPE, BoqBuildJob, LibraryImportJob
 from ..errors import IngestError
+from ..export.contracts import MARKED_PDF_TYPE, MarkedPdfJob  # Sprint 5 (Worker-Export)
+from ..export.job import run_marked_pdf  # Sprint 5 (Worker-Export)
 from ..library_import.importer import run_library_import
 from ..stores.base import BlobStore, DocStore
 from .contracts import IngestSheetVersionJob
@@ -79,9 +82,12 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
             return JSONResponse({"status": "rejected", "reason": "bad_envelope"}, status_code=200)
         jtype = payload.get("type") if isinstance(payload, dict) else None
         model: Any
-        model = {BOQ_BUILD_TYPE: BoqBuildJob, LIBRARY_IMPORT_TYPE: LibraryImportJob, FIND_SIMILAR_TYPE: FindSimilarJob}.get(
-            str(jtype), IngestSheetVersionJob
-        )
+        model = {
+            BOQ_BUILD_TYPE: BoqBuildJob,
+            LIBRARY_IMPORT_TYPE: LibraryImportJob,
+            FIND_SIMILAR_TYPE: FindSimilarJob,
+            MARKED_PDF_TYPE: MarkedPdfJob,
+        }.get(str(jtype), IngestSheetVersionJob)
         try:
             job = model.model_validate(payload)
         except ValidationError as e:
@@ -96,6 +102,10 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
             elif isinstance(job, LibraryImportJob):
                 await run_in_threadpool(
                     functools.partial(run_library_import, limits=opts.limits, workdir_root=opts.workdir_root), job, blobs, docs
+                )
+            elif isinstance(job, MarkedPdfJob):
+                await run_in_threadpool(
+                    functools.partial(run_marked_pdf, limits=opts.limits, workdir_root=opts.workdir_root), job, blobs, docs
                 )
             elif isinstance(job, FindSimilarJob):
                 await run_in_threadpool(
@@ -115,6 +125,9 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
 def app_from_env() -> FastAPI:  # pragma: no cover - production wiring (needs ADC)
     from ..sandbox.runner import Limits, NetMode
     from ..stores.gcp import FirestoreDocStore, GcsBlobStore
+    from .logging_setup import configure_logging
+
+    configure_logging(os.environ.get("KAMUTAN_LOG_LEVEL", "INFO").upper())  # R-W1: JSON lines for Cloud Logging
 
     def mode(var: str) -> NetMode:
         v = os.environ.get(var, "auto")

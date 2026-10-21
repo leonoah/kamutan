@@ -1,12 +1,15 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Ban, Download } from "lucide-react";
-import { ApiError, type BoqLine, type BoqTemplate } from "@/api/types";
+import { AlertTriangle, Ban, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { ApiError, type BoqLine, type BoqTemplate, type SheetRow } from "@/api/types";
+import { Progress } from "@/components/ui/progress";
+import { sheetName } from "@/features/sheets/model";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import { env } from "@/lib/env";
-import { useExportBoq } from "./queries";
+import { cn } from "@/lib/utils";
+import { useExportBoq, useExportDoc, useExportMarkedPdf } from "./queries";
 
 /**
  * S12 export: summed / by floor, template choice; when non-green lines remain, the spec's warning copy
@@ -22,7 +25,15 @@ export function ExportDialog({
   blockOnRed,
   built,
   onGoToItems,
+  sheets = [],
+  canMarkedPdf = false,
+  pollMs,
 }: {
+  /** Sprint 5: ready sheets (marked-PDF subset picker). */
+  sheets?: readonly SheetRow[];
+  /** Sprint 5: editor+ may export the marked PDF. */
+  canMarkedPdf?: boolean;
+  pollMs?: number;
   projectId: string;
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -40,6 +51,7 @@ export function ExportDialog({
   const [split, setSplit] = useState<"summed" | "byFloor">("summed");
   const [draftNote, setDraftNote] = useState(true);
   const [serverBlocked, setServerBlocked] = useState<number | null>(null);
+  const [format, setFormat] = useState<"xlsx" | "pdf">("xlsx");
 
   useEffect(() => {
     if (!open) return;
@@ -78,10 +90,51 @@ export function ExportDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>{t("boq.export.title")}</DialogTitle>
-          <DialogDescription>{t("boq.export.description")}</DialogDescription>
+          <DialogTitle>{format === "pdf" ? t("markedPdf.title") : t("boq.export.title")}</DialogTitle>
+          <DialogDescription>{format === "pdf" ? t("markedPdf.description") : t("boq.export.description")}</DialogDescription>
         </DialogHeader>
 
+        <div role="radiogroup" aria-label={t("markedPdf.format")} className="mb-4 inline-flex self-start rounded-md border border-input p-0.5">
+          {(
+            [
+              { v: "xlsx", label: t("markedPdf.formatXlsx"), Icon: FileSpreadsheet },
+              { v: "pdf", label: t("markedPdf.formatPdf"), Icon: FileText },
+            ] as const
+          ).map(({ v, label, Icon }) => (
+            <button
+              key={v}
+              type="button"
+              role="radio"
+              aria-checked={format === v}
+              onClick={() => setFormat(v)}
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-[5px] px-3 text-dense font-medium",
+                format === v ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-muted",
+              )}
+            >
+              <Icon className="size-4" aria-hidden />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {format === "pdf" ? (
+          <MarkedPdfExport
+            projectId={projectId}
+            sheets={sheets}
+            built={built}
+            blocked={blockOnRed && red > 0}
+            red={red}
+            canExport={canMarkedPdf}
+            onGoToItems={() => {
+              onOpenChange(false);
+              onGoToItems();
+            }}
+            open={open}
+            {...(pollMs !== undefined ? { pollMs } : {})}
+          />
+        ) : (
+        <>
         {!built ? (
           <p role="alert" className="text-body text-foreground">{t("boq.export.notBuilt")}</p>
         ) : blocked ? (
@@ -185,7 +238,185 @@ export function ExportDialog({
             </Button>
           )}
         </DialogFooter>
+        </>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * FR-29 / E2E-13: marked PDF — every evidence symbol coloured by its BOQ line + legend page + ●▲◆ glyphs.
+ * Options: one page per floor, hide the title block, a subset of sheets. The job runs in the worker; the dialog
+ * polls the export doc and offers the 15-minute signed URL as a download.
+ */
+function MarkedPdfExport({
+  projectId,
+  sheets,
+  built,
+  blocked,
+  red,
+  canExport,
+  onGoToItems,
+  open,
+  pollMs,
+}: {
+  projectId: string;
+  sheets: readonly SheetRow[];
+  built: boolean;
+  blocked: boolean;
+  red: number;
+  canExport: boolean;
+  onGoToItems: () => void;
+  open: boolean;
+  pollMs?: number;
+}) {
+  const { t } = useTranslation();
+  const start = useExportMarkedPdf(projectId);
+  const [exportId, setExportId] = useState<string | null>(null);
+  const doc = useExportDoc(projectId, exportId, pollMs);
+  const [floorSplit, setFloorSplit] = useState(false);
+  const [hideTitleBlock, setHideTitleBlock] = useState(false);
+  const [all, setAll] = useState(true);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [serverBlocked, setServerBlocked] = useState(false);
+  const fsId = useId();
+  const tbId = useId();
+  const allId = useId();
+
+  useEffect(() => {
+    if (open) return;
+    setExportId(null);
+    setServerBlocked(false);
+  }, [open]);
+
+  const d = doc.data;
+  const done = d?.status === "succeeded";
+  const failed = d?.status === "failed" || doc.isError;
+  const running = Boolean(exportId) && !done && !failed;
+  useEffect(() => {
+    if (done) toast({ title: t("markedPdf.done"), tone: "success" });
+  }, [done, t]);
+
+  const submit = async () => {
+    const sheetIds = all ? null : [...picked];
+    if (sheetIds && sheetIds.length === 0) return;
+    try {
+      const r = await start.mutateAsync({ sheetIds, floorSplit, hideTitleBlock });
+      setExportId(r.exportId);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && e.code === "export_blocked") setServerBlocked(true);
+      else toast({ title: t("markedPdf.failed"), tone: "error" });
+    }
+  };
+
+  if (!built) return <p role="alert" className="text-body text-foreground">{t("boq.export.notBuilt")}</p>;
+  if (!canExport) return <p role="alert" className="text-body text-foreground">{t("markedPdf.noPermission")}</p>;
+  if (blocked || serverBlocked) {
+    return (
+      <>
+        <div role="alert" className="flex gap-3 rounded-md border border-conf-low/40 bg-conf-low/[0.07] p-4">
+          <Ban className="mt-0.5 size-5 shrink-0 text-conf-low" aria-hidden />
+          <div className="flex flex-col gap-1 text-body">
+            <p className="font-bold text-foreground">{t("boq.export.blockedTitle")}</p>
+            <p className="text-foreground">{t("boq.export.blockedBody", { count: red })}</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={onGoToItems}>{t("boq.export.goToItems")}</Button>
+        </DialogFooter>
+      </>
+    );
+  }
+  const noneSelected = !all && picked.size === 0;
+  return (
+    <>
+      <div className="flex flex-col gap-3 text-body" data-marked-pdf>
+        <label htmlFor={fsId} className="inline-flex cursor-pointer items-center gap-2 text-foreground">
+          <input id={fsId} type="checkbox" checked={floorSplit} onChange={(e) => setFloorSplit(e.target.checked)} disabled={running} className="size-4 accent-[rgb(var(--primary))]" />
+          {t("markedPdf.floorSplit")}
+        </label>
+        <label htmlFor={tbId} className="inline-flex cursor-pointer items-center gap-2 text-foreground">
+          <input id={tbId} type="checkbox" checked={hideTitleBlock} onChange={(e) => setHideTitleBlock(e.target.checked)} disabled={running} className="size-4 accent-[rgb(var(--primary))]" />
+          {t("markedPdf.hideTitleBlock")}
+        </label>
+        <fieldset className="flex flex-col gap-1.5 rounded-md border border-border p-3" disabled={running}>
+          <legend className="px-1 text-dense text-muted-foreground">
+            {t("markedPdf.sheets")} · {all ? t("markedPdf.allSheets", { count: sheets.length }) : t("markedPdf.someSheets", { n: picked.size, count: sheets.length })}
+          </legend>
+          <label htmlFor={allId} className="inline-flex cursor-pointer items-center gap-2 font-medium text-foreground">
+            <input
+              id={allId}
+              type="checkbox"
+              checked={all}
+              onChange={(e) => {
+                setAll(e.target.checked);
+                if (!e.target.checked) setPicked(new Set(sheets.map((r) => r.sheet.id)));
+              }}
+              className="size-4 accent-[rgb(var(--primary))]"
+            />
+            {t("markedPdf.allSheets", { count: sheets.length })}
+          </label>
+          {!all ? (
+            <ul className="grid max-h-40 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto ps-6">
+              {sheets.map((r) => (
+                <li key={r.sheet.id}>
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-dense text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={picked.has(r.sheet.id)}
+                      onChange={(e) =>
+                        setPicked((cur) => {
+                          const n = new Set(cur);
+                          if (e.target.checked) n.add(r.sheet.id);
+                          else n.delete(r.sheet.id);
+                          return n;
+                        })
+                      }
+                      className="size-4 accent-[rgb(var(--primary))]"
+                    />
+                    <span className="truncate">{sheetName(r)}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {noneSelected ? <p role="alert" className="text-meta text-destructive">{t("markedPdf.sheetsNone")}</p> : null}
+        </fieldset>
+
+        {exportId ? (
+          <div role="status" aria-live="polite" className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-sunken p-3">
+            {failed ? (
+              <p className="text-destructive">{t("markedPdf.failed")}</p>
+            ) : done ? (
+              <>
+                <p className="font-medium text-foreground">{t("markedPdf.ready", { count: d?.pageCount ?? 0 })}</p>
+                <p className="text-meta text-muted-foreground">{t("markedPdf.linkExpires")}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-foreground">{d && (d.progress ?? 0) > 0 ? t("markedPdf.preparing", { pct: d.progress ?? 0 }) : t("markedPdf.queued")}</p>
+                <Progress value={d?.progress ?? 0} aria-label={t("markedPdf.preparing", { pct: d?.progress ?? 0 })} />
+              </>
+            )}
+          </div>
+        ) : null}
+      </div>
+      <DialogFooter>
+        {done && d?.url ? (
+          <Button asChild>
+            <a href={d.url} download={d.filename ?? "marked.pdf"} rel="noopener noreferrer" referrerPolicy="no-referrer">
+              <Download aria-hidden />
+              {t("markedPdf.download")}
+            </a>
+          </Button>
+        ) : (
+          <Button onClick={() => void submit()} disabled={start.isPending || running || noneSelected}>
+            <FileText aria-hidden />
+            {running || start.isPending ? t("markedPdf.queued") : failed ? t("markedPdf.submit") : t("markedPdf.submit")}
+          </Button>
+        )}
+      </DialogFooter>
+    </>
   );
 }
