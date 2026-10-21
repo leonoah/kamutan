@@ -34,6 +34,9 @@ RUN pnpm --filter @kamutan/contracts build \
 # ---------- runtime ----------
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production
+# The job runs `node` only: drop the bundled npm/corepack (and their transitive CVEs) from the runtime image.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 WORKDIR /app
 COPY --from=build --chown=root:root /out /app
 USER node
