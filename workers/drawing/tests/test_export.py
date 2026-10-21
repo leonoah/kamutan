@@ -397,12 +397,60 @@ def test_marked_pdf_keeps_vectors_and_draws_coloured_marks(rot: int) -> None:
     assert "מקרא צבעים לפי סעיף" in t and "נק' מאור כוללת מפסק" in t
 
 
+def strip_text_objects(pdf: bytes) -> bytes:
+    """Sec-gate PoC (poc_strip_wm.py): delete every BT…ET text object from every page content stream."""
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.generic import ContentStream, NameObject
+
+    w = PdfWriter(clone_from=PdfReader(io.BytesIO(pdf)))
+    for pg in w.pages:
+        cs = ContentStream(pg.get_contents(), w)
+        ops, inside = [], False
+        for operands, op in cs.operations:
+            if op == b"BT":
+                inside = True
+            if not inside:
+                ops.append((operands, op))
+            if op == b"ET":
+                inside = False
+        cs.operations = ops
+        pg[NameObject("/Contents")] = w._add_object(cs)
+    out = io.BytesIO()
+    w.write(out)
+    return out.getvalue()
+
+
+def text_in_box(pdf: bytes, i: int, box_mm: tuple[float, float, float, float]) -> str:
+    """Extractable text inside a paper-mm box (y down) of page ``i``."""
+    doc = pdfium.PdfDocument(pdf)
+    try:
+        pg = doc[i]
+        _, h = pg.get_size()
+        x0, y0, x1, y1 = box_mm
+        return str(pg.get_textpage().get_text_bounded(x0 * MM, h - y1 * MM, x1 * MM, h - y0 * MM))
+    finally:
+        doc.close()
+
+
+def burned_pixels(img: Image.Image, box_mm: tuple[float, float, float, float], dpi: int) -> int:
+    """Light-grey watermark pixels (burned in, ~30 % #6B7280 over white) inside an otherwise blank box."""
+    s = dpi / 25.4
+    a = np.asarray(img).astype(int)[round(box_mm[1] * s) : round(box_mm[3] * s), round(box_mm[0] * s) : round(box_mm[2] * s)]
+    lo, hi = a.min(axis=2), a.max(axis=2)
+    return int(((lo > 195) & (hi < 245) & (hi - lo < 18)).sum())
+
+
+BLANK = (300.0, 90.0, 410.0, 250.0)  # nothing of the fixture drawing or overlay there
+
+
 def test_marked_pdf_hide_title_block_redacts_and_watermarks() -> None:
     blobs, docs = project(secret="SECRET-CLIENT-NAME", title_block=[300, 271, 414, 291])
     run_marked_pdf(job(hideTitleBlock=True, watermark="שותף עם קבלן • 15.10.2026"), blobs, docs, limits=LIM)
     pdf = blobs.read(output_path(ORG, PROJ, "x1"))
     t0 = page_text(pdf, 0)
-    assert "SECRET" not in t0  # redacted in the pixels, no text layer left
+    assert "SECRET" not in t0 and b"SECRET" not in pdf  # redacted in the pixels, no text layer left
+    # PoC regression: no extractable text in the masked area except our own sheet legend (no client text)
+    assert "SECRET" not in text_in_box(pdf, 0, (300, 271, 414, 291))
     img = render_page(pdf, 0, dpi=144)
     s = 144 / 25.4
     a = np.asarray(img)
@@ -411,21 +459,100 @@ def test_marked_pdf_hide_title_block_redacts_and_watermarks() -> None:
     tb = a[round(269.8 * s) : round(270.3 * s), round(302 * s) : round(335 * s)]
     assert not ((tb < 60).all(axis=2)).any()
     assert (a[round(269.8 * s) : round(270.3 * s), round(150 * s) : round(160 * s)] > 200).all()
-    # watermark text present on the drawing page and the legend page
+    # text watermark layer on the drawing page and the legend page
     assert "שותף עם קבלן • 15.10.2026" in t0
     assert "שותף עם קבלן • 15.10.2026" in page_text(pdf, 1)
     jd = docs.get("jobs/j1") or {}
     assert jd["result"]["titleBlock"] == {"s1": "plan"} and jd["result"]["rendered"] == {"raster": 1}
+    assert jd["result"]["titleBlockMasked"] == {"s1": True} and jd["result"]["omittedSheets"] == []
+    x = docs.get(f"{P}/exports/x1") or {}
+    assert x["titleBlockMasked"] is True and x["titleBlockBySheet"] == {"s1": True}
+    assert jd["result"]["pageBytes"]["s1"] > 0
     # marks are still vector, on top of the raster
     assert near(img, 200 - 3.35, 60, line_colour("4.01"), dpi=144, r=2)
 
 
-def test_marked_pdf_title_block_fallback_band_when_not_found() -> None:
-    blobs, docs = project(secret="SECRET-CLIENT-NAME")  # no titleBlock, no primitives: band under the regions
-    run_marked_pdf(job(hideTitleBlock=True), blobs, docs, limits=LIM)
+def test_share_watermark_survives_deleting_text_objects() -> None:
+    """Sec gate F-6 (poc_strip_wm.py): the share watermark is burned into the pixels of every page."""
+    blobs, docs = project()
+    run_marked_pdf(job(watermark="שותף עם קבלן • abc123"), blobs, docs, limits=LIM)
     pdf = blobs.read(output_path(ORG, PROJ, "x1"))
-    assert "SECRET" not in page_text(pdf, 0)
-    assert (docs.get("jobs/j1") or {})["result"]["titleBlock"] == {"s1": "fallback"}
+    stripped = strip_text_objects(pdf)
+    assert "abc123" not in page_text(stripped, 0)  # the text layer is really gone …
+    for i in (0, 1):  # … but the drawing page and the legend page still carry the watermark in their pixels
+        img = render_page(stripped, i, dpi=100)
+        box = BLANK if i == 0 else (20.0, 200.0, 190.0, 280.0)
+        assert burned_pixels(img, box, 100) > 500, i
+    # a plain (internal) export has none of it
+    blobs2, docs2 = project()
+    run_marked_pdf(job(), blobs2, docs2, limits=LIM)
+    assert burned_pixels(render_page(blobs2.read(output_path(ORG, PROJ, "x1")), 0, dpi=100), BLANK, 100) < 50
+
+
+def test_share_pdf_never_embeds_the_original_vector_page() -> None:
+    """F-6: watermark set + hideTitleBlock false → raster page, no customer text / vector objects."""
+    blobs, docs = project(secret="SECRET-CLIENT-NAME")
+    run_marked_pdf(job(watermark="שותף עם קבלן"), blobs, docs, limits=LIM)
+    pdf = blobs.read(output_path(ORG, PROJ, "x1"))
+    assert b"SECRET" not in pdf and "SECRET" not in page_text(pdf, 0)
+    r = (docs.get("jobs/j1") or {})["result"]
+    assert r["rendered"] == {"raster": 1} and r["share"] is True and r["titleBlockMasked"] == {}
+    doc = pdfium.PdfDocument(pdf)
+    kinds = [o.type for o in doc[0].get_objects()]
+    doc.close()
+    assert kinds.count(pdfium.raw.FPDF_PAGEOBJ_IMAGE) == 1  # the drawing is one image
+    # the original drawing is still visible (black symbol stroke under the overlay)
+    assert near(render_page(pdf, 0, dpi=144), 200, 60, "#000000", dpi=144, r=2, tol=150)
+    # no sheet title (read from the title block) on share PDFs
+    assert "חשמל קרקע" not in page_text(pdf, 0)
+
+
+def test_share_raster_does_not_render_source_annotations() -> None:
+    """Sec gate I-3: comments / stamps of the source are not painted into the raster."""
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.annotations import Rectangle
+
+    blobs, docs = project()
+    w = PdfWriter(clone_from=PdfReader(io.BytesIO(source_pdf())))
+    x0, y0 = 330 * MM, (297 - 150) * MM
+    w.add_annotation(0, Rectangle(rect=(x0, y0, x0 + 40 * MM, y0 + 20 * MM), interior_color="ff00ff"))
+    b = io.BytesIO()
+    w.write(b)
+    data = b.getvalue()
+    blobs.write(f"{P}/uploads/set1/source.pdf", data, "application/pdf")
+    v = docs.get(f"{P}/sheets/s1/versions/v1") or {}
+    docs.set(f"{P}/sheets/s1/versions/v1", {**v, "sourceSha256": hashlib.sha256(data).hexdigest()})
+    assert near(render_page(data, 0), 350, 140, "#FF00FF", r=1)  # pdfium does draw it by default
+    run_marked_pdf(job(watermark="x"), blobs, docs, limits=LIM)
+    pdf = blobs.read(output_path(ORG, PROJ, "x1"))
+    assert not near(render_page(pdf, 0), 350, 140, "#FF00FF", r=3, tol=120)
+
+
+def test_no_title_block_refuses_the_export() -> None:
+    """Sec gate F-3 (poc_redact.py hide_no_tb_detected): never an unmasked page; masked=false; job fails."""
+    blobs, docs = project(secret="SECRET-CLIENT-NAME")  # no titleBlock, no primitives to search
+    with pytest.raises(IngestError) as e:
+        run_marked_pdf(job(hideTitleBlock=True), blobs, docs, limits=LIM)
+    assert e.value.code == "title_block_not_found" and not e.value.retryable
+    x = docs.get(f"{P}/exports/x1") or {}
+    assert x["status"] == "failed" and x["titleBlockMasked"] is False and x["titleBlockBySheet"] == {"s1": False}
+    assert x["error"]["code"] == "title_block_not_found"
+    assert (docs.get("jobs/j1") or {})["result"]["titleBlockMasked"] == {"s1": False}
+    assert not blobs.list(f"{P}/exports/")  # nothing written
+
+
+def test_no_title_block_on_one_sheet_omits_only_that_page() -> None:
+    blobs, docs = project(secret="SECRET-CLIENT-NAME", title_block=[300, 271, 414, 291])
+    # s2 (no evidence, no title block) exported explicitly
+    run_marked_pdf(job(hideTitleBlock=True, sheetIds=["s1", "s2"]), blobs, docs, limits=LIM)
+    pdf = blobs.read(output_path(ORG, PROJ, "x1"))
+    x = docs.get(f"{P}/exports/x1") or {}
+    assert x["status"] == "ready" and x["titleBlockMasked"] is False
+    assert x["titleBlockBySheet"] == {"s1": True, "s2": False} and x["versionIds"] == {"s1": "v1"}
+    r = (docs.get("jobs/j1") or {})["result"]
+    assert r["omittedSheets"] == ["s2"] and r["titleBlock"] == {"s1": "plan", "s2": "none"}
+    assert x["pageCount"] == 2  # s1 + legend; s2 left out
+    assert "גיליונות הושמטו" in page_text(pdf, 1)
 
 
 def test_marked_pdf_raster_sheet_uses_tiles_and_floor_split_legend() -> None:

@@ -161,4 +161,32 @@ describe("Export dialog: PDF מסומן (FR-29, E2E-13)", { timeout: 30_000 }, (
     await user.click(screen.getByRole("radio", { name: "PDF מסומן" }));
     expect(screen.getByText("לא ניתן לייצא עדיין.")).toBeInTheDocument();
   });
+
+  it("F-3: hide title block → omitted sheets are listed; none maskable → the API's Hebrew message", async () => {
+    const user = userEvent.setup({ delay: null });
+    const backend = createMockBackend({ latencyMs: 0, jobTickMs: 5, devIndex: false, boqPrebuilt: true, titleBlockDetected: (id) => id === "noah-eb8be8a3-p0" });
+    for (let i = 0; i < 200 && (await backend.api.listBoqLines(PID)).items.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    const lines = (await backend.api.listBoqLines(PID)).items;
+    const rows = (await new Promise<SheetRow[]>((r) => backend.realtime.sheets("org-demo", PID, r, () => {}))).filter((x) => x.version?.status === "ready");
+    const { unmount } = renderExport(backend, lines, rows);
+    await user.click(screen.getByRole("radio", { name: "PDF מסומן" }));
+    await user.click(screen.getByLabelText("הסתר את טבלת הכותרת"));
+    await user.click(screen.getByRole("button", { name: "צור PDF" }));
+    await screen.findByRole("link", { name: "הורד PDF" }, WAIT);
+    const omitted = document.querySelector<HTMLElement>("[data-omitted]")!;
+    expect(omitted).toHaveTextContent("חלק מהגיליונות הושמטו");
+    expect(omitted.querySelectorAll("li")).toHaveLength(rows.length - 1);
+    unmount();
+
+    renderExport(backend, lines, rows);
+    await user.click(screen.getByRole("radio", { name: "PDF מסומן" }));
+    await user.click(screen.getByLabelText("הסתר את טבלת הכותרת"));
+    await user.click(screen.getByLabelText(`כל הגיליונות (${rows.length})`));
+    const boxes = screen.getAllByRole("checkbox").slice(3);
+    for (const [i, b] of boxes.entries()) if (rows[i]!.sheet.id === "noah-eb8be8a3-p0") await user.click(b);
+    await user.click(screen.getByRole("button", { name: "צור PDF" }));
+    expect(await screen.findByText(/לא נמצאה טבלת כותרת להסתרה באף גיליון/, {}, WAIT)).toHaveAttribute("data-export-error", "title_block_not_found");
+    expect(screen.queryByRole("link", { name: "הורד PDF" })).toBeNull();
+  });
 });
+

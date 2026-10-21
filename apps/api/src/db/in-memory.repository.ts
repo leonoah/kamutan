@@ -586,8 +586,8 @@ export class InMemoryRepository implements Repository {
       after: event.after ?? null,
       at: at.toISOString(),
     };
-    logAuditEvent(orgId, event);
     const hash = auditHash(prevHash, body);
+    logAuditEvent(orgId, event, hash);
     this.docs.set(fsPaths.auditEvent(orgId, autoId()), { ...body, at, prevHash, hash });
     const head = this.docs.get(fsPaths.auditHead(orgId));
     this.docs.set(fsPaths.auditHead(orgId), { hash, at, count: ((head?.count as number | undefined) ?? log.length) + 1 });

@@ -1,0 +1,37 @@
+{
+  "$ref": "#/definitions/ShareLinkSheet",
+  "definitions": {
+    "ShareLinkSheet": {
+      "type": "object",
+      "properties": {
+        "sheetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "versionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "titleBlockMasked": {
+          "type": "boolean"
+        },
+        "included": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sheetId",
+        "versionId",
+        "titleBlockMasked",
+        "included"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ShareLinkSheet.json"
+}

@@ -291,7 +291,7 @@ version lock, 404/410 identical bodies, 405, share-token write 403, pdf 302/409/
 purge + certificate + isolation), `e2e/dependents.e2e.test.ts`, `unit/governance.unit.test.ts` (chain, history mapping,
 ipPrefix, watermark, limiter, recent auth, service-level isolation, R-A1 log redaction, R-A7, worker field mappers),
 emulator block "Sprint 5" in `integration/firestore.emulator.test.ts` (CI only).
-Commands (green, 21.10.2026): `pnpm turbo run lint typecheck test build --filter=@kamutan/api --filter=@kamutan/contracts
+Commands (green, 21.10.2026, after the security-gate round: api 292 passed / 21 skipped, contracts 108, firebase-tests 47 / 195 emulator-skipped; first run below): `pnpm turbo run lint typecheck test build --filter=@kamutan/api --filter=@kamutan/contracts
 --filter=@kamutan/firebase-tests --concurrency=2` (api 278 passed / 21 emulator-skipped; contracts 108; firebase-tests
 46 passed / 170 emulator-skipped), `pnpm --filter @kamutan/api openapi`.
 
@@ -306,6 +306,21 @@ Known gaps (Sprint 5):
 - `apiJobs` / `reprocessDependents` functions and the `api-jobs` topic need DevOps deploy wiring (firebase deploy
   creates both from `function.ts` exports) and the runtime SA needs `firebaseauth.users.update` (revokeRefreshTokens).
 - `rebuild` history items appear only if the worker writes `boqLines/rebuild` audit events (it does not today).
+
+### Sprint 5 security gate fixes (docs/sprints/sprint-5-security-gate.md)
+
+| Finding | Fix | Regression test |
+| --- | --- | --- |
+| F-1 High | `firestore.rules`: `isMember` = member **and** `orgActive(orgId)` (`get(orgs/{orgId}).data.get('status','active') != 'offboarding'`); `roleIn`/`isAdmin`/`canCorrect` build on it → every tenant read and the `reviewItems` write are closed for an offboarding org. Exceptions: `orgs/{orgId}` (members see the status → blocked screen) and `offboardingExports` (admin). Storage `canUpload` also requires `orgActive`. Chose the org-doc `status` field (already written atomically by the offboarding transaction) over a custom claim: no claim refresh lag, and since it is evaluated on every request existing ID tokens stop working immediately (no `auth_time` comparison needed). Cost: one extra rules `get()` per request. A purged org has no doc → denied. | `firebase/tests`: `firestore.rules.test.ts` "F-1" block (22 collections × 4 roles, PoC reads + reviewItem update, org doc + export still visible, other org unaffected), `storage.rules.test.ts` quarantine/import upload refused, `rules.lint.test.ts` F-1 static check (emulator suites run in CI) |
+| F-2 Medium | `trust proxy` = `TRUST_PROXY_HOPS` (default **2**: Hosting edge + GFE; chain client → Firebase Hosting (appends client IP to XFF) → GFE (appends the edge IP) → Cloud Functions gen2/Cloud Run). `req.ip` is the 2nd entry from the right; client-prepended entries are ignored. Share limiter keys IPv6 by /64 (`ipLimitKey`). Residual: a client calling the function's `run.app` URL directly (bypassing Hosting) controls one hop → DevOps: restrict direct invocation / ingress. Limiter still per instance (I-1). | `e2e/secgate` F-2 (rotating left-most XFF still locked out; other real client unaffected; audit ipPrefix = trusted hop; /64 keys) |
+| F-3 Medium | No guessed strip any more: the mask is only a detected `titleBlockMm` (or worker `titleBlock.bboxMm`). On create with `hideTitleBlock`, ready sheets without a detected title block are **excluded** unless `includeUnmaskedSheets: true`; response `link.sheets[] {titleBlockMasked, included}` + `warnings[]` (`title_block_not_detected`, `…_included`, Hebrew). Meta with hideTitleBlock: `project.name` = link label, sheet titles "גיליון N", `titleBlockMasked` per sheet; PDF download file name never the project name. Worker-Export follow-up: `ExportRecord.titleBlockMasked` / `titleBlockBySheet`, error code `title_block_not_found` (+ `EXPORT_ERROR_MESSAGES_HE`, `message` on `GET …/exports/:id`, `pdf.errorCode` in meta); share PDFs always carry the link watermark (worker's raster-only path) and the public `/pdf` is served only when watermarked and, with hideTitleBlock, `titleBlockMasked === true`. | `e2e/secgate` F-3 (exclusion + warning + 404 + PDF job lock, detected right-column mask, opt-in unmasked, no client names), F-3/F-6 follow-up block, `e2e/share` meta / pdf (unconfirmed mask → 404) |
+| F-4 Medium | BOQ frozen at creation: `share/{linkId}/boq.json.gz` (`kamutan.share-boq/1`: code, description, unit, effective qty, byFloor, level, status, floor) written before the link; `GET boq` serves only it (`snapshotAt`); links without a snapshot get an empty BOQ (never live lines). `reasons` / `overridden` removed from `PublicShareBoqLine` (non-additive change of a public DTO, required by the gate; the web already ignored them). Storage `projects/*/share/**` deny-all. | `e2e/secgate` F-4 (line added + override changed after creation not served; no snapshot → empty), `e2e/share` boq |
+| F-5 Low | Middleware matches `/api/v1/public/` case-insensitively (headers + 405 on every variant) and answers 404 to any non-canonical case; `logPath` redaction is case-insensitive. (Express `case sensitive routing` is not honoured once Nest has created the router, so the gate is in the middleware.) Platform request logs: DevOps exclusion (R-A1 note). | `e2e/secgate` F-5 |
+| F-7 Low | `GET …/offboarding/export/:id` signs the ZIP URL only after `requireOffboardingAdmin` (admin + MFA + sign-in ≤ 10 min); status of a pending export stays admin-readable. | `e2e/secgate` F-7 |
+| F-8 Low | Verify compares the chain tip with `auditMeta/head` (hash, and count when present) → `ok:false, headMismatch:true, brokenAt` = surviving tip. Every audit log line now carries the event `hash` (external anchor in Cloud Logging). | `e2e/secgate` F-8 |
+| F-9 Low | History keeps only `boqLines` events whose `after.projectId` equals the project (all events since Sprint 3 carry it; corrections were already per project). | `e2e/secgate` F-9 |
+
+Not in the API's area: F-6 / I-3 (Worker-Export, done on their side), I-4 purge `--execute` default (open), I-5 (DevOps).
 
 ## Upload flow (SEC-13/14/15)
 

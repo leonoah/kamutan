@@ -5,12 +5,12 @@ import { useTranslation } from "react-i18next";
 import { Clock, Download, Eye, Link2Off, SearchX } from "lucide-react";
 import { useBackend } from "@/api/client";
 import { shareErrorKind } from "@/api/http";
-import type { PublicBoqLine, PublicShareMeta, ShareErrorKind } from "@/api/types";
+import { EXPORT_ERROR_MESSAGES_HE, type PublicBoqLine, type PublicShareMeta, type ShareErrorKind } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { ConfidenceBadge, levelFromDb } from "@/components/ConfidenceBadge";
 import { Logo } from "@/components/Logo";
 import { Ltr } from "@/components/Ltr";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { compareCodes, fmtQty } from "@/features/boq/model";
 import { useShareBoq, useShareMeta, useShareOverlay } from "./queries";
@@ -65,7 +65,7 @@ export function SharedViewerPage() {
   if (meta.isError || !meta.data) return <ShareGone kind={shareErrorKind(meta.error)} />;
   const boqErr = boq.isError ? shareErrorKind(boq.error) : null;
   if (boqErr && boqErr !== "error") return <ShareGone kind={boqErr} />;
-  return <SharedViewer token={token} meta={meta.data} lines={boq.data?.lines ?? null} chapters={boq.data?.chapters ?? []} boqError={boq.isError} />;
+  return <SharedViewer token={token} meta={meta.data} lines={boq.data?.lines ?? null} chapters={boq.data?.chapters ?? []} snapshotAt={boq.data?.snapshotAt ?? null} boqError={boq.isError} />;
 }
 
 export function ShareGone({ kind }: { kind: ShareErrorKind }) {
@@ -89,7 +89,22 @@ export function ShareGone({ kind }: { kind: ShareErrorKind }) {
   );
 }
 
-function SharedViewer({ token, meta, lines, chapters, boqError }: { token: string; meta: PublicShareMeta; lines: PublicBoqLine[] | null; chapters: { code: string; title: string }[]; boqError: boolean }) {
+function SharedViewer({
+  token,
+  meta,
+  lines,
+  chapters,
+  snapshotAt,
+  boqError,
+}: {
+  token: string;
+  meta: PublicShareMeta;
+  lines: PublicBoqLine[] | null;
+  chapters: { code: string; title: string }[];
+  /** F-4: the BOQ is frozen at link creation. */
+  snapshotAt: string | null;
+  boqError: boolean;
+}) {
   const { t } = useTranslation();
   const { publicShare } = useBackend();
   const qc = useQueryClient();
@@ -105,7 +120,22 @@ function SharedViewer({ token, meta, lines, chapters, boqError }: { token: strin
     return m;
   }, [evidence]);
   const focusIds = useMemo(() => (lineId ? (evidence?.[lineId] ?? []) : []), [lineId, evidence]);
-  const pdfHref = useMemo(() => (meta.allowPdfDownload ? publicShare.pdfUrl(token) : null), [meta.allowPdfDownload, publicShare, token]);
+  // The button only exists while the per-link PDF is ready (F-3: a hidden title block that could not be masked → no PDF).
+  const pdfReady = meta.allowPdfDownload && (meta.pdf === undefined || meta.pdf?.status === "ready");
+  const pdfHref = useMemo(() => {
+    if (!pdfReady) return null;
+    try {
+      return publicShare.pdfUrl(token);
+    } catch {
+      return null;
+    }
+  }, [pdfReady, publicShare, token]);
+  const pdfNote =
+    meta.pdf && meta.pdf.status !== "ready"
+      ? meta.pdf.status === "failed"
+        ? (meta.pdf.errorCode && EXPORT_ERROR_MESSAGES_HE[meta.pdf.errorCode]) || t("shareViewer.pdfFailed")
+        : t("shareViewer.pdfPending")
+      : null;
 
   const groups = useMemo(() => {
     const by = new Map<string, PublicBoqLine[]>();
@@ -184,11 +214,24 @@ function SharedViewer({ token, meta, lines, chapters, boqError }: { token: strin
             </a>
           </Button>
         ) : null}
+        {pdfNote ? (
+          <p role="note" className="basis-full text-meta text-muted-foreground" data-pdf-note>
+            {pdfNote}
+          </p>
+        ) : null}
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(22rem,38%)_1fr]">
         <section aria-label={t("shareViewer.boq")} className="flex min-h-0 flex-col border-b border-border bg-surface lg:border-b-0 lg:border-e">
-          <h2 className="shrink-0 border-b border-border px-4 py-2 text-panel font-bold text-foreground">{t("shareViewer.boq")}</h2>
+          <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-border px-4 py-2">
+            <h2 className="text-panel font-bold text-foreground">{t("shareViewer.boq")}</h2>
+            {snapshotAt ? (
+              <span className="text-meta text-muted-foreground" data-snapshot-at>
+                {t("shareViewer.snapshotAt", { date: "" })}
+                <Ltr>{formatDateTime(snapshotAt)}</Ltr>
+              </span>
+            ) : null}
+          </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {boqError ? (
               <p role="alert" className="p-4 text-dense text-destructive">{t("shareViewer.errorBody")}</p>

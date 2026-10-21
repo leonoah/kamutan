@@ -24,6 +24,7 @@ const auditLogger = new Logger('Audit');
  * R-A2 (SEC-43): content-free structured line per audit event, so Cloud Monitoring can alert on it (Firestore is not
  * alertable). Ids and action names only — never `after`. Inside a retried Firestore transaction it may repeat.
  */
-export function logAuditEvent(orgId: string, e: { entity: string; action: string; actorId: string | null; actorKind?: string; entityId?: string | null }): void {
-  auditLogger.log({ event: 'audit', orgId, entity: e.entity, action: e.action, actorType: e.actorKind ?? 'user', actorUid: e.actorKind === 'share_link' ? null : e.actorId, entityId: e.entityId ?? null }, 'audit');
+export function logAuditEvent(orgId: string, e: { entity: string; action: string; actorId: string | null; actorKind?: string; entityId?: string | null }, hash?: string): void {
+  // F-8: the hash goes to Cloud Logging too — an anchor of the chain outside Firestore.
+  auditLogger.log({ event: 'audit', orgId, hash: hash ?? null, entity: e.entity, action: e.action, actorType: e.actorKind ?? 'user', actorUid: e.actorKind === 'share_link' ? null : e.actorId, entityId: e.entityId ?? null }, 'audit');
 }

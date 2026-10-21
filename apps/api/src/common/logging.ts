@@ -4,7 +4,7 @@ import type { Params } from 'nestjs-pino';
 import type { AppConfig } from '../config/config';
 
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{8,128}$/;
-const SHARE_PATH_RE = /^(\/api\/v1\/public\/share\/)[^/?#]*/;
+const SHARE_PATH_RE = /^(\/api\/v1\/public\/share\/)[^/?#]*/i;
 
 /**
  * Sprint 5 (R-A1, SEC-26): the raw share token is a bearer secret — never log it. The token segment of

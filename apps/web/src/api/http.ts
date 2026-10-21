@@ -26,6 +26,7 @@ import {
   type PublicShareOverlay,
   type ShareErrorKind,
   type ShareLink,
+  type CreateShareLinkResponse,
 } from "./types";
 
 /* ---------------- Sprint 4 adapters (contracts corrections.ts ↔ app DTOs) ---------------- */
@@ -209,6 +210,9 @@ export function toExportDoc(v: Record<string, unknown>): ExportDoc {
     createdAt: str(doc.createdAt) ?? new Date().toISOString(),
     error: err ?? null,
     url: str(v.url) ?? str(v.signedUrl) ?? str(doc.url),
+    titleBlockMasked: typeof doc.titleBlockMasked === "boolean" ? doc.titleBlockMasked : null,
+    titleBlockBySheet: (doc.titleBlockBySheet as Record<string, boolean> | null | undefined) ?? null,
+    message: str(v.message),
     filename: str(v.fileName) ?? str(v.filename) ?? str(doc.fileName) ?? str(doc.filename),
     expiresAt: str(v.expiresAt) ?? str(doc.expiresAt),
   };
@@ -229,6 +233,7 @@ export function toShareLink(v: Partial<ShareLink> & { id: string; expiresAt: str
     lastViewedAt: v.lastViewedAt ?? null,
     createdBy: v.createdBy ?? "",
     createdAt: v.createdAt,
+    ...(v.sheets ? { sheets: v.sheets } : {}),
   };
 }
 
@@ -295,12 +300,9 @@ export function createPublicShareClient(base = env.apiBase, fetchImpl: typeof fe
     getMeta: async (token) => normalizeShareMeta(await get<PublicShareMeta>(path(token, "/meta"))),
     getBoq: async (token) => {
       const v = await get<PublicShareBoq & { items?: PublicShareBoq["lines"] }>(path(token, "/boq"));
-      // Spec S15: no reasons / scores in the external view (contracts lines carry `reasons`; drop them here).
-      const lines = (v.lines ?? v.items ?? []).map((l) => {
-        const { reasons: _r, overridden: _o, floor: _f, ...rest } = l as typeof l & { reasons?: unknown; overridden?: unknown; floor?: unknown };
-        return { ...rest, byFloor: rest.byFloor ?? {} };
-      });
-      return { lines, ...(v.chapters ? { chapters: v.chapters } : {}) };
+      // F-4: a snapshot frozen at link creation (contracts lines have no reasons / override marker).
+      const lines = (v.lines ?? v.items ?? []).map((l) => ({ ...l, byFloor: l.byFloor ?? {} }));
+      return { snapshotAt: v.snapshotAt ?? null, lines, ...(v.chapters ? { chapters: v.chapters } : {}) };
     },
     getOverlay: async (token, sheetId) => normalizeShareOverlay(await get<Parameters<typeof normalizeShareOverlay>[0]>(path(token, `/sheets/${enc(sheetId)}/overlay`)), sheetId),
     tileUrl: (token, sheetId, z, x, y) => path(token, `/sheets/${enc(sheetId)}/tiles/${z}/${x}/${y}`),
@@ -313,7 +315,7 @@ interface PublicShareMetaDto {
   link: { shortId: string; label: string; recipient: string | null; expiresAt: string; createdAt: string; hideTitleBlock: boolean; allowPdfDownload: boolean; watermark: string };
   project: { name: string; address: string | null };
   sheets: (Omit<PublicShareMeta["sheets"][number], "id"> & { sheetId: string })[];
-  pdf: { status: "queued" | "running" | "ready" | "failed" } | null;
+  pdf: { status: "queued" | "running" | "ready" | "failed"; errorCode?: string | null } | null;
 }
 export function normalizeShareMeta(raw: PublicShareMeta | PublicShareMetaDto): PublicShareMeta {
   if ("link" in raw && "project" in raw) {
@@ -329,6 +331,7 @@ export function normalizeShareMeta(raw: PublicShareMeta | PublicShareMetaDto): P
       hideTitleBlock: link.hideTitleBlock,
       // The per-link watermarked PDF is generated after creation: offer it once it is ready.
       allowPdfDownload: link.allowPdfDownload && pdf?.status === "ready",
+      pdf: link.allowPdfDownload ? (pdf ?? null) : null,
       showConfidence: true,
       watermark: link.watermark,
       sheets: sheets.map(({ sheetId, ...x }) => ({ ...x, id: sheetId })),
@@ -344,6 +347,7 @@ export function normalizeShareMeta(raw: PublicShareMeta | PublicShareMetaDto): P
     allowPdfDownload: v.allowPdfDownload ?? false,
     showConfidence: v.showConfidence ?? true,
     watermark: v.watermark ?? "",
+    pdf: v.pdf ?? (v.allowPdfDownload ? { status: "ready" } : null),
     sheets: (v.sheets ?? []).map((s) => ({ ...s, floors: s.floors ?? [], title: s.title ?? null, discipline: s.discipline ?? null, page: s.page ?? null, tiles: s.tiles ?? null })),
   };
 }
@@ -643,8 +647,8 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
     },
     getExport: async (projectId, exportId) => toExportDoc(await request(`/projects/${enc(projectId)}/exports/${enc(exportId)}`)),
     createShareLink: async (projectId, req) => {
-      const r = await post<{ link: ShareLink; url: string }>(`/projects/${enc(projectId)}/share-links`, req);
-      return { link: toShareLink(r.link), url: r.url };
+      const r = await post<{ link: ShareLink; url: string; warnings?: CreateShareLinkResponse["warnings"] }>(`/projects/${enc(projectId)}/share-links`, req);
+      return { link: toShareLink(r.link), url: r.url, warnings: r.warnings ?? [] };
     },
     listShareLinks: async (projectId) => {
       const r = await request<{ items: ShareLink[] } | ShareLink[]>(`/projects/${enc(projectId)}/share-links`);

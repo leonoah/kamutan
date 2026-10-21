@@ -521,8 +521,49 @@ Command: `pnpm turbo run lint typecheck test build --filter=@kamutan/web --filte
 
 Screenshots (mock dev with the real Noah artifacts, Chromium 1194, 1440×900): `/home/claude/kamutan-data/debug/s5/` 01–16 (badge, history, export options and ready, share dialog / created / revoke, external viewer + line focus, expired / revoked / not found, settings, audit, offboarding, re-authentication).
 
+## Security-gate follow-up (docs/sprints/sprint-5-security-gate.md, F-3 / F-4 / F-7)
+
+**Share dialog (F-3)**
+- When "הסתר את טבלת הכותרת" is on, a new opt-in appears: "כלול גם גיליונות שלא זוהתה בהם טבלת כותרת". It is off by default. Its hint spells out the risk: the recipient will see the address, the client name and the office details.
+- `includeUnmaskedSheets: true` is sent only when the editor ticks that box.
+- After creation the dialog shows:
+  - the API's Hebrew `warnings` (`title_block_not_detected` / `…_included`, role=alert), each with its sheet names;
+  - a per-sheet list from `link.sheets[]`: טבלת הכותרת מוסתרת / נכלל בלי הסתרה (shown in red) / לא נכלל / נכלל.
+  - Sheet names come from the review page.
+
+**External viewer (F-3 / F-4)**
+- Renders whatever `meta` returns. With hideTitleBlock that means the link label as the title and "גיליון N" sheet names, so no code in the viewer uses the project name.
+- Shows "נכון ל-{snapshotAt}" next to the BOQ.
+- `reasons` / `overridden` are no longer read or stripped.
+- PDF button: shown only when `pdf.status === ready`. Otherwise a note is shown: the Hebrew message for `errorCode` (e.g. `title_block_not_found`, taken from `EXPORT_ERROR_MESSAGES_HE`), or "בהכנה" / "לא זמין".
+
+**Marked-PDF dialog (F-3)**
+- When sheets were left out (`titleBlockBySheet[sid] === false`), a warning lists them by name, using the API `message` or `EXPORT_SHEETS_OMITTED_HE`.
+- A failed export shows `message` or the Hebrew text for its error code.
+
+**Offboarding download (F-7)**
+- The reauthentication flow now has two purposes: `export` and `offboard`.
+- Starting the export first checks `auth_time`.
+- A ready export whose GET answers `recent_auth_required` stops polling and shows the box: "גם הורדת הייצוא המלא מחייבת…". After a successful reauth it refetches, and the signed URL appears.
+- `mfa_required` shows the MFA message.
+
+**Mock**
+- Title-block detection per sheet (`titleBlockDetected` option). By default `noah-c…` and `noah-7…` have no title block.
+- Link `sheets[]` plus warnings.
+- `meta`: label as the project name, "גיליון N" sheet names, and `pdf` = failed `title_block_not_found` when nothing can be masked.
+- Excluded sheets: their overlay answers 404.
+- The BOQ snapshot is frozen at creation. Seeded links freeze on their first read, dated at their creation.
+- Marked PDF: `titleBlockBySheet`, `titleBlockMasked`, `message`, and a failed state when nothing can be masked.
+- Offboarding ZIP URL: signed only with a recent sign-in (`recentAuth` reads the mock session's `auth_time`).
+
+**Tests:** web 256 (+9)
+- mock: F-3 exclusion and opt-in, no-mask PDF, F-4 frozen BOQ, omitted / failed marked PDF
+- adapters: snapshot, `pdf.errorCode`, export fields
+- UI: share opt-in, warnings and per-sheet states; viewer with no PDF; F-7 reauth before the export and on a 403 download; marked-PDF omitted / failed
+
 ## Known gaps
 - Mock tiles in the viewer are not title-block-masked or watermarked. The server burns both in, and the client overlay watermark is always on.
+- The mock does not model MFA: `mfa_required` is only exercised through the HTTP error mapping.
 - The share viewer has no floor / room filter or receipt tooltips yet (spec S15 "זמין"). It has row ↔ drawing highlighting and a per-floor breakdown on the selected row.
 - The audit "details" column shows raw `after` JSON (admin evidence view). There is no per-action Hebrew rendering yet.
 - The real Google re-authentication popup and MFA are not testable in the sandbox. Firebase calls are covered by unit tests with mocks.

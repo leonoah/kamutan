@@ -35,8 +35,38 @@ export const ShareLinkSchema = z.object({
   revokeReason: z.enum(['user', 'offboarding', 'project_deleted']).nullable().optional(),
   /** exports/{id} of the per-link watermarked marked PDF (only when allowPdfDownload). */
   pdfExportId: DocIdSchema.nullable().optional(),
+  /**
+   * Security gate F-3: sheetId → the title block of the locked version is masked (a detected box exists). Sheets
+   * without a detected title block are excluded from `hideTitleBlock` links unless `includeUnmaskedSheets`.
+   */
+  titleBlockMaskedBySheet: z.record(DocIdSchema, z.boolean()).optional(),
+  includeUnmaskedSheets: z.boolean().optional(),
+  /** F-3: sheetId → versionId of ready sheets left out (no detected title block, no opt-in). */
+  excludedSheets: z.record(DocIdSchema, DocIdSchema).optional(),
+  /** Security gate F-4: the BOQ frozen at creation (Storage `share/{linkId}/boq.json.gz`); the public API serves only it. */
+  boqSnapshotPath: z.string().max(1024).nullable().optional(),
 });
 export type ShareLink = z.infer<typeof ShareLinkSchema>;
+
+/** Per-sheet share status (editor's share dialog). */
+export const ShareLinkSheetSchema = z.object({
+  sheetId: DocIdSchema,
+  versionId: DocIdSchema,
+  /** The title block of this sheet is masked on tiles / overlay / PDF. */
+  titleBlockMasked: z.boolean(),
+  /** Part of the link (excluded when hideTitleBlock and no title block was detected, unless includeUnmaskedSheets). */
+  included: z.boolean(),
+});
+export type ShareLinkSheet = z.infer<typeof ShareLinkSheetSchema>;
+
+export const SHARE_LINK_WARNING_CODES = ['title_block_not_detected', 'title_block_not_detected_included'] as const;
+export const ShareLinkWarningSchema = z.object({
+  code: z.enum(SHARE_LINK_WARNING_CODES),
+  /** Hebrew, shown in the share dialog. */
+  message: z.string().max(500),
+  sheetIds: z.array(DocIdSchema),
+});
+export type ShareLinkWarning = z.infer<typeof ShareLinkWarningSchema>;
 
 export const SHARE_LINK_DEFAULT_DAYS = 14;
 export const SHARE_LINK_MAX_DAYS = 90;
@@ -64,6 +94,10 @@ export const ShareLinkViewSchema = ShareLinkSchema.omit({ tokenHash: true }).ext
   state: ShareLinkStateSchema,
   /** First 6 chars of the id (shown in the watermark). */
   shortId: z.string().min(1).max(16),
+  /** F-3: every ready sheet at creation with its masking / inclusion status. */
+  sheets: z.array(ShareLinkSheetSchema),
+  /** F-4: true when the link serves a BOQ frozen at creation. */
+  boqLocked: z.boolean(),
 });
 export type ShareLinkView = z.infer<typeof ShareLinkViewSchema>;
 
@@ -75,6 +109,8 @@ export const CreateShareLinkRequestSchema = z
     recipient: z.string().trim().max(200).nullable().optional(),
     hideTitleBlock: z.boolean().default(true),
     allowPdfDownload: z.boolean().default(false),
+    /** F-3: explicit opt-in to share sheets whose title block was NOT detected (they cannot be masked). */
+    includeUnmaskedSheets: z.boolean().default(false),
   })
   .strict();
 export type CreateShareLinkRequest = z.infer<typeof CreateShareLinkRequestSchema>;
@@ -84,6 +120,8 @@ export const CreateShareLinkResponseSchema = z.object({
   link: ShareLinkViewSchema,
   url: z.string().url(),
   token: ShareTokenSchema,
+  /** F-3: e.g. sheets excluded because their title block could not be detected. */
+  warnings: z.array(ShareLinkWarningSchema),
 });
 export type CreateShareLinkResponse = z.infer<typeof CreateShareLinkResponseSchema>;
 
@@ -117,7 +155,10 @@ export const SHARE_STATE_HEADER = 'x-share-state';
 export const PublicShareSheetSchema = z.object({
   sheetId: DocIdSchema,
   versionId: DocIdSchema,
+  /** With hideTitleBlock a neutral "גיליון N" (never text read from the title block). */
   title: z.string().max(300),
+  /** F-3: the title block of this sheet is masked. */
+  titleBlockMasked: z.boolean(),
   discipline: z.string().max(64).nullable(),
   floors: z.array(z.string().max(32)),
   page: z.object({ widthMm: z.number().positive(), heightMm: z.number().positive() }).nullable(),
@@ -147,35 +188,45 @@ export const PublicShareMetaSchema = z.object({
     watermark: z.string(),
   }),
   project: z.object({
+    /** With hideTitleBlock the link label (the project name often names the client). */
     name: z.string(),
     /** null when hideTitleBlock (SEC-28). */
     address: z.string().nullable(),
   }),
   sheets: z.array(PublicShareSheetSchema),
   /** Marked-PDF availability: null = not allowed; else the per-link export status. */
-  pdf: z.object({ status: z.enum(['queued', 'running', 'ready', 'failed']) }).nullable(),
+  pdf: z
+    .object({
+      status: z.enum(['queued', 'running', 'ready', 'failed']),
+      /** e.g. `title_block_not_found` (see exports.ts EXPORT_ERROR_MESSAGES_HE). */
+      errorCode: z.string().max(64).nullable().optional(),
+    })
+    .nullable(),
 });
 export type PublicShareMeta = z.infer<typeof PublicShareMetaSchema>;
 
-/** A BOQ line as an external viewer sees it: no notes, no override reasons, no user ids. */
+/**
+ * A BOQ line as an external viewer sees it (frozen at link creation, F-4): no notes, no reasons, no override marker, no
+ * user ids. (Sprint 5 security gate removed `reasons` / `overridden` from this public DTO.)
+ */
 export const PublicShareBoqLineSchema = z.object({
   id: DocIdSchema,
   chapter: z.string(),
   code: z.string(),
   description: z.string(),
   unit: z.string(),
-  /** Effective quantity (`qtyOverride ?? qty`). */
+  /** Effective quantity (`qtyOverride ?? qty`) at link creation. */
   qty: z.number().finite(),
-  overridden: z.boolean(),
   level: ConfidenceLevelSchema,
   status: BoqLineStatusSchema,
-  reasons: z.array(z.string()),
   floor: z.string().nullable(),
   byFloor: z.record(z.string(), z.number()),
 });
 export type PublicShareBoqLine = z.infer<typeof PublicShareBoqLineSchema>;
 
 export const PublicShareBoqSchema = z.object({
+  /** When the snapshot was taken (link creation); null for links created before the snapshot existed (empty BOQ). */
+  snapshotAt: TimestampSchema.nullable(),
   lines: z.array(PublicShareBoqLineSchema),
   floors: z.array(z.string()),
   counts: z.object({ lines: z.number().int(), green: z.number().int(), yellow: z.number().int(), red: z.number().int(), approved: z.number().int() }),
@@ -200,3 +251,16 @@ export const PublicShareOverlaySchema = z.object({
 export type PublicShareOverlay = z.infer<typeof PublicShareOverlaySchema>;
 
 export const ShareLinkPageSchema = pageOf(ShareLinkViewSchema);
+
+/** F-4: Storage JSON frozen at link creation (`kamutan.share-boq/1`). */
+export const SHARE_BOQ_SNAPSHOT_SCHEMA = 'kamutan.share-boq/1' as const;
+export const ShareBoqSnapshotSchema = PublicShareBoqSchema.extend({
+  schema: z.literal(SHARE_BOQ_SNAPSHOT_SCHEMA),
+  linkId: DocIdSchema,
+  buildId: DocIdSchema.nullable(),
+});
+export type ShareBoqSnapshot = z.infer<typeof ShareBoqSnapshotSchema>;
+
+/** F-3: shown in the share dialog when sheets are excluded / included without a mask. */
+export const TITLE_BLOCK_WARNING_EXCLUDED = 'לא זוהתה טבלת כותרת בגיליונות אלה, ולכן לא ניתן להסתיר אותה — הם לא נכללו בקישור.';
+export const TITLE_BLOCK_WARNING_INCLUDED = 'לא זוהתה טבלת כותרת בגיליונות אלה — הם נכללו בקישור ללא הסתרת טבלת הכותרת (לפי בחירתך).';

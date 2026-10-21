@@ -101,6 +101,39 @@ describe("Share dialog (S12, FR-30)", { timeout: 30_000 }, () => {
     await expect(backend.publicShare.getMeta(token)).rejects.toMatchObject({ status: 410, code: "share_revoked" });
   });
 
+  it("F-3: unmasked-sheet opt-in with its risk copy; warnings + per-sheet title-block status after creation", async () => {
+    const user = userEvent.setup({ delay: null });
+    const { backend } = renderDialog();
+    const create = vi.spyOn(backend.api, "createShareLink");
+    const dlg = await screen.findByRole("dialog", { name: "שיתוף לצפייה בלבד" });
+    const opt = within(dlg).getByLabelText("כלול גם גיליונות שלא זוהתה בהם טבלת כותרת");
+    expect(opt).not.toBeChecked();
+    expect(opt).toHaveAccessibleDescription(/יראה בהם את הכתובת, שם הלקוח/);
+    // the opt-in only exists while the title block is hidden
+    await user.click(within(dlg).getByLabelText(/הסתר את טבלת הכותרת/));
+    expect(within(dlg).queryByLabelText("כלול גם גיליונות שלא זוהתה בהם טבלת כותרת")).toBeNull();
+    await user.click(within(dlg).getByLabelText(/הסתר את טבלת הכותרת/));
+
+    await user.type(within(dlg).getByLabelText("שם הקישור"), "פיקוח");
+    await user.click(within(dlg).getByRole("button", { name: "צור קישור" }));
+    expect(create.mock.calls[0]![1]).not.toHaveProperty("includeUnmaskedSheets");
+    const warn = await within(dlg).findByRole("alert");
+    expect(warn).toHaveAttribute("data-share-warning", "title_block_not_detected");
+    expect(warn).toHaveTextContent("הם לא נכללו בקישור");
+    const states = [...dlg.querySelectorAll<HTMLElement>("[data-share-sheets] [data-sheet-state]")].map((x) => x.dataset.sheetState);
+    expect(states).toContain("excluded");
+    expect(states).toContain("masked");
+    expect(within(dlg).getAllByText("לא נכלל: לא זוהתה טבלת כותרת").length).toBeGreaterThan(0);
+
+    await user.click(within(dlg).getByRole("button", { name: "צור קישור נוסף" }));
+    await user.type(within(dlg).getByLabelText("שם הקישור"), "פיקוח 2");
+    await user.click(within(dlg).getByLabelText("כלול גם גיליונות שלא זוהתה בהם טבלת כותרת"));
+    await user.click(within(dlg).getByRole("button", { name: "צור קישור" }));
+    expect(create.mock.calls[1]![1]).toMatchObject({ includeUnmaskedSheets: true });
+    expect(await within(dlg).findByRole("alert")).toHaveAttribute("data-share-warning", "title_block_not_detected_included");
+    expect(dlg.querySelector('[data-sheet-state="unmasked"]')).toHaveTextContent("נכלל בלי הסתרת טבלת הכותרת");
+  });
+
   it("reviewers / viewers see the list but no create or revoke", async () => {
     renderDialog({ canManage: false });
     const dlg = await screen.findByRole("dialog", { name: "שיתוף לצפייה בלבד" });
@@ -130,8 +163,12 @@ describe("External viewer /s/:token (S15, E2E-09)", { timeout: 40_000 }, () => {
         for (const k of MEMBER_API_METHODS(b.api)) spies.push(vi.spyOn(b.api, k));
       },
     });
-    const viewer = await screen.findByRole("heading", { level: 1, name: /בית משפחת נח/ }, WAIT);
-    expect(viewer).toHaveTextContent("סטודיו נח לעיצוב פנים · בית משפחת נח");
+    // F-3: with hideTitleBlock the project name (the client's family) is replaced by the link label; sheets are "גיליון N".
+    const viewer = await screen.findByRole("heading", { level: 1, name: /קבלן חשמל — הצעת מחיר/ }, WAIT);
+    expect(document.body).not.toHaveTextContent("בית משפחת נח");
+    expect(screen.getByRole("combobox")).toHaveDisplayValue("גיליון 1");
+    // F-4: the BOQ is a snapshot from link creation
+    expect(await screen.findByText(/^נכון ל-/, {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("לקריאה בלבד")).toBeInTheDocument();
     expect(document.head.querySelector('meta[name="robots"]')).toHaveAttribute("content", "noindex,nofollow");
     expect(document.head.querySelector('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
@@ -152,6 +189,7 @@ describe("External viewer /s/:token (S15, E2E-09)", { timeout: 40_000 }, () => {
     const buttons = screen.getAllByRole("button");
     for (const b of buttons) expect(b).toHaveAccessibleName(/^הצג את /);
     expect(screen.queryByRole("textbox")).toBeNull();
+    void viewer;
     expect(screen.queryByRole("checkbox")).toBeNull();
 
     // row → drawing: the line's evidence is focused (switches to the sheet holding it)
@@ -190,10 +228,18 @@ describe("External viewer /s/:token (S15, E2E-09)", { timeout: 40_000 }, () => {
 
   it("a link revoked while open → the next request shows 'הקישור בוטל'", async () => {
     const { backend } = await renderApp("/s/demo-noah", { boqPrebuilt: true, devIndex: false });
-    await screen.findByRole("heading", { level: 1, name: /בית משפחת נח/ }, WAIT);
+    await screen.findByRole("heading", { level: 1, name: /קבלן חשמל/ }, WAIT);
     const id = (await backend.api.listShareLinks("p-noah")).find((l) => l.label.startsWith("קבלן חשמל"))!.id;
     await backend.api.revokeShareLink("p-noah", id);
     await expect(backend.publicShare.getBoq("demo-noah")).rejects.toMatchObject({ status: 410 });
+  });
+
+  it("F-3: PDF unavailable (title_block_not_found) → Hebrew note, no download button", async () => {
+    await renderApp("/s/demo-noah", { boqPrebuilt: true, devIndex: false, titleBlockDetected: () => false });
+    await screen.findByRole("heading", { level: 1, name: /קבלן חשמל/ }, WAIT);
+    expect(document.querySelector("[data-pdf-note]")).toHaveTextContent("לא נמצאה טבלת כותרת להסתרה באף גיליון");
+    expect(screen.queryByRole("link", { name: "הורד PDF מסומן" })).toBeNull();
+    expect(screen.getByText("אין גיליונות לתצוגה בקישור הזה.")).toBeInTheDocument();
   });
 
   it("is accessible (axe) with the BOQ loaded", async () => {

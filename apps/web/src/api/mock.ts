@@ -17,6 +17,7 @@ import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
 import { createReviewMock } from "./mockReview";
 import { createSprint5Mock } from "./mockSprint5";
+import { getAuthService, hasRecentLogin } from "@/features/auth/authService";
 
 export interface MockOptions {
   /** Seed projects. Defaults to two demo projects. Pass [] to see the empty state. */
@@ -54,6 +55,8 @@ export interface MockOptions {
   seedShareLinks?: boolean;
   /** Sprint 5 (tests): start with a broken audit hash chain. */
   auditBroken?: boolean;
+  /** Security gate F-3 (tests): title-block detection per sheet (default: mock rule). */
+  titleBlockDetected?: (sheetId: string) => boolean;
 }
 
 export const DEMO_ORG_ID = "org-demo";
@@ -208,6 +211,13 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     devBase: DEV_ARTIFACTS_BASE,
     seedLinks: opts.seedShareLinks ?? true,
     auditBroken: opts.auditBroken ?? false,
+    ...(opts.titleBlockDetected ? { titleBlockDetected: opts.titleBlockDetected } : {}),
+    // F-7: the mock checks the signed-in user's auth_time like the API (MFA is not modelled).
+    // (No signed-in user = backend unit tests: not modelled.)
+    recentAuth: async () => {
+      const a = getAuthService();
+      return a.getSession() ? hasRecentLogin(a) : true;
+    },
   });
   if (opts.blockExportOnRed) s5.setBlockExportOnRed(orgs[0]?.id ?? DEMO_ORG_ID, true);
   if (opts.boqPrebuilt && sheets.has("p-noah")) queueMicrotask(() => boq.buildBoq("p-noah"));
@@ -593,7 +603,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       revokeShareLink: async (projectId, linkId) => delay(s5.revokeShareLink(projectId, linkId)),
       patchOrgSettings: async (orgId, req) => delay(s5.patchOrgSettings(orgId, req)),
       startOffboardingExport: async (orgId) => delay(s5.startOffboardingExport(orgId)),
-      getOffboardingExport: async (orgId, id) => delay(s5.getOffboardingExport(orgId, id)),
+      getOffboardingExport: async (orgId, id) => delay(await s5.getOffboardingExport(orgId, id)),
       offboardOrg: async (orgId, req) => delay(s5.offboardOrg(orgId, req.confirm)),
     },
 

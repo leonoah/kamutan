@@ -630,6 +630,7 @@ export const paths = {
   /** Sprint 5 Storage objects — none client-readable. */
   markedPdf: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}/marked.pdf`,
   offboardingZip: (o: string, exportId: string) => `orgs/${o}/offboarding/${exportId}.zip`,
+  shareBoqSnapshot: (o: string, p: string, linkId: string) => `orgs/${o}/projects/${p}/share/${linkId}/boq.json.gz`,
 } as const;
 
 /** Storage prefixes a client may READ directly. Empty by design: every read is a signed URL (SEC-20). */

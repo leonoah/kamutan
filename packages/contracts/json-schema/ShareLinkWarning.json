@@ -1,0 +1,38 @@
+{
+  "$ref": "#/definitions/ShareLinkWarning",
+  "definitions": {
+    "ShareLinkWarning": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "title_block_not_detected",
+            "title_block_not_detected_included"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "sheetIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "sheetIds"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ShareLinkWarning.json"
+}

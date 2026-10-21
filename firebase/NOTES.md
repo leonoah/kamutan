@@ -119,6 +119,16 @@ No new composite index: the API queries corrections with one equality filter and
 deleteAfter), reprocessRequests collection group (status, notBefore) / (status, claimedAt). Tests: Sprint 5 block in
 `firestore.rules.test.ts`, storage serverObjects + 2 paths, lint for the deny-all matches. Emulator: CI only.
 
+### Sprint 5 security gate F-1 — offboarding closes the org in the rules
+
+`isMember(orgId)` = membership **and** `orgActive(orgId)` (`get(orgs/{orgId}).data.get('status','active') != 'offboarding'`);
+all role helpers build on it. Only `orgs/{orgId}` (members, `isMemberAnyStatus`) and `offboardingExports` (admin,
+`isAdminAnyStatus`) stay readable while offboarding. Storage `canUpload` requires `orgActive` too. Status field chosen
+over a custom claim: it is written in the offboarding transaction and checked on every request, so issued ID tokens
+lose access at once. Cost: one extra `get()` per rule evaluation. Tests: `firestore.rules.test.ts` "F-1",
+`storage.rules.test.ts` (uploads refused), `rules.lint.test.ts` (static). Also new: storage `projects/*/share/**`
+deny-all (share BOQ snapshots, F-4).
+
 ## Running
 
 ```bash

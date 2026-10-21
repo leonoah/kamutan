@@ -13,6 +13,12 @@ Log sources: API = Cloud Functions gen2 → Cloud Run service `api`, pino JSON (
 `kamutan-worker`, Python log lines (`textPayload`). Filters also match `jsonPayload.message` for when the worker moves
 to structured logs (request R-W1 in `docs/security/sprint-5-requests.md`). Log retention: `_Default` bucket 90 days.
 
+**Share tokens are never stored in Cloud Logging (F-5):** the script adds the `_Default` sink exclusion
+`share-token-urls` (`httpRequest.requestUrl` matching `/api/v1/public/share/` or `/s/<token>`, case-insensitive), so
+platform request logs of public share calls are dropped before storage. Consequence: those requests have no Cloud Run
+request-log entry (latency/status for them come from the app's pino line, whose path is redacted). Share-view alerts use
+the app log only. Do not enable Firebase Hosting's Cloud Logging integration without keeping this exclusion.
+
 Thresholds are starting points for a beta with a handful of orgs; tune after two weeks of baseline traffic
 (Metrics Explorer → `logging/user/kamutan_*`).
 

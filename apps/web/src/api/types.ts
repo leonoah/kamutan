@@ -1072,7 +1072,18 @@ export interface ExportDoc {
   url: string | null;
   filename: string | null;
   expiresAt: string | null;
+  /** Security gate F-3: with hideTitleBlock, every exported sheet was masked (null when not requested). */
+  titleBlockMasked?: boolean | null;
+  /** F-3: sheetId → masked; `false` sheets were left out of the PDF. */
+  titleBlockBySheet?: Record<string, boolean> | null;
+  /** Hebrew message from the API (error code / omitted sheets). */
+  message?: string | null;
 }
+/** contracts EXPORT_ERROR_MESSAGES_HE / EXPORT_SHEETS_OMITTED_HE (fallbacks when the API sends no `message`). */
+export const EXPORT_ERROR_MESSAGES_HE: Readonly<Record<string, string>> = {
+  title_block_not_found: "לא נמצאה טבלת כותרת להסתרה באף גיליון, ולכן ה-PDF לא נוצר. בטלו את הסתרת טבלת הכותרת או בחרו גיליונות אחרים.",
+};
+export const EXPORT_SHEETS_OMITTED_HE = "חלק מהגיליונות הושמטו: לא נמצאה בהם טבלת כותרת להסתרה.";
 
 /** Share link as returned to members (contracts ShareLinkSchema without tokenHash). */
 export interface ShareLink {
@@ -1088,7 +1099,24 @@ export interface ShareLink {
   lastViewedAt: string | null;
   createdBy: string;
   createdAt: string;
+  /** Security gate F-3: per locked sheet — title block masked? part of the link? */
+  sheets?: ShareLinkSheet[];
 }
+export interface ShareLinkSheet {
+  sheetId: string;
+  versionId: string;
+  titleBlockMasked: boolean;
+  included: boolean;
+}
+export interface ShareLinkWarning {
+  code: "title_block_not_detected" | "title_block_not_detected_included";
+  /** Hebrew, from the API. */
+  message: string;
+  sheetIds: string[];
+}
+/** contracts TITLE_BLOCK_WARNING_* (mock + fallbacks). */
+export const TITLE_BLOCK_WARNING_EXCLUDED = "לא זוהתה טבלת כותרת בגיליונות אלה, ולכן לא ניתן להסתיר אותה — הם לא נכללו בקישור.";
+export const TITLE_BLOCK_WARNING_INCLUDED = "לא זוהתה טבלת כותרת בגיליונות אלה — הם נכללו בקישור ללא הסתרת טבלת הכותרת (לפי בחירתך).";
 export const SHARE_LINK_DEFAULT_DAYS = 14;
 export const SHARE_LINK_MAX_DAYS = 90;
 export interface CreateShareLinkRequest {
@@ -1097,11 +1125,14 @@ export interface CreateShareLinkRequest {
   recipient?: string | null;
   hideTitleBlock?: boolean;
   allowPdfDownload?: boolean;
+  /** F-3: explicit opt-in to share sheets whose title block was not detected (they cannot be masked). */
+  includeUnmaskedSheets?: boolean;
 }
 /** The raw token is in `url` ONCE (never stored by the server). */
 export interface CreateShareLinkResponse {
   link: ShareLink;
   url: string;
+  warnings: ShareLinkWarning[];
 }
 
 /** Public (unauthenticated) share API `/v1/public/share/:token/…` — read-only by construction. */
@@ -1113,6 +1144,8 @@ export interface PublicShareSheet {
   floors: string[];
   page: { widthMm: number; heightMm: number } | null;
   tiles: { tileSize: number; dpi: number; levels: number; widthPx: number; heightPx: number } | null;
+  /** F-3: the title block of this sheet is masked. */
+  titleBlockMasked?: boolean;
 }
 export interface PublicShareMeta {
   linkId: string;
@@ -1129,6 +1162,8 @@ export interface PublicShareMeta {
   /** "שותף עם {recipient|label} • {date} • {linkId-short}" (also burned into tiles + PDF by the server). */
   watermark: string;
   sheets: PublicShareSheet[];
+  /** Per-link marked PDF: null = not allowed; `failed` may carry `errorCode` (e.g. title_block_not_found). */
+  pdf?: { status: "queued" | "running" | "ready" | "failed"; errorCode?: string | null } | null;
 }
 /** Public BOQ line: no internal names, scores, reasons, notes or override authors. */
 export interface PublicBoqLine {
@@ -1145,6 +1180,8 @@ export interface PublicBoqLine {
   order?: number;
 }
 export interface PublicShareBoq {
+  /** F-4: the BOQ is a snapshot taken at link creation (null = link older than snapshots → empty BOQ). */
+  snapshotAt?: string | null;
   lines: PublicBoqLine[];
   chapters?: { code: string; title: string }[];
 }

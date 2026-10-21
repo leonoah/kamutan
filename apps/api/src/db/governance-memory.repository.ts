@@ -72,6 +72,11 @@ export class InMemoryGovernanceRepository implements GovernanceRepository {
       .map(([k, d]) => ({ event: toAuditEvent(idOf(k), d), body: auditBody(d) }));
   }
 
+  async getAuditHead(orgId: string) {
+    const d = this.docs.get(fsPaths.auditHead(orgId));
+    return d ? { hash: typeof d.hash === 'string' ? d.hash : null, count: typeof d.count === 'number' ? d.count : null } : null;
+  }
+
   async auditForEntity(orgId: string, entity: string, entityId: string) {
     return this.core
       .children(`orgs/${orgId}/auditLog`)

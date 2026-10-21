@@ -36,7 +36,8 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
   const [downloaded, setDownloaded] = useState(false);
   const [typed, setTyped] = useState("");
   const [ack, setAck] = useState(false);
-  const [reauth, setReauth] = useState(false);
+  /** Which action waits for a fresh sign-in: the ZIP export / download (F-7) or the offboarding itself. */
+  const [reauth, setReauth] = useState<null | "export" | "offboard">(null);
   const [password, setPassword] = useState("");
   const [reauthBusy, setReauthBusy] = useState(false);
   const [reauthErr, setReauthErr] = useState(false);
@@ -44,11 +45,12 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
   const [mfa, setMfa] = useState(false);
 
   const startExport = useMutation({
+    // (re-checked by the API: admin + MFA + sign-in ≤ 10 min)
     mutationFn: () => api.startOffboardingExport(org!.id),
     onSuccess: (x) => setExportId(x.id),
     onError: (e) => {
       if (isMfaError(e)) setMfa(true);
-      else if (isReauthError(e)) setReauth(true);
+      else if (isReauthError(e)) setReauth("export");
       else toast({ title: t("offboarding.exportError"), tone: "error" });
     },
   });
@@ -56,8 +58,16 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
     queryKey: ["offboarding-export", org?.id, exportId],
     queryFn: () => api.getOffboardingExport(org!.id, exportId!),
     enabled: Boolean(org && exportId),
-    refetchInterval: (q) => (q.state.data?.status === "succeeded" || q.state.data?.status === "failed" ? false : pollMs),
+    retry: false,
+    // F-7: signing the ZIP URL needs recent auth + MFA → the GET of a ready export may answer 403; stop polling then.
+    refetchInterval: (q) => (q.state.error || q.state.data?.status === "succeeded" || q.state.data?.status === "failed" ? false : pollMs),
   });
+  useEffect(() => {
+    const e = exp.error;
+    if (!e) return;
+    if (isMfaError(e)) setMfa(true);
+    else if (isReauthError(e)) setReauth("export");
+  }, [exp.error]);
   const offboard = useMutation({ mutationFn: () => api.offboardOrg(org!.id, { confirm: typed.trim() }) });
 
   useEffect(() => {
@@ -65,6 +75,10 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
   }, [org?.status, org?.deleteAfter]);
 
   if (!org) return null;
+  const beginExport = async () => {
+    if (!(await hasRecentLogin(getAuthService()))) setReauth("export");
+    else startExport.mutate();
+  };
   const slug = confirmTextOf(org);
   const matches = typed.trim() === slug;
   const x = exp.data;
@@ -73,7 +87,7 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
   const submit = async () => {
     if (!matches || !ack) return;
     if (!(await hasRecentLogin(getAuthService()))) {
-      setReauth(true);
+      setReauth("offboard");
       return;
     }
     try {
@@ -82,7 +96,7 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
       void qc.invalidateQueries({ queryKey: ["me"] });
     } catch (e) {
       if (isMfaError(e)) setMfa(true);
-      else if (isReauthError(e)) setReauth(true);
+      else if (isReauthError(e)) setReauth("offboard");
       else toast({ title: t("offboarding.error"), tone: "error" });
     }
   };
@@ -91,16 +105,57 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
     setReauthErr(false);
     try {
       await getAuthService().reauthenticate(method === "password" ? password : undefined);
-      setReauth(false);
+      const purpose = reauth;
+      setReauth(null);
       setPassword("");
       toast({ title: t("offboarding.reauthDone"), tone: "success" });
-      await submit();
+      if (purpose === "export") {
+        if (exportId) await exp.refetch();
+        else startExport.mutate();
+      } else await submit();
     } catch {
       setReauthErr(true);
     } finally {
       setReauthBusy(false);
     }
   };
+
+  const reauthEl = (
+
+              <div role="alertdialog" aria-labelledby="ob-reauth" className="flex flex-col gap-2 rounded-md border border-border bg-surface p-4" data-reauth>
+                <p id="ob-reauth" className="flex items-center gap-2 font-bold text-foreground">
+                  <KeyRound className="size-4" aria-hidden />
+                  {t("offboarding.reauthTitle")}
+                </p>
+                <p className="text-dense text-muted-foreground">{t(reauth === "export" ? "offboarding.reauthForDownload" : "offboarding.reauthBody")}</p>
+                {method === "signin" ? (
+                  <p className="text-dense text-foreground">{t("offboarding.reauthSignin")}</p>
+                ) : method === "google" ? (
+                  <div>
+                    <Button variant="secondary" onClick={() => void doReauth()} disabled={reauthBusy}>
+                      {t("offboarding.reauthGoogle")}
+                    </Button>
+                  </div>
+                ) : (
+                  <form
+                    className="flex flex-wrap items-end gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void doReauth();
+                    }}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor={ids.pw} className="text-meta text-muted-foreground">{t("offboarding.reauthPassword")}</label>
+                      <Input id={ids.pw} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-64" />
+                    </div>
+                    <Button type="submit" variant="secondary" disabled={reauthBusy || !password}>
+                      {t("offboarding.reauthSubmit")}
+                    </Button>
+                  </form>
+                )}
+                {reauthErr ? <p role="alert" className="text-meta text-destructive">{t("offboarding.reauthFailed")}</p> : null}
+              </div>
+  );
 
   return (
     <div className="flex flex-col gap-5" data-offboarding>
@@ -120,6 +175,7 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
           {t("offboarding.step1")}
         </h3>
         <p className="text-dense text-muted-foreground">{t("offboarding.step1Body")}</p>
+        {reauth === "export" ? reauthEl : null}
         {x?.status === "succeeded" && x.url ? (
           <div role="status" className="flex flex-wrap items-center gap-3">
             <span className="font-medium text-foreground">{t("offboarding.exportReady")}</span>
@@ -134,7 +190,7 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
         ) : x?.status === "failed" ? (
           <div className="flex items-center gap-3">
             <p role="alert" className="text-dense text-destructive">{t("offboarding.exportError")}</p>
-            <Button variant="secondary" onClick={() => startExport.mutate()}>{t("offboarding.exportStart")}</Button>
+            <Button variant="secondary" onClick={() => void beginExport()}>{t("offboarding.exportStart")}</Button>
           </div>
         ) : exportId ? (
           <div role="status" aria-live="polite" className="flex flex-col gap-1.5">
@@ -143,7 +199,7 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
           </div>
         ) : (
           <div>
-            <Button variant="secondary" onClick={() => startExport.mutate()} disabled={startExport.isPending}>
+            <Button variant="secondary" onClick={() => void beginExport()} disabled={startExport.isPending || reauth === "export"}>
               <PackageOpen aria-hidden />
               {t("offboarding.exportStart")}
             </Button>
@@ -194,44 +250,10 @@ export function OffboardingPage({ pollMs = 700 }: { pollMs?: number }) {
               {t("offboarding.understand")}
             </label>
 
-            {reauth ? (
-              <div role="alertdialog" aria-labelledby="ob-reauth" className="flex flex-col gap-2 rounded-md border border-border bg-surface p-4" data-reauth>
-                <p id="ob-reauth" className="flex items-center gap-2 font-bold text-foreground">
-                  <KeyRound className="size-4" aria-hidden />
-                  {t("offboarding.reauthTitle")}
-                </p>
-                <p className="text-dense text-muted-foreground">{t("offboarding.reauthBody")}</p>
-                {method === "signin" ? (
-                  <p className="text-dense text-foreground">{t("offboarding.reauthSignin")}</p>
-                ) : method === "google" ? (
-                  <div>
-                    <Button variant="secondary" onClick={() => void doReauth()} disabled={reauthBusy}>
-                      {t("offboarding.reauthGoogle")}
-                    </Button>
-                  </div>
-                ) : (
-                  <form
-                    className="flex flex-wrap items-end gap-2"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void doReauth();
-                    }}
-                  >
-                    <div className="flex flex-col gap-1">
-                      <label htmlFor={ids.pw} className="text-meta text-muted-foreground">{t("offboarding.reauthPassword")}</label>
-                      <Input id={ids.pw} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-64" />
-                    </div>
-                    <Button type="submit" variant="secondary" disabled={reauthBusy || !password}>
-                      {t("offboarding.reauthSubmit")}
-                    </Button>
-                  </form>
-                )}
-                {reauthErr ? <p role="alert" className="text-meta text-destructive">{t("offboarding.reauthFailed")}</p> : null}
-              </div>
-            ) : null}
+            {reauth === "offboard" ? reauthEl : null}
 
             <div>
-              <Button variant="destructive" onClick={() => void submit()} disabled={!matches || !ack || offboard.isPending || reauth}>
+              <Button variant="destructive" onClick={() => void submit()} disabled={!matches || !ack || offboard.isPending || reauth !== null}>
                 {offboard.isPending ? t("offboarding.submitting") : t("offboarding.submit")}
               </Button>
             </div>

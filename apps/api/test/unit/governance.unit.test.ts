@@ -191,7 +191,7 @@ describe('service-level isolation (no guards)', () => {
     await expect404(audit.lineHistory(bAdmin, projectA, 'l1'));
     await expect404(exportsSvc.createMarkedPdf(bAdmin, projectA, { sheetIds: null, options: {} }, 'tp'));
     await expect404(exportsSvc.get(bAdmin, projectA, 'x'));
-    await expect404(shares.create(bAdmin, projectA, { days: 1, label: 'x', hideTitleBlock: true, allowPdfDownload: false }, 'tp'));
+    await expect404(shares.create(bAdmin, projectA, { days: 1, label: 'x', hideTitleBlock: true, allowPdfDownload: false, includeUnmaskedSheets: false }, 'tp'));
     await expect404(shares.list(bAdmin, projectA));
     await expect404(shares.revoke(bAdmin, projectA, 'x'));
     await expect404(off.patchSettings(bAdmin, orgA, { llmEnabled: true }));
@@ -201,7 +201,7 @@ describe('service-level isolation (no guards)', () => {
     // inside A: editor is not admin, reviewer cannot share or export
     await expect(audit.list(aEditor, orgA, { limit: 10 })).rejects.toMatchObject({ code: 'forbidden' });
     await expect(off.patchSettings(aEditor, orgA, { llmEnabled: true })).rejects.toMatchObject({ code: 'forbidden' });
-    await expect(shares.create(aReviewer, projectA, { days: 1, label: 'x', hideTitleBlock: true, allowPdfDownload: false }, 'tp')).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(shares.create(aReviewer, projectA, { days: 1, label: 'x', hideTitleBlock: true, allowPdfDownload: false, includeUnmaskedSheets: false }, 'tp')).rejects.toMatchObject({ code: 'forbidden' });
     await expect(exportsSvc.createMarkedPdf(aReviewer, projectA, { sheetIds: null, options: {} }, 'tp')).rejects.toMatchObject({ code: 'forbidden' });
     expect((await audit.lineHistory(aReviewer, projectA, 'l1')).items).toEqual([]);
     expect(t.app.get(PublicShareService)).toBeDefined();

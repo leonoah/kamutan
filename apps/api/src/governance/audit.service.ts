@@ -29,7 +29,18 @@ const validId = (s: string) => DocIdSchema.safeParse(s).success;
  * previous event's hash, with exactly one genesis (prevHash null) and no forks. `brokenAt` = the first offending event
  * (in time order) — a tampered/deleted/inserted record or a fork.
  */
-export function verifyChain(stored: readonly StoredAuditEvent[]): AuditVerifyResponse {
+export function verifyChain(stored: readonly StoredAuditEvent[], head: { hash: string | null; count: number | null } | null = null): AuditVerifyResponse {
+  const res = verifyLinks(stored);
+  if (!res.ok || !head) return res;
+  // F-8: the tip must be the head the API recorded (deleting the newest events leaves a shorter, still-linked chain).
+  const tipMismatch = head.hash !== null && head.hash !== res.headHash;
+  const countMismatch = head.count !== null && head.count !== res.checked;
+  if (!tipMismatch && !countMismatch) return { ...res, headMismatch: false };
+  const tip = [...stored].sort((a, b) => b.event.at.localeCompare(a.event.at) || b.event.id.localeCompare(a.event.id))[0];
+  return { ok: false, checked: res.checked, brokenAt: tip?.event.id ?? 'auditMeta/head', headHash: res.headHash, headMismatch: true };
+}
+
+function verifyLinks(stored: readonly StoredAuditEvent[]): AuditVerifyResponse {
   if (stored.length === 0) return { ok: true, checked: 0, brokenAt: null, headHash: null };
   const byTime = [...stored].sort((a, b) => a.event.at.localeCompare(b.event.at) || a.event.id.localeCompare(b.event.id));
   // (1) every record hashes correctly
@@ -94,7 +105,8 @@ export class AuditService {
 
   async verify(user: AuthContext, orgId: string): Promise<AuditVerifyResponse> {
     await this.access.requireRole(user, orgId, 'admin');
-    const res = verifyChain(await this.gov.auditForVerify(orgId));
+    const [events, head] = await Promise.all([this.gov.auditForVerify(orgId), this.gov.getAuditHead(orgId)]);
+    const res = verifyChain(events, head);
     if (!res.ok) this.logger.error({ orgId, brokenAt: res.brokenAt, checked: res.checked }, 'audit chain verification FAILED'); // SEC-43 alert
     return res;
   }
@@ -117,7 +129,9 @@ export class AuditService {
     ]);
     const by = (uid: string | null) => (uid ? { uid, displayName: names.get(uid) ?? null } : null);
     const items: LineHistoryItem[] = [];
-    for (const e of events) items.push(...historyItemsOf(e, by));
+    // F-9: line ids are deterministic per code (`ln_4_01`) → the same id exists in every project of the org. Only
+    // events of THIS project count (every boqLines audit payload carries projectId since Sprint 3).
+    for (const e of events) if (e.after?.projectId === projectId) items.push(...historyItemsOf(e, by));
     for (const c of corrections) {
       const affects = (c.itemCode !== null && c.itemCode === line.code) || (c.detectionId !== null && evidenceIds.has(c.detectionId));
       if (!affects) continue;

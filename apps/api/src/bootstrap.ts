@@ -19,7 +19,8 @@ type MiniRes = { setHeader: (k: string, v: string) => void; status: (n: number) 
 
 /** Headers on every public response + 405 for anything but GET/HEAD (before routing, so no handler ever sees a write). */
 export function publicShareMiddleware(req: MiniReq, res: MiniRes, next: () => void): void {
-  if (!req.path?.startsWith(PUBLIC_SHARE_PREFIX)) return next();
+  // F-5: case-insensitive match — every case variant gets the public headers / 405 / 404.
+  if (!req.path?.toLowerCase().startsWith(PUBLIC_SHARE_PREFIX)) return next();
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'no-store');
@@ -28,13 +29,20 @@ export function publicShareMiddleware(req: MiniReq, res: MiniRes, next: () => vo
     res.status(405).json({ error: { code: 'method_not_allowed', message: 'the share API is read-only', requestId: null } });
     return;
   }
+  // F-5: Express routing is case-insensitive; only the canonical lower-case prefix is served (no second, differently
+  // logged / headed path to the same handler).
+  if (!req.path.startsWith(PUBLIC_SHARE_PREFIX)) {
+    res.status(404).json({ error: { code: 'not_found', message: 'not found', requestId: null } });
+    return;
+  }
   next();
 }
 
 /** Applies HTTP hardening shared by main.ts, function.ts and e2e tests. */
 export function configureApp(app: NestExpressApplication, cfg: AppConfig): void {
   app.disable('x-powered-by');
-  app.set('trust proxy', true); // behind Google Front End / Hosting; needed for per-IP throttling
+  // F-2: trust exactly the known hops (Hosting edge + GFE), never `true` (left-most XFF entry = client-controlled).
+  app.set('trust proxy', cfg.TRUST_PROXY_HOPS);
   // In Cloud Functions the body is already parsed by the functions framework (body-parser skips it then).
   // Sprint 4: 2 MB — a correction batch (≤ 500 items, ≤ 20 000 geometry points) must fit.
   app.useBodyParser('json', { limit: '2mb' });

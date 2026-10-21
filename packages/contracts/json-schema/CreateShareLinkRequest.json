@@ -33,6 +33,10 @@
         "allowPdfDownload": {
           "type": "boolean",
           "default": false
+        },
+        "includeUnmaskedSheets": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [

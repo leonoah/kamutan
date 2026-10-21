@@ -289,6 +289,25 @@ jobs:
             --project "$PROJECT" --non-interactive \
             --only "firestore:rules,firestore:indexes,storage,${FUNCTIONS},hosting"
 
+      - name: F-2 direct invocation check (informational)
+        # Security gate F-2: calls that bypass Hosting control one X-Forwarded-For hop. infra/IAM.md §3c.
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          PROJECT: ${{ steps.cfg.outputs.project }}
+          REGION: ${{ steps.cfg.outputs.region }}
+        run: |
+          set -uo pipefail
+          url="$(gcloud run services describe api --region "$REGION" --project "$PROJECT" --format='value(status.url)' 2>/dev/null || true)"
+          ingress="$(gcloud run services describe api --region "$REGION" --project "$PROJECT" --format='value(metadata.annotations."run.googleapis.com/ingress")' 2>/dev/null || true)"
+          if [ -z "$url" ]; then echo "::notice::F-2: could not resolve the api service URL."; exit 0; fi
+          code="$(curl -s -o /dev/null -m 15 -w '%{http_code}' "$url/api/v1/health" || echo 000)"
+          if [ "$code" = "200" ]; then
+            echo "::notice::F-2: api is directly reachable (ingress=${ingress:-unknown}); Hosting bypass can spoof one XFF hop (accepted residual, infra/IAM.md §3c)."
+          else
+            echo "::notice::F-2: direct invocation blocked (HTTP $code, ingress=${ingress:-unknown})."
+          fi
+          echo "F2_DIRECT=${code}" >> "$GITHUB_ENV"
+
       - name: Summary
         if: steps.cfg.outputs.ready == 'true'
         env:
@@ -304,4 +323,5 @@ jobs:
             echo "- Worker image: \`${DIGEST}\` (revision \`${worker_revision:-unknown}\`)"
             echo "- Purge job image: \`${purge_image:-not updated (job missing)}\`"
             echo "- Functions: api, apiJobs (topic api-jobs), reprocessDependents (every minute)"
+            echo "- F-2 direct call to api: HTTP ${F2_DIRECT:-not checked} (200 = reachable without Hosting)"
           } >> "$GITHUB_STEP_SUMMARY"

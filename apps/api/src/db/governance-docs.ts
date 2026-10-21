@@ -30,6 +30,11 @@ const idRecord = (v: unknown): Record<string, string> | null => {
   return out;
 };
 
+const boolRecord = (v: unknown): Record<string, boolean> | null => {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  return Object.fromEntries(Object.entries(v as Doc).filter(([k, x]) => /^[A-Za-z0-9_-]{1,128}$/.test(k) && typeof x === 'boolean')) as Record<string, boolean>;
+};
+
 /** Timestamps (any depth) → Date, so the hashed audit body can be recomputed exactly as it was written. */
 export function datesDeep(v: unknown, depth = 0): unknown {
   if (v instanceof Date) return v;
@@ -88,6 +93,12 @@ export function toShareLink(id: string, d: Doc): ShareLink {
     revokedBy: str(d.revokedBy),
     revokeReason: d.revokeReason === 'user' || d.revokeReason === 'offboarding' || d.revokeReason === 'project_deleted' ? d.revokeReason : null,
     pdfExportId: str(d.pdfExportId),
+    ...(d.titleBlockMaskedBySheet && typeof d.titleBlockMaskedBySheet === 'object'
+      ? { titleBlockMaskedBySheet: Object.fromEntries(Object.entries(d.titleBlockMaskedBySheet as Doc).filter(([k, v]) => /^[A-Za-z0-9_-]{1,128}$/.test(k) && typeof v === 'boolean')) as Record<string, boolean> }
+      : {}),
+    ...(typeof d.includeUnmaskedSheets === 'boolean' ? { includeUnmaskedSheets: d.includeUnmaskedSheets } : {}),
+    ...(idRecord(d.excludedSheets) ? { excludedSheets: idRecord(d.excludedSheets) as Record<string, string> } : {}),
+    boqSnapshotPath: str(d.boqSnapshotPath),
   };
 }
 
@@ -119,6 +130,8 @@ export function toExportRecord(id: string, d: Doc): ExportRecord {
           jobId: str(d.jobId),
           shareLinkId: str(d.shareLinkId),
           versionIds: idRecord(d.versionIds),
+          ...(typeof d.titleBlockMasked === 'boolean' || d.titleBlockMasked === null ? { titleBlockMasked: d.titleBlockMasked as boolean | null } : {}),
+          ...(d.titleBlockBySheet !== undefined ? { titleBlockBySheet: boolRecord(d.titleBlockBySheet) } : {}),
         }
       : {}),
   };
@@ -177,4 +190,17 @@ export function ipPrefix(ip: string | undefined | null): string {
     return `${groups.join(':')}::/48`;
   }
   return 'unknown';
+}
+
+/** F-2: rate-limit key of a client IP — the full IPv4 address, the /64 of an IPv6 address (one host owns a /64). */
+export function ipLimitKey(ip: string | undefined | null): string {
+  if (!ip) return 'unknown';
+  let a = ip.trim().toLowerCase();
+  if (a.startsWith('::ffff:') && a.includes('.')) a = a.slice(7);
+  if (!a.includes(':')) return a;
+  const [head = '', tail = ''] = a.split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const full = a.includes('::') ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t] : h;
+  return `${full.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
 }

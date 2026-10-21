@@ -89,6 +89,9 @@
                 "type": "string",
                 "maxLength": 300
               },
+              "titleBlockMasked": {
+                "type": "boolean"
+              },
               "discipline": {
                 "anyOf": [
                   {
@@ -177,6 +180,7 @@
               "sheetId",
               "versionId",
               "title",
+              "titleBlockMasked",
               "discipline",
               "floors",
               "page",
@@ -197,6 +201,17 @@
                     "running",
                     "ready",
                     "failed"
+                  ]
+                },
+                "errorCode": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
                   ]
                 }
               },

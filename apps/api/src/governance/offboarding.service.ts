@@ -95,6 +95,8 @@ export class OffboardingService {
     const exp = await this.gov.getOffboardingExport(orgId, exportId);
     if (!exp) throw notFound('export');
     if (exp.status !== 'ready') return { export: exp, url: null, expiresAt: null };
+    // F-7: the ZIP is the whole org (incl. every source) → same MFA + recent sign-in as creating it.
+    await this.requireOffboardingAdmin(user, orgId);
     const path = storagePaths.offboardingZip(orgId, exportId);
     const signed = await this.storage.signZip(path, `kamutan-export-${orgId}-${exp.createdAt.slice(0, 10)}.zip`, OFFBOARDING_EXPORT_URL_TTL_SECONDS);
     await this.repo.appendAudit(orgId, { actorId: user.uid, entity: 'offboardingExports', entityId: exportId, action: 'download', after: { sha256: exp.sha256 } });

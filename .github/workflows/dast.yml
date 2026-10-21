@@ -46,8 +46,12 @@ env:
   PLAYWRIGHT_VERSION: "1.56.0"
   TURBO_TELEMETRY_DISABLED: "1"
   DO_NOT_TRACK: "1"
-  # Floating tag on purpose: ZAP rules update with it. The resolved digest is recorded in the job summary.
-  ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:stable
+  # I-5 (Sprint-5 security gate): pin by digest via the repository variable ZAP_IMAGE, e.g.
+  #   ghcr.io/zaproxy/zaproxy@sha256:<digest>   (owner action: copy the digest this workflow records in its summary
+  #   after a green run; review + bump monthly — ZAP rule updates ship with new images).
+  # TODO(owner, I-5): set vars.ZAP_IMAGE. Until then the floating `:stable` tag is used and the run warns.
+  # (The digest could not be resolved from the dev sandbox: ghcr.io / Docker Hub are blocked there.)
+  ZAP_IMAGE: ${{ vars.ZAP_IMAGE || 'ghcr.io/zaproxy/zaproxy:stable' }}
   WEB_URL: http://127.0.0.1:5000
   API_URL: http://127.0.0.1:3001
 
@@ -129,6 +133,14 @@ jobs:
 
       - name: Record ZAP image digest
         run: |
+          # Strict allow-list: the value ends up in the ZAP actions' `docker run` command line.
+          if [[ "$ZAP_IMAGE" =~ ^ghcr\.io/zaproxy/zaproxy@sha256:[0-9a-f]{64}$ ]]; then
+            echo "ZAP image pinned by digest (vars.ZAP_IMAGE)."
+          elif [ "$ZAP_IMAGE" = "ghcr.io/zaproxy/zaproxy:stable" ]; then
+            echo "::warning::ZAP image is not pinned by digest (I-5). Set the repository variable ZAP_IMAGE to the digest recorded below."
+          else
+            echo "::error::vars.ZAP_IMAGE must be ghcr.io/zaproxy/zaproxy@sha256:<64 hex>"; exit 1
+          fi
           docker pull -q "$ZAP_IMAGE"
           digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$ZAP_IMAGE")
           echo "ZAP image: \`$digest\`" >> "$GITHUB_STEP_SUMMARY"

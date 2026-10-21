@@ -27,6 +27,9 @@
               "type": "null"
             }
           ]
+        },
+        "headMismatch": {
+          "type": "boolean"
         }
       },
       "required": [

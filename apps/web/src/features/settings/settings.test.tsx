@@ -4,6 +4,7 @@ import { axe } from "@/test/axe";
 import { renderApp } from "@/test/utils";
 import { createMockAuth } from "@/features/auth/authService";
 import { useToastStore } from "@/components/ui/toast";
+import { ApiError } from "@/api/types";
 
 const WAIT = { timeout: 15_000 };
 const toasts = () => useToastStore.getState().items.map((t) => t.title);
@@ -127,6 +128,44 @@ describe("Offboarding (SEC-52)", { timeout: 40_000 }, () => {
     await user.click(within(box).getByRole("button", { name: "אמת" }));
     await waitFor(() => expect(off).toHaveBeenCalledTimes(1), WAIT);
     expect(await screen.findByText(/הארגון בתהליך סיום התקשרות\./, {}, WAIT)).toBeInTheDocument();
+  });
+
+  it("F-7: an old sign-in must re-authenticate before the full export (and its download)", async () => {
+    const user = userEvent.setup({ delay: null });
+    const auth = createMockAuth({ persist: false, latencyMs: 0, authAgeMs: 60 * 60_000 });
+    const { backend } = await renderApp("/settings/offboarding", { signedIn: true, auth });
+    const start = vi.spyOn(backend.api, "startOffboardingExport");
+    await user.click(await screen.findByRole("button", { name: "הכן ייצוא מלא" }, WAIT));
+    const box = await screen.findByRole("alertdialog", { name: "נדרשת כניסה מחדש" });
+    expect(box).toHaveTextContent("גם הורדת הייצוא המלא מחייבת כניסה מהדקות האחרונות ואימות דו-שלבי");
+    expect(start).not.toHaveBeenCalled();
+    await user.type(within(box).getByLabelText("סיסמה"), "correct-horse-battery");
+    await user.click(within(box).getByRole("button", { name: "אמת" }));
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1), WAIT);
+    expect(await screen.findByRole("link", { name: "הורד ZIP" }, WAIT)).toBeInTheDocument();
+  });
+
+  it("F-7: a ready export answering recent_auth_required asks to re-authenticate, then shows the download", async () => {
+    const user = userEvent.setup({ delay: null });
+    let stale = true;
+    await renderApp("/settings/offboarding", {
+      signedIn: true,
+      onBackend: (b) => {
+        const get = b.api.getOffboardingExport;
+        b.api.getOffboardingExport = async (o, id) => {
+          const x = await get(o, id);
+          if (x.status === "succeeded" && stale) throw new ApiError(403, "recent_auth_required", "sign in again");
+          return x;
+        };
+      },
+    });
+    await user.click(await screen.findByRole("button", { name: "הכן ייצוא מלא" }, WAIT));
+    const box = await screen.findByRole("alertdialog", { name: "נדרשת כניסה מחדש" }, WAIT);
+    expect(screen.queryByRole("link", { name: "הורד ZIP" })).toBeNull();
+    stale = false;
+    await user.type(within(box).getByLabelText("סיסמה"), "correct-horse-battery");
+    await user.click(within(box).getByRole("button", { name: "אמת" }));
+    expect(await screen.findByRole("link", { name: "הורד ZIP" }, WAIT)).toBeInTheDocument();
   });
 
   it("an offboarding org blocks the app except the admin's export page", async () => {

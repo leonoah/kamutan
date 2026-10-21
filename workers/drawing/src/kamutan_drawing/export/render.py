@@ -7,7 +7,7 @@ WebP tiles of raster / DXF sheets (Pillow) and the title-block search on the sto
 Two modes (``args.mode``):
 
 * ``pages`` — ``{plan, pages [i…], out}``: writes the given plan pages to ``out`` (one PDF part) and returns
-  ``{out, pages, titleBlocks {i: [x0,y0,x1,y1] | null}, maskSource {i: "plan"|"detected"|"fallback"|"none"},
+  ``{out, pages, titleBlocks {i: [x0,y0,x1,y1] | null}, maskSource {i: "plan"|"detected"|"none"},
   background {i: "vector"|"raster"|"tiles"|"blank"}}``.
 * ``assemble`` — ``{plan, parts [file…], out}``: concatenates the parts, appends the legend page(s) and writes
   ``out``; returns ``{out, pageCount, legendPages}``.
@@ -17,7 +17,11 @@ the display size — cropbox + /Rotate normalised exactly like ``ingest.pdf_vect
 reportlab overlay merged over it; annotations / actions of the source are dropped). With ``hideTitleBlock`` the
 page is instead rendered to a raster (pypdfium2, :data:`REDACT_DPI`) and the title block is painted white in the
 pixels — a white box over vectors would only *hide* the text, the content stream would still carry it (real
-redaction for share links). Raster / DXF sheets use the stored tile pyramid (level ≈ :data:`TILE_DPI`).
+redaction for share links). With ``hideTitleBlock`` and no known title block the page is REFUSED (left out, reported
+in ``titleBlockMasked`` / ``refused``) — never emitted unmasked (sec gate F-3). Share PDFs (``watermark`` set) never
+embed the original vector page: every page is a ``SHARE_DPI`` raster with the watermark burned into the pixels
+(tiled, :func:`burn_watermark`) plus the text watermark on top; legend pages too (F-6). Source annotations are never
+rendered (I-3). Raster / DXF sheets use the stored tile pyramid (level ≈ ``TILE_DPI``).
 """
 
 from __future__ import annotations
@@ -39,6 +43,9 @@ Progress = Callable[[str, int], None]
 
 MM = 72.0 / 25.4  # pt per mm
 REDACT_DPI = 200
+SHARE_DPI = 150  # share PDFs (watermark set): every page is a raster with the watermark burned into the pixels
+WATERMARK_ALPHA = 0.3
+WATERMARK_TILE_MM = (150.0, 70.0)  # pattern step of the burned watermark (x, y)
 FONT = "KamutanSans"
 FONT_BOLD = "KamutanSans-Bold"
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
@@ -294,9 +301,8 @@ def draw_page_tag(c: Any, plan: dict[str, Any], page: dict[str, Any], P: Page) -
     floors = " + ".join(plan.get("floorLabels", {}).get(f, f) for f in page.get("floors") or []) or "ללא קומה"
     n = sum(cnt for _, cnt in page.get("legend") or [])
     title = page.get("title") or ""
-    txt = (
-        f"{floors} · {title} · {n} סימונים" if title and not plan["options"].get("hideTitleBlock") else f"{floors} · {n} סימונים"
-    )
+    private = plan["options"].get("hideTitleBlock") or plan["options"].get("watermark")  # no sheet title on share PDFs
+    txt = f"{floors} · {title} · {n} סימונים" if title and not private else f"{floors} · {n} סימונים"
     from reportlab.pdfbase.pdfmetrics import stringWidth
 
     size = 6.5
@@ -397,6 +403,10 @@ def legend_pages(plan: dict[str, Any]) -> bytes:
         sub = f"כתב כמויות: בנייה {meta.get('buildId', '')} · הופק {meta.get('date', '')}"
         draw_text(c, W - margin, y - 28, sub, size=8, colour=_rgb("#57534E"))
         y -= 34
+        if meta.get("omitted"):
+            draw_text(c, W - margin, y - 8, f"{meta['omitted']} גיליונות הושמטו: לא נמצאה טבלת כותרת להסתרה", size=8,
+                      font=FONT_BOLD, colour=_rgb("#C2410C"))  # fmt: skip
+            y -= 12
         if meta.get("stale"):
             draw_text(c, W - margin, y - 8, "שימו לב: כתב הכמויות אינו מעודכן לגרסאות האחרונות של השרטוטים", size=8,
                       font=FONT_BOLD, colour=_rgb("#C2410C"))  # fmt: skip
@@ -527,7 +537,8 @@ def render_pdf_raster(path: Path, index: int, dpi: int, mask: list[float] | None
     doc = pdfium.PdfDocument(str(path))
     try:
         page = doc[index]
-        img = page.render(scale=dpi / 72.0, draw_annots=True, may_draw_forms=False).to_pil().convert("RGB")
+        # annotations (comments, stamps, links) of the source are never painted into our pages (sec gate I-3)
+        img = page.render(scale=dpi / 72.0, draw_annots=False, may_draw_forms=False).to_pil().convert("RGB")
         page.close()
     finally:
         doc.close()
@@ -561,7 +572,8 @@ def stitch_tiles(src: dict[str, Any], mask: list[float] | None, w_mm: float, h_m
 
 # ----------------------------------------------------------------------------- title block
 def find_title_block(page: dict[str, Any]) -> tuple[list[float] | None, str]:
-    """(mask rect mm, source). Plan value → search on the stored primitives/text → band under the drawing regions."""
+    """(mask rect mm, source): the version's box ("plan") → search on the stored primitives/text ("detected") →
+    ``(None, "none")``. No geometric guess: an unknown title block makes the caller REFUSE the page (sec gate F-3)."""
     W, H = float(page["widthMm"]), float(page["heightMm"])
 
     def pad(b: list[float]) -> list[float]:
@@ -584,14 +596,34 @@ def find_title_block(page: dict[str, Any]) -> tuple[list[float] | None, str]:
             bb = read_title_block(spans, vs).bbox
             if bb is not None and (bb[2] - bb[0]) > 5 and (bb[3] - bb[1]) > 3:
                 return pad([float(v) for v in bb]), "detected"
-        except Exception as e:  # noqa: BLE001 - fall back to the geometric band below
+        except Exception as e:  # noqa: BLE001 - not found → the page is refused
             print(f"title block search failed: {type(e).__name__}", file=sys.stderr)
-    regs = page.get("regions") or []
-    if regs:
-        bottom = max(float(r[3]) for r in regs)
-        if H - bottom >= 8.0 and (H - bottom) <= 0.3 * H:
-            return [0.0, bottom + 0.5, W, H], "fallback"
     return None, "none"
+
+
+def burn_watermark(img: Any, text: str, dpi: float) -> Any:
+    """Tiled diagonal watermark painted INTO the pixels (cannot be removed by deleting PDF text objects)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    px = dpi / 25.4
+    # BASIC layout: draw the code points in the (already visual) order given — raqm would re-apply bidi
+    font = ImageFont.truetype(
+        str(FONT_DIR / "DejaVuSans-Bold-heb.ttf"), max(10, round(6.0 * px)), layout_engine=ImageFont.Layout.BASIC
+    )
+    v = visual(text)
+    left, top, right, bottom = font.getbbox(v)
+    stamp = Image.new("L", (int(right - left) + 8, int(bottom - top) + 8), 0)
+    ImageDraw.Draw(stamp).text((4 - left, 4 - top), v, font=font, fill=round(255 * WATERMARK_ALPHA))
+    stamp = stamp.rotate(30, expand=True, resample=Image.Resampling.BICUBIC)
+    alpha = Image.new("L", img.size, 0)
+    sx = max(stamp.width, round(WATERMARK_TILE_MM[0] * px))
+    sy = max(stamp.height // 2, round(WATERMARK_TILE_MM[1] * px))
+    for row, y in enumerate(range(-stamp.height // 2, img.height, sy)):
+        off = (sx // 2) * (row % 2)
+        for x in range(-stamp.width // 2 - off, img.width, sx):
+            alpha.paste(stamp, (x, y), stamp)
+    grey = Image.new("RGB", img.size, tuple(round(c * 255) for c in hex_rgb(WATERMARK_GREY)))
+    return Image.composite(grey, img.convert("RGB"), alpha)
 
 
 # ----------------------------------------------------------------------------- page assembly
@@ -611,16 +643,22 @@ def _overlay_bytes(plan: dict[str, Any], page: dict[str, Any], mask: list[float]
 
 
 def write_pages(plan: dict[str, Any], indices: list[int], out: Path, progress: Progress) -> dict[str, Any]:
+    from PIL import Image
     from pypdf import PdfReader, PdfWriter, Transformation
     from pypdf.generic import NameObject
 
     register_fonts()
     hide = bool(plan["options"].get("hideTitleBlock"))
+    wm = plan["options"].get("watermark")
+    share = bool(wm)  # share PDF: raster only, watermark burned in, never the original vector page (sec gate F-6)
     writer = PdfWriter()
     readers: dict[str, Any] = {}
     tbs: dict[str, Any] = {}
     msrc: dict[str, str] = {}
     bgs: dict[str, str] = {}
+    masked: dict[str, bool] = {}
+    refused: list[int] = []
+    page_bytes: dict[str, int] = {}
     for n, i in enumerate(indices):
         page = plan["pages"][i]
         w_mm, h_mm = float(page["widthMm"]), float(page["heightMm"])
@@ -628,9 +666,15 @@ def write_pages(plan: dict[str, Any], indices: list[int], out: Path, progress: P
             raise ValueError("bad page size")
         mask, ms = find_title_block(page) if hide else (None, "none")
         tbs[str(i)], msrc[str(i)] = mask, ms
+        if hide:
+            masked[str(i)] = mask is not None
+            if mask is None:  # fail closed: never emit a page whose title block could not be masked (F-3)
+                refused.append(i)
+                progress("export", int(100 * (n + 1) / max(1, len(indices))))
+                continue
         src = page.get("source") or {"kind": "none"}
         kind = src.get("kind")
-        if kind == "pdf" and not hide:
+        if kind == "pdf" and not hide and not share:
             f = str(src["file"])
             if f not in readers:
                 r = PdfReader(str(_inside(f)), strict=False)
@@ -653,33 +697,80 @@ def write_pages(plan: dict[str, Any], indices: list[int], out: Path, progress: P
             bgs[str(i)] = "vector"
         else:
             bg = None
+            dpi: float = SHARE_DPI if share else REDACT_DPI
             if kind == "pdf":
-                bg = render_pdf_raster(_inside(str(src["file"])), int(src["pageIndex"]), REDACT_DPI, mask, w_mm, h_mm)
+                bg = render_pdf_raster(_inside(str(src["file"])), int(src["pageIndex"]), int(dpi), mask, w_mm, h_mm)
                 bgs[str(i)] = "raster"
             elif kind == "tiles":
                 bg = stitch_tiles(src, mask, w_mm, h_mm)
+                dpi = bg.width / (w_mm / 25.4)
                 bgs[str(i)] = "tiles"
             else:
                 bgs[str(i)] = "blank"
-            writer.add_page(PdfReader(io.BytesIO(_overlay_bytes(plan, page, mask, bg))).pages[0])
+                if share:
+                    bg = Image.new("RGB", (round(w_mm / 25.4 * dpi), round(h_mm / 25.4 * dpi)), (255, 255, 255))
+            if share and bg is not None:
+                bg = burn_watermark(bg, str(wm), dpi)
+            data = _overlay_bytes(plan, page, mask, bg)
+            page_bytes[str(i)] = len(data)
+            writer.add_page(PdfReader(io.BytesIO(data)).pages[0])
         progress("export", int(100 * (n + 1) / max(1, len(indices))))
     writer.compress_identical_objects(remove_identicals=True, remove_orphans=True)
     with open(out, "wb") as fh:
         writer.write(fh)
-    return {"out": str(out.relative_to(Path.cwd().resolve())), "pages": len(indices), "titleBlocks": tbs, "maskSource": msrc,
-            "background": bgs}  # fmt: skip
+    if not writer.pages:
+        writer.add_blank_page(width=10, height=10)  # placeholder part (every page of the chunk refused); dropped by assemble
+    return {"out": str(out.relative_to(Path.cwd().resolve())), "pages": len(indices) - len(refused), "titleBlocks": tbs,
+            "maskSource": msrc, "background": bgs, "titleBlockMasked": masked, "refused": refused,
+            "pageBytes": page_bytes}  # fmt: skip
 
 
-def assemble(plan: dict[str, Any], parts: list[str], out: Path) -> dict[str, Any]:
+def _share_legend(pdf: bytes, text: str) -> bytes:
+    """Share PDFs: legend pages rasterised with the watermark burned in (+ the text watermark on top)."""
+    import pypdfium2 as pdfium
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+
+    doc = pdfium.PdfDocument(pdf)
+    buf = io.BytesIO()
+    c = None
+    try:
+        for k in range(len(doc)):
+            pg = doc[k]
+            w, h = pg.get_size()
+            img = burn_watermark(pg.render(scale=SHARE_DPI / 72.0, draw_annots=False).to_pil().convert("RGB"), text, SHARE_DPI)
+            pg.close()
+            if c is None:
+                c = canvas.Canvas(buf, pagesize=(w, h), pageCompression=1)
+            c.setPageSize((w, h))
+            c.drawImage(ImageReader(img), 0, 0, width=w, height=h)
+            draw_watermark(c, text, w, h)
+            c.showPage()
+    finally:
+        doc.close()
+    if c is None:
+        return pdf
+    c.save()
+    return buf.getvalue()
+
+
+def assemble(plan: dict[str, Any], parts: list[str], out: Path, omitted: int = 0) -> dict[str, Any]:
     from pypdf import PdfReader, PdfWriter
 
     writer = PdfWriter()
     for p in parts:
         for pg in PdfReader(str(_inside(p))).pages:
+            if float(pg.mediabox.width) <= 11 and float(pg.mediabox.height) <= 11:
+                continue  # placeholder of a fully refused chunk
             writer.add_page(pg)
     legend_n = 0
     if plan["options"].get("legend", True):
-        for pg in PdfReader(io.BytesIO(legend_pages(plan))).pages:
+        plan = {**plan, "meta": {**(plan.get("meta") or {}), "omitted": int(omitted)}}
+        leg = legend_pages(plan)
+        if plan["options"].get("watermark"):
+            register_fonts()
+            leg = _share_legend(leg, str(plan["options"]["watermark"]))
+        for pg in PdfReader(io.BytesIO(leg)).pages:
             writer.add_page(pg)
             legend_n += 1
     writer.add_metadata({"/Title": "PDF מסומן לפי סעיף", "/Producer": "kamutan-drawing", "/Creator": "Kamutan"})
@@ -708,7 +799,8 @@ def _run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     out = _inside(str(args["out"]))
     out.parent.mkdir(parents=True, exist_ok=True)
     if args.get("mode") == "assemble":
-        return assemble(plan, [str(p) for p in args.get("parts") or []], out)
+        omitted = max(0, min(10_000, int(args.get("omitted") or 0)))
+        return assemble(plan, [str(p) for p in args.get("parts") or []], out, omitted)
     idx = [int(i) for i in args.get("pages") or []]
     if any(not 0 <= i < len(plan["pages"]) for i in idx):
         raise ValueError("page index out of range")

@@ -92,6 +92,8 @@ export interface GovernanceRepository {
   listAudit(orgId: string, opts: AuditListOpts): Promise<{ items: AuditEvent[]; nextCursor: string | null }>;
   /** Every event of the org (≤ MAX_AUDIT_VERIFY), any order, with the hashed body. */
   auditForVerify(orgId: string): Promise<StoredAuditEvent[]>;
+  /** F-8: `orgs/{o}/auditMeta/head` ({hash, count?}) or null (legacy logs). */
+  getAuditHead(orgId: string): Promise<{ hash: string | null; count: number | null } | null>;
   /** Events with this entity + entityId (≤ MAX_ENTITY_AUDIT), any order. */
   auditForEntity(orgId: string, entity: string, entityId: string): Promise<AuditEvent[]>;
   listMembers(orgId: string): Promise<Member[]>;

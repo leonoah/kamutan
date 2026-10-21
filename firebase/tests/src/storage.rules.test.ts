@@ -40,6 +40,7 @@ function serverObjects(f: OrgFx): string[] {
     // Sprint 5: marked PDF + offboarding ZIP
     paths.markedPdf(f.org, f.project, 'mp1'),
     paths.offboardingZip(f.org, 'ox1'),
+    paths.shareBoqSnapshot(f.org, f.project, 'sl1'),
   ];
 }
 
@@ -74,6 +75,16 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR || !HAS_STORAGE_EMULATOR)('storage.rules
     const q = (o: string, id: string) => paths.quarantine(o, id);
     const U1 = '0b6f1c2e-6a7d-4f53-9b1e-2f0c8d3a4e51';
     const U2 = '7d4c2b1a-0e9f-4a8b-8c7d-6e5f4a3b2c1d';
+
+    it('F-1: no quarantine or import upload into an org that is being offboarded', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().doc(`orgs/${A.org}`).update({ status: 'offboarding' });
+      });
+      await assertFails(put(A.users.editor, q(A.org, U1)));
+      await assertFails(put(A.users.admin, q(A.org, U2)));
+      await assertFails(put(A.users.editor, paths.libraryImportObject(A.org, U1, 'xlsx'), PDF, { contentType: 'application/octet-stream' }));
+      await assertSucceeds(put(B.users.editor, q(B.org, U1)));
+    });
 
     it('editor and admin of the org upload (pdf, octet-stream, png, dxf)', async () => {
       await assertSucceeds(put(A.users.editor, q(A.org, U1)));

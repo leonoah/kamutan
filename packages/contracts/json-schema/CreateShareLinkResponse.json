@@ -139,6 +139,45 @@
                 }
               ]
             },
+            "titleBlockMaskedBySheet": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "boolean"
+              },
+              "propertyNames": {
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            },
+            "includeUnmaskedSheets": {
+              "type": "boolean"
+            },
+            "excludedSheets": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "propertyNames": {
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            },
+            "boqSnapshotPath": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "projectId": {
               "type": "string",
               "minLength": 1,
@@ -157,6 +196,42 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 16
+            },
+            "sheets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sheetId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "versionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "titleBlockMasked": {
+                    "type": "boolean"
+                  },
+                  "included": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "sheetId",
+                  "versionId",
+                  "titleBlockMasked",
+                  "included"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "boqLocked": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -178,7 +253,9 @@
             "pdfExportId",
             "projectId",
             "state",
-            "shortId"
+            "shortId",
+            "sheets",
+            "boqLocked"
           ],
           "additionalProperties": false
         },
@@ -189,12 +266,47 @@
         "token": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "title_block_not_detected",
+                  "title_block_not_detected_included"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "sheetIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "sheetIds"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [
         "link",
         "url",
-        "token"
+        "token",
+        "warnings"
       ],
       "additionalProperties": false
     }

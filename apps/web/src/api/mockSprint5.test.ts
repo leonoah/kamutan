@@ -124,9 +124,11 @@ describe("Sprint 5 mock: share links + public API (E2E-09)", () => {
     const r = await b.api.createShareLink(PID, { days: 7, label: "קבלן", recipient: "יוסי", allowPdfDownload: true });
     const token = r.url.split("/s/")[1]!;
     const meta = await b.publicShare.getMeta(token);
-    expect(meta).toMatchObject({ projectName: "בית משפחת נח", allowPdfDownload: true, hideTitleBlock: true, watermark: expect.stringMatching(/^שותף עם יוסי • \d\d\.\d\d\.\d{4} • /) });
+    expect(meta).toMatchObject({ projectName: "קבלן", label: "קבלן", allowPdfDownload: true, hideTitleBlock: true, watermark: expect.stringMatching(/^שותף עם יוסי • \d\d\.\d\d\.\d{4} • /) });
     expect(meta.sheets.length).toBeGreaterThan(0);
     expect(JSON.stringify(meta)).not.toContain("רחוב הדקל"); // no address
+    expect(JSON.stringify(meta)).not.toContain("בית משפחת נח"); // F-3: no client name with hideTitleBlock
+    expect(meta.sheets.every((s, i) => s.title === `גיליון ${i + 1}`)).toBe(true);
     const boq = await b.publicShare.getBoq(token);
     expect(boq.lines.length).toBeGreaterThan(5);
     expect(Object.keys(boq.lines[0]!)).not.toEqual(expect.arrayContaining(["reasons", "qtyOverrideReason", "reviewedBy", "note"]));
@@ -189,3 +191,54 @@ describe("Sprint 5 mock: org settings + offboarding", () => {
     await expect(b.api.createShareLink(PID, { days: 7, label: "x" })).rejects.toMatchObject({ status: 403 });
   });
 });
+
+describe("Security gate F-3 / F-4 / F-7 (mock)", () => {
+  it("F-3: hideTitleBlock excludes sheets without a detected title block unless opted in; Hebrew warnings", async () => {
+    const b = await built({ titleBlockDetected: (id) => id !== "noah-b2046277-p0" });
+    const r = await b.api.createShareLink(PID, { days: 7, label: "קבלן" });
+    const s = r.link.sheets!.find((x) => x.sheetId === "noah-b2046277-p0")!;
+    expect(s).toMatchObject({ titleBlockMasked: false, included: false });
+    expect(r.warnings).toEqual([{ code: "title_block_not_detected", message: expect.stringContaining("לא נכללו בקישור"), sheetIds: ["noah-b2046277-p0"] }]);
+    const token = r.url.split("/s/")[1]!;
+    expect((await b.publicShare.getMeta(token)).sheets.map((x) => x.id)).not.toContain("noah-b2046277-p0");
+    await expect(b.publicShare.getOverlay(token, "noah-b2046277-p0")).rejects.toMatchObject({ status: 404 });
+    const opt = await b.api.createShareLink(PID, { days: 7, label: "קבלן", includeUnmaskedSheets: true });
+    expect(opt.link.sheets!.find((x) => x.sheetId === "noah-b2046277-p0")).toMatchObject({ titleBlockMasked: false, included: true });
+    expect(opt.warnings[0]!.code).toBe("title_block_not_detected_included");
+    const plain = await b.api.createShareLink(PID, { days: 7, label: "קבלן", hideTitleBlock: false });
+    expect(plain.warnings).toEqual([]);
+    expect(plain.link.sheets!.every((x) => x.included && !x.titleBlockMasked)).toBe(true);
+  });
+
+  it("F-3: no maskable sheet → the per-link PDF is unavailable with title_block_not_found", async () => {
+    const b = await built({ titleBlockDetected: () => false });
+    const r = await b.api.createShareLink(PID, { days: 7, label: "x", allowPdfDownload: true, includeUnmaskedSheets: true });
+    const meta = await b.publicShare.getMeta(r.url.split("/s/")[1]!);
+    expect(meta.pdf).toEqual({ status: "failed", errorCode: "title_block_not_found" });
+    expect(meta.allowPdfDownload).toBe(false);
+  });
+
+  it("F-4: the public BOQ is frozen at creation (later overrides are not served)", async () => {
+    const b = await built();
+    const r = await b.api.createShareLink(PID, { days: 7, label: "x" });
+    const token = r.url.split("/s/")[1]!;
+    await new Promise((res) => setTimeout(res, 20));
+    const line = (await b.api.listBoqLines(PID)).items.find((l) => l.code === "4.01")!;
+    await b.api.patchBoqLine(PID, line.id, { qtyOverride: 999, reason: "בדיקה" });
+    const boq = await b.publicShare.getBoq(token);
+    expect(boq.snapshotAt).toBe(r.link.createdAt);
+    expect(boq.lines.find((l) => l.code === "4.01")!.qty).toBe(line.qtyOverride ?? line.qty);
+    expect(Object.keys(boq.lines[0]!)).not.toEqual(expect.arrayContaining(["reasons", "overridden"]));
+  });
+
+  it("marked PDF with hideTitleBlock: omitted sheets reported; none maskable → failed with the Hebrew message", async () => {
+    const b = await built({ titleBlockDetected: (id) => id === "noah-eb8be8a3-p0" });
+    const { exportId } = await b.api.exportMarkedPdf(PID, { sheetIds: ["noah-eb8be8a3-p0", "noah-b2046277-p0"], floorSplit: false, hideTitleBlock: true });
+    const ok = await until(() => b.api.getExport(PID, exportId), (d) => d.status === "succeeded");
+    expect(ok).toMatchObject({ titleBlockMasked: false, titleBlockBySheet: { "noah-eb8be8a3-p0": true, "noah-b2046277-p0": false }, pageCount: 2, message: expect.stringContaining("הושמטו") });
+    const bad = await b.api.exportMarkedPdf(PID, { sheetIds: ["noah-b2046277-p0"], floorSplit: false, hideTitleBlock: true });
+    const failed = await until(() => b.api.getExport(PID, bad.exportId), (d) => d.status === "failed");
+    expect(failed).toMatchObject({ error: { code: "title_block_not_found" }, message: expect.stringContaining("לא נמצאה טבלת כותרת") });
+  });
+});
+

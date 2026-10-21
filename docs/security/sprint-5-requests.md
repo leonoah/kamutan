@@ -4,7 +4,13 @@ Status 2026-10-21: done in code (verified by DevOps) — R-A1 (`apps/api/src/com
 segment), R-A2 (`apps/api/src/db/audit-chain.ts` `{event:'audit',…}` line), R-A5 (`bootstrap.ts` `useDefaults:false`
 + `X-Frame-Options: DENY`), R-A7 (`config.ts` refuses `OFFBOARDING_REQUIRE_MFA=false` in production), R-WEB2
 (`apps/web/public/.well-known/security.txt`, contact still a placeholder; `firebase.json` now deploys `.well-known/`
-directly instead of the earlier rewrite). Open: R-A3, R-A4, R-A6, **R-A8 (P1)**, R-A9, **R-W1 (P1)**, R-W2.
+directly instead of the earlier rewrite). Open: R-A3, R-A4, R-A6, R-A10, R-W2. Done: R-A8 (functions run as `API_SERVICE_ACCOUNT`, default `kamutan-api@`, `apps/api/src/function.ts`), R-A9 (one-line certificate), R-W1 (`workers/drawing/src/kamutan_drawing/service/logging_setup.py`, JSON lines with `severity`).
+
+Sprint-5 security gate (docs/sprints/sprint-5-security-gate.md), status 2026-10-21: F-1 (High), F-2, F-3, F-4, F-5,
+F-7, F-8, F-9 fixed in the API/rules (apps/api/NOTES.md "security gate fixes"), F-6 and I-3 fixed by Worker-Export.
+Infra residuals handled by DevOps: F-2 direct invocation → infra/IAM.md §3c + deploy check + R-A10; F-5 platform
+request logs → Cloud Logging exclusion `share-token-urls` (`infra/monitoring/setup-alerts.sh`); I-5 → `vars.ZAP_IMAGE`
+digest pin (owner action). Still open: I-1 (per-instance limiter), I-4 (purge destructive by default), I-6.
 
 DevOps does not edit `apps/api`, `packages/contracts` or `workers/`. Each item: owner, why, what, how to verify.
 Priority: **P1** = before beta, **P2** = soon after.
@@ -20,9 +26,8 @@ SEC-26 says only the SHA-256 is stored). Also the `HttpExceptionFilter` / error 
 - Same for any `logger.*` call that receives `req.url`/`req.originalUrl` on public routes.
 - Test: an e2e request to `/api/v1/public/share/<token>/meta` and assert the captured pino output does not contain the
   token. The monitoring filters (`infra/monitoring/setup-alerts.sh`) only rely on the `/api/v1/public/share/` prefix.
-- Note for the owner (not code): Cloud Run's own request log (`httpRequest.requestUrl`) also contains the path. Keep
-  `roles/logging.viewer` limited to the owner; optionally add a log exclusion for that log on `/api/v1/public/share/`
-  (loses per-request platform logs for share views; the app log line stays).
+- Platform request logs (`httpRequest.requestUrl`): **done (DevOps, F-5)** — `_Default` sink exclusion
+  `share-token-urls` in `infra/monitoring/setup-alerts.sh` (case-insensitive `/api/v1/public/share/` and `/s/<token>`).
 
 ### R-A2 (P2, **done** 2026-10-21) — Content-free audit log line for alerting (SEC-43)
 Audit events live in Firestore (`orgs/{o}/auditLog`), which Cloud Monitoring cannot alert on. When `AuditService`
@@ -60,7 +65,7 @@ cap, rate-limited, logs `effective-directive` + `blocked-uri` origin only). DevO
 when `NODE_ENV=production` (same pattern as the memory drivers), so a mis-set variable cannot disable SEC-02/SEC-52.
 Also consider `requireMfa` on every admin-only route (settings PATCH, templates/rules PATCH, audit read).
 
-### R-A8 (P1) — Run all three functions as `kamutan-api@`
+### R-A8 (P1) — Run all three functions as `kamutan-api@` — **done**
 `function.ts` sets no `serviceAccount`, so `api`, `apiJobs` and `reprocessDependents` run as the **default compute
 SA** (Editor on older projects) and none of the least-privilege bindings in infra/IAM.md §3 apply. Add
 `setGlobalOptions({ serviceAccount: process.env.FUNCTIONS_SERVICE_ACCOUNT ?? 'kamutan-api@<project>.iam.gserviceaccount.com' })`
@@ -70,9 +75,17 @@ SA** (Editor on older projects) and none of the least-privilege bindings in infr
 `offboard-purge.ts` prints the certificate with `JSON.stringify(c, null, 2)`; on Cloud Run each line becomes a separate
 log entry. Print `JSON.stringify(c)` (one line → `jsonPayload`), keep the pretty file for `--out`.
 
+### R-A10 (P2) — Sprint-5 gate F-2 residual (direct invocation)
+See infra/IAM.md §3c. (a) If the staging experiment shows Hosting rewrites still work with restricted ingress, set
+`ingressSettings: 'ALLOW_INTERNAL_AND_GCLB'` on `api` in `function.ts` (the ingress of a gen2 function is owned by the
+code; a manual `gcloud` change is reverted by the next deploy). (b) Either way, add an IP-independent circuit breaker
+for unknown share tokens (e.g. > 200 unknown-token hits/min across all callers → short global 429 on unknown tokens;
+valid tokens unaffected), so rotating a spoofed XFF hop cannot keep guessing at full speed. Keep `TRUST_PROXY_HOPS=2`
+(chain documented in IAM.md §3c).
+
 ## Worker agents (`workers/drawing`)
 
-### R-W1 (P1) — Configure logging in the service (SEC-43)
+### R-W1 (P1) — Configure logging in the service (SEC-43) — **done**
 `kamutan_drawing/service` never configures `logging`, so Python's last-resort handler prints only WARNING+ as plain text:
 the per-call `llm_call {…}` INFO line (cost, status) is **dropped in production** and cannot feed the LLM cost metric.
 Configure a JSON formatter at INFO on stdout in `service/app.py` startup with Cloud Logging field names:

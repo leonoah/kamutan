@@ -9,6 +9,9 @@ import {
   storagePaths,
   type CreateMarkedPdfRequest,
   type CreateMarkedPdfResponse,
+  EXPORT_ERROR_MESSAGES_HE,
+  EXPORT_SHEETS_OMITTED_HE,
+  type ExportRecord,
   type ExportStatusResponse,
   type MarkedPdfOptions,
 } from '@kamutan/contracts';
@@ -23,6 +26,13 @@ import { sanitizeFilename } from '../uploads/filename';
 import { GOVERNANCE_STORAGE, type GovernanceStorage } from './governance-storage';
 
 const validId = (s: string) => DocIdSchema.safeParse(s).success;
+
+/** Hebrew message for the export dialog: worker error code (e.g. title_block_not_found) or omitted sheets (F-3). */
+export function exportMessage(r: ExportRecord): string | null {
+  if (r.status === 'failed' && r.error?.code) return EXPORT_ERROR_MESSAGES_HE[r.error.code] ?? null;
+  if (r.titleBlockBySheet && Object.values(r.titleBlockBySheet).some((v) => v === false)) return EXPORT_SHEETS_OMITTED_HE;
+  return null;
+}
 
 /** "PDF מסומן - <project> - dd.mm.yyyy.pdf" (sanitised; never part of a storage path). */
 export function markedPdfFileName(projectName: string, d: Date): string {
@@ -91,7 +101,7 @@ export class ExportsService {
     if (!validId(exportId)) throw notFound('export');
     const [record, project] = await Promise.all([this.gov.getExport(orgId, projectId, exportId), this.repo.getProject(orgId, projectId)]);
     if (!record || !project) throw notFound('export');
-    if (record.status !== 'ready') return { export: record, url: null, expiresAt: null, fileName: null };
+    if (record.status !== 'ready') return { export: record, url: null, expiresAt: null, fileName: null, message: exportMessage(record) };
     const created = new Date(record.createdAt);
     if (record.kind === 'marked_pdf') {
       // Path derived from ids, never from the stored (worker-writable) string.
@@ -99,7 +109,7 @@ export class ExportsService {
       const fileName = markedPdfFileName(project.name, created);
       const signed = await this.storage.signMarkedPdf(path, fileName, MARKED_PDF_URL_TTL_SECONDS);
       await this.repo.appendAudit(orgId, { actorId: user.uid, entity: 'exports', entityId: exportId, action: 'download', after: { projectId, kind: 'marked_pdf' } });
-      return { export: { ...record, storagePath: path }, url: signed.url, expiresAt: signed.expiresAt.toISOString(), fileName };
+      return { export: { ...record, storagePath: path }, url: signed.url, expiresAt: signed.expiresAt.toISOString(), fileName, message: exportMessage(record) };
     }
     const path = storagePaths.boqExportFile(orgId, projectId, exportId);
     const fileName = sanitizeFilename(`כתב כמויות - ${project.name}.xlsx`, 'xlsx');

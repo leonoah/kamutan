@@ -35,7 +35,12 @@ import {
   type Role,
   type RoomsArtifact,
   type ShareLink,
+  type ShareLinkWarning,
   type SheetRow,
+  EXPORT_ERROR_MESSAGES_HE,
+  EXPORT_SHEETS_OMITTED_HE,
+  TITLE_BLOCK_WARNING_EXCLUDED,
+  TITLE_BLOCK_WARNING_INCLUDED,
 } from "./types";
 
 /**
@@ -64,7 +69,14 @@ export interface Sprint5Deps {
   seedLinks?: boolean;
   /** Tests: start with a broken audit chain. */
   auditBroken?: boolean;
+  /** Security gate F-3: was a title block detected on this sheet (mask possible)? Default: all but `noah-c…` / `noah-7…`. */
+  titleBlockDetected?: (sheetId: string) => boolean;
+  /** Security gate F-7: the user signed in recently (+MFA) — required to sign the offboarding ZIP URL. Default true. */
+  recentAuth?: () => Promise<boolean>;
 }
+
+/** Mock title-block detection: deterministic, a couple of Noah sheets have none (F-3 demo). */
+export const defaultTitleBlockDetected = (sheetId: string) => !/^noah-[c7]/.test(sheetId);
 
 export const MOCK_ACTOR: ActorRef = { uid: "mock-user", displayName: "דנה כהן" };
 const DAY = 86_400_000;
@@ -139,6 +151,8 @@ export const fmtDateIL = (iso: string) => {
 interface StoredLink extends ShareLink {
   projectId: string;
   token: string;
+  /** F-4: BOQ frozen at creation (seeded links: frozen lazily on the first read, dated at creation). */
+  snapshot: PublicShareBoq | null;
 }
 
 export function createSprint5Mock(deps: Sprint5Deps) {
@@ -205,12 +219,21 @@ export function createSprint5Mock(deps: Sprint5Deps) {
 
   /* ---------- share links ---------- */
   function publicLink(l: StoredLink): ShareLink {
-    const { projectId: _p, token: _t, ...rest } = l;
-    return { ...rest, versionLock: [...rest.versionLock] };
+    const { projectId: _p, token: _t, snapshot: _s, ...rest } = l;
+    return { ...rest, versionLock: [...rest.versionLock], sheets: (rest.sheets ?? []).map((x) => ({ ...x })) };
   }
+  const detected = deps.titleBlockDetected ?? defaultTitleBlockDetected;
   function makeLink(projectId: string, req: CreateShareLinkRequest, token: string, createdAt = now()): StoredLink {
+    const hide = req.hideTitleBlock ?? true;
     const rows = deps.rows(projectId).filter((r) => r.version?.status === "ready");
+    // F-3: with hideTitleBlock, sheets without a detected title block are left out unless the editor opts in.
+    const sheets = rows.map((r) => {
+      const masked = hide && detected(r.sheet.id);
+      return { sheetId: r.sheet.id, versionId: r.version!.id, titleBlockMasked: masked, included: !hide || masked || Boolean(req.includeUnmaskedSheets) };
+    });
     return {
+      snapshot: null,
+      sheets,
       id: id("sl"),
       projectId,
       token,
@@ -260,6 +283,45 @@ export function createSprint5Mock(deps: Sprint5Deps) {
     return deps.boq.listLines(projectId);
   }
 
+  /** F-4: the public BOQ as frozen at link creation (no reasons / override marker / names). */
+  async function snapshotOf(projectId: string, at: string): Promise<PublicShareBoq> {
+    const res = await waitForBuild(projectId);
+    return {
+      snapshotAt: at,
+      lines: res.items.map((x: BoqLine) => ({
+        id: x.id,
+        chapter: x.chapter,
+        chapterTitle: x.chapterTitle ?? null,
+        code: x.code,
+        description: x.description,
+        unit: x.unit,
+        qty: x.qtyOverride ?? x.qty,
+        level: x.level,
+        status: x.status,
+        byFloor: { ...x.byFloor },
+        ...(x.order !== undefined ? { order: x.order } : {}),
+      })),
+      chapters: (res.chapters ?? []).map((c) => ({ code: c.code, title: c.title })),
+    };
+  }
+  async function overlayOf(l: StoredLink, sheetId: string): Promise<PublicShareOverlay> {
+    const row = deps.rows(l.projectId).find((r) => r.sheet.id === sheetId && r.version?.status === "ready");
+    if (!row?.version) throw new ApiError(404, "share_not_found", "Link is not active");
+    await waitForBuild(l.projectId); // the evidence index belongs to the build
+    const art = await deps.artifacts(row);
+    const ev = deps.boq.sheetEvidence(l.projectId, sheetId, row.version.id);
+    const evidence: Record<string, string[]> = {};
+    for (const [det, lineIds] of Object.entries(ev.detections)) for (const li of lineIds) (evidence[li] ??= []).push(det);
+    return {
+      sheetId,
+      versionId: row.version.id,
+      detections: (art.detections?.detections ?? []).map((d) => ({ id: d.id, class: d.class, centerMm: d.centerMm, bboxMm: d.bboxMm, level: d.level, lifecycle: d.lifecycle, floor: d.floor, roomId: d.roomId })),
+      rooms: (art.rooms?.rooms ?? []).map((r) => ({ id: r.id, name: r.name, floor: r.floor, polygonMm: r.polygonMm, areaM2: r.areaM2 })),
+      linkGroups: (deps.boq.links(l.projectId, sheetId)?.groups ?? []).map((g) => ({ id: g.id, switchIds: g.switchIds, luminaireIds: g.luminaireIds, pointIds: g.pointIds, level: g.level })),
+      evidence,
+    };
+  }
+
   const publicShare: PublicShareClient = {
     async getMeta(token): Promise<PublicShareMeta> {
       const l = resolveToken(token);
@@ -268,25 +330,31 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       append({ actor: null, action: "view", actorKind: "share_link", entity: "shareLinks", entityId: l.id, projectId: l.projectId, meta: { ipPrefix: "203.0.113.0/24", userAgent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 120) : "test" } }, projectOrg(l.projectId));
       const p = deps.projects().get(l.projectId);
       const org = deps.orgs().find((o) => o.id === p?.orgId);
-      const rows = deps.rows(l.projectId).filter((r) => r.version?.status === "ready" && r.version.artifacts?.tiles);
+      const inc = new Map((l.sheets ?? []).filter((x) => x.included).map((x) => [x.sheetId, x]));
+      const rows = deps.rows(l.projectId).filter((r) => r.version?.status === "ready" && r.version.artifacts?.tiles && inc.has(r.sheet.id));
       const dates = rows.map((r) => r.version!.updatedAt ?? r.version!.createdAt).sort();
+      // F-3: the per-link PDF needs every included sheet masked when hideTitleBlock.
+      const pdfOk = !l.hideTitleBlock || rows.some((r) => inc.get(r.sheet.id)!.titleBlockMasked);
       return {
         linkId: l.id,
-        projectName: p?.name ?? "",
+        // F-3: with hideTitleBlock the project name (often the client's family) is replaced by the link label.
+        projectName: l.hideTitleBlock ? l.label : (p?.name ?? ""),
         orgName: org?.name ?? null,
+        pdf: l.allowPdfDownload ? (pdfOk ? { status: "ready" } : { status: "failed", errorCode: "title_block_not_found" }) : null,
         label: l.label,
         expiresAt: l.expiresAt,
         versionDate: dates[dates.length - 1] ?? null,
         hideTitleBlock: l.hideTitleBlock,
-        allowPdfDownload: l.allowPdfDownload,
+        allowPdfDownload: l.allowPdfDownload && pdfOk,
         showConfidence: true,
         watermark: watermarkOf(l),
-        sheets: rows.map((r) => {
+        sheets: rows.map((r, i) => {
           const t = r.version!.artifacts!.tiles!;
           return {
             id: r.sheet.id,
             versionId: r.version!.id,
-            title: r.sheet.title ?? null,
+            title: l.hideTitleBlock ? `גיליון ${i + 1}` : (r.sheet.title ?? null),
+            titleBlockMasked: inc.get(r.sheet.id)!.titleBlockMasked,
             discipline: r.sheet.discipline ?? null,
             floors: r.sheet.floors ?? [],
             page: r.version!.page ? { widthMm: r.version!.page.widthMm, heightMm: r.version!.page.heightMm } : { widthMm: (t.widthPx / t.dpi) * 25.4, heightMm: (t.heightPx / t.dpi) * 25.4 },
@@ -297,41 +365,13 @@ export function createSprint5Mock(deps: Sprint5Deps) {
     },
     async getBoq(token): Promise<PublicShareBoq> {
       const l = resolveToken(token);
-      const res = await waitForBuild(l.projectId);
-      return {
-        lines: res.items.map((x: BoqLine) => ({
-          id: x.id,
-          chapter: x.chapter,
-          chapterTitle: x.chapterTitle ?? null,
-          code: x.code,
-          description: x.description,
-          unit: x.unit,
-          qty: x.qtyOverride ?? x.qty,
-          level: x.level,
-          status: x.status,
-          byFloor: { ...x.byFloor },
-          ...(x.order !== undefined ? { order: x.order } : {}),
-        })),
-        chapters: (res.chapters ?? []).map((c) => ({ code: c.code, title: c.title })),
-      };
+      if (!l.snapshot) l.snapshot = await snapshotOf(l.projectId, l.createdAt);
+      return structuredClone(l.snapshot);
     },
     async getOverlay(token, sheetId): Promise<PublicShareOverlay> {
       const l = resolveToken(token);
-      const row = deps.rows(l.projectId).find((r) => r.sheet.id === sheetId && r.version?.status === "ready");
-      if (!row?.version) throw new ApiError(404, "share_not_found", "Link is not active");
-      await waitForBuild(l.projectId); // the evidence index belongs to the build
-      const art = await deps.artifacts(row);
-      const ev = deps.boq.sheetEvidence(l.projectId, sheetId, row.version.id);
-      const evidence: Record<string, string[]> = {};
-      for (const [det, lineIds] of Object.entries(ev.detections)) for (const li of lineIds) (evidence[li] ??= []).push(det);
-      return {
-        sheetId,
-        versionId: row.version.id,
-        detections: (art.detections?.detections ?? []).map((d) => ({ id: d.id, class: d.class, centerMm: d.centerMm, bboxMm: d.bboxMm, level: d.level, lifecycle: d.lifecycle, floor: d.floor, roomId: d.roomId })),
-        rooms: (art.rooms?.rooms ?? []).map((r) => ({ id: r.id, name: r.name, floor: r.floor, polygonMm: r.polygonMm, areaM2: r.areaM2 })),
-        linkGroups: (deps.boq.links(l.projectId, sheetId)?.groups ?? []).map((g) => ({ id: g.id, switchIds: g.switchIds, luminaireIds: g.luminaireIds, pointIds: g.pointIds, level: g.level })),
-        evidence,
-      };
+      if (!(l.sheets ?? []).some((x) => x.sheetId === sheetId && x.included)) throw new ApiError(404, "share_not_found", "Link is not active");
+      return overlayOf(l, sheetId);
     },
     tileUrl(token, sheetId, z, x, y) {
       const l = [...links.values()].find((v) => v.token === token);
@@ -341,7 +381,8 @@ export function createSprint5Mock(deps: Sprint5Deps) {
     },
     pdfUrl(token) {
       const l = resolveToken(token);
-      if (!l.allowPdfDownload) throw new ApiError(403, "pdf_not_allowed", "PDF download is not allowed");
+      const masked = (l.sheets ?? []).some((x) => x.included && x.titleBlockMasked);
+      if (!l.allowPdfDownload || (l.hideTitleBlock && !masked)) throw new ApiError(403, "pdf_not_allowed", "PDF download is not allowed");
       return blobUrl(mockPdfBytes(`Kamutan shared marked PDF ${l.id}`, 2), "application/pdf");
     },
   };
@@ -440,8 +481,15 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       if (req.sheetIds && req.sheetIds.length === 0) throw new ApiError(400, "validation_failed", "no sheets");
       const exportId = id("x");
       const started = Date.now();
-      const pages = (req.sheetIds?.length ?? ready.length) * (req.floorSplit ? 2 : 1) + 1;
+      // F-3 (worker): with hideTitleBlock, sheets without a detected title block are left out of the PDF.
+      const chosen = req.sheetIds ?? ready.map((r) => r.sheet.id);
+      const bySheet = req.hideTitleBlock ? Object.fromEntries(chosen.map((sid) => [sid, detected(sid)])) : null;
+      const kept = bySheet ? chosen.filter((sid) => bySheet[sid]) : chosen;
+      const pages = kept.length * (req.floorSplit ? 2 : 1) + 1;
       exports.set(exportId, {
+        titleBlockMasked: bySheet ? kept.length === chosen.length : null,
+        titleBlockBySheet: bySheet,
+        message: null,
         id: exportId,
         projectId,
         kind: "marked_pdf",
@@ -464,9 +512,12 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       const x = exports.get(exportId);
       if (!x || x.projectId !== projectId) throw new ApiError(404, "not_found", "Export not found");
       const started = Date.parse(x.createdAt);
-      if (x.status !== "succeeded") {
+      if (x.status !== "succeeded" && x.status !== "failed") {
         const pct = progressOf(x.readyAt, started);
-        if (pct >= 100) {
+        if (pct >= 100 && x.titleBlockBySheet && !Object.values(x.titleBlockBySheet).some(Boolean)) {
+          Object.assign(x, { status: "failed", progress: 100, error: { code: "title_block_not_found", message: "no title block" }, message: EXPORT_ERROR_MESSAGES_HE.title_block_not_found });
+        } else if (pct >= 100) {
+          if (x.titleBlockBySheet && !x.titleBlockMasked) x.message = EXPORT_SHEETS_OMITTED_HE;
           Object.assign(x, { status: "succeeded", progress: 100, pageCount: x.pages, url: blobUrl(mockPdfBytes(`Kamutan marked PDF ${projectId}`, x.pages), "application/pdf"), filename: `marked-${projectId}.pdf`, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() });
         } else Object.assign(x, { status: pct > 0 ? "running" : "queued", progress: pct });
       }
@@ -483,7 +534,17 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       links.set(l.id, l);
       append({ actor: MOCK_ACTOR, action: "create", entity: "shareLinks", entityId: l.id, projectId, after: { days: req.days, label: l.label, recipient: l.recipient, hideTitleBlock: l.hideTitleBlock, allowPdfDownload: l.allowPdfDownload } }, projectOrg(projectId));
       deps.emit();
-      return { link: publicLink(l), url: `${origin}/s/${l.token}` };
+      const notMasked = (l.sheets ?? []).filter((x) => l.hideTitleBlock && !x.titleBlockMasked);
+      const warnings: ShareLinkWarning[] = notMasked.length
+        ? [
+            req.includeUnmaskedSheets
+              ? { code: "title_block_not_detected_included", message: TITLE_BLOCK_WARNING_INCLUDED, sheetIds: notMasked.map((x) => x.sheetId) }
+              : { code: "title_block_not_detected", message: TITLE_BLOCK_WARNING_EXCLUDED, sheetIds: notMasked.map((x) => x.sheetId) },
+          ]
+        : [];
+      // F-4: the BOQ is frozen now (before the link is usable).
+      void snapshotOf(projectId, l.createdAt).then((snap) => void (l.snapshot ??= snap));
+      return { link: publicLink(l), url: `${origin}/s/${l.token}`, warnings };
     },
     listShareLinks(projectId: string): ShareLink[] {
       return [...links.values()].filter((l) => l.projectId === projectId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(publicLink);
@@ -526,17 +587,21 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       const { orgId: _o, readyAt: _r, ...out } = doc;
       return out;
     },
-    getOffboardingExport(orgId: string, exportId: string): OffboardingExport {
+    async getOffboardingExport(orgId: string, exportId: string): Promise<OffboardingExport> {
       requireRole(["admin"]);
       const x = offExports.get(exportId);
       if (!x || x.orgId !== orgId) throw new ApiError(404, "not_found", "Export not found");
       if (x.status !== "succeeded") {
         const pct = progressOf(x.readyAt, Date.parse(x.createdAt));
-        if (pct >= 100) Object.assign(x, { status: "succeeded", progress: 100, url: blobUrl(EMPTY_ZIP, "application/zip"), expiresAt: new Date(Date.now() + DAY).toISOString() });
+        if (pct >= 100) Object.assign(x, { status: "succeeded", progress: 100 });
         else Object.assign(x, { status: pct > 0 ? "running" : "queued", progress: pct });
       }
       const { orgId: _o, readyAt: _r, ...out } = x;
-      return { ...out };
+      if (out.status !== "succeeded") return { ...out, url: null, expiresAt: null };
+      // F-7: signing the ZIP URL needs the same MFA + recent sign-in as creating it.
+      if (deps.recentAuth && !(await deps.recentAuth())) throw new ApiError(403, "recent_auth_required", "sign in again (within the last 10 minutes) to do this");
+      append({ actor: MOCK_ACTOR, action: "download", entity: "offboardingExports", entityId: exportId }, orgId);
+      return { ...out, url: blobUrl(EMPTY_ZIP, "application/zip"), expiresAt: new Date(Date.now() + DAY).toISOString() };
     },
     offboardOrg(orgId: string, confirm: string): OffboardResponse {
       requireRole(["admin"]);

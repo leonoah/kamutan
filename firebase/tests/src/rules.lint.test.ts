@@ -114,8 +114,18 @@ describe('firestore.rules (static)', () => {
       for (const a of allows) expect(isDenyAll(a.condition), seg).toBe(true);
     }
     expect(fs.allows.find((a) => a.path.endsWith('/exports/{exportId}') && a.methods.includes('read'))?.condition).toBe('isMember(orgId)');
-    expect(fs.allows.find((a) => a.path.endsWith('offboardingExports/{exportId}') && a.methods.includes('read'))?.condition).toBe('isAdmin(orgId)');
+    expect(fs.allows.find((a) => a.path.endsWith('offboardingExports/{exportId}') && a.methods.includes('read'))?.condition).toBe('isAdminAnyStatus(orgId)');
     expect(stripComments(FIRESTORE_RULES)).not.toContain('canEditShare');
+  });
+
+  it('F-1: isMember / roleIn require an active org; only the org doc + offboarding exports skip it', () => {
+    const rules = stripComments(FIRESTORE_RULES);
+    expect(rules).toMatch(/function isMember\(orgId\) \{\s*return isMemberAnyStatus\(orgId\) && orgActive\(orgId\);/);
+    expect(rules).toMatch(/function orgActive\(orgId\) \{[^}]*data\.get\('status', 'active'\) != 'offboarding'/);
+    expect(rules).toMatch(/function roleIn\(orgId, roles\) \{\s*return isMember\(orgId\) &&/);
+    const anyStatus = fs.allows.filter((a) => /AnyStatus/.test(a.condition)).map((a) => a.path.replace(`${DOCS}`, ''));
+    expect(anyStatus.sort()).toEqual(['/orgs/{orgId}', '/orgs/{orgId}/offboardingExports/{exportId}']);
+    expect(stripComments(STORAGE_RULES)).toMatch(/function canUpload\(orgId\) \{\s*return isMember\(orgId\) && orgActive\(orgId\)/);
   });
 
   it('jobs are read by membership of resource.data.orgId', () => {

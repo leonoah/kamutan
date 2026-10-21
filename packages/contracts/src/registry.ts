@@ -98,6 +98,9 @@ import {
   ShareLinkSchema,
   ShareLinkViewSchema,
   ShareTokenIndexSchema,
+  ShareBoqSnapshotSchema,
+  ShareLinkSheetSchema,
+  ShareLinkWarningSchema,
 } from './share.js';
 import { AuditEventSchema, AuditPageSchema, AuditVerifyResponseSchema, LineHistoryItemSchema, LineHistoryResponseSchema } from './audit.js';
 import {
@@ -327,4 +330,7 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   OffboardOrgResponse: OffboardOrgResponseSchema,
   DeletionCertificate: DeletionCertificateSchema,
   ReprocessRequest: ReprocessRequestSchema,
+  ShareBoqSnapshot: ShareBoqSnapshotSchema,
+  ShareLinkSheet: ShareLinkSheetSchema,
+  ShareLinkWarning: ShareLinkWarningSchema,
 });

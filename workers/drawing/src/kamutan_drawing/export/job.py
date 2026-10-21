@@ -50,6 +50,7 @@ from .plan import SheetArtifacts, build_plan
 log = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 5
+TITLE_BLOCK_NOT_FOUND = "title_block_not_found"  # non-retryable (export doc error.code)
 PAGES_PER_CALL = 8
 TILE_DPI = 150
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
@@ -95,14 +96,18 @@ def _by_id(items: Any) -> dict[str, dict[str, Any]]:
 def _title_block(v: dict[str, Any]) -> tuple[float, float, float, float] | None:
     """Title-block box when the version doc carries one (``titleBlock.bboxMm`` [x0,y0,x1,y1] or {x,y,w,h};
     requested additive field, see NOTES); otherwise the sandbox searches it on the stored artifacts."""
-    for holder in (v.get("titleBlock"), (v.get("classification") or {}).get("titleBlock")):
+    holders = (v.get("titleBlock"), {"bboxMm": v.get("titleBlockMm")}, (v.get("classification") or {}).get("titleBlock"))
+    for holder in holders:
         b = holder.get("bboxMm") if isinstance(holder, dict) else None
         try:
+            r: tuple[float, float, float, float] | None = None
             if isinstance(b, list | tuple) and len(b) == 4:
-                return (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
-            if isinstance(b, dict):
+                r = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+            elif isinstance(b, dict):
                 x, y, w, h = float(b["x"]), float(b["y"]), float(b["w"]), float(b["h"])
-                return (x, y, x + w, y + h)
+                r = (x, y, x + w, y + h)
+            if r is not None and all(math.isfinite(c) for c in r) and r[2] - r[0] > 1 and r[3] - r[1] > 1:
+                return r
         except (KeyError, TypeError, ValueError):
             continue
     return None
@@ -345,6 +350,9 @@ def render_export(
         options=job.options.model_dump(),
         meta={"buildId": build_id, "date": when.strftime("%d.%m.%Y %H:%M") + " UTC", "stale": stale},
     )
+    if job.options.hideTitleBlock or job.options.watermark:
+        for pg in plan["pages"]:  # the sheet title is read from the title block: never on share / hidden PDFs (F-3)
+            pg["title"] = ""
     lim = limits or Limits()
     wd = Path(tempfile.mkdtemp(prefix="kamutan-export-", dir=workdir_root))
     try:
@@ -353,6 +361,8 @@ def render_export(
         parts: list[str] = []
         mask_src: dict[str, str] = {}
         bg_kinds: dict[str, int] = {}
+        masked: dict[str, bool] = {}
+        page_bytes: dict[str, int] = {}
         n_pages = len(plan["pages"])
         chunks = [list(range(i, min(n_pages, i + PAGES_PER_CALL))) for i in range(0, n_pages, PAGES_PER_CALL)]
         for k, idx in enumerate(chunks):
@@ -368,16 +378,28 @@ def render_export(
             safe_output_path(str(wd), f"out/part_{k}.pdf")
             parts.append(f"out/part_{k}.pdf")
             for key, val in (res.get("maskSource") or {}).items():
-                if str(key).isdigit() and val in ("plan", "detected", "fallback", "none"):
+                if str(key).isdigit() and int(key) < n_pages and val in ("plan", "detected", "none"):
                     mask_src[plan["pages"][int(key)]["sheetId"]] = str(val)
+            for key, val in (res.get("titleBlockMasked") or {}).items():
+                if str(key).isdigit() and int(key) < n_pages and isinstance(val, bool):
+                    masked[plan["pages"][int(key)]["sheetId"]] = val
+            for key, val in (res.get("pageBytes") or {}).items():
+                if str(key).isdigit() and int(key) < n_pages and isinstance(val, int):
+                    page_bytes[plan["pages"][int(key)]["sheetId"]] = val
             for val in (res.get("background") or {}).values():
                 if val in ("vector", "raster", "tiles", "blank"):
                     bg_kinds[str(val)] = bg_kinds.get(str(val), 0) + 1
             for key, val in (res.get("titleBlocks") or {}).items():
                 if str(key).isdigit() and int(key) < n_pages:
                     _clean_rect(val)  # validated, informational only
-        res = run_task("export_marked", {"mode": "assemble", "plan": "plan.json", "parts": parts, "out": "out/marked.pdf"},
-                       workdir=str(wd), limits=lim)  # fmt: skip
+        if job.options.hideTitleBlock:
+            # fail closed: every page must report a mask; a page without one was refused by the sandbox (F-3)
+            masked = {pg["sheetId"]: masked.get(pg["sheetId"]) is True for pg in plan["pages"]}
+            if not any(masked.values()):
+                raise TitleBlockRefused(masked)
+        omitted = sum(1 for v in masked.values() if not v)
+        res = run_task("export_marked", {"mode": "assemble", "plan": "plan.json", "parts": parts, "out": "out/marked.pdf",
+                                         "omitted": omitted}, workdir=str(wd), limits=lim)  # fmt: skip
         if not isinstance(res, dict):
             raise IngestError(E.PARSE_CRASHED, "export task returned no result")
         data = Path(safe_output_path(str(wd), "out/marked.pdf")).read_bytes()
@@ -387,7 +409,7 @@ def render_export(
             page_count = int(res.get("pageCount"))  # type: ignore[arg-type]
         except (TypeError, ValueError):
             raise IngestError(E.PARSE_CRASHED, "export task reported no page count") from None
-        if not 1 <= page_count <= n_pages + 200:
+        if not 1 <= page_count <= n_pages - omitted + 200:
             raise IngestError(E.PARSE_CRASHED, "export task reported an invalid page count")
     finally:
         shutil.rmtree(wd, ignore_errors=True)
@@ -403,10 +425,24 @@ def render_export(
         "backgrounds": backgrounds,
         "rendered": bg_kinds,
         "titleBlock": mask_src if job.options.hideTitleBlock else {},
+        "titleBlockMasked": masked if job.options.hideTitleBlock else {},
+        "omittedSheets": sorted(k for k, v in masked.items() if not v),
+        "share": bool(job.options.watermark),
+        "pageBytes": page_bytes,
         "durationMs": int((time.monotonic() - t0) * 1000),
     }
     return {"pageCount": page_count, "storagePath": path, "sizeBytes": len(data), "stats": stats,
-            "versionIds": {s.sheet_id: s.version_id for s in sheets}}  # fmt: skip
+            "versionIds": {s.sheet_id: s.version_id for s in sheets if masked.get(s.sheet_id, True)},
+            "titleBlockMasked": (all(masked.values()) if job.options.hideTitleBlock else None),
+            "titleBlockBySheet": masked if job.options.hideTitleBlock else None}  # fmt: skip
+
+
+class TitleBlockRefused(IngestError):
+    """``hideTitleBlock`` and no sheet has a known title block: nothing may be emitted (sec gate F-3)."""
+
+    def __init__(self, by_sheet: dict[str, bool]) -> None:
+        super().__init__(TITLE_BLOCK_NOT_FOUND, "title block not found on any sheet; cannot hide it", retryable=False)
+        self.by_sheet = by_sheet
 
 
 def run_marked_pdf(
@@ -461,13 +497,18 @@ def run_marked_pdf(
             err = IngestError(err.code, f"{err.message} (gave up after {attempts} attempts)", retryable=False)
         final = not err.retryable
         docs.set(job_path, {"status": "failed" if final else "queued", "error": err.to_doc(), "updatedAt": SERVER_TIMESTAMP})
-        docs.set(xp, {"status": "failed" if final else "queued", "error": err.to_doc(),
-                      "finishedAt": SERVER_TIMESTAMP if final else None})  # fmt: skip
+        fail: dict[str, Any] = {"status": "failed" if final else "queued", "error": err.to_doc(),
+                                "finishedAt": SERVER_TIMESTAMP if final else None}  # fmt: skip
+        if isinstance(err, TitleBlockRefused):
+            fail.update({"titleBlockMasked": False, "titleBlockBySheet": err.by_sheet})
+            docs.set(job_path, {"result": {"exportId": job.exportId, "titleBlockMasked": err.by_sheet}})
+        docs.set(xp, fail)
         raise err from None
     docs.set(
         xp,
         {"status": "ready", "storagePath": out["storagePath"], "pageCount": out["pageCount"], "sizeBytes": out["sizeBytes"],
-         "versionIds": out["versionIds"], "error": None, "finishedAt": SERVER_TIMESTAMP},
+         "versionIds": out["versionIds"], "titleBlockMasked": out["titleBlockMasked"],
+         "titleBlockBySheet": out["titleBlockBySheet"], "error": None, "finishedAt": SERVER_TIMESTAMP},
     )  # fmt: skip
     docs.set(
         job_path,

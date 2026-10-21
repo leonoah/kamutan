@@ -2,11 +2,10 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DocIdSchema,
-  effectiveQty,
   storagePaths,
   tileLevels,
   ShareTokenSchema,
-  type BoqLine,
+  ShareBoqSnapshotSchema,
   type PublicShareBoq,
   type PublicShareMeta,
   type PublicShareOverlay,
@@ -15,13 +14,9 @@ import {
   type SheetVersion,
 } from '@kamutan/contracts';
 import { BOQ_STORAGE, type BoqStorage } from '../boq/boq-storage';
-import { compareLines } from '../boq/boq.service';
-import { floorsOf } from '../boq/excel';
 import { ApiException, notFound } from '../common/api-exception';
-import { countLines } from '../db/boq-docs';
-import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { GOVERNANCE_REPOSITORY, type GovernanceRepository } from '../db/governance-repository';
-import { ipPrefix } from '../db/governance-docs';
+import { ipLimitKey, ipPrefix } from '../db/governance-docs';
 import { REPOSITORY, type Repository } from '../db/repository';
 import { GOVERNANCE_STORAGE, type GovernanceStorage } from '../governance/governance-storage';
 import { ReviewArtifacts } from '../review/artifact-views';
@@ -86,7 +81,6 @@ export class PublicShareService {
   constructor(
     @Inject(REPOSITORY) private readonly repo: Repository,
     @Inject(GOVERNANCE_REPOSITORY) private readonly gov: GovernanceRepository,
-    @Inject(BOQ_REPOSITORY) private readonly boq: BoqRepository,
     @Inject(BOQ_STORAGE) private readonly boqStorage: BoqStorage,
     @Inject(GOVERNANCE_STORAGE) private readonly storage: GovernanceStorage,
     @Inject(SHARE_RATE_LIMITER) private readonly limiter: ShareRateLimiter,
@@ -96,7 +90,7 @@ export class PublicShareService {
 
   // ------------------------------------------------------------------ token → link
   async resolve(token: string, ctx: ShareRequestCtx, endpoint: Endpoint): Promise<ResolvedShare> {
-    const ipKey = hashKey(ctx.ip ?? 'unknown');
+    const ipKey = hashKey(ipLimitKey(ctx.ip));
     const tile = endpoint === 'tiles';
     const locked = this.limiter.locked(ipKey);
     if (!locked.ok) throw new ShareRateLimitedError(locked.retryAfterSec);
@@ -153,11 +147,13 @@ export class PublicShareService {
     }
   }
 
+  /**
+   * F-3: the mask is ONLY a detected title block (`titleBlockMm`). No guessed strip: a sheet without one is either not
+   * in the link at all, or the editor opted in to share it unmasked (`includeUnmaskedSheets`).
+   */
   private maskOf(link: ShareLink, v: SheetVersion | null): TileRect | null {
-    if (link.hideTitleBlock === false || !v?.page) return null;
-    if (v.titleBlockMm) return v.titleBlockMm;
-    const h = Math.min(TITLE_BLOCK_FALLBACK_MM, v.page.heightMm);
-    return { x: 0, y: v.page.heightMm - h, w: v.page.widthMm, h };
+    if (link.hideTitleBlock === false || !v?.titleBlockMm) return null;
+    return v.titleBlockMm;
   }
 
   private async lockedVersion(r: ResolvedShare, sheetId: string): Promise<SheetVersion> {
@@ -173,15 +169,19 @@ export class PublicShareService {
     const r = await this.resolve(token, ctx, 'meta');
     const project = await this.repo.getProject(r.orgId, r.projectId);
     if (!project) throw new ShareUnavailableError(410, 'revoked');
+    const hide = r.link.hideTitleBlock !== false;
     const sheets: PublicShareSheet[] = [];
-    for (const [sheetId, versionId] of Object.entries(r.lock).slice(0, 500)) {
+    const entries = Object.entries(r.lock).sort(([a], [b]) => a.localeCompare(b)).slice(0, 500);
+    for (const [i, [sheetId, versionId]] of entries.entries()) {
       const [sheet, v] = await Promise.all([this.repo.getSheet(r.orgId, r.projectId, sheetId), this.repo.getVersion(r.orgId, r.projectId, sheetId, versionId)]);
       if (!sheet || !v) continue;
       const t = v.status === 'ready' ? v.artifacts.tiles : undefined;
       sheets.push({
         sheetId,
         versionId,
-        title: sheet.title || sheet.classification?.sheetTitle || sheetId,
+        // F-3: with hideTitleBlock never text read from the title block (sheet titles name the client / address).
+        title: hide ? `גיליון ${i + 1}` : sheet.title || sheet.classification?.sheetTitle || sheetId,
+        titleBlockMasked: this.maskOf(r.link, v) !== null,
         discipline: sheet.discipline ?? null,
         floors: sheet.floors ?? [],
         page: v.page ? { widthMm: v.page.widthMm, heightMm: v.page.heightMm } : null,
@@ -191,7 +191,7 @@ export class PublicShareService {
     let pdf: PublicShareMeta['pdf'] = null;
     if (r.link.allowPdfDownload) {
       const rec = r.link.pdfExportId ? await this.gov.getExport(r.orgId, r.projectId, r.link.pdfExportId) : null;
-      pdf = { status: rec ? rec.status : 'failed' };
+      pdf = { status: rec ? rec.status : 'failed', errorCode: rec?.error?.code ?? null };
     }
     await this.recordView(r, ctx, 'meta');
     return {
@@ -205,35 +205,33 @@ export class PublicShareService {
         allowPdfDownload: r.link.allowPdfDownload,
         watermark: linkWatermark(r.link),
       },
-      project: { name: project.name, address: r.link.hideTitleBlock === false ? (project.address ?? null) : null },
+      // F-3: the project name often names the client → the link label instead when hiding the title block.
+      project: { name: hide ? (r.link.label ?? 'קישור שיתוף') : project.name, address: hide ? null : (project.address ?? null) },
       sheets,
       pdf,
     };
   }
 
-  /** Current BOQ lines (the reviewed state) — no notes, no override reasons, no user ids. */
+  /** F-4: the BOQ frozen at link creation (never the live lines). Links without a snapshot serve an empty BOQ. */
   async boqView(token: string, ctx: ShareRequestCtx): Promise<PublicShareBoq> {
     const r = await this.resolve(token, ctx, 'boq');
-    const lines = (await this.boq.listLines(r.orgId, r.projectId)).sort(compareLines);
+    const path = storagePaths.shareBoqSnapshot(r.orgId, r.projectId, r.link.id);
+    let raw: unknown = null;
+    if (r.link.boqSnapshotPath === path) {
+      try {
+        raw = await this.storage.readShareSnapshot(path);
+      } catch (err) {
+        if (!(err instanceof ArtifactTooLargeError || err instanceof SyntaxError)) throw err;
+      }
+    }
+    const snap = ShareBoqSnapshotSchema.safeParse(raw);
     await this.recordView(r, ctx, 'boq');
-    return {
-      lines: lines.map((l: BoqLine) => ({
-        id: l.id,
-        chapter: l.chapter,
-        code: l.code,
-        description: l.description,
-        unit: l.unit,
-        qty: effectiveQty(l),
-        overridden: l.qtyOverride !== null && l.qtyOverride !== undefined,
-        level: l.level,
-        status: l.status,
-        reasons: (l.reasons ?? []).slice(0, 32),
-        floor: l.floor ?? null,
-        byFloor: l.byFloor ?? {},
-      })),
-      floors: floorsOf(lines),
-      counts: (({ lines: n, green, yellow, red, approved }) => ({ lines: n, green, yellow, red, approved }))(countLines(lines)),
-    };
+    if (!snap.success || snap.data.linkId !== r.link.id) {
+      if (raw !== null) this.logger.warn({ linkId: r.link.id }, 'share BOQ snapshot unreadable');
+      return { snapshotAt: null, lines: [], floors: [], counts: { lines: 0, green: 0, yellow: 0, red: 0, approved: 0 } };
+    }
+    const { snapshotAt, lines, floors, counts } = snap.data;
+    return { snapshotAt, lines, floors, counts };
   }
 
   async overlay(token: string, sheetId: string, ctx: ShareRequestCtx): Promise<PublicShareOverlay> {
@@ -316,8 +314,12 @@ export class PublicShareService {
     const rec = r.link.pdfExportId ? await this.gov.getExport(r.orgId, r.projectId, r.link.pdfExportId) : null;
     if (!rec) throw notFound('pdf');
     if (rec.status !== 'ready') throw new ApiException(HttpStatus.CONFLICT, 'not_ready', 'the PDF is being prepared');
-    const project = await this.repo.getProject(r.orgId, r.projectId);
-    const name = `${project?.name ?? 'project'} - ${shortIdOf(r.link.id)}.pdf`;
+    // F-3 / F-6: a share PDF is only handed out when it is watermarked and, with hideTitleBlock, the worker confirmed
+    // the mask (titleBlockMasked === true; a missing flag = an export from before the gate → refused, fail closed).
+    if (!rec.options?.watermark || (r.link.hideTitleBlock !== false && rec.titleBlockMasked !== true)) throw notFound('pdf');
+    // F-3: never the project name (client) in the download name when hiding the title block.
+    const project = r.link.hideTitleBlock === false ? await this.repo.getProject(r.orgId, r.projectId) : null;
+    const name = `${project?.name ?? r.link.label ?? 'kamutan'} - ${shortIdOf(r.link.id)}.pdf`;
     const signed = await this.storage.signMarkedPdf(storagePaths.markedPdf(r.orgId, r.projectId, rec.id), name, SHARE_PDF_URL_TTL_SECONDS);
     await this.recordView(r, ctx, 'pdf');
     return { url: signed.url, expiresAt: signed.expiresAt.toISOString() };

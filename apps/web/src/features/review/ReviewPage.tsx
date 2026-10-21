@@ -211,6 +211,7 @@ export function ReviewPage() {
   /* ---------- Sprint 5: calibration badge (header + BOQ panel) ---------- */
   const calibration = useMemo(() => resolveCalibration(linesQ.data?.calibration ?? build.data?.stats?.calibration, ready), [linesQ.data, build.data, ready]);
   const capped = useMemo(() => cappedLines(allLines), [allLines]);
+  const sheetNames = useMemo(() => Object.fromEntries(ready.map((r) => [r.sheet.id, sheetName(r)])), [ready]);
   const greenThreshold = org?.settings?.greenThreshold ?? null;
   const panelBadge = useMemo(
     () => <CalibrationBadge calibration={calibration} capped={capped} greenThreshold={greenThreshold} size="sm" />,
@@ -1766,7 +1767,7 @@ export function ReviewPage() {
         saving={patchLine.isPending}
       />
       <LineHistoryDialog projectId={projectId} line={historyLine} open={historyLine !== null} onOpenChange={(o) => !o && setHistoryLine(null)} />
-      <ShareDialog projectId={projectId} open={shareOpen} onOpenChange={setShareOpen} canManage={role === "admin" || role === "editor"} />
+      <ShareDialog projectId={projectId} open={shareOpen} onOpenChange={setShareOpen} canManage={role === "admin" || role === "editor"} sheetNames={sheetNames} />
       <ExportDialog
         projectId={projectId}
         sheets={ready}

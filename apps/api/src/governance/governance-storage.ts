@@ -1,5 +1,7 @@
 import { Readable, Writable } from 'node:stream';
-import { MARKED_PDF_PATH_RE, OFFBOARDING_ZIP_PATH_RE, PROJECT_UPLOAD_PATH_RE, TILE_PATH_RE } from '@kamutan/contracts';
+import { gzipSync } from 'node:zlib';
+import { MARKED_PDF_PATH_RE, OFFBOARDING_ZIP_PATH_RE, PROJECT_UPLOAD_PATH_RE, SHARE_BOQ_SNAPSHOT_PATH_RE, TILE_PATH_RE } from '@kamutan/contracts';
+import { decodeGzipJson, MAX_ARTIFACT_GZ_BYTES, ArtifactTooLargeError } from '../understanding/artifact-reader';
 import type { App } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 import { contentDisposition } from '../boq/boq-storage';
@@ -28,6 +30,9 @@ export interface GovernanceStorage {
   signZip(path: string, fileName: string, ttlSeconds: number): Promise<SignedUrl>;
   /** Deletes every object under `orgs/{orgId}/`; returns the deleted object names. */
   deleteOrgObjects(orgId: string): Promise<string[]>;
+  /** F-4: BOQ snapshot of a share link (gzip JSON, written once at creation). */
+  writeShareSnapshot(path: string, value: unknown): Promise<void>;
+  readShareSnapshot(path: string): Promise<unknown | null>;
 }
 
 const assert = (re: RegExp, path: string, what: string) => {
@@ -105,6 +110,27 @@ export class FirebaseGovernanceStorage implements GovernanceStorage {
       responseType: 'application/zip',
     });
     return { url, expiresAt };
+  }
+
+  async writeShareSnapshot(path: string, value: unknown): Promise<void> {
+    assert(SHARE_BOQ_SNAPSHOT_PATH_RE, path, 'share snapshot');
+    await this.bucket()
+      .file(path)
+      .save(gzipSync(Buffer.from(JSON.stringify(value))), { resumable: false, contentType: 'application/gzip', metadata: { cacheControl: 'private, max-age=0, no-store' } });
+  }
+
+  async readShareSnapshot(path: string): Promise<unknown | null> {
+    assert(SHARE_BOQ_SNAPSHOT_PATH_RE, path, 'share snapshot');
+    try {
+      const file = this.bucket().file(path);
+      const [meta] = await file.getMetadata();
+      if (Number(meta.size ?? 0) > MAX_ARTIFACT_GZ_BYTES) throw new ArtifactTooLargeError('snapshot too large');
+      const [buf] = await file.download({ decompress: false, validation: false });
+      return decodeGzipJson(buf);
+    } catch (err) {
+      if ((err as { code?: number }).code === 404) return null;
+      throw err;
+    }
   }
 
   async deleteOrgObjects(orgId: string): Promise<string[]> {
@@ -194,6 +220,17 @@ export class InMemoryGovernanceStorage implements GovernanceStorage {
     assert(OFFBOARDING_ZIP_PATH_RE, path, 'offboarding zip');
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
     return { url: `https://storage.invalid/test-bucket/${encodeURI(path)}?X-Goog-Expires=${ttlSeconds}&response-content-disposition=${encodeURIComponent(contentDisposition(fileName))}`, expiresAt };
+  }
+
+  async writeShareSnapshot(path: string, value: unknown): Promise<void> {
+    assert(SHARE_BOQ_SNAPSHOT_PATH_RE, path, 'share snapshot');
+    this.objects.set(path, gzipSync(Buffer.from(JSON.stringify(value))));
+  }
+
+  async readShareSnapshot(path: string): Promise<unknown | null> {
+    assert(SHARE_BOQ_SNAPSHOT_PATH_RE, path, 'share snapshot');
+    const b = this.objects.get(path);
+    return b ? decodeGzipJson(b) : null;
   }
 
   async deleteOrgObjects(orgId: string): Promise<string[]> {

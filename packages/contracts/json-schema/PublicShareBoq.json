@@ -4,6 +4,17 @@
     "PublicShareBoq": {
       "type": "object",
       "properties": {
+        "snapshotAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "lines": {
           "type": "array",
           "items": {
@@ -30,9 +41,6 @@
               "qty": {
                 "type": "number"
               },
-              "overridden": {
-                "type": "boolean"
-              },
               "level": {
                 "type": "string",
                 "enum": [
@@ -48,12 +56,6 @@
                   "reviewed",
                   "approved"
                 ]
-              },
-              "reasons": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
               },
               "floor": {
                 "type": [
@@ -75,10 +77,8 @@
               "description",
               "unit",
               "qty",
-              "overridden",
               "level",
               "status",
-              "reasons",
               "floor",
               "byFloor"
             ],
@@ -121,6 +121,7 @@
         }
       },
       "required": [
+        "snapshotAt",
         "lines",
         "floors",
         "counts"

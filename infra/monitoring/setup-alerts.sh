@@ -54,6 +54,25 @@ run gcloud services enable monitoring.googleapis.com logging.googleapis.com --pr
 # SEC-43: operational logs kept 30–90 days (default bucket is 30 days; 90 keeps a quarter for investigations).
 run gcloud logging buckets update _Default --location=global --retention-days=90 --project "$PROJECT"
 
+# ------------------------------------------------------------------ F-5: keep share tokens out of Cloud Logging
+# Platform request logs (Cloud Run / Functions gen2 `run.googleapis.com/requests`, and Firebase Hosting
+# `firebasehosting.googleapis.com/webrequests` if that integration is ever enabled) record httpRequest.requestUrl,
+# i.e. the raw bearer token of every public share request. Drop them before storage on the _Default sink
+# (case-insensitive: Express routes /api/v1/PUBLIC/... too). The app's own pino line keeps a redacted path
+# (`/api/v1/public/share/<redacted>/…`, R-A1/F-5), which is what the share-view metrics below use.
+# Not matched on logName on purpose: any present or future log carrying the URL in httpRequest is excluded.
+# No commas in the filter: gcloud parses --add-exclusion as a comma-separated key=value list.
+SHARE_URL_EXCLUSION='httpRequest.requestUrl=~"(?i)/api/v1/public/share/" OR httpRequest.requestUrl=~"(?i)/s/[A-Za-z0-9_-]{20}"'
+if [ "$DRY_RUN" != 1 ] && gcloud logging sinks describe _Default --project "$PROJECT" --format=json 2>/dev/null |
+  jq -e '.exclusions // [] | map(.name) | index("share-token-urls")' >/dev/null; then
+  run gcloud logging sinks update _Default --project "$PROJECT" \
+    --update-exclusion="name=share-token-urls,description=F-5 share tokens in request URLs,filter=$SHARE_URL_EXCLUSION"
+else
+  run gcloud logging sinks update _Default --project "$PROJECT" \
+    --add-exclusion="name=share-token-urls,description=F-5 share tokens in request URLs,filter=$SHARE_URL_EXCLUSION"
+fi
+# Path-only, token-free view count from the platform side is not needed: kamutan_share_views counts the app log line.
+
 # ------------------------------------------------------------------ notification channel
 if [ -z "$CHANNEL" ]; then
   capture CHANNEL "projects/$PROJECT/notificationChannels/DRYRUN" gcloud beta monitoring channels list \

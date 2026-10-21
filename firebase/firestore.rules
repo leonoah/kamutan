@@ -30,11 +30,26 @@ service cloud.firestore {
     function memberDoc(orgId) {
       return /databases/$(database)/documents/orgs/$(orgId)/members/$(request.auth.uid);
     }
-    function isMember(orgId) {
+    // Sprint 5 (SEC-52, security gate F-1): an org being offboarded is CLOSED for its members. The org doc's
+    // `status` field (written by the API in the offboarding transaction) is read with get() on every tenant rule —
+    // one extra document read per request (rules cache identical get()s within a request). Because it is checked on
+    // every request, already-issued ID tokens stop working at once (no auth_time / revocation check needed). A purged
+    // org has no doc → get() fails → denied.
+    function orgActive(orgId) {
+      return get(/databases/$(database)/documents/orgs/$(orgId)).data.get('status', 'active') != 'offboarding';
+    }
+    function isMemberAnyStatus(orgId) {
       return signedIn() && exists(memberDoc(orgId));
+    }
+    function isMember(orgId) {
+      return isMemberAnyStatus(orgId) && orgActive(orgId);
     }
     function roleIn(orgId, roles) {
       return isMember(orgId) && get(memberDoc(orgId)).data.role in roles;
+    }
+    // Only for the org doc itself and the offboarding-export status (the blocked screen + export download UI).
+    function isAdminAnyStatus(orgId) {
+      return isMemberAnyStatus(orgId) && get(memberDoc(orgId)).data.role == 'admin';
     }
     function isAdmin(orgId)     { return roleIn(orgId, ['admin']); }
     function canCorrect(orgId)  { return roleIn(orgId, ['admin', 'editor', 'reviewer']); }
@@ -80,7 +95,7 @@ service cloud.firestore {
 
     // ------------------------------------------------------------------ orgs
     match /orgs/{orgId} {
-      allow read: if isMember(orgId);
+      allow read: if isMemberAnyStatus(orgId);   // members see `status: offboarding` (blocked screen)
       allow write: if false;                       // API only
 
       match /members/{uid} {
@@ -98,7 +113,7 @@ service cloud.firestore {
       }
       // Sprint 5: offboarding ZIP exports (status for the admin screen); created/updated by the API only.
       match /offboardingExports/{exportId} {
-        allow read: if isAdmin(orgId);
+        allow read: if isAdminAnyStatus(orgId);      // still visible while offboarding (download goes via the API)
         allow write: if false;
       }
 

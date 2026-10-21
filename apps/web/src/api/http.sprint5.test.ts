@@ -111,16 +111,18 @@ describe("contracts adapters (packages/contracts share.ts / audit.ts / exports.t
     expect(m).toMatchObject({ linkId: "ab12cd", projectName: "בית משפחת נח", watermark: dto.link.watermark, versionDate: dto.link.createdAt, allowPdfDownload: false, sheets: [{ id: "s1", versionId: "v1" }] });
     expect(normalizeShareMeta({ ...dto, pdf: { status: "ready" } }).allowPdfDownload).toBe(true);
     expect(normalizeShareMeta({ ...dto, pdf: null }).allowPdfDownload).toBe(false);
+    expect(normalizeShareMeta({ ...dto, pdf: { status: "failed", errorCode: "title_block_not_found" } }).pdf).toEqual({ status: "failed", errorCode: "title_block_not_found" });
   });
 
-  it("410 + x-share-state header → expired / revoked screens; public BOQ drops reasons", async () => {
+  it("410 + x-share-state header → expired / revoked screens; public BOQ snapshot", async () => {
     const res = (state: string) => new Response(JSON.stringify({ error: { code: "share_unavailable", message: "share link not available" } }), { status: 410, headers: { "x-share-state": state } });
     const pub = (state: string) => createPublicShareClient("/api/v1", (async () => res(state)) as unknown as typeof fetch);
     expect(shareErrorKind(await pub("revoked").getMeta("x").catch((e) => e))).toBe("revoked");
     expect(shareErrorKind(await pub("expired").getMeta("x").catch((e) => e))).toBe("expired");
-    const boq = createPublicShareClient("/api/v1", (async () => json({ lines: [{ id: "l", chapter: "04", code: "4.01", description: "x", unit: "יח'", qty: 3, overridden: false, level: "yellow", status: "draft", reasons: ["כיול שמרני: …"], floor: null, byFloor: {} }], floors: [], counts: {} })) as unknown as typeof fetch);
-    const l = (await boq.getBoq("t")).lines[0]!;
-    expect(l).not.toHaveProperty("reasons");
+    const boq = createPublicShareClient("/api/v1", (async () => json({ snapshotAt: "2026-10-15T10:00:00Z", lines: [{ id: "l", chapter: "04", code: "4.01", description: "x", unit: "יח'", qty: 3, level: "yellow", status: "draft", floor: null, byFloor: {} }], floors: [], counts: {} })) as unknown as typeof fetch);
+    const got = await boq.getBoq("t");
+    expect(got.snapshotAt).toBe("2026-10-15T10:00:00Z");
+    const l = got.lines[0]!;
     expect(l).toMatchObject({ code: "4.01", qty: 3, level: "yellow" });
   });
 
@@ -147,6 +149,7 @@ describe("contracts adapters (packages/contracts share.ts / audit.ts / exports.t
     expect(toAuditEvent({ ...base, actorId: null, actorKind: "share_link", actorName: null })).toMatchObject({ actor: null, actorKind: "share_link" });
     expect(toAuditEvent({ ...base, actorId: "u1", actorKind: "user", actorName: "דנה" }).actor).toEqual({ uid: "u1", displayName: "דנה" });
     expect(toExportDoc({ export: { id: "x", kind: "marked_pdf", status: "ready", createdAt: "t" }, url: "https://u", fileName: "a.pdf", expiresAt: "t" }).status).toBe("succeeded");
+    expect(toExportDoc({ export: { id: "x", kind: "marked_pdf", status: "failed", createdAt: "t", titleBlockMasked: false, titleBlockBySheet: { s1: false } }, message: "לא נמצאה טבלת כותרת", url: null })).toMatchObject({ status: "failed", titleBlockMasked: false, titleBlockBySheet: { s1: false }, message: "לא נמצאה טבלת כותרת" });
     expect(toOffboardingExport({ export: { id: "o", status: "ready", createdAt: "t" }, url: "https://z", expiresAt: "t" })).toMatchObject({ id: "o", status: "succeeded", url: "https://z" });
     const t = i18n.t.bind(i18n);
     const h = { at: "t", by: null, reason: null };

@@ -72,7 +72,10 @@ describe('Sprint 5 e2e — share links (FR-30, SEC-26–29, E2E-09)', () => {
     projectId = (await t.repo.createProject(orgId, { name: 'בית משפחת נח', address: 'רחוב הדקל 5' }, 'editor')).id;
     otherProject = (await t.repo.createProject(otherOrg, { name: 'Q' }, 'outsider')).id;
     // A3 sheet, 300 dpi: 4961 × 3508 px, 6 levels; detections: one in the drawing, one inside the bottom title-block strip
-    sheet = t.repo.seedWorkerSheet(orgId, projectId, 'setA', 0, { understanding: true, widthMm: 420, heightMm: 297, widthPx: 4961, heightPx: 3508, levels: 6 });
+    sheet = t.repo.seedWorkerSheet(orgId, projectId, 'setA', 0, { understanding: true, widthMm: 420, heightMm: 297, widthPx: 4961, heightPx: 3508, levels: 6, title: 'משפחת נח - חשמל' });
+    // the worker detected this sheet's title block (bottom strip) → maskable
+    const vp0 = fsPaths.version(orgId, projectId, sheet.sheetId, sheet.versionId);
+    t.repo.docs.set(vp0, { ...(t.repo.docs.get(vp0) as Doc), titleBlockMm: { x: 0, y: 252, w: 420, h: 45 } });
     t.artifacts.putJson(storagePaths.detections(orgId, projectId, sheet.sheetId, sheet.versionId), {
       schema: 'kamutan.detections/1',
       detections: [det('d_1', 'socket_double', 100, 100, 0.99, 'green'), det('d_tb', 'socket_double', 300, 290, 0.9, 'yellow')],
@@ -107,7 +110,9 @@ describe('Sprint 5 e2e — share links (FR-30, SEC-26–29, E2E-09)', () => {
       expect(Buffer.from(r.token, 'base64url').length).toBe(32);
       expect(r.url).toBe(`https://app.example.test/s/${r.token}`);
       expect(r.link).not.toHaveProperty('tokenHash');
-      expect(r.link).toMatchObject({ label: 'קבלן חשמל', recipient: 'דני קבלן', hideTitleBlock: true, allowPdfDownload: false, state: 'active', viewCount: 0, versionLockBySheet: { [sheet.sheetId]: sheet.versionId }, versionLock: [sheet.versionId], pdfExportId: null });
+      expect(r.link).toMatchObject({ label: 'קבלן חשמל', recipient: 'דני קבלן', hideTitleBlock: true, allowPdfDownload: false, state: 'active', viewCount: 0, versionLockBySheet: { [sheet.sheetId]: sheet.versionId }, versionLock: [sheet.versionId], pdfExportId: null, boqLocked: true });
+      expect(r.link.sheets).toEqual([{ sheetId: sheet.sheetId, versionId: sheet.versionId, titleBlockMasked: true, included: true }]);
+      expect(r.warnings).toEqual([]);
       expect(Date.parse(r.link.expiresAt) - Date.now()).toBeGreaterThan(7 * 86_400_000 - 60_000);
       const doc = t.repo.docs.get(fsPaths.shareLink(orgId, projectId, r.link.id)) as Doc;
       expect(doc.tokenHash).toBe(sha(r.token));
@@ -179,7 +184,10 @@ describe('Sprint 5 e2e — share links (FR-30, SEC-26–29, E2E-09)', () => {
       const r = await http.get(S(link.token) + '/meta').set({ 'x-forwarded-for': '203.0.113.77', 'user-agent': 'ContractorBrowser/1.0' });
       expect(r.status).toBe(200);
       const m = PublicShareMetaSchema.parse(r.body);
-      expect(m.project).toEqual({ name: 'בית משפחת נח', address: null });
+      // F-3: hideTitleBlock → neither the project name nor the title-block sheet title (they name the client)
+      expect(m.project).toEqual({ name: 'קבלן חשמל', address: null });
+      expect(m.sheets[0]).toMatchObject({ title: 'גיליון 1', titleBlockMasked: true });
+      expect(JSON.stringify(m)).not.toMatch(/משפחת נח/);
       expect(m.link).toMatchObject({ label: 'קבלן חשמל', recipient: 'דני קבלן', hideTitleBlock: true, allowPdfDownload: false, shortId: link.link.id.slice(0, 6) });
       expect(m.link.watermark).toMatch(new RegExp(`^שותף עם דני קבלן • \\d{2}\\.\\d{2}\\.\\d{4} • ${link.link.id.slice(0, 6)}$`));
       expect(m.sheets).toEqual([expect.objectContaining({ sheetId: sheet.sheetId, versionId: sheet.versionId, tiles: expect.objectContaining({ levels: 6, widthPx: 4961 }) })]);
@@ -194,14 +202,20 @@ describe('Sprint 5 e2e — share links (FR-30, SEC-26–29, E2E-09)', () => {
       expect(JSON.stringify(ev)).not.toContain('203.0.113.77');
       // address shown when the title block is NOT hidden
       const open = await create({ hideTitleBlock: false });
-      expect(PublicShareMetaSchema.parse((await http.get(S(open.token) + '/meta').set(ip())).body).project.address).toBe('רחוב הדקל 5');
+      const om = PublicShareMetaSchema.parse((await http.get(S(open.token) + '/meta').set(ip())).body);
+      expect(om.project).toEqual({ name: 'בית משפחת נח', address: 'רחוב הדקל 5' });
+      expect(om.sheets[0]).toMatchObject({ title: 'משפחת נח - חשמל', titleBlockMasked: false });
     });
 
     it('boq: lines with effective qty, levels, statuses, byFloor — never notes, override reasons or user ids', async () => {
       const r = await http.get(S(link.token) + '/boq').set(ip());
       expect(r.status).toBe(200);
       const b = PublicShareBoqSchema.parse(r.body);
-      expect(b.lines).toEqual([expect.objectContaining({ id: 'bl_4_01', code: '4.01', qty: 3, overridden: true, level: 'green', status: 'approved', byFloor: { '0': 2 } })]);
+      expect(b.lines).toEqual([{ id: 'bl_4_01', chapter: '04', code: '4.01', description: 'שקע כפול', unit: 'יחידה', qty: 3, level: 'green', status: 'approved', floor: null, byFloor: { '0': 2 } }]);
+      expect(b.snapshotAt).toBe(link.link.createdAt);
+      // F-4: no reasons / override marker for external viewers
+      expect(r.body.lines[0]).not.toHaveProperty('reasons');
+      expect(r.body.lines[0]).not.toHaveProperty('overridden');
       expect(b.counts).toMatchObject({ lines: 1, green: 1, approved: 1 });
       const s = JSON.stringify(b);
       expect(s).not.toContain('הערה פנימית');
@@ -214,11 +228,6 @@ describe('Sprint 5 e2e — share links (FR-30, SEC-26–29, E2E-09)', () => {
       expect(o.versionId).toBe(sheet.versionId);
       expect(o.detections.map((d) => [d.id, d.lineIds])).toEqual([['d_1', ['bl_4_01']]]);
       expect(o.maskMm).toEqual({ x: 0, y: 252, w: 420, h: 45 });
-      // worker-provided title block wins over the fallback strip
-      const vp = fsPaths.version(orgId, projectId, sheet.sheetId, sheet.versionId);
-      t.repo.docs.set(vp, { ...(t.repo.docs.get(vp) as Doc), titleBlockMm: { x: 250, y: 260, w: 170, h: 37 } });
-      expect(PublicShareOverlaySchema.parse((await http.get(S(link.token) + `/sheets/${sheet.sheetId}/overlay`).set(ip())).body).maskMm).toEqual({ x: 250, y: 260, w: 170, h: 37 });
-      t.repo.docs.set(vp, { ...(t.repo.docs.get(vp) as Doc), titleBlockMm: undefined });
       expect((await http.get(S(link.token) + '/sheets/nope/overlay').set(ip())).status).toBe(404);
     });
 
@@ -307,10 +316,13 @@ describe('Sprint 5 e2e — share links (FR-30, SEC-26–29, E2E-09)', () => {
       const job = MarkedPdfJobSchema.parse(t.queue.messages.at(-1)?.data);
       expect(job).toMatchObject({ exportId: withPdf.link.pdfExportId, versionIds: { [sheet.sheetId]: sheet.versionId }, sheetIds: [sheet.sheetId], options: { hideTitleBlock: true, watermark: expect.stringContaining('שותף עם קבלן') } });
       expect(t.repo.docs.get(fsPaths.boqExport(orgId, projectId, withPdf.link.pdfExportId as string))).toMatchObject({ shareLinkId: withPdf.link.id, kind: 'marked_pdf' });
-      expect(PublicShareMetaSchema.parse((await http.get(S(withPdf.token) + '/meta').set(ip())).body).pdf).toEqual({ status: 'queued' });
+      expect(PublicShareMetaSchema.parse((await http.get(S(withPdf.token) + '/meta').set(ip())).body).pdf).toEqual({ status: 'queued', errorCode: null });
       expect((await http.get(S(withPdf.token) + '/pdf').set(ip())).status).toBe(409);
       const ep = fsPaths.boqExport(orgId, projectId, withPdf.link.pdfExportId as string);
-      t.repo.docs.set(ep, { ...(t.repo.docs.get(ep) as Doc), status: 'ready' });
+      // worker finished but could not confirm the mask → still refused (fail closed, F-3)
+      t.repo.docs.set(ep, { ...(t.repo.docs.get(ep) as Doc), status: 'ready', titleBlockMasked: false, titleBlockBySheet: { [sheet.sheetId]: false } });
+      expect((await http.get(S(withPdf.token) + '/pdf').set(ip()).redirects(0)).status).toBe(404);
+      t.repo.docs.set(ep, { ...(t.repo.docs.get(ep) as Doc), status: 'ready', titleBlockMasked: true, titleBlockBySheet: { [sheet.sheetId]: true } });
       const r = await http.get(S(withPdf.token) + '/pdf').set(ip()).redirects(0);
       expect(r.status).toBe(302);
       expect(r.headers.location).toContain(encodeURI(storagePaths.markedPdf(orgId, projectId, withPdf.link.pdfExportId as string)));

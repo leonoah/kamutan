@@ -68,14 +68,32 @@ export const ExportRecordSchema = z.object({
   shareLinkId: DocIdSchema.nullable().optional(),
   /** sheetId → versionId rendered (share links: the locked versions). */
   versionIds: z.record(DocIdSchema, DocIdSchema).nullable().optional(),
+  /** Security gate F-3 (worker): every exported sheet had its title block masked (null when hideTitleBlock is off). */
+  titleBlockMasked: z.boolean().nullable().optional(),
+  /** Security gate F-3 (worker): sheetId → masked; sheets with `false` were left out of the PDF. */
+  titleBlockBySheet: z.record(DocIdSchema, z.boolean()).nullable().optional(),
 });
 export type ExportRecord = z.infer<typeof ExportRecordSchema>;
 
 export const ExportStatusResponseSchema = z.object({
   export: ExportRecordSchema,
+  /** Hebrew message for `export.error.code` / omitted sheets (F-3), null when nothing to say. */
+  message: z.string().nullable().optional(),
   /** V4 signed download URL (attachment) when `status = ready`; marked PDF 15 min, xlsx 2 min. */
   url: z.string().url().nullable(),
   expiresAt: TimestampSchema.nullable(),
   fileName: z.string().nullable(),
 });
 export type ExportStatusResponse = z.infer<typeof ExportStatusResponseSchema>;
+
+/**
+ * Non-retryable worker error codes of `export.marked_pdf` (export doc `error.code`). `title_block_not_found`:
+ * hideTitleBlock was requested and NO sheet's title block could be located → nothing was written (fail closed).
+ */
+export const EXPORT_ERROR_CODES = Object.freeze({ titleBlockNotFound: 'title_block_not_found' } as const);
+/** Hebrew UI text per export error code (web dialog / share viewer). */
+export const EXPORT_ERROR_MESSAGES_HE: Readonly<Record<string, string>> = Object.freeze({
+  title_block_not_found: 'לא נמצאה טבלת כותרת להסתרה באף גיליון, ולכן ה-PDF לא נוצר. בטלו את הסתרת טבלת הכותרת או בחרו גיליונות אחרים.',
+});
+/** Hebrew warning when some sheets were omitted from a hideTitleBlock export. */
+export const EXPORT_SHEETS_OMITTED_HE = 'חלק מהגיליונות הושמטו: לא נמצאה בהם טבלת כותרת להסתרה.';

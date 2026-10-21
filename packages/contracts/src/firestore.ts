@@ -47,6 +47,8 @@ export const fsPaths = Object.freeze({
   auditEvent: (o: string, id: string) => `orgs/${o}/auditLog/${id}`,
   /** Sprint 5: head of the org's audit hash chain `{hash, at, count}` (serializes appends; API-only). */
   auditHead: (o: string) => `orgs/${o}/auditMeta/head`,
+  /** Sprint 5 (security gate F-4): BOQ snapshot frozen at share-link creation (API only). */
+  shareBoqSnapshot: (o: string, p: string, linkId: string) => `orgs/${o}/projects/${p}/share/${linkId}/boq.json.gz`,
   /** Sprint 5: offboarding ZIP exports (API-only). */
   offboardingExport: (o: string, id: string) => `orgs/${o}/offboardingExports/${id}`,
   /** Sprint 5: deletion certificate / tombstone kept after the purge (top level, API/script-only). */
@@ -105,6 +107,8 @@ export const storagePaths = Object.freeze({
   boqExportFile: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}.xlsx`,
   /** Sprint 5: marked PDF (worker writes; API signs 15 min / redirects share viewers). */
   markedPdf: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}/marked.pdf`,
+  /** Sprint 5 (security gate F-4): BOQ snapshot frozen at share-link creation (API only). */
+  shareBoqSnapshot: (o: string, p: string, linkId: string) => `orgs/${o}/projects/${p}/share/${linkId}/boq.json.gz`,
   /** Sprint 5: offboarding ZIP (API writes; 24 h signed URL). Deleted with the org by the purge. */
   offboardingZip: (o: string, exportId: string) => `orgs/${o}/offboarding/${exportId}.zip`,
   /** Sprint 4: find_similar candidate crop (worker; API signs, never client-readable). */
@@ -136,6 +140,8 @@ export const BOQ_EVIDENCE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/b
 export const BOQ_EXPORT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/exports/(${ID})\\.xlsx$`);
 /** Sprint 5: marked PDF object. */
 export const MARKED_PDF_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/exports/(${ID})/marked\\.pdf$`);
+/** Sprint 5: share BOQ snapshot object. */
+export const SHARE_BOQ_SNAPSHOT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/share/(${ID})/boq\\.json\\.gz$`);
 /** Sprint 5: offboarding ZIP object. */
 export const OFFBOARDING_ZIP_PATH_RE = new RegExp(`^orgs/(${ID})/offboarding/(${ID})\\.zip$`);
 /** Sprint 5: one tile of a sheet version (what the share proxy may read). */

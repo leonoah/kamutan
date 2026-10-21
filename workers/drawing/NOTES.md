@@ -1226,7 +1226,8 @@ pypdf / pdfium / Pillow failure on the customer file → `parse_crashed` (typed,
   the pixels (a white box over vectors would leave the text in the content stream); overlay stays vector; the sheet's
   compact legend is drawn into the freed box. Title block: `version.titleBlock.bboxMm` when present (contract request
   below), else searched in the sandbox on the stored primitives + text (`titleblock.read_title_block`, Noah 10/10
-  found), else the band under the drawing regions (≤ 30 % of the page), else none; `result.titleBlock` reports which.
+  found), else none → the page is REFUSED (see the security-gate follow-up below; the earlier "band under the
+  drawing regions" guess is gone); `result.titleBlock` reports which.
 * **Hebrew**: `export/bidi.py` — UAX #9 subset for one RTL line (numbers with separators, Latin runs, neutrals,
   mirrored brackets, nikud kept on its base), pure Python (python-bidi is LGPL). Hebrew needs no shaping. pdfium's
   text extraction of our pages returns the logical strings (asserted in the tests).
@@ -1271,7 +1272,7 @@ glyphs readable, arcs on the lighting sheets, hatches in the wet rooms, legend H
 `uv run pytest -q tests/test_export.py` — 29 tests, ~17 s: bidi cases, palette, display matrix vs the ingest frame
 (4 rotations, offset crop box), plan (shared items, arcs, areas, manual geometry, stale evidence), end to end in the
 sandbox on synthetic PDFs (rot 0/90: vectors kept, pixel colours at marks / labels / hatches, white paper elsewhere,
-legend text), redaction (no text of the title block left, pixels white) + watermark, fallback band, tiles background +
+legend text), redaction (no text of the title block left, pixels white) + watermark, tiles background +
 floor-split legend, stale evidence, redelivery / foreign job / no build / xlsx doc, hostile source → `parse_crashed`,
 changed source → blank page, payload validation, contract mirror vs `json-schema/MarkedPdfJob.json`, app routing.
 
@@ -1297,7 +1298,6 @@ None required (font ships inside the wheel). Optional: extend the image smoke ch
 * Pinned versions (share links) older than the latest build's evidence show no marks (`result.stale`) — a share link
   should be paired with the build of its locked versions.
 * Raster / DXF sheets use the tile pyramid at ~150 dpi (not the original PNG / a fresh DXF render).
-* The fallback band (no title block found) is a heuristic; with no regions nothing is masked (reported as `none`).
 * Run on 2026-10-15 alongside other agents: `tests/test_sandbox.py::test_fork_bomb…` flaked (peak 51 > 49 processes,
   load avg 9 on 2 vCPU); the links / rooms / understand failures in the full suite are in modules other agents were
   editing at the time; `ruff format --check` flagged `tests/test_calibration.py` and mypy `rooms/segment.py` then `ocr/glyphs.py` (not ours).
@@ -1418,3 +1418,33 @@ bandit -ll && pytest -q`): all green, 510 tests.
   `boq/build.py`); (b) `boq.build` should copy `stats.calibration` of the sheets into the build `stats`.
 * Rooms have no score map (tiling domain has none); rooms are capped like every class.
 * Cross-check with Data/QA: `kbench calibrate --fail-on-disallowed-green` on a fresh run must report 0 greens.
+
+### Security-gate follow-up (docs/sprints/sprint-5-security-gate.md F-3, F-6, I-3)
+* **F-3 fail closed.** With `hideTitleBlock`, a page is emitted only when its title block is known: the version's
+  `titleBlock.bboxMm` / `titleBlockMm` (now written by the ingest) → else the sandbox search on primitives + text.
+  No geometric guess. A sheet without one is left out of the PDF. Per sheet it is reported in the export doc as
+  `titleBlockMasked` (bool: all exported sheets masked) + `titleBlockBySheet {sheetId: bool}`, and in the job's
+  `result.titleBlockMasked` / `omittedSheets`. The legend says "N גיליונות הושמטו: לא נמצאה טבלת כותרת להסתרה". If
+  no sheet can be masked, the export fails with `error.code = "title_block_not_found"` (non-retryable), the doc gets
+  `titleBlockMasked: false`, and nothing is written to Storage. `versionIds` lists only the sheets in the PDF. The sheet
+  title (title-block text) is blanked in the plan before it reaches the sandbox, whenever `hideTitleBlock` or a
+  watermark is set.
+* **F-6 share PDFs** (= any export with `watermark`): never the original vector page, even with
+  `hideTitleBlock=false`. Every drawing page is a 150 dpi raster (`SHARE_DPI`; tiles at their level, blank pages a white
+  raster) with the watermark burned into the pixels as a tiled 30° pattern (Pillow, bundled DejaVu, `Layout.BASIC` +
+  our bidi), plus the reportlab text watermark on top. Legend pages are rasterised and burned the same way. The internal
+  export (no watermark) stays vector; `hideTitleBlock` without a watermark stays a 200 dpi redaction raster.
+* **I-3**: rasters never render source annotations (`draw_annots=False`).
+* **Size** (`result.pageBytes {sheetId: bytes}`, `result.share`): Noah, hide + floor split + watermark: 10 drawing pages
+  0.42–1.02 MB each, 7.80 MB total for 12 pages (sources 1.23 MB). Watermark only: 7.39 MB. Internal vector: 1.27 MB.
+  MK-02's < 1.5× target is not met for share PDFs. Options, not done: JPEG backgrounds or palette images.
+* Regression tests (`tests/test_export.py`, from the PoCs): no extractable client text in the masked box and no secret
+  bytes in the file; deleting every BT…ET text object (`poc_strip_wm.py`) leaves the burned watermark on the drawing
+  page and the legend page; a share PDF without `hideTitleBlock` embeds one image and no customer text, and has no sheet
+  title; a source Square annotation is not painted; no title block → `title_block_not_found` + `titleBlockMasked:
+  false`, nothing written; mixed sheets → only the masked sheet is in the PDF and the omission is reported.
+* **API requests** (contracts owner): add `titleBlockMasked: boolean | null` and `titleBlockBySheet: Record<sheetId,
+  boolean> | null` to `ExportRecordSchema`. Refuse or warn on `hideTitleBlock` share PDFs when `titleBlockMasked` is
+  false, and map `title_block_not_found` to a Hebrew message in the dialog. For share links the worker treats the
+  presence of `watermark` as "share": always set it for share PDFs.
+* Checks (2026-10-21): ruff check / format clean, mypy (2.4.0) no issues, bandit clean, `pytest -q` 514 passed.

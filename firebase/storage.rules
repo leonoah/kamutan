@@ -60,8 +60,12 @@ service firebase.storage {
     function isMember(orgId) {
       return signedIn() && firestore.exists(memberPath(orgId));
     }
+    // Sprint 5 (F-1): no uploads into an org that is being offboarded.
+    function orgActive(orgId) {
+      return firestore.get(/databases/(default)/documents/orgs/$(orgId)).data.get('status', 'active') != 'offboarding';
+    }
     function canUpload(orgId) {
-      return isMember(orgId) && firestore.get(memberPath(orgId)).data.role in ['admin', 'editor'];
+      return isMember(orgId) && orgActive(orgId) && firestore.get(memberPath(orgId)).data.role in ['admin', 'editor'];
     }
     function isUuid(id) {
       // Same as packages/contracts QUARANTINE_PATH_RE (lowercase canonical UUID).
@@ -148,6 +152,10 @@ service firebase.storage {
         allow read, write: if false;               // worker writes evidence.json.gz; API reads server-side
       }
       // ------------------------------------------------------------ Sprint 4: find_similar candidate crops
+      // ------------------------------------------------------------ Sprint 5: share-link BOQ snapshots (API only)
+      match /share/{rest=**} {
+        allow read, write: if false;
+      }
       match /similar/{rest=**} {
         allow read, write: if false;               // worker writes; API signs read URLs (never client-readable)
       }

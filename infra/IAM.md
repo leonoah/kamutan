@@ -265,6 +265,54 @@ granted to the scheduler, so it can only start the default, full purge.)
 Firebase ID-token verification needs no IAM (public keys). Since Sprint 5 the API revokes refresh tokens on
 offboarding (custom role `kamutanAuthRevoke`, §3), never `roles/firebaseauth.admin`. Signed URL TTLs: tiles 15 min (brief) — SEC-20 asks 5 min; reconcile in the API (owner decision).
 
+## 3c. Direct invocation of `api` and the client-IP chain (Sprint-5 gate F-2)
+
+**Proxy chain** (what `TRUST_PROXY_HOPS=2`, the API default, assumes):
+
+```
+browser ──► Firebase Hosting edge ──► Google Front End ──► Cloud Functions gen2 / Cloud Run `api` (Express)
+             appends <client IP>        appends <Hosting edge IP>
+X-Forwarded-For seen by Express:  [anything the client sent…], <client IP>, <Hosting edge IP>
+req.ip = 2nd entry from the right = <client IP>   (entries the client prepended are ignored)
+```
+
+Direct call to the function's own URL (`https://api-<hash>-ew.a.run.app`, `https://europe-west1-<project>.cloudfunctions.net/api`):
+`[client value], <client IP>` → with 2 trusted hops `req.ip` = the **client-chosen** value. So a caller who bypasses
+Hosting can still pick the IP used for the share rate limit / unknown-token lockout and the `share.view` `ipPrefix`.
+(Token guessing stays infeasible — 256-bit tokens; the per-token limit and the `share-bruteforce` alert, which counts
+404/410/429 regardless of IP, still apply.)
+
+**Why not simply restrict ingress / invoker:** Firebase Hosting rewrites reach the function over Google's public path
+without an identity token. Our understanding (not verifiable from the dev sandbox — test on staging, below) is that
+Hosting rewrites need the function to keep **ingress `all`** and the **`allUsers` invoker** (`invoker: 'public'` in
+`function.ts`): `ALLOW_INTERNAL_AND_GCLB` ingress or an IAM-only invoker would make every `/api/**` request through
+Hosting fail with 403/404. Note also that the ingress of a 2nd-gen function is part of the code
+(`onRequest({ ingressSettings })` in `apps/api/src/function.ts`): a manual `gcloud run services update --ingress` would
+be reverted by the next `firebase deploy`, so the setting belongs to the API agent (request R-A10).
+
+Staging experiment (Owner, 10 min) — decides between options A and B:
+
+```bash
+gcloud run services update api --region=$REGION --ingress=internal-and-cloud-load-balancing   # staging project!
+curl -s -o /dev/null -w '%{http_code}\n' https://<staging>.web.app/api/v1/health   # via Hosting
+curl -s -o /dev/null -w '%{http_code}\n' "$(gcloud run services describe api --region=$REGION --format='value(status.url)')/api/v1/health"   # direct
+gcloud run services update api --region=$REGION --ingress=all                                   # revert
+```
+
+- **A — Hosting still works (200 via Hosting, 404/403 direct):** API sets `ingressSettings: 'ALLOW_INTERNAL_AND_GCLB'`
+  on `api` in `function.ts` (R-A10); F-2 residual closed; `TRUST_PROXY_HOPS=2` stays correct.
+- **B — Hosting fails (expected):** keep ingress `all` for beta and accept the residual with the compensating controls
+  above (per-token limit, IP-independent `share-bruteforce` alert, request R-A10 for a global unknown-token circuit
+  breaker that does not depend on the client IP). Post-beta hardening: an external Application Load Balancer
+  (serverless NEG → `api`, Cloud Armor rate-limit + preconfigured WAF rules) on the custom domain's `/api/*`, with the
+  function's ingress `internal-and-cloud-load-balancing`; Hosting keeps serving the SPA and `/api/**` is routed by the
+  LB instead of a Hosting rewrite. The external ALB appends `<client IP>, <LB IP>` to X-Forwarded-For, so
+  `TRUST_PROXY_HOPS=2` stays right — confirm by logging one request's XFF on staging before relying on it
+  (≈ USD 20/month + Cloud Armor).
+
+`_deploy-env.yml` reports after every deploy whether the function's own URL answers directly ("F-2 direct invocation"
+notice in the run summary), so the state is visible per environment.
+
 ## 4. Deploy — `kamutan-deploy@` via Workload Identity Federation (GitHub OIDC, no keys)
 
 ```bash

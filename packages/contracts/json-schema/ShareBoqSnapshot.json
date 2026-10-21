@@ -1,0 +1,160 @@
+{
+  "$ref": "#/definitions/ShareBoqSnapshot",
+  "definitions": {
+    "ShareBoqSnapshot": {
+      "type": "object",
+      "properties": {
+        "snapshotAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "chapter": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "qty": {
+                "type": "number"
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "green",
+                  "yellow",
+                  "red"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "reviewed",
+                  "approved"
+                ]
+              },
+              "floor": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "byFloor": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "chapter",
+              "code",
+              "description",
+              "unit",
+              "qty",
+              "level",
+              "status",
+              "floor",
+              "byFloor"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "floors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "lines": {
+              "type": "integer"
+            },
+            "green": {
+              "type": "integer"
+            },
+            "yellow": {
+              "type": "integer"
+            },
+            "red": {
+              "type": "integer"
+            },
+            "approved": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "lines",
+            "green",
+            "yellow",
+            "red",
+            "approved"
+          ],
+          "additionalProperties": false
+        },
+        "schema": {
+          "type": "string",
+          "const": "kamutan.share-boq/1"
+        },
+        "linkId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "buildId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "snapshotAt",
+        "lines",
+        "floors",
+        "counts",
+        "schema",
+        "linkId",
+        "buildId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ShareBoqSnapshot.json"
+}

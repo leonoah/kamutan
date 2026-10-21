@@ -54,6 +54,13 @@ export const EnvSchema = z
     SHARE_LOCKOUT_MS: z.coerce.number().int().positive().default(15 * 60_000),
     /** Offboarding (export + offboard) requires an MFA session in addition to a recent sign-in (SEC-07). */
     OFFBOARDING_REQUIRE_MFA: bool.default('true'),
+    /**
+     * Security gate F-2: number of trusted proxy hops in front of the app (Express `trust proxy`). Production chain:
+     * client → Firebase Hosting (Fastly edge, appends the client IP to X-Forwarded-For) → Google Front End (appends the
+     * edge IP; its own address is the socket peer) → Cloud Functions gen2 / Cloud Run. `req.ip` = the entry 2 hops from
+     * the right of XFF (anything the client prepends is ignored). NEVER `true` (= left-most, client-controlled).
+     */
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(2),
     /** TTF/OTF with Hebrew glyphs for share watermarks (default: bundled assets/fonts/DejaVuSans.ttf). */
     WATERMARK_FONT_FILE: z.string().min(1).optional(),
   })

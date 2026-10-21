@@ -55,6 +55,11 @@ export const AuditVerifyResponseSchema = z.object({
   brokenAt: z.string().nullable(),
   /** Hash of the newest event (null for an empty log). */
   headHash: Sha256HexSchema.nullable(),
+  /**
+   * Security gate F-8: the chain tip does not match `auditMeta/head` (hash / count) — the newest events were deleted
+   * or the head was rewritten. Absent/false when it matches (or no head doc exists, legacy logs).
+   */
+  headMismatch: z.boolean().optional(),
 });
 export type AuditVerifyResponse = z.infer<typeof AuditVerifyResponseSchema>;
 

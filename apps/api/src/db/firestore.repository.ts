@@ -495,8 +495,8 @@ export class FirestoreRepository implements Repository {
       after: event.after ?? null,
       at: at.toDate().toISOString(),
     };
-    logAuditEvent(orgId, event);
     const hash = auditHash(prevHash, body);
+    logAuditEvent(orgId, event, hash);
     tx.create(this.db.collection(`orgs/${orgId}/auditLog`).doc(), { ...body, at, prevHash, hash });
     const writes = (state?.writes ?? 0) + 1;
     const count = state?.count ?? null;

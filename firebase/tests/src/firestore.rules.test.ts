@@ -198,6 +198,46 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Security gate F-1 (SEC-52): an org being offboarded is closed to its members (adapted from the gate PoC).
+  describe('F-1: offboarding org — every member read / write denied except the org doc + offboarding exports', () => {
+    const offboard = (org: string) => env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(`orgs/${org}`).update({ status: 'offboarding', deleteAfter: Timestamp.fromDate(new Date(Date.now() + 30 * 864e5)) });
+    });
+    const closed = [
+      'member', 'project', 'sheetSet', 'sheet', 'version', 'legendEntry', 'reviewItem', 'correction', 'boqDraft', 'itemLibrary',
+      'boqTemplate', 'symbolMapping', 'job', 'boqRule', 'libraryImport', 'boqBuild', 'boqExport', 'correctionBatch', 'roomSettings',
+      'similarSearch', 'markedPdfExport', 'auditEvent',
+    ] as const;
+
+    it.each(closed)('%s: readable while active, denied for every role once offboarding', async (k) => {
+      await assertSucceeds(db(A.users.admin).doc(a[k]).get());
+      await offboard(A.org);
+      for (const role of ['admin', 'editor', 'reviewer', 'viewer'] as const) await assertFails(db(A.users[role]).doc(a[k]).get());
+      // the other org is unaffected
+      await assertSucceeds(db(B.users.viewer).doc(b.project).get());
+    });
+
+    it('PoC: viewer cannot read project (address), BOQ lines or list sheets; reviewer cannot resolve a review item', async () => {
+      await offboard(A.org);
+      await assertFails(db(A.users.viewer).doc(a.project).get());
+      await assertFails(db(A.users.viewer).doc(a.boqDraft).get());
+      await assertFails(db(A.users.viewer).collection(`orgs/${A.org}/projects/${A.project}/sheets`).get());
+      await assertFails(db(A.users.viewer).collection('jobs').where('orgId', '==', A.org).get());
+      await assertFails(
+        db(A.users.reviewer).doc(a.reviewItem).update({ status: 'resolved', resolution: 'x', resolvedBy: A.users.reviewer, resolvedAt: FieldValue.serverTimestamp() }),
+      );
+    });
+
+    it('still visible: the org doc (status for the blocked screen) to members, offboarding exports to the admin', async () => {
+      await offboard(A.org);
+      for (const role of ['admin', 'editor', 'reviewer', 'viewer'] as const) await assertSucceeds(db(A.users[role]).doc(a.org).get());
+      await assertSucceeds(db(A.users.admin).doc(a.offboardingExport).get());
+      await assertFails(db(A.users.editor).doc(a.offboardingExport).get());
+      await assertFails(db(B.users.admin).doc(a.org).get());
+    });
+  });
+
+  // -------------------------------------------------------------------------
   describe('reviewItems: status/resolution only', () => {
     const resolve = (uid: string) => ({
       status: 'resolved',

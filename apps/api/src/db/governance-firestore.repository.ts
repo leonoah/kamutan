@@ -90,6 +90,14 @@ export class FirestoreGovernanceRepository implements GovernanceRepository {
     return out.slice(0, MAX_AUDIT_VERIFY);
   }
 
+  async getAuditHead(orgId: string) {
+    const snap = await this.db.doc(fsPaths.auditHead(orgId)).get();
+    if (!snap.exists) return null;
+    const hash = snap.get('hash');
+    const count = snap.get('count');
+    return { hash: typeof hash === 'string' ? hash : null, count: typeof count === 'number' ? count : null };
+  }
+
   async auditForEntity(orgId: string, entity: string, entityId: string) {
     // Two equality filters: served by single-field indexes (no composite index needed).
     const snap = await this.db.collection(`orgs/${orgId}/auditLog`).where('entity', '==', entity).where('entityId', '==', entityId).limit(MAX_ENTITY_AUDIT).get();

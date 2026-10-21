@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Ban, Download, FileSpreadsheet, FileText } from "lucide-react";
-import { ApiError, type BoqLine, type BoqTemplate, type SheetRow } from "@/api/types";
+import { ApiError, EXPORT_ERROR_MESSAGES_HE, EXPORT_SHEETS_OMITTED_HE, type BoqLine, type BoqTemplate, type SheetRow } from "@/api/types";
 import { Progress } from "@/components/ui/progress";
 import { sheetName } from "@/features/sheets/model";
 import { Button } from "@/components/ui/button";
@@ -294,6 +294,14 @@ function MarkedPdfExport({
   const done = d?.status === "succeeded";
   const failed = d?.status === "failed" || doc.isError;
   const running = Boolean(exportId) && !done && !failed;
+  // F-3: sheets left out because no title block could be masked.
+  const omitted = Object.entries(d?.titleBlockBySheet ?? {})
+    .filter(([, masked]) => !masked)
+    .map(([sid]) => sid);
+  const nameOf = (sid: string) => {
+    const r = sheets.find((x) => x.sheet.id === sid);
+    return r ? sheetName(r) : sid;
+  };
   useEffect(() => {
     if (done) toast({ title: t("markedPdf.done"), tone: "success" });
   }, [done, t]);
@@ -384,10 +392,25 @@ function MarkedPdfExport({
           {noneSelected ? <p role="alert" className="text-meta text-destructive">{t("markedPdf.sheetsNone")}</p> : null}
         </fieldset>
 
+        {omitted.length && (done || failed) ? (
+          <div role="alert" className="flex gap-2 rounded-md border border-conf-mid/50 bg-conf-mid/[0.1] p-3 text-dense text-foreground" data-omitted>
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-conf-mid" aria-hidden />
+            <div className="flex flex-col gap-1">
+              <p>{done ? (d?.message ?? EXPORT_SHEETS_OMITTED_HE) : t("markedPdf.omitted")}</p>
+              <ul className="list-disc ps-5 text-meta text-muted-foreground">
+                {omitted.map((sid) => (
+                  <li key={sid}>{nameOf(sid)}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
         {exportId ? (
           <div role="status" aria-live="polite" className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-sunken p-3">
             {failed ? (
-              <p className="text-destructive">{t("markedPdf.failed")}</p>
+              <p className="text-destructive" data-export-error={d?.error?.code ?? undefined}>
+                {d?.message ?? (d?.error?.code ? EXPORT_ERROR_MESSAGES_HE[d.error.code] : undefined) ?? t("markedPdf.failed")}
+              </p>
             ) : done ? (
               <>
                 <p className="font-medium text-foreground">{t("markedPdf.ready", { count: d?.pageCount ?? 0 })}</p>

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Copy, Eye, Link2, Link2Off, Plus } from "lucide-react";
-import { SHARE_LINK_DEFAULT_DAYS, SHARE_LINK_MAX_DAYS, type ShareLink } from "@/api/types";
+import { AlertTriangle, Copy, Eye, Link2, Link2Off, Plus } from "lucide-react";
+import { SHARE_LINK_DEFAULT_DAYS, SHARE_LINK_MAX_DAYS, type CreateShareLinkResponse, type ShareLink } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -19,19 +19,33 @@ const DAY = 86_400_000;
  * recipient for the watermark; hide title block ON; allow PDF OFF). The URL holds the raw token and is shown ONCE
  * with a copy button. Below: the project's links with expiry / views / revoked, and revoke behind a confirmation.
  */
-export function ShareDialog({ projectId, open, onOpenChange, canManage }: { projectId: string; open: boolean; onOpenChange: (o: boolean) => void; canManage: boolean }) {
+export function ShareDialog({
+  projectId,
+  open,
+  onOpenChange,
+  canManage,
+  sheetNames = {},
+}: {
+  projectId: string;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  canManage: boolean;
+  /** sheetId → display name (per-sheet title-block status after creation, F-3). */
+  sheetNames?: Readonly<Record<string, string>>;
+}) {
   const { t } = useTranslation();
   const links = useShareLinks(projectId, open);
   const create = useCreateShareLink(projectId);
   const revoke = useRevokeShareLink(projectId);
-  const ids = { label: useId(), recipient: useId(), days: useId(), tb: useId(), pdf: useId(), url: useId() };
+  const ids = { label: useId(), recipient: useId(), days: useId(), tb: useId(), pdf: useId(), url: useId(), unm: useId() };
   const [label, setLabel] = useState("");
   const [recipient, setRecipient] = useState("");
   const [days, setDays] = useState(String(SHARE_LINK_DEFAULT_DAYS));
   const [hideTitleBlock, setHideTitleBlock] = useState(true);
   const [allowPdf, setAllowPdf] = useState(false);
+  const [includeUnmasked, setIncludeUnmasked] = useState(false);
   const [touched, setTouched] = useState(false);
-  const [created, setCreated] = useState<{ url: string; link: ShareLink } | null>(null);
+  const [created, setCreated] = useState<CreateShareLinkResponse | null>(null);
   const [confirm, setConfirm] = useState<ShareLink | null>(null);
   const urlRef = useRef<HTMLInputElement>(null);
 
@@ -41,6 +55,7 @@ export function ShareDialog({ projectId, open, onOpenChange, canManage }: { proj
     setDays(String(SHARE_LINK_DEFAULT_DAYS));
     setHideTitleBlock(true);
     setAllowPdf(false);
+    setIncludeUnmasked(false);
     setTouched(false);
     setCreated(null);
   };
@@ -58,7 +73,15 @@ export function ShareDialog({ projectId, open, onOpenChange, canManage }: { proj
     setTouched(true);
     if (!daysOk || !labelOk) return;
     try {
-      const r = await create.mutateAsync({ days: n, label: label.trim(), recipient: recipient.trim() || null, hideTitleBlock, allowPdfDownload: allowPdf });
+      const r = await create.mutateAsync({
+        days: n,
+        label: label.trim(),
+        recipient: recipient.trim() || null,
+        hideTitleBlock,
+        allowPdfDownload: allowPdf,
+        // F-3: explicit opt-in only (sheets without a detected title block cannot be masked).
+        ...(hideTitleBlock && includeUnmasked ? { includeUnmaskedSheets: true } : {}),
+      });
       setCreated(r);
     } catch {
       toast({ title: t("share.createError"), tone: "error" });
@@ -118,6 +141,33 @@ export function ShareDialog({ projectId, open, onOpenChange, canManage }: { proj
               </div>
               <p className="text-dense text-foreground">{t("share.createdOnce")}</p>
               <p className="text-meta text-muted-foreground">{t("share.expiresOn", { date: formatDate(created.link.expiresAt) })}</p>
+              {created.warnings.map((w) => (
+                <div key={w.code} role="alert" className="flex gap-2 rounded-md border border-conf-mid/50 bg-conf-mid/[0.1] p-3 text-dense text-foreground" data-share-warning={w.code}>
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0 text-conf-mid" aria-hidden />
+                  <div className="flex flex-col gap-1">
+                    <p>{w.message}</p>
+                    <p className="text-meta text-muted-foreground">{w.sheetIds.map((id) => sheetNames[id] ?? id).join(" · ")}</p>
+                  </div>
+                </div>
+              ))}
+              {created.link.sheets?.length ? (
+                <details className="text-dense" open={created.warnings.length > 0}>
+                  <summary className="cursor-pointer text-muted-foreground">{t("share.sheetsTitle")} ({created.link.sheets.filter((x) => x.included).length}/{created.link.sheets.length})</summary>
+                  <ul className="mt-1.5 flex flex-col gap-1" data-share-sheets>
+                    {created.link.sheets.map((x) => {
+                      const st = !x.included ? "excluded" : !created.link.hideTitleBlock ? "shown" : x.titleBlockMasked ? "masked" : "unmasked";
+                      return (
+                        <li key={x.sheetId} data-sheet={x.sheetId} data-sheet-state={st} className="flex items-center justify-between gap-3">
+                          <span className={cn("truncate", !x.included && "text-muted-foreground line-through")}>{sheetNames[x.sheetId] ?? x.sheetId}</span>
+                          <span className={cn("shrink-0 text-meta", st === "unmasked" ? "font-medium text-conf-low" : "text-muted-foreground")}>
+                            {t(st === "excluded" ? "share.sheetExcluded" : st === "masked" ? "share.sheetMasked" : st === "unmasked" ? "share.sheetUnmasked" : "share.sheetShown")}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </details>
+              ) : null}
               <div>
                 <Button size="sm" variant="secondary" onClick={reset}>
                   <Plus aria-hidden />
@@ -192,6 +242,15 @@ export function ShareDialog({ projectId, open, onOpenChange, canManage }: { proj
                 <input id={ids.tb} type="checkbox" checked={hideTitleBlock} onChange={(e) => setHideTitleBlock(e.target.checked)} className="size-4 accent-[rgb(var(--primary))]" />
                 {t("share.hideTitleBlock")}
               </label>
+              {hideTitleBlock ? (
+                <div className="flex flex-col gap-1 ps-6">
+                  <label htmlFor={ids.unm} className="inline-flex cursor-pointer items-center gap-2 text-dense text-foreground">
+                    <input id={ids.unm} type="checkbox" checked={includeUnmasked} onChange={(e) => setIncludeUnmasked(e.target.checked)} aria-describedby={`${ids.unm}-h`} className="size-4 accent-[rgb(var(--primary))]" />
+                    {t("share.includeUnmasked")}
+                  </label>
+                  <p id={`${ids.unm}-h`} className={cn("text-meta", includeUnmasked ? "text-conf-low" : "text-muted-foreground")}>{t("share.includeUnmaskedHint")}</p>
+                </div>
+              ) : null}
               <label htmlFor={ids.pdf} className="inline-flex cursor-pointer items-center gap-2 text-dense text-foreground">
                 <input id={ids.pdf} type="checkbox" checked={allowPdf} onChange={(e) => setAllowPdf(e.target.checked)} className="size-4 accent-[rgb(var(--primary))]" />
                 {t("share.allowPdf")}

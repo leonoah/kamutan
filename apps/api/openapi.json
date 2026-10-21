@@ -22717,6 +22717,28 @@
                             "unmapped": {
                               "type": "integer",
                               "minimum": 0
+                            },
+                            "calibration": {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "conservative",
+                                    "full"
+                                  ]
+                                },
+                                "version": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 64
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "version"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
@@ -23419,6 +23441,28 @@
                                 "unmapped": {
                                   "type": "integer",
                                   "minimum": 0
+                                },
+                                "calibration": {
+                                  "type": "object",
+                                  "properties": {
+                                    "mode": {
+                                      "type": "string",
+                                      "enum": [
+                                        "conservative",
+                                        "full"
+                                      ]
+                                    },
+                                    "version": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 64
+                                    }
+                                  },
+                                  "required": [
+                                    "mode",
+                                    "version"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               },
                               "required": [
@@ -35440,6 +35484,9 @@
                       "type": "string",
                       "pattern": "^[a-f0-9]{64}$",
                       "nullable": true
+                    },
+                    "headMismatch": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -39145,6 +39192,17 @@
                             "pattern": "^[A-Za-z0-9_-]+$"
                           },
                           "nullable": true
+                        },
+                        "titleBlockMasked": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "titleBlockBySheet": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "boolean"
+                          },
+                          "nullable": true
                         }
                       },
                       "required": [
@@ -39160,6 +39218,10 @@
                         "error"
                       ],
                       "additionalProperties": false
+                    },
+                    "message": {
+                      "type": "string",
+                      "nullable": true
                     },
                     "url": {
                       "type": "string",
@@ -39475,6 +39537,10 @@
                   "allowPdfDownload": {
                     "type": "boolean",
                     "default": false
+                  },
+                  "includeUnmaskedSheets": {
+                    "type": "boolean",
+                    "default": false
                   }
                 },
                 "required": [
@@ -39587,6 +39653,29 @@
                           "pattern": "^[A-Za-z0-9_-]+$",
                           "nullable": true
                         },
+                        "titleBlockMaskedBySheet": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "boolean"
+                          }
+                        },
+                        "includeUnmaskedSheets": {
+                          "type": "boolean"
+                        },
+                        "excludedSheets": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          }
+                        },
+                        "boqSnapshotPath": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "nullable": true
+                        },
                         "projectId": {
                           "type": "string",
                           "minLength": 1,
@@ -39605,6 +39694,42 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 16
+                        },
+                        "sheets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sheetId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$"
+                              },
+                              "versionId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$"
+                              },
+                              "titleBlockMasked": {
+                                "type": "boolean"
+                              },
+                              "included": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "sheetId",
+                              "versionId",
+                              "titleBlockMasked",
+                              "included"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "boqLocked": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -39626,7 +39751,9 @@
                         "pdfExportId",
                         "projectId",
                         "state",
-                        "shortId"
+                        "shortId",
+                        "sheets",
+                        "boqLocked"
                       ],
                       "additionalProperties": false
                     },
@@ -39637,12 +39764,47 @@
                     "token": {
                       "type": "string",
                       "pattern": "^[A-Za-z0-9_-]{43}$"
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "enum": [
+                              "title_block_not_detected",
+                              "title_block_not_detected_included"
+                            ]
+                          },
+                          "message": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "sheetIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+$"
+                            }
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "message",
+                          "sheetIds"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
                     "link",
                     "url",
-                    "token"
+                    "token",
+                    "warnings"
                   ],
                   "additionalProperties": false
                 }
@@ -40165,6 +40327,29 @@
                             "pattern": "^[A-Za-z0-9_-]+$",
                             "nullable": true
                           },
+                          "titleBlockMaskedBySheet": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "boolean"
+                            }
+                          },
+                          "includeUnmaskedSheets": {
+                            "type": "boolean"
+                          },
+                          "excludedSheets": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+$"
+                            }
+                          },
+                          "boqSnapshotPath": {
+                            "type": "string",
+                            "maxLength": 1024,
+                            "nullable": true
+                          },
                           "projectId": {
                             "type": "string",
                             "minLength": 1,
@@ -40183,6 +40368,42 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 16
+                          },
+                          "sheets": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "sheetId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128,
+                                  "pattern": "^[A-Za-z0-9_-]+$"
+                                },
+                                "versionId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128,
+                                  "pattern": "^[A-Za-z0-9_-]+$"
+                                },
+                                "titleBlockMasked": {
+                                  "type": "boolean"
+                                },
+                                "included": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "sheetId",
+                                "versionId",
+                                "titleBlockMasked",
+                                "included"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "boqLocked": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -40204,7 +40425,9 @@
                           "pdfExportId",
                           "projectId",
                           "state",
-                          "shortId"
+                          "shortId",
+                          "sheets",
+                          "boqLocked"
                         ],
                         "additionalProperties": false
                       }
@@ -40664,6 +40887,29 @@
                           "pattern": "^[A-Za-z0-9_-]+$",
                           "nullable": true
                         },
+                        "titleBlockMaskedBySheet": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "boolean"
+                          }
+                        },
+                        "includeUnmaskedSheets": {
+                          "type": "boolean"
+                        },
+                        "excludedSheets": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          }
+                        },
+                        "boqSnapshotPath": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "nullable": true
+                        },
                         "projectId": {
                           "type": "string",
                           "minLength": 1,
@@ -40682,6 +40928,42 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 16
+                        },
+                        "sheets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sheetId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$"
+                              },
+                              "versionId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$"
+                              },
+                              "titleBlockMasked": {
+                                "type": "boolean"
+                              },
+                              "included": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "sheetId",
+                              "versionId",
+                              "titleBlockMasked",
+                              "included"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "boqLocked": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -40703,7 +40985,9 @@
                         "pdfExportId",
                         "projectId",
                         "state",
-                        "shortId"
+                        "shortId",
+                        "sheets",
+                        "boqLocked"
                       ],
                       "additionalProperties": false
                     }
@@ -41141,6 +41425,9 @@
                             "type": "string",
                             "maxLength": 300
                           },
+                          "titleBlockMasked": {
+                            "type": "boolean"
+                          },
                           "discipline": {
                             "type": "string",
                             "maxLength": 64,
@@ -41218,6 +41505,7 @@
                           "sheetId",
                           "versionId",
                           "title",
+                          "titleBlockMasked",
                           "discipline",
                           "floors",
                           "page",
@@ -41237,6 +41525,11 @@
                             "ready",
                             "failed"
                           ]
+                        },
+                        "errorCode": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "nullable": true
                         }
                       },
                       "required": [
@@ -41518,6 +41811,11 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "snapshotAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
                     "lines": {
                       "type": "array",
                       "items": {
@@ -41544,9 +41842,6 @@
                           "qty": {
                             "type": "number"
                           },
-                          "overridden": {
-                            "type": "boolean"
-                          },
                           "level": {
                             "type": "string",
                             "enum": [
@@ -41562,12 +41857,6 @@
                               "reviewed",
                               "approved"
                             ]
-                          },
-                          "reasons": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            }
                           },
                           "floor": {
                             "type": "string",
@@ -41587,10 +41876,8 @@
                           "description",
                           "unit",
                           "qty",
-                          "overridden",
                           "level",
                           "status",
-                          "reasons",
                           "floor",
                           "byFloor"
                         ],
@@ -41633,6 +41920,7 @@
                     }
                   },
                   "required": [
+                    "snapshotAt",
                     "lines",
                     "floors",
                     "counts"

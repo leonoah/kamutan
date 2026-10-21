@@ -207,6 +207,30 @@
                   "type": "null"
                 }
               ]
+            },
+            "titleBlockMasked": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "titleBlockBySheet": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "propertyNames": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -222,6 +246,12 @@
             "error"
           ],
           "additionalProperties": false
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "url": {
           "anyOf": [
