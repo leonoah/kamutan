@@ -60,7 +60,11 @@ export const EnvSchema = z
      * edge IP; its own address is the socket peer) → Cloud Functions gen2 / Cloud Run. `req.ip` = the entry 2 hops from
      * the right of XFF (anything the client prepends is ignored). NEVER `true` (= left-most, client-controlled).
      */
-    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(2),
+    TRUST_PROXY_HOPS: z
+      .preprocess(
+        (v) => (v === undefined || (typeof v === 'string' && v.trim() === '') ? 2 : v), // blank → default, never 0
+        z.coerce.number().int().min(0).max(5),
+      ),
     /** TTF/OTF with Hebrew glyphs for share watermarks (default: bundled assets/fonts/DejaVuSans.ttf). */
     WATERMARK_FONT_FILE: z.string().min(1).optional(),
   })
@@ -72,6 +76,8 @@ export const EnvSchema = z
     req(!env.CORS_ORIGINS.includes('*'), 'CORS_ORIGINS', 'wildcard origin is not allowed');
     if (env.NODE_ENV === 'production') {
       req(env.DATA_DRIVER === 'firestore', 'DATA_DRIVER', 'memory driver is not allowed in production');
+      // security gate N-1: 0 hops = every viewer shares the proxy's IP → one client can lock everybody out
+      req(env.TRUST_PROXY_HOPS >= 1, 'TRUST_PROXY_HOPS', 'must be >= 1 in production (behind Firebase Hosting)');
       req(env.STORAGE_DRIVER === 'firebase', 'STORAGE_DRIVER', 'memory storage is not allowed in production');
       req(env.QUEUE_DRIVER === 'pubsub', 'QUEUE_DRIVER', 'memory queue is not allowed in production');
       // R-A7: SEC-02 / SEC-52 — the MFA requirement of offboarding cannot be switched off in production.

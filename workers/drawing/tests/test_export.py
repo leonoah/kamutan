@@ -655,3 +655,17 @@ def test_app_routes_marked_pdf_jobs() -> None:
     bad = base64.b64encode(json.dumps({**job().model_dump(), "exportId": "../x"}).encode()).decode()
     r = client.post("/pubsub/ingest", json={"message": {"data": bad, "messageId": "2"}, "subscription": "s"})
     assert r.status_code == 200 and r.json()["reason"] == "invalid_payload"
+
+
+def test_burned_watermark_keeps_its_configured_opacity() -> None:
+    """Security gate N-2: the burned-in stamp must reach WATERMARK_ALPHA (not alpha squared ~9%)."""
+    from PIL import Image
+
+    from kamutan_drawing.export import render
+
+    img = Image.new("RGB", (1200, 900), (255, 255, 255))
+    out = render.burn_watermark(img, "שותף עם בדיקה", 150).convert("L")
+    darkest = min(out.getdata())
+    grey = round(sum(render.hex_rgb(render.WATERMARK_GREY)) / 3 * 255)
+    expected = round(255 - (255 - grey) * render.WATERMARK_ALPHA)
+    assert darkest <= expected + 3, (darkest, expected)

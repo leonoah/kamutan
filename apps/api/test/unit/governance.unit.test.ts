@@ -246,6 +246,19 @@ describe('R-A7: offboarding MFA cannot be disabled in production', () => {
   });
 });
 
+describe('security gate N-1: TRUST_PROXY_HOPS', () => {
+  it('blank means the default (2); 0 is refused in production only', async () => {
+    const { loadConfig } = await import('../../src/config/config');
+    const base = { UPLOAD_TOKEN_SECRET: 'x'.repeat(48), NODE_ENV: 'production' };
+    expect(loadConfig({ ...base, TRUST_PROXY_HOPS: '' }).TRUST_PROXY_HOPS).toBe(2);
+    expect(loadConfig({ ...base, TRUST_PROXY_HOPS: ' ' }).TRUST_PROXY_HOPS).toBe(2);
+    expect(() => loadConfig({ ...base, TRUST_PROXY_HOPS: '0' })).toThrow(/TRUST_PROXY_HOPS/);
+    expect(() => loadConfig({ ...base, TRUST_PROXY_HOPS: 'abc' })).toThrow(/TRUST_PROXY_HOPS/);
+    const dev = { ...base, NODE_ENV: 'test', DATA_DRIVER: 'memory', STORAGE_DRIVER: 'memory', QUEUE_DRIVER: 'memory' };
+    expect(loadConfig({ ...dev, TRUST_PROXY_HOPS: '0' }).TRUST_PROXY_HOPS).toBe(0);
+  });
+});
+
 describe('worker-written fields (Worker-Export / ingest)', () => {
   it('version titleBlock {bboxMm:[x0,y0,x1,y1]} → titleBlockMm; export startedAt + "succeeded" → ready', async () => {
     const { toVersion } = await import('../../src/db/mappers');

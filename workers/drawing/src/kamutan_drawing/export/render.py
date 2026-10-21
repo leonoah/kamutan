@@ -603,7 +603,7 @@ def find_title_block(page: dict[str, Any]) -> tuple[list[float] | None, str]:
 
 def burn_watermark(img: Any, text: str, dpi: float) -> Any:
     """Tiled diagonal watermark painted INTO the pixels (cannot be removed by deleting PDF text objects)."""
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageChops, ImageDraw, ImageFont
 
     px = dpi / 25.4
     # BASIC layout: draw the code points in the (already visual) order given — raqm would re-apply bidi
@@ -621,7 +621,9 @@ def burn_watermark(img: Any, text: str, dpi: float) -> Any:
     for row, y in enumerate(range(-stamp.height // 2, img.height, sy)):
         off = (sx // 2) * (row % 2)
         for x in range(-stamp.width // 2 - off, img.width, sx):
-            alpha.paste(stamp, (x, y), stamp)
+            # max-combine (not paste-with-self-mask, which squares the opacity: security gate N-2)
+            region = alpha.crop((x, y, x + stamp.width, y + stamp.height))
+            alpha.paste(ImageChops.lighter(region, stamp), (x, y))
     grey = Image.new("RGB", img.size, tuple(round(c * 255) for c in hex_rgb(WATERMARK_GREY)))
     return Image.composite(grey, img.convert("RGB"), alpha)
 

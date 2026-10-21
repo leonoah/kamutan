@@ -239,3 +239,86 @@ The worker sandboxing, tenant scoping of the export ZIP and purge, and the `gree
 | I-1, I-4, I-6 | open | per-instance limiter; purge default destructive; no project-delete endpoint |
 | I-3 | fixed | raster path ignores source annotations |
 | I-5 | open (owner) | pin `ZAP_IMAGE` digest after first DAST run |
+
+## Re-verification (2026-10-21, `main` @ `a2abf29`)
+
+Inputs:
+- the remediation table in `docs/sprints/sprint-5-security-gate.md` §Remediation;
+- `git diff 32a33ab a2abf29`, which touches the rules, API share/governance, worker `export/`, infra and web;
+- the original PoCs re-run against HEAD, plus new PoCs aimed at the fixes.
+
+Test runs:
+- `apps/api` vitest: 292 passed, 21 skipped (27 files).
+- Worker `test_export.py` + `test_calibration.py`: 62 passed.
+- `firebase/tests` locally: lint passed, emulator suites skipped. The emulator JAR download is blocked here.
+- GitHub CI on `a2abf29` (run 39610763630): every job `success`, including "DB (Firebase rules + emulator)". That job has
+  a "rules suites actually ran (no skipped emulator tests)" guard, so the F-1 emulator tests did run. I could not read
+  the job log itself because the egress allowlist blocks the log blob.
+
+### Per finding
+
+| # | Was | Now | Evidence |
+| --- | --- | --- | --- |
+| F-1 | High | **fixed** | `firestore.rules`: `orgActive()` (`get(org).status != 'offboarding'`) is ANDed into `isMember`, and so into `roleIn`, `isAdmin` and `canCorrect` for every tenant path and for `jobs`. A purged org has no doc, so `get` errors and the request is denied. While offboarding, members can read only the org doc (`isMemberAnyStatus`) and admins can read `offboardingExports` (`isAdminAnyStatus`). `storage.rules` `canUpload` adds `orgActive`. That makes 2 unique Firestore documents per evaluation (member + org); the cross-service limit is 2, so the rule stays valid. Tests: `firestore.rules.test.ts` "F-1" (21 collections × 4 roles, the original PoC, member docs, org doc and exports); `storage.rules.test.ts` "F-1" (quarantine + import). Green in CI. |
+| F-1 exception | — | **acceptable** | Your own membership doc stays readable through the collection-group rule `/{path=**}/members/{memberId}` (`firestore.rules:92-94`, `resource.data.uid == request.auth.uid`). Rules are OR-ed, so this rule applies regardless of `isMember`. It exposes only data about the caller: uid, role, display name, email and createdAt. It does not expose org content or other members; reading another member's doc or listing `orgs/{o}/members` is denied, and both are tested. The app needs this read for "which orgs am I in" and to show the blocked screen. The org doc being readable is the same kind of exposure: name, settings, status, `deleteAfter`, and the requesting admin's uid. |
+| F-2 | Medium | **fixed for the Hosting path; residual + new N-1** | `app.set('trust proxy', cfg.TRUST_PROXY_HOPS)` (default 2), and IPv6 is keyed by /64 (`ipLimitKey`). PoC `api/test/xff2.poc.test.ts`: with the modelled Hosting chain `spoof, client, edge`, spoofing no longer helps; lockout comes after 10 unknown tokens, including for a valid token. **Residual 1:** calling the function URL directly (`spoof, client`) still lets the client pick the IP; the PoC confirms it. This is documented in `infra/IAM.md` §3c with compensating controls and an owner staging experiment. **Residual 2:** the 2-hop chain is an assumption that nobody has checked against real traffic. If production appends one entry fewer, F-2 is fully back. If it appends one more, every client shares the edge IP and the lockout becomes a global DoS (see N-1). Original PoC `share.poc.test.ts` › F-XFF still "passes" because supertest sends a single XFF entry, the same as direct invocation; it does not model Hosting. |
+| F-3 | Medium | **fixed** | API (`share-links.service.ts`): with `hideTitleBlock`, a sheet without `titleBlockMm` is **excluded** from the lock, with a warning. It is included only with the explicit `includeUnmaskedSheets` opt-in, which also returns a warning. `maskOf` never guesses a box. Meta shows "גיליון N" instead of title-block text, and the link label instead of `project.name`. Worker: `find_title_block` has no geometric fallback; with `hideTitleBlock`, a page with no box is **refused**; if no page is left the job fails `title_block_not_found`. The API serves the share PDF only when `rec.titleBlockMasked === true` (fails closed for older exports). PoC `pdf/poc_reverify.py`: `share_hide_no_tb` → `refused [0]`, 0 pages; `share_hide_tb` → raster, no source or title text, 0 dark pixels in the box. |
+| F-4 | Medium | **fixed** | The BOQ is frozen at creation into `orgs/{o}/projects/{p}/share/{linkId}/boq.json.gz`. The public API reads it only when `link.boqSnapshotPath` equals the path recomputed from ids, and validates it with `ShareBoqSnapshotSchema` + `linkId`. `reasons` and `overridden` are no longer sent. The original PoC › F-BOQ now **fails**, as it should: the line added later is not served. **Snapshot path:** `SHARE_BOQ_SNAPSHOT_PATH_RE` is asserted on every read and write. Storage rules have an explicit deny-all `projects/{p}/share/**` (`storage.rules:156`), on top of default deny, covered by the "server objects never client-readable" matrix. Firebase Storage is the only client path to the object. The purge prefix `orgs/{o}/` covers it. Reads are bounded: metadata size ≤ `MAX_ARTIFACT_GZ_BYTES`, `gunzip maxOutputLength`. Info: the snapshot is not deleted on revoke, and if the link transaction fails it is left orphaned. Both are harmless; it is still purged with the org. |
+| F-5 | Low | **fixed** | The middleware lower-cases the path before matching. Non-canonical case variants get the public headers, 405 for non-GET and 404 for GET. `SHARE_PATH_RE` is now case-insensitive. A Cloud Logging exclusion `share-token-urls` (`(?i)/api/v1/public/share/` and `/s/<token>`) is in `infra/monitoring/setup-alerts.sh`; the owner has to run it. PoC `case2.poc.test.ts`, as a variants table: the token is logged in no routed variant, and `X-Robots-Tag` is present on all of them. Info: a URL with a percent-encoded prefix (`/api/v1/publi%63/share/<token>/…`) is not routed (404), but pino logs its path unredacted and the exclusion regex does not match it. Only a holder deliberately sending their own token in that form can trigger it. |
+| F-6 | Low | **partially fixed, new N-2** | Share PDFs (`watermark` set) never embed the original vector page; every page and the legend is a 150 dpi raster with the watermark burned into the pixels. PoC `share_nohide`: no source text, JS, embedded file or `/Annots`. **However**, the burned mark is almost invisible (N-2). |
+| F-7 | Low | **fixed** | `getExport` calls `requireOffboardingAdmin` (admin + MFA + `auth_time ≤ 10 min`) before signing (`offboarding.service.ts:99`). A status read without a URL stays admin-only. |
+| F-8 | Low | **fixed** | `verifyChain(events, head)` requires the tip hash, and the count when stored, to match `auditMeta/head`. The head hash is also logged with every audit event, which anchors it outside Firestore. The original PoC `verify.poc.test.ts` now **fails** (`ok: false`), as it should. An attacker who can rewrite both the events and the head doc defeats any in-DB check; the Cloud Logging hash is the anchor against that. |
+| F-9 | Low | **fixed** | History keeps only events where `after.projectId === projectId` (`audit.service.ts:134`); every `boqLines` audit payload carries `projectId`. The original PoC `history.poc.test.ts` now **fails** (empty history for project A), as it should. No `rebuild` event emitter exists, so nothing is lost. |
+| I-3 | Info | **fixed (code)** | `draw_annots=False` in `render_pdf_raster` (`render.py:541`) and in the share legend raster (`:741`). My dynamic check used a FreeText annotation without an appearance stream, which no renderer draws, so it proves nothing; this rests on reading the code. |
+
+### New findings introduced by the fixes
+
+**N-1 (Low): `TRUST_PROXY_HOPS` silently accepts a blank value as 0, also in production.**
+- **Where:** `apps/api/src/config/config.ts:63`, `z.coerce.number().int().min(0).max(5).default(2)`.
+- **Behaviour** (PoC `api/test/hops.poc.test.ts`, results in `secgate/hops.txt`): `''` → 0, `' '` → 0, `'0x2'` → 2, `'2e0'` → 2. Only `true`, `-1`, `1.5` and `6` are rejected. With 0, `req.ip` is the socket peer (the GFE), so every viewer shares one rate-limit key.
+- **Exploit** (PoC `xff2.poc.test.ts`, third test): once an env var or secret is set empty, for example by a templated deploy with a missing value, any client sending 10 unknown tokens locks **every** share viewer out with 429 for 15 minutes. The 60/min per-IP limit also becomes global. A real hop count one higher than configured has the same effect.
+- **Fix:**
+  - parse as `z.string().regex(/^[0-5]$/)`, with no coercion of `''`;
+  - in production require `>= 1` and refuse `0`;
+  - on staging, log the XFF entry count once and pin the value, as IAM.md §3c already suggests.
+  - Key the unknown-token lockout on (IP, token prefix), or add an IP-independent circuit breaker (R-A10), so a wrong hop count cannot turn the lockout into a global DoS.
+
+**N-2 (Low): the burned-in share PDF watermark is applied at about 9 % instead of 30 % opacity.**
+- **Where:** `workers/drawing/src/kamutan_drawing/export/render.py:604-627`. The stamp is drawn with `fill = 255·0.3`, then pasted with **itself as the mask** (`alpha.paste(stamp, (x, y), stamp)`, `:624`). That squares the opacity: 77·77/255 ≈ 23, about 9 %.
+- **Measured:** on white, burned pixels are L = 242–243 (`secgate/pdf/wm_test.png`).
+- **Exploit:** remove the vector text watermark (PoC `poc_strip_wm.py`, still works), then apply one "levels/threshold ≥ 240" step. That erases the burned mark completely while black or coloured line-art and the marks remain. Leak traceability (SEC-28) is effectively back to the pre-fix state. The tile watermark (≈ 35 %) is not affected.
+- **Fix:** paste without the self-mask (`alpha.paste(stamp, (x, y))`, or `ImageChops.lighter`) so the opacity is the intended 0.3. Consider a darker or coloured mark, matching the tiles' `#7a0019` at 35 %. Add a test asserting burned pixels ≤ L 200 on white.
+
+### Requested spot checks
+- **F-4 snapshot path and rules:** ok (see the table). It is never client-readable, is path-bound to ids, is size-bounded and is purged with the org.
+- **`TRUST_PROXY_HOPS` parsing:** N-1.
+- **Case-insensitive `/public` middleware:** ok. Every case variant gets the headers and 405; non-canonical GETs get 404. Variants such as `/public/SHARE/…`, `…/META` and a trailing `/` are served normally with headers and with logs redacted. The percent-encoded prefix variant is Info only (not routed).
+- **Share-PDF raster path:**
+  - Fails closed per page, and the API requires `titleBlockMasked === true`.
+  - It never takes the vector path.
+  - Annotations are not drawn.
+  - The placeholder for a chunk where every page was refused (≤ 11 pt page) is dropped in `assemble`.
+  - The blank/tiles background is sized from the page mm at 150 dpi. The same sandbox memory limits as before apply, so there is no new DoS surface.
+  - The only defect is N-2.
+
+### Updated beta verdict: **PASS-with-conditions**
+
+No Critical or High finding is open: F-1 is fixed and covered by emulator tests that ran in CI. Open items:
+
+| Item | Severity | Condition |
+| --- | --- | --- |
+| F-2 residual (direct invocation; 2-hop assumption unverified) | Medium (residual) | Owner runs the IAM.md §3c staging check and logs the real XFF entry count **before beta**. Option A (ingress) or documented acceptance of B. |
+| N-1 `TRUST_PROXY_HOPS` blank → 0 | Low | Strict parsing, and refuse 0 in production. Small fix; do it with the F-2 staging check. |
+| N-2 watermark opacity squared | Low | One-line fix + test, within 30 days (recommended before beta, since it undoes most of F-6). |
+| I-1, I-4, I-5, I-6; F-5 Info (`%63` variant); F-4 Info (snapshot on revoke) | Info | Track. |
+
+Re-verification PoCs (scratch only), under `/tmp/claude-0/-home-claude/f061e704-d760-5c6d-ac8c-efaa67cb7367/scratchpad/secgate/`:
+- `api/test/` — `share.poc.test.ts`, `history.poc.test.ts`, `verify.poc.test.ts` (original), plus `xff2.poc.test.ts`, `case2.poc.test.ts`, `hops.poc.test.ts` (new);
+- `pdf/poc_reverify.py`;
+- `pdf/wm_test.png`;
+- `case2.json`;
+- `hops.txt`.
+
+### N-1 / N-2 follow-up (orchestrator, 21.10.2026)
+- **N-1 fixed:** blank `TRUST_PROXY_HOPS` → default 2; production refuses 0 (`apps/api/src/config/config.ts`, test in `apps/api/test/unit/governance.unit.test.ts`). An IP-independent unknown-token limit remains open (R-A10).
+- **N-2 fixed:** burned-in watermark max-combined instead of pasted with its own mask, so it keeps the configured 30% opacity (`export/render.py`, test `test_burned_watermark_keeps_its_configured_opacity`).
