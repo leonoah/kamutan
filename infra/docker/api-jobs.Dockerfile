@@ -12,7 +12,7 @@
 # TODO(SEC-46): pin base images by digest (same as worker-drawing.Dockerfile).
 
 # ---------- build ----------
-FROM node:22-slim AS build
+FROM node:26-slim AS build
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=1 TURBO_TELEMETRY_DISABLED=1
 RUN corepack enable
 WORKDIR /src
@@ -32,7 +32,7 @@ RUN pnpm --filter @kamutan/contracts build \
  && test -f /out/dist/scripts/offboard-purge.js
 
 # ---------- runtime ----------
-FROM node:22-slim AS runtime
+FROM node:26-slim AS runtime
 ENV NODE_ENV=production
 # The job runs `node` only: drop the bundled npm/corepack (and their transitive CVEs) from the runtime image.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
