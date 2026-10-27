@@ -1,0 +1,9 @@
+# Trivy ignore list (SEC-45). Read automatically by `trivy image` from the repository root, so it applies to the CI
+# docker job (trivy-action + the annotations step) and the deploy scan. Every entry needs: the id, why it cannot be
+# fixed now, and an expiry (`exp:`, max ~3 months). When it expires the scan fails again and must be re-reviewed.
+# Keep in sync with osv-scanner.toml (same decision, same expiry).
+
+# zod 3.25.76 in the api-jobs image -> fixed only in zod >=4.6.6 (same fixed version as GHSA-mrhx-c7xc-m3w5).
+# The repo is on the zod 3 API (31 files); the zod 4 migration is a separate task. Full reasoning, the measured
+# impact and the mitigation plan are in the osv-scanner.toml entry for GHSA-mrhx-c7xc-m3w5.
+CVE-2023-54404 exp:2027-01-20

@@ -15,3 +15,22 @@ patterns hard-coded in apps/web/tailwind.config.ts; braces is not in the shipped
 the Cloud Functions API or the worker image, and never sees user input. Re-check for a braces
 fix or migrate to Tailwind v4 (no chokidar/micromatch) before expiry.
 """
+
+[[IgnoredVulns]]
+id = "GHSA-mrhx-c7xc-m3w5"
+ignoreUntil = 2027-01-20T00:00:00Z
+reason = """
+zod <4.6.6: memory exhaustion when an array schema validates a very large array whose elements all fail
+(issues are accumulated without a cap). The fix exists ONLY in zod >=4.6.6; 3.25.76 is the last 3.x release,
+so there is nothing to bump inside the current major. apps/api and packages/contracts use the zod 3 API in
+31 files (no `zod/v4` imports), and moving them to zod 4 (zod-to-json-schema is not v4-compatible, error and
+record/strict semantics change) is a separate, tested migration, not a lockfile change.
+Measured on 2026-10-27 (node, zod 3.25.76): safeParse(z.array(z.string())) of 1,000,000 failing elements
+(about the size of the API's 2 MB JSON body limit) allocates about 265 MB of heap, so this is a real, bounded
+amplification and NOT "unreachable". Exposure: only routes that validate request bodies with zod; the API
+limits JSON bodies to 2 MB (bootstrap.ts) and runs with 1 GiB per function instance. Not verified here:
+whether every such route is behind authentication.
+Plan before expiry: migrate contracts/api to zod 4 (>=4.6.6), or in the meantime cap array lengths with
+`.max()` (32 of 116 z.array() in packages/contracts have no max today) and use a smaller per-route body
+limit for routes that do not need 2 MB (only POST corrections/batch does). Re-check for a 3.x fix first.
+"""
