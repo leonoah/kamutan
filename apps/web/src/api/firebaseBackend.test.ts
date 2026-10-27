@@ -107,6 +107,25 @@ describe("Firestore realtime", () => {
     expect(off).toHaveBeenCalled();
   });
 
+  it("jobs: normalizes the Firestore progress object { stage, pct } to a number + stage (no NaN%)", () => {
+    const onData = vi.fn();
+    fs.onSnapshot.mockImplementation((_q: unknown, next: (s: unknown) => void) => {
+      next(
+        snapOf([
+          { id: "j1", data: { orgId: "o1", status: "running", progress: { stage: "render", pct: 42.4 }, createdAt: ts("2026-10-12T08:00:00Z") } },
+          { id: "j2", data: { orgId: "o1", status: "queued", createdAt: ts("2026-10-12T08:00:00Z") } },
+          { id: "j3", data: { orgId: "o1", status: "running", progress: 40, createdAt: ts("2026-10-12T08:00:00Z") } },
+        ]),
+      );
+      return vi.fn();
+    });
+    createFirestoreRealtime(db).jobs("o1", null, onData, vi.fn());
+    const [j1, j2, j3] = onData.mock.calls[0]![0] as { progress: number; stage?: string }[];
+    expect(j1).toMatchObject({ progress: 42.4, stage: "render" });
+    expect(j2!.progress).toBe(0);
+    expect(j3!.progress).toBe(40);
+  });
+
   it("jobs without a project filter only constrain orgId (rules require it)", () => {
     fs.onSnapshot.mockReturnValue(vi.fn());
     createFirestoreRealtime(db).jobs("o1", null, vi.fn(), vi.fn());
