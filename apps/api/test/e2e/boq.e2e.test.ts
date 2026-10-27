@@ -314,6 +314,14 @@ describe('BOQ e2e — build, lines, review PATCH, evidence, export (fake auth, i
       expect(e.issues).toEqual([{ path: 'red', message: '1' }]);
     });
 
+    it('a red line that a human approved no longer blocks the export (only unapproved red lines count)', async () => {
+      expect((await http.patch(`${base()}/lines/bl_4_12`).set(auth('reviewer')).send({ status: 'reviewed' })).status).toBe(200);
+      expect((await http.patch(`${base()}/lines/bl_4_12`).set(auth('admin')).send({ status: 'approved' })).status).toBe(200);
+      const r = await http.post(`${base()}/export`).set(auth('editor')).send({});
+      expect(r.status).toBe(200);
+      expect(ExportBoqResponseSchema.parse(r.body).counts).toMatchObject({ red: 1, approved: expect.any(Number) });
+    });
+
     it('exports xlsx (warning row, override, evidence sheet), signed 2-min URL, record + audit', async () => {
       setBlock(false);
       const r = await http.post(`${base()}/export`).set(auth('editor')).send({ split: 'summed', markDraft: true });

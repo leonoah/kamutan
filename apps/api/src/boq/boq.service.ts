@@ -271,8 +271,10 @@ export class BoqService {
     if (all.length === 0) throw new ApiException(HttpStatus.CONFLICT, 'not_ready', 'the project has no BOQ lines yet; build the BOQ first');
     const lines = all.sort(compareLines);
     const counts = countLines(lines);
-    if ((org?.settings.blockExportOnRed ?? true) && counts.red > 0) {
-      throw new ApiException(HttpStatus.CONFLICT, 'export_blocked', `export blocked by org policy: ${counts.red} line(s) need review`, [{ path: 'red', message: String(counts.red) }]);
+    // A red line a human has approved is handled (spec: "לבדיקה" = still needs a person); only unapproved red lines block.
+    const openRed = lines.filter((l) => l.level === 'red' && l.status !== 'approved').length;
+    if ((org?.settings.blockExportOnRed ?? true) && openRed > 0) {
+      throw new ApiException(HttpStatus.CONFLICT, 'export_blocked', `export blocked by org policy: ${openRed} line(s) need review`, [{ path: 'red', message: String(openRed) }]);
     }
     const template = await this.templateFor(orgId, req.templateId);
 
