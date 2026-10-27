@@ -56,6 +56,19 @@ export function toIso(v: unknown): string {
 const withId = <T>(id: string, data: DocumentData): T =>
   ({ ...data, id, createdAt: toIso(data.createdAt), ...(data.updatedAt ? { updatedAt: toIso(data.updatedAt) } : {}) }) as T;
 
+/**
+ * jobs/{id}.progress is `{ stage, pct }` in Firestore (contracts JobProgressSchema); the web `Job` type (and the mocks)
+ * use a plain 0–100 number plus an optional `stage`. Normalize here, otherwise the UI renders "NaN%".
+ */
+export function toJob(id: string, data: DocumentData): Job {
+  const job = withId<Job>(id, data);
+  const raw = data.progress as unknown;
+  const obj = raw && typeof raw === "object" ? (raw as { stage?: unknown; pct?: unknown }) : null;
+  const pct = typeof raw === "number" ? raw : typeof obj?.pct === "number" ? obj.pct : 0;
+  const stage = job.stage ?? (typeof obj?.stage === "string" ? obj.stage : undefined);
+  return { ...job, progress: Math.min(100, Math.max(0, pct)), ...(stage ? { stage } : {}) };
+}
+
 const projectPath = (orgId: string, projectId: string) => `orgs/${orgId}/projects/${projectId}`;
 
 export function createFirestoreRealtime(db: Firestore): RealtimeSource {
@@ -67,7 +80,7 @@ export function createFirestoreRealtime(db: Firestore): RealtimeSource {
       constraints.push(orderBy("createdAt", "desc"), limit(50));
       return onSnapshot(
         query(collection(db, "jobs"), ...constraints),
-        (snap) => onData(snap.docs.map((d) => withId<Job>(d.id, d.data()))),
+        (snap) => onData(snap.docs.map((d) => toJob(d.id, d.data()))),
         onError,
       );
     },
