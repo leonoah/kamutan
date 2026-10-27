@@ -275,6 +275,23 @@ jobs:
           echo "purge_image=${DIGEST}" >> "$GITHUB_ENV"
 
       # ---- 4. Firebase (rules, indexes, `api` codebase functions, hosting) ------------------------------------
+      - name: Function parameters (non-secret)
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          PROJECT: ${{ steps.cfg.outputs.project }}
+          API_SA: ${{ vars.API_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          # firebase-tools refuses to run non-interactively while a declared param has no value in a dotenv file,
+          # even if it has a default (apps/api/src/function.ts: API_SERVICE_ACCOUNT, default `kamutan-api@`).
+          # The trailing `@` is expanded by the CLI to kamutan-api@<project>.iam.gserviceaccount.com, so the same
+          # value is right for staging and production. Optional override: Environment variable API_SERVICE_ACCOUNT.
+          VALUE="${API_SA:-kamutan-api@}"
+          if ! [[ "$VALUE" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]@([a-z0-9.-]+\.iam\.gserviceaccount\.com)?$ ]]; then
+            echo "::error::API_SERVICE_ACCOUNT is not a valid service account (name@ or name@project.iam.gserviceaccount.com)."; exit 1
+          fi
+          printf 'API_SERVICE_ACCOUNT=%s\n' "$VALUE" > "apps/api/.env.${PROJECT}"
+          echo "Wrote apps/api/.env.${PROJECT}: API_SERVICE_ACCOUNT=${VALUE}"
       - name: Firebase deploy
         if: steps.cfg.outputs.ready == 'true'
         env:
