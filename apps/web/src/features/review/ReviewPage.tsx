@@ -682,6 +682,12 @@ export function ReviewPage() {
         const r = it.roomId && it.sheetId === sheetIdNow ? rooms.get(it.roomId) : null;
         if (r && it.roomId) {
           putRoom.mutate({ sheetId: it.sheetId, roomId: it.roomId, settings: defaultSettings(r) });
+          // The server keeps a room in the queue while it has issues (unnamed / not closed / low confidence);
+          // only an accept correction on the room marks it handled, otherwise it comes back after a reload.
+          void actions.apply([baseCorrection("accept", { sheetId: it.sheetId, versionId: it.versionId, anchorMm: bboxCenter(it.bboxMm) }, { roomId: it.roomId })], {
+            label: t("queue.roomAccepted"),
+            meta: { queueItemId: it.id },
+          });
           say(t("queue.roomAccepted"));
           return finish(it);
         }
