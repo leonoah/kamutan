@@ -46,7 +46,7 @@
       "**/*.map"
     ],
     "predeploy": [
-      "pnpm turbo run build --filter=@kamutan/web"
+      "pnpm turbo run build --filter @kamutan/web"
     ],
     "cleanUrls": true,
     "trailingSlash": false,
