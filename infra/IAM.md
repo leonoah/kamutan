@@ -265,6 +265,22 @@ granted to the scheduler, so it can only start the default, full purge.)
 Firebase ID-token verification needs no IAM (public keys). Since Sprint 5 the API revokes refresh tokens on
 offboarding (custom role `kamutanAuthRevoke`, §3), never `roles/firebaseauth.admin`. Signed URL TTLs: tiles 15 min (brief) — SEC-20 asks 5 min; reconcile in the API (owner decision).
 
+## 3d. Bucket CORS (signed-URL reads from the browser)
+
+The viewer fetches tiles / thumbnails / overlays with `fetch()` from `https://storage.googleapis.com/<bucket>/…` using
+the API's V4 signed URLs. A browser blocks those responses unless the bucket answers with
+`Access-Control-Allow-Origin` for the web origin (Firebase Hosting does not do this for you). Symptom without it:
+`has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header` on every tile, viewer stays blank.
+Uploads (Firebase SDK, `firebasestorage.googleapis.com`) are not affected.
+
+```bash
+gcloud storage buckets update "gs://$BUCKET" --cors-file=infra/storage-cors.json
+gcloud storage buckets describe "gs://$BUCKET" --format="default(cors_config)"
+```
+
+`infra/storage-cors.json` lists the staging origins (`<project>.web.app`, `<project>.firebaseapp.com`). Add the custom
+domain(s) there when one is attached, and use the production project's own origins for the production bucket.
+
 ## 3c. Direct invocation of `api` and the client-IP chain (Sprint-5 gate F-2)
 
 **Proxy chain** (what `TRUST_PROXY_HOPS=2`, the API default, assumes):

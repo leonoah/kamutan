@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://kamutan-fba67.web.app", "https://kamutan-fba67.firebaseapp.com"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Range", "ETag"],
+    "maxAgeSeconds": 3600
+  }
+]
