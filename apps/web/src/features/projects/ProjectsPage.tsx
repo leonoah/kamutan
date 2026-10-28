@@ -1,18 +1,20 @@
-import { useRef, useState, type DragEvent } from "react";
+import { useMemo, useRef, useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, FolderPlus, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronLeft, Ellipsis, FolderPlus, Layers, Pencil, Plus } from "lucide-react";
 import type { Job, Project } from "@/api/types";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/EmptyState";
 import { ConfidenceShape } from "@/components/ConfidenceBadge";
 import { Ltr } from "@/components/Ltr";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CreateProjectDialog } from "./CreateProjectDialog";
-import { activeProgress, projectPhase, useProjects, verifiedPct, type ProjectPhase } from "./queries";
+import { EditProjectDialog } from "./EditProjectDialog";
+import { activeProgress, projectPhase, useProjects, useUpdateProject, verifiedPct, type ProjectPhase } from "./queries";
 import { useOrgId } from "@/features/org/useCurrentOrg";
 import { useLiveJobs } from "@/features/realtime/hooks";
 
@@ -32,11 +34,15 @@ export function ProjectsPage() {
   const jobs = useLiveJobs(orgId).data;
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<File[] | undefined>();
+  const [editing, setEditing] = useState<Project | null>(null);
 
   const openCreate = (files?: File[]) => {
     setPending(files);
     setOpen(true);
   };
+
+  // Keep the dialog's project fresh after a save (the list refetches and the object identity changes).
+  const editingLive = useMemo(() => (editing ? data?.find((p) => p.id === editing.id) ?? editing : null), [editing, data]);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
@@ -65,95 +71,165 @@ export function ProjectsPage() {
       ) : !data || data.length === 0 ? (
         <EmptyDrop onFiles={(files) => openCreate(files)} onCreate={() => openCreate()} />
       ) : (
-        <ProjectsTable projects={data} jobs={jobs ?? []} />
+        <ProjectsGrid projects={data} jobs={jobs ?? []} onEdit={setEditing} />
       )}
 
       <CreateProjectDialog open={open} onOpenChange={setOpen} pendingFiles={pending} />
+      <EditProjectDialog project={editingLive} open={editing !== null} onOpenChange={(o) => !o && setEditing(null)} />
     </div>
   );
 }
 
-function ProjectsTable({ projects, jobs }: { projects: Project[]; jobs: Job[] }) {
+function ProjectsGrid({ projects, jobs, onEdit }: { projects: Project[]; jobs: Job[]; onEdit: (p: Project) => void }) {
   const { t } = useTranslation();
+  const [showArchived, setShowArchived] = useState(false);
+  const active = projects.filter((p) => p.status !== "archived");
+  const archived = projects.filter((p) => p.status === "archived");
+  const visible = showArchived ? [...active, ...archived] : active;
+
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface">
-      <Table>
-        <TableCaption>{t("projects.title")}</TableCaption>
-        <TableHeader>
-          <TableRow className="h-9">
-            <TableHead scope="col" className="ps-5">{t("projects.columns.name")}</TableHead>
-            <TableHead scope="col">{t("projects.columns.status")}</TableHead>
-            <TableHead scope="col" className="w-44">{t("projects.columns.verified")}</TableHead>
-            <TableHead scope="col" className="text-end">{t("projects.columns.sheets")}</TableHead>
-            <TableHead scope="col">{t("projects.columns.updated")}</TableHead>
-            <TableHead scope="col" className="pe-5 text-end">{t("projects.columns.next")}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {projects.map((p) => {
-            const phase = projectPhase(p, jobs);
-            const pct = verifiedPct(p);
-            const live = activeProgress(p.id, jobs);
-            const sheets = p.stats?.sheets ?? 0;
-            const toReview = p.stats?.reviewOpen ?? 0;
-            return (
-              <TableRow key={p.id} className="h-16 hover:bg-surface-sunken/60">
-                <TableCell className="ps-5">
-                  <Link to={`/projects/${p.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
-                    {p.name}
-                  </Link>
-                  {p.address ? <p className="mt-0.5 text-meta text-muted-foreground">{p.address}</p> : null}
-                </TableCell>
-                <TableCell>
-                  <span className="inline-flex items-center gap-2 text-dense text-foreground">
-                    <span aria-hidden className={cn("size-2 rounded-full", statusDot[phase], phase === "processing" && "animate-pulse")} />
-                    {live !== null ? t("projects.processingPct", { pct: live }) : t(`projects.status.${phase}`)}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  {pct !== null ? (
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between gap-2 text-dense">
-                        <Ltr className="font-medium text-foreground">{`${pct}%`}</Ltr>
-                        {toReview > 0 ? (
-                          <span className="inline-flex items-center gap-1 text-meta text-muted-foreground">
-                            <ConfidenceShape level="low" className="size-2.5" />
-                            {t("projects.toReview", { count: toReview })}
-                          </span>
-                        ) : null}
-                      </div>
-                      <Progress
-                        value={pct}
-                        aria-label={`${t("projects.columns.verified")}: ${pct}%`}
-                        indicatorClassName="bg-conf-high"
-                      />
-                    </div>
-                  ) : (
-                    <span className="text-meta text-muted-foreground">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-end text-dense text-foreground">
-                  <Ltr>{sheets}</Ltr>
-                </TableCell>
-                <TableCell className="text-dense text-muted-foreground">
-                  <Ltr>{formatDate(p.createdAt)}</Ltr>
-                </TableCell>
-                <TableCell className="pe-5 text-end">
-                  <Link
-                    to={phase === "review" || phase === "ready" ? `/projects/${p.id}/review` : `/projects/${p.id}`}
-                    className="inline-flex items-center gap-1 rounded text-dense font-medium text-primary hover:underline"
-                  >
-                    {t(`projects.next.${phase}`)}
-                    {/* "next" chevrons point left in RTL */}
-                    <ChevronLeft className="size-4 ltr:rotate-180" aria-hidden />
-                  </Link>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+    <div className="flex flex-col gap-4">
+      {archived.length > 0 ? (
+        <div className="flex justify-end">
+          <Button variant="ghost" size="sm" aria-pressed={showArchived} onClick={() => setShowArchived((v) => !v)}>
+            <Archive aria-hidden />
+            {t(showArchived ? "projects.hideArchived" : "projects.showArchived", { count: archived.length })}
+          </Button>
+        </div>
+      ) : null}
+      <ul aria-label={t("projects.title")} className="grid list-none grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 p-0">
+        {visible.map((p) => (
+          <li key={p.id} className="min-w-0">
+            <ProjectCard project={p} jobs={jobs} onEdit={() => onEdit(p)} />
+          </li>
+        ))}
+      </ul>
     </div>
+  );
+}
+
+function ProjectCard({ project: p, jobs, onEdit }: { project: Project; jobs: Job[]; onEdit: () => void }) {
+  const { t } = useTranslation();
+  const update = useUpdateProject();
+  const phase = projectPhase(p, jobs);
+  const pct = verifiedPct(p);
+  const live = activeProgress(p.id, jobs);
+  const sheets = p.stats?.sheets ?? 0;
+  const toReview = p.stats?.reviewOpen ?? 0;
+  const isArchived = p.status === "archived";
+  const href = `/projects/${p.id}`;
+
+  async function toggleArchive() {
+    try {
+      const saved = await update.mutateAsync({ id: p.id, patch: { status: isArchived ? "active" : "archived" } });
+      toast({ title: t(isArchived ? "editProject.restored" : "editProject.archived", { name: saved.name }), tone: "success" });
+    } catch {
+      toast({ title: t("editProject.errorGeneric"), tone: "error" });
+    }
+  }
+
+  return (
+    <article
+      aria-labelledby={`project-${p.id}-name`}
+      className={cn(
+        // `relative` anchors the title link's ::after overlay, which makes the whole card clickable.
+        "group relative flex h-full flex-col gap-4 rounded-lg border border-border bg-surface p-5 transition-colors",
+        "hover:border-primary/40 hover:shadow-sm focus-within:border-primary/60",
+        isArchived && "opacity-70 hover:opacity-100",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 id={`project-${p.id}-name`} className="truncate text-panel text-foreground">
+            <Link
+              to={href}
+              className="rounded font-semibold outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] group-hover:text-primary focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-offset-2"
+            >
+              {p.name}
+            </Link>
+          </h2>
+          <p className="mt-0.5 truncate text-meta text-muted-foreground">{p.address ?? " "}</p>
+        </div>
+        {/* Above the overlay (z-10); stop propagation so menu clicks never reach the card. */}
+        <div className="relative z-10 -me-2 -mt-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label={t("projects.actions")} className="text-muted-foreground hover:text-foreground">
+                <Ellipsis aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onEdit}>
+                <Pencil aria-hidden />
+                {t("projects.edit")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={update.isPending}
+                onSelect={() => void toggleArchive()}
+                className={isArchived ? undefined : "text-destructive data-[highlighted]:bg-destructive/[0.06]"}
+              >
+                {isArchived ? <ArchiveRestore aria-hidden /> : <Archive aria-hidden />}
+                {t(isArchived ? "projects.restore" : "projects.archive")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-meta font-medium text-foreground",
+            isArchived ? "border-dashed border-input bg-surface-sunken text-muted-foreground" : "border-border bg-surface-sunken",
+          )}
+        >
+          <span aria-hidden className={cn("size-2 rounded-full", statusDot[phase], phase === "processing" && "animate-pulse")} />
+          {live !== null ? t("projects.processingPct", { pct: live }) : t(`projects.status.${phase}`)}
+        </span>
+        {toReview > 0 && !isArchived ? (
+          <span className="inline-flex items-center gap-1 text-meta text-muted-foreground">
+            <ConfidenceShape level="low" className="size-2.5" />
+            {t("projects.toReview", { count: toReview })}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-2 text-dense">
+          <span className="text-muted-foreground">{t("projects.columns.verified")}</span>
+          {pct !== null ? (
+            <Ltr className="font-medium text-foreground">{`${pct}%`}</Ltr>
+          ) : (
+            <span className="text-meta text-muted-foreground" title={t("projects.noBoq")}>
+              —
+            </span>
+          )}
+        </div>
+        <Progress
+          value={pct ?? 0}
+          aria-label={pct !== null ? `${t("projects.columns.verified")}: ${pct}%` : t("projects.noBoq")}
+          indicatorClassName={pct !== null ? "bg-conf-high" : "bg-transparent"}
+        />
+      </div>
+
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3 text-meta text-muted-foreground">
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <span className="inline-flex items-center gap-1">
+            <Layers className="size-3.5" aria-hidden />
+            {t("projects.sheetsCount", { count: sheets })}
+          </span>
+          <span aria-hidden>·</span>
+          <Ltr>{formatDate(p.createdAt)}</Ltr>
+        </span>
+        {/* Always the project hub — the hub decides where to continue. */}
+        <Link to={href} className="relative z-10 inline-flex shrink-0 items-center gap-1 rounded text-dense font-medium text-primary hover:underline">
+          {t(`projects.next.${phase}`)}
+          {/* "next" chevrons point left in RTL */}
+          <ChevronLeft className="size-4 ltr:rotate-180" aria-hidden />
+        </Link>
+      </div>
+    </article>
   );
 }
 
@@ -207,12 +283,14 @@ function EmptyDrop({ onFiles, onCreate }: { onFiles: (f: File[]) => void; onCrea
 function ProjectsSkeleton() {
   const { t } = useTranslation();
   return (
-    <div className="rounded-lg border border-border bg-surface p-5" role="status" aria-label={t("common.loading")}>
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4" role="status" aria-label={t("common.loading")}>
       {[0, 1, 2].map((i) => (
-        <div key={i} className="flex items-center gap-4 border-b border-border py-4 last:border-0">
-          <div className="h-3 w-48 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-20 animate-pulse rounded bg-muted" />
-          <div className="h-1.5 flex-1 animate-pulse rounded bg-muted" />
+        <div key={i} className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-5">
+          <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+          <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+          <div className="h-6 w-24 animate-pulse rounded-full bg-muted" />
+          <div className="h-1.5 w-full animate-pulse rounded bg-muted" />
+          <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
         </div>
       ))}
     </div>

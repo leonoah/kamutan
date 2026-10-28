@@ -39,6 +39,8 @@ export interface ReviewDrawingProps {
   projectId: string;
   rows: SheetRow[];
   row: SheetRow | null;
+  /** Sheet analysis route: one sheet, no picker. */
+  locked?: boolean;
   loading: boolean;
   onPick: (sheetId: string) => void;
   overlays: readonly OverlayFeature[];
@@ -84,6 +86,12 @@ export const ReviewDrawing = memo(function ReviewDrawing(p: ReviewDrawingProps) 
   return (
     <>
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border bg-surface px-3 text-dense">
+        {p.locked ? (
+          <span className="inline-flex h-7 max-w-[55%] items-center gap-1 text-foreground">
+            <span className="shrink-0 text-muted-foreground">{t("review.sheet")}:</span>
+            <bdi className="truncate font-medium">{row ? sheetName(row) : "—"}</bdi>
+          </span>
+        ) : (
         <DropdownMenu>
           <DropdownMenuTrigger
             disabled={p.rows.length === 0}
@@ -119,6 +127,7 @@ export const ReviewDrawing = memo(function ReviewDrawing(p: ReviewDrawingProps) 
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
         {p.toolNote}
         <div className="ms-auto flex items-center gap-0.5">
           <button

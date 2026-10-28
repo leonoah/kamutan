@@ -362,6 +362,21 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         projects.set(p.id, p);
         return delay(structuredClone(p));
       },
+      updateProject: async (id, patch) => {
+        const p = mustGet(id);
+        if (patch.name !== undefined) {
+          const name = patch.name.trim();
+          if (!name) throw new ApiError(400, "validation_failed", "name is required");
+          p.name = name;
+        }
+        if (patch.address !== undefined) {
+          const address = patch.address.trim();
+          if (address) p.address = address;
+          else delete p.address;
+        }
+        if (patch.status !== undefined) p.status = patch.status;
+        return delay(structuredClone(p));
+      },
       createUpload: async (projectId, req) => {
         const p = mustGet(projectId);
         const ext = req.filename.split(".").pop()?.toLowerCase();
