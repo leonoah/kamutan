@@ -10,17 +10,50 @@ describe("Projects list", () => {
     expect(screen.getByText("גררו לכאן סט שרטוטים ונתחיל.")).toBeInTheDocument();
   });
 
-  it("lists projects with status, verified % and next action", async () => {
+  it("lists projects as cards with status, verified % and a next action that opens the project hub", async () => {
     await renderApp("/projects", { signedIn: true });
-    const row = (await screen.findByRole("link", { name: "בית משפחת נח" })).closest("tr")!;
-    expect(within(row).getByText("בבדיקה")).toBeInTheDocument();
-    expect(within(row).getByText("87%")).toBeInTheDocument();
-    expect(within(row).getByRole("link", { name: /לסביבת הבדיקה/ })).toHaveAttribute("href", "/projects/p-noah/review");
+    const title = await screen.findByRole("link", { name: "בית משפחת נח" });
+    expect(title).toHaveAttribute("href", "/projects/p-noah");
+    const card = title.closest("article")!;
+    expect(within(card).getByText("בבדיקה")).toBeInTheDocument();
+    expect(within(card).getByText("87%")).toBeInTheDocument();
+    // The next-action link always goes to the hub, never straight into /review.
+    expect(within(card).getByRole("link", { name: /המשך בדיקה/ })).toHaveAttribute("href", "/projects/p-noah");
+    expect(within(card).getByRole("button", { name: "פעולות" })).toBeInTheDocument();
+  });
+
+  it("edits a project's details from the card menu", async () => {
+    const user = userEvent.setup();
+    await renderApp("/projects", { signedIn: true });
+    const card = (await screen.findByRole("link", { name: "בית משפחת נח" })).closest("article")!;
+    await user.click(within(card).getByRole("button", { name: "פעולות" }));
+    await user.click(await screen.findByRole("menuitem", { name: "עריכת פרטים" }));
+    const dialog = await screen.findByRole("dialog", { name: "עריכת פרטי הפרויקט" });
+    const name = within(dialog).getByLabelText("שם הפרויקט");
+    expect(name).toHaveValue("בית משפחת נח");
+    await user.clear(name);
+    await user.type(name, "בית משפחת נח — שלב ב");
+    await user.click(within(dialog).getByRole("button", { name: "שמירה" }));
+    expect(await screen.findByRole("link", { name: "בית משפחת נח — שלב ב" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('הפרטים של "בית משפחת נח — שלב ב" נשמרו.')).toBeInTheDocument());
+  });
+
+  it("archives a project from the card menu and hides it behind the archive toggle", async () => {
+    const user = userEvent.setup();
+    await renderApp("/projects", { signedIn: true });
+    const card = (await screen.findByRole("link", { name: "דירת לוי — שיפוץ מטבח ורחצה" })).closest("article")!;
+    await user.click(within(card).getByRole("button", { name: "פעולות" }));
+    await user.click(await screen.findByRole("menuitem", { name: "העברה לארכיון" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "דירת לוי — שיפוץ מטבח ורחצה" })).not.toBeInTheDocument());
+    await user.click(await screen.findByRole("button", { name: "הצג ארכיון (1)" }));
+    const archived = (await screen.findByRole("link", { name: "דירת לוי — שיפוץ מטבח ורחצה" })).closest("article")!;
+    expect(within(archived).getByText("בארכיון")).toBeInTheDocument();
+    expect(within(archived).getByRole("link", { name: /פתיחה/ })).toHaveAttribute("href", "/projects/p-levi");
   });
 
   it("shows live processing progress from the org jobs listener", async () => {
     const { backend } = await renderApp("/projects", { signedIn: true, jobTickMs: 10_000 });
-    const row = (await screen.findByRole("link", { name: "דירת לוי — שיפוץ מטבח ורחצה" })).closest("tr")!;
+    const row = (await screen.findByRole("link", { name: "דירת לוי — שיפוץ מטבח ורחצה" })).closest("article")!;
     expect(within(row).getByText("טיוטה")).toBeInTheDocument();
     const up = await backend.api.createUpload("p-levi", { filename: "a.pdf", sizeBytes: 5 });
     await new Promise<void>((resolve) => {

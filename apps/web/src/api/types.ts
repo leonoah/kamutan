@@ -55,6 +55,13 @@ export interface CreateProjectInput {
   address?: string;
 }
 
+/** PATCH /api/v1/projects/:projectId (contracts UpdateProjectRequest — at least one field). */
+export interface UpdateProjectInput {
+  name?: string;
+  address?: string;
+  status?: "active" | "archived";
+}
+
 /** POST /api/v1/projects/:projectId/uploads */
 export interface CreateUploadRequest {
   filename: string;
@@ -1230,6 +1237,7 @@ export interface ApiClient {
   listProjects(orgId: string): Promise<Project[]>;
   getProject(id: string): Promise<Project>;
   createProject(input: CreateProjectInput): Promise<Project>;
+  updateProject(id: string, patch: UpdateProjectInput): Promise<Project>;
   createUpload(projectId: string, req: CreateUploadRequest): Promise<CreateUploadResponse>;
   finalizeUpload(projectId: string, req: FinalizeUploadRequest): Promise<FinalizeUploadResponse>;
   /** Sprint 1: confirm a sheet's classification (sets confirmed/confirmedBy/confirmedAt). */

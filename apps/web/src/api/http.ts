@@ -464,6 +464,7 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
     },
     getProject: (id) => request(`/projects/${enc(id)}`),
     createProject: (input) => post("/projects", input),
+    updateProject: (id, patch) => request(`/projects/${enc(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
     createUpload: (projectId, req) => post(`/projects/${enc(projectId)}/uploads`, req),
     finalizeUpload: (projectId, req) => post(`/projects/${enc(projectId)}/sheet-sets`, req),
     confirmSheet: (projectId, sheetId, req) => post(`/projects/${enc(projectId)}/sheets/${enc(sheetId)}/confirm`, req),

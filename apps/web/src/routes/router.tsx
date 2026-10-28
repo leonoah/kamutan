@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, Outlet, type RouteObject } from "react-router-dom";
+import { createBrowserRouter, Outlet, type RouteObject } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { AuthProvider, RequireAuth } from "@/features/auth/AuthProvider";
 import { LoginPage } from "@/features/auth/LoginPage";
@@ -9,6 +9,7 @@ import { ProjectPage } from "@/features/projects/ProjectPage";
 import { SheetsPage } from "@/features/sheets/SheetsPage";
 import { LegendPage } from "@/features/legend/LegendPage";
 import { LibraryPage } from "@/features/library/LibraryPage";
+import { LandingPage } from "@/features/landing/LandingPage";
 import { NotFoundPage } from "./NotFoundPage";
 
 export const routes: RouteObject[] = [
@@ -60,9 +61,14 @@ export const routes: RouteObject[] = [
             path: "/projects/:projectId/review",
             lazy: async () => ({ Component: (await import("@/features/review/ReviewPage")).ReviewPage }),
           },
+          // Sheet analysis: the same workspace locked to one sheet (IA level 3).
+          {
+            path: "/projects/:projectId/sheets/:sheetId",
+            lazy: async () => ({ Component: (await import("@/features/review/ReviewPage")).ReviewPage }),
+          },
         ],
       },
-      { path: "/", element: <Navigate to="/projects" replace /> },
+      { path: "/", element: <LandingPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],
   },

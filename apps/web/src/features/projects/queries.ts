@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/api/client";
-import type { CreateProjectInput, Job, Project } from "@/api/types";
+import type { CreateProjectInput, Job, Project, UpdateProjectInput } from "@/api/types";
 import { isActiveJob } from "@/features/realtime/hooks";
 
 export const useProjects = (orgId: string) => {
@@ -19,6 +19,18 @@ export const useCreateProject = () => {
   return useMutation({
     mutationFn: (input: CreateProjectInput) => api.createProject(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+};
+
+export const useUpdateProject = () => {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateProjectInput }) => api.updateProject(id, patch),
+    onSuccess: (_p, { id }) => {
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["project", id] });
+    },
   });
 };
 

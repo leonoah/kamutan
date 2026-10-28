@@ -1,8 +1,6 @@
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { AlertCircle, BookOpenCheck, CheckCircle2, ClipboardCheck, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import type { Job, SheetRow, SheetSet } from "@/api/types";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Ltr } from "@/components/Ltr";
@@ -48,10 +46,6 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
   // Per-sheet (per-version) stages: everything not yet ready, plus failures with a Hebrew reason.
   const sheetRows = (sheets.data ?? []).filter((r) => r.version && r.version.status !== "ready");
   const setOf = (r: SheetRow) => sets.data?.find((s) => s.id === r.sheet.sheetSetId);
-  const toConfirm = (sheets.data ?? []).filter((r) => r.version?.status === "ready" && !r.sheet.confirmed).length;
-  const withLegend = (sheets.data ?? []).filter(
-    (r) => r.version?.status === "ready" && (Boolean(r.version.artifacts?.legend) || (r.version.stats?.legendEntries ?? 0) > 0),
-  ).length;
 
   return (
     <Card className="mt-8">
@@ -88,30 +82,6 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
               ))}
             </ul>
           </section>
-        ) : null}
-
-        {toConfirm > 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-primary/30 bg-primary/[0.04] px-3 py-2.5">
-            <span className="text-dense text-foreground">{t("project.confirmSheetsCta", { count: toConfirm })}</span>
-            <Button size="sm" asChild>
-              <Link to={`/projects/${projectId}/sheets`}>
-                <ClipboardCheck aria-hidden />
-                {t("project.confirmSheets")}
-              </Link>
-            </Button>
-          </div>
-        ) : null}
-
-        {withLegend > 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-border bg-surface-sunken/60 px-3 py-2.5">
-            <span className="text-dense text-foreground">{t("legend.cta", { count: withLegend })}</span>
-            <Button size="sm" variant="secondary" asChild>
-              <Link to={`/projects/${projectId}/legend`}>
-                <BookOpenCheck aria-hidden />
-                {t("legend.title")}
-              </Link>
-            </Button>
-          </div>
         ) : null}
 
         {sets.data && sets.data.length > 0 ? (

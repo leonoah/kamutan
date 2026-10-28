@@ -130,8 +130,15 @@ const rank = (r: SheetRow) =>
  */
 const NO_CHAPTERS: BoqChapter[] = [];
 
+/**
+ * Two routes share this workspace:
+ *  - `/projects/:projectId/review` — the project BOQ review (all sheets, sheet picker, ?sheet= in the URL);
+ *  - `/projects/:projectId/sheets/:sheetId` — "ניתוח שרטוט": the same tools locked to one sheet, with the
+ *    components map (ספירה לפי סוג) as the default panel and the queue / BOQ scoped to that sheet.
+ */
 export function ReviewPage() {
-  const { projectId = "" } = useParams();
+  const { projectId = "", sheetId: lockedSheetId } = useParams();
+  const locked = Boolean(lockedSheetId);
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   // URL updates can follow each other within one render (e.g. "עבור לפריטים" sets lvl=red, then the line's sheet
@@ -161,8 +168,8 @@ export function ReviewPage() {
         .sort((a, b) => rank(a) - rank(b) || sheetName(a).localeCompare(sheetName(b), "he")),
     [sheets.data],
   );
-  const wanted = params.get("sheet");
-  const row = ready.find((r) => r.sheet.id === wanted) ?? ready[0] ?? null;
+  const wanted = lockedSheetId ?? params.get("sheet");
+  const row = ready.find((r) => r.sheet.id === wanted) ?? (locked ? null : (ready[0] ?? null));
   const bboxParam = row && row.sheet.id === wanted ? params.get("bbox") : null;
   const bbox = useMemo(() => parseBBox(bboxParam), [bboxParam]);
 
@@ -172,11 +179,14 @@ export function ReviewPage() {
   const role = org?.role ?? null;
   const orgId = project.data?.orgId ?? org?.id ?? null;
   const session = useAuthStore((s) => s.session);
-  const tab: PanelTab = params.get("panel") === "counts" ? "counts" : "boq";
+  // Sheet analysis opens on the components map; the project review on the BOQ.
+  const defaultTab: PanelTab = locked ? "counts" : "boq";
+  const panelParam = params.get("panel");
+  const tab: PanelTab = panelParam === "counts" ? "counts" : panelParam === "boq" ? "boq" : defaultTab;
   const setTab = (v: PanelTab) =>
     updateParams((next) => {
-      if (v === "counts") next.set("panel", "counts");
-      else next.delete("panel");
+      if (v === defaultTab) next.delete("panel");
+      else next.set("panel", v);
       return next;
     });
   const boqState = useBoqState(orgId, projectId);
@@ -186,7 +196,11 @@ export function ReviewPage() {
   const linesQ = useBoqLines(projectId, boqState.data?.latestBuildId);
   const state = boqState.data !== undefined ? boqState.data : (linesQ.data?.boq ?? null);
   const buildId = state?.latestBuildId ?? null;
-  const allLines = useMemo(() => (buildId ? (linesQ.data?.items ?? []) : []), [linesQ.data, buildId]);
+  const allLines = useMemo(() => {
+    const items = buildId ? (linesQ.data?.items ?? []) : [];
+    // Sheet analysis: only the lines this sheet contributes to.
+    return lockedSheetId ? items.filter((l) => l.sourceVersions.some((v) => v.sheetId === lockedSheetId)) : items;
+  }, [linesQ.data, buildId, lockedSheetId]);
   const templates = useTemplates(orgId ?? "");
   const chapters = linesQ.data?.chapters ?? templates.data?.find((x) => x.default)?.chapters ?? NO_CHAPTERS;
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -348,9 +362,13 @@ export function ReviewPage() {
     const lv = new Set(filters.levels);
     const dom = new Set(filters.domains);
     return (queueQ.data?.items ?? []).filter(
-      (i) => !doneIds.has(i.id) && (lv.has(i.level) || i.kind === "room" || i.kind === "line") && (dom.size === 0 || !i.class || dom.has(domainOf(i.class))),
+      (i) =>
+        !doneIds.has(i.id) &&
+        (lv.has(i.level) || i.kind === "room" || i.kind === "line") &&
+        (dom.size === 0 || !i.class || dom.has(domainOf(i.class))) &&
+        (!lockedSheetId || !i.sheetId || i.sheetId === lockedSheetId),
     );
-  }, [queueQ.data, doneIds, filters]);
+  }, [queueQ.data, doneIds, filters, lockedSheetId]);
   const activeItem = queueItems.find((i) => i.id === activeItemId) ?? null;
   const rowsById = useMemo(() => new Map(ready.map((r) => [r.sheet.id, r])), [ready]);
   const snapPoints = useMemo<Vec2[]>(
@@ -1444,14 +1462,24 @@ export function ReviewPage() {
               <Link to={`/projects/${projectId}`} className="truncate text-muted-foreground hover:text-foreground">{name}</Link>
             </li>
             <li aria-hidden className="text-muted-foreground">‹</li>
-            <li aria-current="page" className="font-medium text-foreground">{t("review.title")}</li>
+            {locked ? (
+              <>
+                <li className="text-muted-foreground">{t("review.sheetAnalysis")}</li>
+                <li aria-hidden className="text-muted-foreground">‹</li>
+                <li aria-current="page" className="min-w-0 truncate font-medium text-foreground">
+                  <bdi>{row ? sheetName(row) : "…"}</bdi>
+                </li>
+              </>
+            ) : (
+              <li aria-current="page" className="font-medium text-foreground">{t("review.title")}</li>
+            )}
           </ol>
         </nav>
         <div className="flex flex-1 items-center justify-end gap-3">
           <button
             type="button"
             onClick={notYet}
-            className="hidden h-8 w-48 items-center gap-2 rounded border border-input bg-surface-sunken px-2.5 text-dense text-muted-foreground hover:border-foreground/30 xl:inline-flex"
+            className="hidden h-8 w-48 items-center gap-2 rounded border border-input bg-surface-sunken px-2.5 text-dense text-muted-foreground hover:border-foreground/30"
           >
             <Search className="size-3.5" aria-hidden />
             <span className="flex-1 text-start">{t("review.search")}</span>
@@ -1539,6 +1567,7 @@ export function ReviewPage() {
             projectId={projectId}
             rows={ready}
             row={row}
+            locked={locked}
             loading={sheets.isLoading}
             onPick={fn.pick}
             overlays={features}
