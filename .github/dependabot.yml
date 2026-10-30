@@ -16,6 +16,10 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # Runtime parity: Cloud Functions run nodejs22 (firebase.json) — bump together with the runtime.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: uv
     directory: "/workers/drawing"
@@ -71,3 +75,9 @@ updates:
     labels: [dependencies, docker]
     commit-message:
       prefix: "chore(docker)"
+    ignore:
+      # Runtime parity: node = Cloud Functions nodejs22; python = the worker's 3.12 target (wheels, sandbox).
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
