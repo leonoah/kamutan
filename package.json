@@ -22,7 +22,8 @@
       "fflate@>=0.7.0 <0.7.5": "^0.7.5",
       "body-parser@>=2.0.0 <2.4.0": "^2.4.0",
       "multer@<2.5.0": "^2.5.0",
-      "texture-compressor": "-"
+      "texture-compressor": "-",
+      "re2js@<2.8.7": "^2.8.7"
     }
   }
 }
