@@ -6,6 +6,7 @@ import type {
   Detection,
   DetectionsArtifact,
   LegendArtifact,
+  PointMm,
   Lifecycle,
   Room,
   RoomsArtifact,
@@ -144,6 +145,15 @@ export const bboxPolygon = (b: BBoxMm): [number, number][] => [
 ];
 
 /** Union bbox [x0, y0, x1, y1] (paper mm) of detections, padded; null for none. */
+/** Axis-aligned bbox of a polygon (paper mm) in the Detection `bboxMm` shape. */
+export function polygonBBox(poly: readonly PointMm[]): { x: number; y: number; w: number; h: number } {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of poly) {
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  }
+  return poly.length ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : { x: 0, y: 0, w: 0, h: 0 };
+}
+
 export function boundsOf(dets: readonly Pick<Detection, "bboxMm">[], padMm = 6): [number, number, number, number] | null {
   if (dets.length === 0) return null;
   let x0 = Infinity;

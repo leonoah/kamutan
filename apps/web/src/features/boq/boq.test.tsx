@@ -239,4 +239,32 @@ describe("BOQ panel (Sprint 3)", { timeout: 40_000 }, () => {
     fireEvent.click(within(row("4.01")).getByRole("button", { name: /^בחר שורה 4\.01/ }));
     expect(await axe(screen.getByRole("region", { name: "כתב כמויות" }))).toHaveNoViolations();
   });
+
+  it("selecting an area line (5.01 חיפוי) focuses its ROOMS: room polygons are focused (green) and the view zooms to them", async () => {
+    const user = userEvent.setup({ delay: null });
+    const { api } = await openBuilt();
+    await waitFor(() => expect(row("5.01")).not.toBeNull(), LAZY);
+    const lines = await api.listBoqLines("p-noah");
+    const l = lines.items.find((x) => x.code === "5.01")!;
+    const ev = await api.getBoqLineEvidence("p-noah", l.id);
+    // Worker contract (units.room_det): room-derived evidence carries the room id, not a detection id.
+    expect(ev.items.length).toBeGreaterThan(0);
+    expect(ev.items.every((e) => e.roomId && e.detectionId === e.roomId)).toBe(true);
+
+    await user.click(within(row("5.01")).getByRole("button", { name: /^בחר שורה 5\.01/ }));
+    const onSheet = new Set(ev.items.filter((e) => e.sheetId === "noah-eb8be8a3-p0").map((e) => e.roomId!));
+    if (onSheet.size === 0) {
+      // the line's rooms live on another sheet → the workspace jumps there first
+      await waitFor(() => expect(toasts().some((x) => x.startsWith("עברת לגיליון"))).toBe(true), LAZY);
+    }
+    await waitFor(() => {
+      const focus = new Set(seen.props!.focusIds);
+      const polys = (seen.props?.overlays ?? []).filter((f): f is PolygonFeature => f.kind === "polygon" && focus.has(f.id));
+      expect(polys.length).toBeGreaterThan(0);
+    }, LAZY);
+    // No marker ids are in the focus set: the row's quantity comes from rooms only.
+    const focus = new Set(seen.props!.focusIds);
+    expect(markers().some((m) => focus.has(m.id))).toBe(false);
+    expect(row("5.01")).toHaveAttribute("data-selected", "true");
+  });
 });
