@@ -35,11 +35,15 @@ def main() -> int:
         ])
         high = report(tmp, "high", [{"pluginid": "40018", "name": "SQL Injection", "riskcode": "3", "count": "1"}])
         failrule = report(tmp, "failrule", [{"pluginid": "10038", "name": "CSP Header Not Set", "riskcode": "2", "count": "1"}])
+        info_same_plugin = report(tmp, "info", [
+            {"pluginid": "10038", "name": "Content Security Policy (CSP) Report-Only Header Found", "riskcode": "0", "count": "4"},
+        ])
         empty = report(tmp, "empty", [])
         cases = [
             ("clean + ignored High passes", gate(clean, empty), 0),
             ("unignored High fails", gate(clean, high), 1),
             ("FAIL rule fails", gate(failrule), 1),
+            ("informational alert under a FAIL plugin passes", gate(info_same_plugin), 0),
             ("missing report fails", gate(clean, tmp / "nope" / "report_json.json"), 1),
         ]
     bad = [c for c in cases if c[1] != c[2]]

@@ -74,7 +74,9 @@ def main(argv: list[str] | None = None) -> int:
         for a in sorted(found, key=lambda x: (-int(x["risk"]), x["plugin"])):
             rule = rules.get(a["plugin"], "WARN")
             gate = "pass"
-            if rule == "FAIL":
+            # FAIL rules gate real findings only: ZAP files informational notes under the same plugin id
+            # (e.g. 10038 "CSP Report-Only Header Found" for our deliberate candidate policy).
+            if rule == "FAIL" and a["risk"] != "0":
                 gate = "**FAIL** (rule)"
             elif a["risk"] == "3" and rule != "IGNORE":
                 gate = "**FAIL** (High)"

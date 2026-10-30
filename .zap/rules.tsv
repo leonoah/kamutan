@@ -5,7 +5,7 @@
 # Never IGNORE a High without a linked issue + compensating control.
 10020	FAIL	Anti-clickjacking header missing - firebase.json sets X-Frame-Options DENY + frame-ancestors 'none' (SEC-40)
 10021	FAIL	X-Content-Type-Options missing - nosniff is set globally in firebase.json and by helmet in the API
-10038	FAIL	Content Security Policy header not set - enforced CSP on every app path, /s/** and the API (SEC-40)
+10038	FAIL	Content Security Policy header not set (Low+; the Info "Report-Only header found" note is expected) - enforced CSP on every app path, /s/** and the API (SEC-40)
 10063	FAIL	Permissions-Policy header not set - set globally in firebase.json
 10098	FAIL	Cross-Domain Misconfiguration (CORS) - API is same-origin by default, explicit allowlist only (SEC-41)
 10035	WARN	HSTS not set - only meaningful over HTTPS; the CI stack is plain HTTP. firebase.json sends max-age=2y; includeSubDomains; preload
