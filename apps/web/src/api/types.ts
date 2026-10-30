@@ -601,9 +601,14 @@ export interface BuildBoqResponse {
 export interface BoqEvidenceItem {
   sheetId: string;
   versionId: string;
+  /** A detection id — or, for room-derived quantities (tiling, flooring), the ROOM id (worker units.room_det). */
   detectionId: string;
   linkGroupId: string | null;
   floor: string | null;
+  /** Set on room-derived evidence. */
+  roomId?: string | null;
+  quantity?: number;
+  source?: "auto" | "manual";
 }
 /** GET /v1/projects/:pid/boq/lines/:lineId/evidence */
 export interface BoqLineEvidence {

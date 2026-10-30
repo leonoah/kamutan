@@ -182,8 +182,22 @@ export function createBoqMock(deps: BoqMockDeps) {
       evidence = { ...evidence, ...pl.evidence };
     }
     const settings = deps.roomSettings?.(projectId) ?? new Map();
-    if (!lines.some((l) => l.chapter === "05")) lines = [...lines, ...computeTiling(sheets, settings, lib, at)];
-    else lines = applyRoomSettingsDeltas(lines, sheets, settings, lib, at);
+    if (!lines.some((l) => l.chapter === "05")) {
+      const tl = computeTiling(sheets, settings, lib, at);
+      lines = [...lines, ...tl];
+      // Like the worker (units.room_det): a room-derived line's evidence is the ROOM id, one item per room.
+      const versionOf = new Map(sheets.map((s) => [s.row.sheet.id, s.row.version?.id ?? "v1"]));
+      for (const l of tl) {
+        const seen = new Set<string>();
+        evidence[l.id] = (l.breakdown ?? []).flatMap((b) => {
+          const key = `${b.sheetId}/${b.roomId}`;
+          if (!b.sheetId || !b.roomId || seen.has(key)) return [];
+          seen.add(key);
+          const floor = l.byFloor && Object.keys(l.byFloor).length === 1 ? (Object.keys(l.byFloor)[0] ?? null) : null;
+          return [{ sheetId: b.sheetId, versionId: versionOf.get(b.sheetId) ?? "v1", detectionId: b.roomId, roomId: b.roomId, linkGroupId: null, floor, quantity: b.qty }];
+        });
+      }
+    } else lines = applyRoomSettingsDeltas(lines, sheets, settings, lib, at);
     const out = applyCorrectionDeltas({ lines, evidence }, perSheet, corrections, lib, at);
     installDerived(p, out.lines, out.evidence);
   }

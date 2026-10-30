@@ -59,6 +59,7 @@ import {
   LEVEL_KEYS,
   applyFilters,
   boundsOf,
+  polygonBBox,
   countsByClass,
   detectionMarkers,
   filtersFromParams,
@@ -307,13 +308,25 @@ export function ReviewPage() {
     const ids = new Set(lineEvidence.filter((e) => e.sheetId === row.sheet.id).map((e) => e.detectionId));
     return dets.filter((d) => ids.has(d.id));
   }, [lineEvidence, row, dets]);
+  /**
+   * Area / length lines (tiling, flooring, corners…) are computed from ROOMS: the worker writes the room id as the
+   * evidence `detectionId` (units.room_det). Those are highlighted as polygons, not markers.
+   */
+  const lineRooms = useMemo(() => {
+    if (!row) return [];
+    const ids = new Set(lineEvidence.filter((e) => e.sheetId === row.sheet.id).map((e) => e.roomId ?? e.detectionId));
+    return [...rooms.values()].filter((r) => ids.has(r.id));
+  }, [lineEvidence, row, rooms]);
   const hoverIds = useMemo(() => {
     if (!hoverLineId || hoverLineId === selectedLineId || !row) return null;
     return lineToDets.get(hoverLineId) ?? null;
   }, [hoverLineId, selectedLineId, lineToDets, row]);
   /** Items the `[` `]` stepper walks: the selected line's evidence on this sheet, else the selected class. */
   const stepItems = selectedLineId ? lineItems : classItems;
-  const baseFocus = useMemo(() => hoverIds ?? stepItems.map((d) => d.id), [hoverIds, stepItems]);
+  const baseFocus = useMemo(
+    () => hoverIds ?? [...stepItems.map((d) => d.id), ...(selectedLineId ? lineRooms.map((r) => r.id) : [])],
+    [hoverIds, stepItems, selectedLineId, lineRooms],
+  );
   const clusters = useMemo(() => data?.detections?.unknownClusters ?? [], [data]);
   const clusterMembers = useMemo(() => {
     const m = new Map<string, Detection[]>();
@@ -417,10 +430,12 @@ export function ReviewPage() {
     [filtered, rejectedShown, lifecycles, layers.symbols],
   );
   const roomFeatures = useMemo(() => {
-    if (!layers.rooms || !data?.rooms) return [];
+    if (!data?.rooms) return [];
+    const opts = { unnamed: t("understanding.unnamedRoom"), areaUnit: t("understanding.area") };
+    if (!layers.rooms) return lineRooms.length ? roomPolygons(lineRooms, opts) : [];
     const dim = filters.room ? new Set([...rooms.keys()].filter((id) => id !== filters.room)) : null;
-    return roomPolygons(data.rooms.rooms, { unnamed: t("understanding.unnamedRoom"), areaUnit: t("understanding.area"), dimIds: dim });
-  }, [layers.rooms, data, filters.room, rooms, t]);
+    return roomPolygons(data.rooms.rooms, { ...opts, dimIds: dim });
+  }, [layers.rooms, data, filters.room, rooms, lineRooms, t]);
   const legendFeatures = useMemo(() => (layers.legend ? legendBoxes(data?.legend ?? null) : []), [layers.legend, data]);
   const linkGroups = useMemo(() => {
     const groups = links?.groups ?? [];
@@ -533,12 +548,12 @@ export function ReviewPage() {
       return;
     }
     const key = `${selectedLineId}@${row.sheet.id}`;
-    if (lineItems.length && lineView.current.zoomed !== key) {
+    if ((lineItems.length || lineRooms.length) && lineView.current.zoomed !== key) {
       lineView.current.zoomed = key;
-      zoomTo(boundsOf(lineItems, 12));
+      zoomTo(boundsOf([...lineItems, ...lineRooms.map((r) => ({ bboxMm: polygonBBox(r.polygonMm) }))], 12));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLineId, lineSource, evidence.data, evidenceSheets, row, lineItems]);
+  }, [selectedLineId, lineSource, evidence.data, evidenceSheets, row, lineItems, lineRooms]);
   const onSelectClass = (cls: string | null) => {
     setSelectedClass(cls);
     setSelectedId(null);

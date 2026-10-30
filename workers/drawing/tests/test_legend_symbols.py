@@ -70,6 +70,8 @@ def sheet(tmp_path_factory):
         ("ברז קיר H=110", "faucet_wall"),
         ("ראה הערה", None),
         ("אביזר מוגן מים", None),
+        ('צינור קוברה 50 מ"מ', "conduit_cobra"),
+        ("צינור 25 להכנה", None),
     ],
 )
 def test_hebrew_label_rules(label, cls):

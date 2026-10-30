@@ -71,7 +71,8 @@ export interface DrawingViewerProps {
   highlightedIds?: readonly string[];
   /**
    * Focus set (e.g. a selected class / BOQ row): when non-empty, every other marker is dimmed to 30% and the
-   * focused ones get a blue halo (spec §הדגשה דו-כיוונית).
+   * focused ones get a GREEN halo / outline (spec §הדגשה דו-כיוונית). Click-selection stays blue, so the two
+   * never look alike. Polygon ids (rooms) may be focused too.
    */
   focusIds?: readonly string[];
   /** Floating RTL card anchored to a paper-mm point (e.g. the details popover of a clicked marker). */
@@ -137,6 +138,8 @@ export interface DrawingViewerHandle {
 }
 
 const BLUE: Rgba = [37, 99, 235, 255];
+/** Focus (a BOQ row / class chosen in a list): green, so it never reads like the blue click-selection. */
+const GREEN: Rgba = [22, 163, 74, 255];
 const DEFAULT_POINT: Rgba = [194, 65, 12, 255];
 const DEFAULT_POLY: Rgba = [15, 76, 129, 255];
 const DEFAULT_PATH: Rgba = [209, 31, 31, 255];
@@ -814,14 +817,17 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
           getFillColor: (f) =>
             isSel(f.id)
               ? withAlpha(BLUE, 50)
-              : dimFill(f.fillColor ? ([...f.fillColor] as [number, number, number, number]) : withAlpha(color(f, DEFAULT_POLY), 24), f.dimmed),
-          getLineColor: (f) => (isSel(f.id) ? BLUE : withAlpha(color(f, DEFAULT_POLY), f.dimmed ? 90 : (color(f, DEFAULT_POLY)[3] ?? 255))),
+              : focused.has(f.id)
+                ? withAlpha(GREEN, 55)
+                : dimFill(f.fillColor ? ([...f.fillColor] as [number, number, number, number]) : withAlpha(color(f, DEFAULT_POLY), 24), f.dimmed),
+          getLineColor: (f) =>
+            isSel(f.id) ? BLUE : focused.has(f.id) ? GREEN : withAlpha(color(f, DEFAULT_POLY), f.dimmed ? 90 : (color(f, DEFAULT_POLY)[3] ?? 255)),
           lineWidthUnits: "pixels",
-          getLineWidth: (f) => (isSel(f.id) ? 3 : (f.lineWidthPx ?? 1.5)),
+          getLineWidth: (f) => (isSel(f.id) || focused.has(f.id) ? 3 : (f.lineWidthPx ?? 1.5)),
           stroked: true,
           filled: true,
           ...dashProps,
-          updateTriggers: { getFillColor: trig, getLineColor: trig, getLineWidth: trig },
+          updateTriggers: { getFillColor: [...trig, focusIds], getLineColor: [...trig, focusIds], getLineWidth: [...trig, focusIds] },
         }),
       );
     if (split.paths.length)
@@ -886,10 +892,10 @@ export const DrawingViewer = forwardRef<DrawingViewerHandle, DrawingViewerProps>
             filled: true,
             lineWidthUnits: "pixels",
             getLineWidth: (f) => (isSel(f.id) ? 3 : 2),
-            getFillColor: withAlpha(BLUE, 40),
-            getLineColor: (f) => withAlpha(BLUE, isSel(f.id) ? 255 : 200),
+            getFillColor: (f) => (isSel(f.id) ? withAlpha(BLUE, 40) : withAlpha(GREEN, 55)),
+            getLineColor: (f) => (isSel(f.id) ? BLUE : withAlpha(GREEN, 230)),
             pickable: false,
-            updateTriggers: { getLineWidth: trig, getLineColor: trig },
+            updateTriggers: { getLineWidth: trig, getLineColor: trig, getFillColor: trig },
           }),
         );
       L.push(
