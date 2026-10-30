@@ -42,8 +42,9 @@ RULES: tuple[Rule, ...] = (
     # --- not countable items / markers (no class)
     _r("", 0.0, "ראה הערה"),
     _r("", 0.0, "אביזר", "מוגן"),
+    # a cobra conduit IS a BOQ item (4.20); other "צינור" legend rows are routing, not countable
+    _r("conduit_cobra", 0.85, "קוברה"),
     _r("", 0.0, "צינור"),
-    _r("", 0.0, "קוברה"),
     # --- plumbing
     _r("", 0.0, "ברז לניאגרה"),  # the cistern's stop valve, not a WC
     _r("fixture_wc_monoblock", 0.85, "מונובלוק"),
