@@ -7,6 +7,14 @@ import { MAX_FILE_BYTES } from "./validation";
 const openProject = async (opts: Parameters<typeof renderApp>[1] = {}) => {
   const r = await renderApp("/projects/p-levi", { signedIn: true, ...opts });
   await screen.findByRole("heading", { level: 1, name: /דירת לוי/ });
+  // IA v2: once a project has drawings, upload is a secondary action in a dialog (no inline dropzone).
+  await waitFor(() =>
+    expect(screen.queryByTestId("file-input") ?? screen.queryByRole("button", { name: "העלאת שרטוטים" })).toBeTruthy(),
+  );
+  if (!screen.queryByTestId("file-input")) {
+    fireEvent.click(screen.getByRole("button", { name: "העלאת שרטוטים" }));
+    await screen.findByTestId("file-input");
+  }
   return r;
 };
 
