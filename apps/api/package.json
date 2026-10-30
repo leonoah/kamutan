@@ -17,20 +17,20 @@
   },
   "dependencies": {
     "@google-cloud/pubsub": "^6.3.1",
-    "@nestjs/common": "^11.2.7",
-    "@nestjs/core": "^11.2.7",
-    "@nestjs/platform-express": "^11.2.7",
-    "@nestjs/swagger": "^11.4.7",
-    "@nestjs/throttler": "^6.4.0",
+    "@nestjs/common": "^12.3.2",
+    "@nestjs/core": "^12.3.2",
+    "@nestjs/platform-express": "^12.3.2",
+    "@nestjs/swagger": "^12.0.5",
+    "@nestjs/throttler": "^6.7.1",
     "exceljs": "4.4.0",
     "express": "^5.2.1",
     "fflate": "0.8.3",
     "firebase-admin": "^13.10.0",
     "firebase-functions": "^7.4.0",
     "helmet": "^8.0.0",
-    "nestjs-pino": "^4.6.1",
-    "pino": "^9.5.0",
-    "pino-http": "^10.3.0",
+    "nestjs-pino": "^5.3.1",
+    "pino": "^10.0.0",
+    "pino-http": "^11.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sharp": "0.35.5",
@@ -38,7 +38,7 @@
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
-    "@nestjs/testing": "^11.2.7",
+    "@nestjs/testing": "^12.3.2",
     "@swc-node/register": "^1.10.9",
     "@swc/core": "^1.16.20",
     "@types/express": "^5.0.6",
@@ -47,8 +47,8 @@
     "esbuild": "^0.28.2",
     "supertest": "^7.0.0",
     "typescript": "^5.6.3",
-    "unplugin-swc": "^1.5.1",
-    "vitest": "^4.1.12"
+    "unplugin-swc": "^2.0.0",
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": "22"

@@ -1746,7 +1746,7 @@ export function ReviewPage() {
                     onClick={() => selectedLine && advance(selectedLine)}
                     aria-keyshortcuts="A"
                   >
-                    <Kbd className="border-primary-foreground/40 bg-transparent text-primary-foreground">A</Kbd>
+                    <Kbd className="border-primary-foreground/40 bg-transparent text-primary-foreground">A</Kbd>{" "}
                     {to ? t("boq.approveLine", { status: t(`boq.status.${to}`) }) : t("review.approve")}
                   </Button>
                 );
