@@ -117,8 +117,8 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
       unplugin-swc:
-        specifier: ^1.5.1
-        version: 1.6.0(@swc/core@1.16.20)(esbuild@0.28.2)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7))
+        specifier: ^2.0.0
+        version: 2.0.0(@swc/core@1.16.20)(esbuild@0.28.2)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7))
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.20.5)(jsdom@25.0.1)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7))
@@ -2180,8 +2180,11 @@ packages:
   '@rolldown/pluginutils@1.0.0-rc.3':
     resolution: {integrity: sha512-eybk3TjzzzV97Dlj5c+XrBFW57eTNhzod66y9HrBlzJ6NsCrWCp/2kaPS3K9wJmurBC0Tdw4yPjXKZqlznim3Q==}
 
-  '@rollup/pluginutils@5.4.0':
-    resolution: {integrity: sha512-MfPp06CjRLfXQ3wY0R8vJDYBy/MvVcc9OulEfR0B8Iv9ko+GCNaRZ+EpJYFl27LhKsZK0o420sYCRHCjfCgeUg==}
+  '@rolldown/pluginutils@1.0.1':
+    resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@rollup/pluginutils@5.5.1':
+    resolution: {integrity: sha512-P9ZvnfouRu4MSC+ilERaw6FmZs8zqKhpHxEs4aGDGWQAMzQGXnhvCSvoNwokfNvdt7t3Y5Y4p6gStQgezeIqug==}
     engines: {node: '>=14.0.0'}
     peerDependencies:
       rollup: ^1.20.0||^2.0.0||^3.0.0||^4.0.0
@@ -2567,6 +2570,9 @@ packages:
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
+
+  '@types/estree@1.0.10':
+    resolution: {integrity: sha512-lTyOMnOcmRBzdCv6/4zUZCrEhV0xrqQiUZBZtVcbmLHBXKLnN8q89v/wKRF/Q0HbwVsqbIG3o5HDoFl9sduM+g==}
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
@@ -4859,13 +4865,14 @@ packages:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
     engines: {node: '>= 0.8'}
 
-  unplugin-swc@1.6.0:
-    resolution: {integrity: sha512-aOdzxAwJvz1GeQ8vwSNA2N8AreHYBrpwxqnwzxmB7LCdeZiXOBDj0rgjZod+lMxFsJGm8k6lF/1iKF/9wacLbw==}
+  unplugin-swc@2.0.0:
+    resolution: {integrity: sha512-hMdGJEtkwiJhzuXXx4Nb1XYDeD9KG4+P7KZOaErJTpZNYhTo1sbWIsXb+u410zXyaqH00veNX4UxOr6TpUwNiQ==}
+    engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       '@swc/core': ^1.2.108
 
-  unplugin@3.4.0:
-    resolution: {integrity: sha512-9skdIFlCsPdFV7wUfZxNsFInlW+7nJmGu2gkTu0OUhF56aXGsHab9x52/QhdJ4lC7ZDPWTxbiC4ANqVlsuaW3w==}
+  unplugin@3.7.0:
+    resolution: {integrity: sha512-GrM2uq3DQo3hvLU2FjeYhooJ8BY9N6j1Fbzgx7Pta3VVJevsD3VP4dPjZkZOS0mLvN8w9zzr9OlP+31bSMyuLw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       '@farmfe/core': '*'
@@ -7381,9 +7388,11 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.0-rc.3': {}
 
-  '@rollup/pluginutils@5.4.0(rollup@4.64.5)':
+  '@rolldown/pluginutils@1.0.1': {}
+
+  '@rollup/pluginutils@5.5.1(rollup@4.64.5)':
     dependencies:
-      '@types/estree': 1.0.9
+      '@types/estree': 1.0.10
       estree-walker: 2.0.2
       picomatch: 4.0.7
     optionalDependencies:
@@ -7714,6 +7723,8 @@ snapshots:
   '@types/crypto-js@4.2.2': {}
 
   '@types/deep-eql@4.0.2': {}
+
+  '@types/estree@1.0.10': {}
 
   '@types/estree@1.0.9': {}
 
@@ -10503,12 +10514,12 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin-swc@1.6.0(@swc/core@1.16.20)(esbuild@0.28.2)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)):
+  unplugin-swc@2.0.0(@swc/core@1.16.20)(esbuild@0.28.2)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)):
     dependencies:
-      '@rollup/pluginutils': 5.4.0(rollup@4.64.5)
+      '@rollup/pluginutils': 5.5.1(rollup@4.64.5)
       '@swc/core': 1.16.20
       load-tsconfig: 0.2.5
-      unplugin: 3.4.0(esbuild@0.28.2)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7))
+      unplugin: 3.7.0(esbuild@0.28.2)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7))
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rsbuild/core'
@@ -10521,9 +10532,10 @@ snapshots:
       - vite
       - webpack
 
-  unplugin@3.4.0(esbuild@0.28.2)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)):
+  unplugin@3.7.0(esbuild@0.28.2)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@1.21.7)):
     dependencies:
       '@jridgewell/remapping': 2.3.5
+      '@rolldown/pluginutils': 1.0.1
       picomatch: 4.0.7
       webpack-virtual-modules: 0.6.2
     optionalDependencies:
