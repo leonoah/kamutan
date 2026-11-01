@@ -76,6 +76,8 @@ export function configureApp(app: NestExpressApplication, cfg: AppConfig): void 
   );
   app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
     res.setHeader('Cache-Control', 'no-store');
+    // SEC-40 / DAST 10063: same feature lockdown as the hosting headers (firebase.json) — a JSON API needs none.
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()');
     next();
   });
   // Sprint 5 (SEC-29): public share API — never indexed, never leaks the URL (token) as a referrer, read-only (405).

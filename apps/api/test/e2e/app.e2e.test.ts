@@ -34,6 +34,7 @@ describe('Kamutan API e2e (/api/v1, fake auth + in-memory Firestore/Storage/PubS
       expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
       expect(res.headers['x-content-type-options']).toBe('nosniff');
       expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['permissions-policy']).toContain('camera=()');
       expect(res.headers['content-security-policy']).toContain("default-src 'none'");
       expect(res.headers['x-powered-by']).toBeUndefined();
     });
