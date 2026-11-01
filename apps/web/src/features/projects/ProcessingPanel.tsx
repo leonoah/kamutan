@@ -1,12 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-import type { Job, SheetRow, SheetSet } from "@/api/types";
+import { isSupersededSet, type Job, type SheetRow, type SheetSet } from "@/api/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Ltr } from "@/components/Ltr";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isActiveJob, useLiveJobs, useLiveSheetSets, useLiveSheets } from "@/features/realtime/hooks";
+import { ReuploadButton } from "@/features/upload/ReuploadButton";
 
 const KNOWN_STAGES = new Set([
   "ingest",
@@ -36,7 +37,9 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
   const liveError = jobs.error ?? sets.error ?? sheets.error;
 
   const activeJobs = (jobs.data ?? []).filter(isActiveJob);
-  const failedJobs = (jobs.data ?? []).filter((j) => j.status === "failed");
+  // A failed job whose set was replaced (re-upload / revision) is history, not a problem to show.
+  const supersededSets = new Set((sets.data ?? []).filter(isSupersededSet).map((x) => x.id));
+  const failedJobs = (jobs.data ?? []).filter((j) => j.status === "failed" && !(j.sheetSetId && supersededSets.has(j.sheetSetId)));
   // job.versionId → sheet → sheetSet name, so each progress row says which file it is.
   const nameOf = (j: Job) => {
     // Sprint 1 jobs carry sheetSetId; version ids are only unique per sheet, so that lookup is a fallback.
@@ -68,7 +71,7 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
         {activeJobs.length + failedJobs.length > 0 ? (
           <section aria-label={t("project.processing")} className="flex flex-col gap-3">
             {[...activeJobs, ...failedJobs].map((j) => (
-              <JobRow key={j.id} job={j} name={nameOf(j)} />
+              <JobRow key={j.id} job={j} name={nameOf(j)} projectId={projectId} />
             ))}
           </section>
         ) : null}
@@ -87,7 +90,7 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
         {sets.data && sets.data.length > 0 ? (
           <ul className="divide-y divide-border" aria-label={t("project.sheetSets")}>
             {sets.data.map((s) => (
-              <SetRow key={s.id} set={s} />
+              <SetRow key={s.id} set={s} replacesName={s.replacesSheetSetId ? (sets.data?.find((x) => x.id === s.replacesSheetSetId)?.name ?? null) : null} />
             ))}
           </ul>
         ) : sets.isLoading ? (
@@ -102,7 +105,7 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
   );
 }
 
-function JobRow({ job, name }: { job: Job; name: string | null }) {
+function JobRow({ job, name, projectId }: { job: Job; name: string | null; projectId: string }) {
   const { t } = useTranslation();
   const failed = job.status === "failed";
   const stage = job.stage && KNOWN_STAGES.has(job.stage) ? t(`project.stage.${job.stage}`) : t(`project.jobStatus.${job.status}`);
@@ -122,19 +125,27 @@ function JobRow({ job, name }: { job: Job; name: string | null }) {
       </div>
       {!failed ? (
         <Progress value={job.progress} aria-label={`${t("project.processing")}: ${stage}`} />
-      ) : job.error ? (
-        <p role="alert" className="ps-6 text-meta text-destructive">
-          {t(`project.errors.${job.error.code}`, { defaultValue: t("project.errors.internal") })}
-        </p>
-      ) : null}
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 ps-6">
+          {job.error ? (
+            <p role="alert" className="flex-1 text-meta text-destructive">
+              {t(`project.errors.${job.error.code}`, { defaultValue: t("project.errors.internal") })}
+            </p>
+          ) : null}
+          {/* A-UI-05 / E2E-14: the fix for a damaged file is to upload it again (as a replacement of this set). */}
+          <ReuploadButton projectId={projectId} sheetSetId={job.sheetSetId ?? null} name={name} />
+        </div>
+      )}
     </div>
   );
 }
 
-function SetRow({ set }: { set: SheetSet }) {
+function SetRow({ set, replacesName }: { set: SheetSet; replacesName: string | null }) {
   const { t } = useTranslation();
-  const icon =
-    set.status === "ready" ? (
+  const superseded = isSupersededSet(set);
+  const icon = superseded ? (
+    <CheckCircle2 className="size-4 text-muted-foreground" aria-hidden />
+  ) : set.status === "ready" ? (
       <CheckCircle2 className="size-4 text-conf-high" aria-hidden />
     ) : set.status === "failed" ? (
       <AlertCircle className="size-4 text-destructive" aria-hidden />
@@ -145,11 +156,16 @@ function SetRow({ set }: { set: SheetSet }) {
     <li className="flex items-center justify-between gap-3 py-2.5 text-dense" data-set-status={set.status}>
       <span className="flex min-w-0 items-center gap-2">
         {icon}
-        <bdi className="truncate text-foreground">{set.name ?? set.id}</bdi>
+        <bdi className={cn("truncate", superseded ? "text-muted-foreground line-through" : "text-foreground")}>{set.name ?? set.id}</bdi>
         <Ltr className="text-meta uppercase text-muted-foreground">{set.fileKind}</Ltr>
+        {replacesName ? (
+          <span className="truncate text-meta text-muted-foreground" data-replaces>
+            · {t("project.setReplaces", { name: replacesName })}
+          </span>
+        ) : null}
       </span>
       <span className="shrink-0 text-muted-foreground">
-        {t(`project.setStatus.${set.status}`)} · <Ltr>{formatDate(set.createdAt)}</Ltr>
+        {t(`project.setStatus.${superseded ? "superseded" : set.status}`, { defaultValue: set.status })} · <Ltr>{formatDate(set.createdAt)}</Ltr>
       </span>
     </li>
   );

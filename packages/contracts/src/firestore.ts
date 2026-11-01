@@ -6,6 +6,10 @@
 export const fsPaths = Object.freeze({
   org: (orgId: string) => `orgs/${orgId}`,
   member: (orgId: string, uid: string) => `orgs/${orgId}/members/${uid}`,
+  /** Stage 10 (A-API-01): members collection + pending invitations (API-only writes, admin-readable). */
+  members: (orgId: string) => `orgs/${orgId}/members`,
+  invites: (orgId: string) => `orgs/${orgId}/invites`,
+  invite: (orgId: string, inviteId: string) => `orgs/${orgId}/invites/${inviteId}`,
   project: (orgId: string, projectId: string) => `orgs/${orgId}/projects/${projectId}`,
   sheetSet: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/sheetSets/${id}`,
   sheets: (o: string, p: string) => `orgs/${o}/projects/${p}/sheets`,
@@ -154,6 +158,8 @@ export const LIBRARY_IMPORT_PATH_RE = new RegExp(`^orgs/(${ID})/imports/(${UUID}
 export const UNDERSTANDING_ARTIFACT_PATH_RE = new RegExp(
   `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(legend|detections|rooms|links|fixtures|walls)\\.json\\.gz$`,
 );
+/** Stage 10: the OCR text artifact, read server-side ONLY for text-line boxes of `text_{n}` evidence (never served). */
+export const TEXT_ARTIFACT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/text\\.json\\.gz$`);
 /** @deprecated Sprint 0 (see storagePaths.upload). */
 export const UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/uploads/(${ID})/(${ID})$`);
 /** @deprecated Sprint 0 (see storagePaths.source). */

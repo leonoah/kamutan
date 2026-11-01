@@ -73,6 +73,8 @@ export interface Sprint5Deps {
   titleBlockDetected?: (sheetId: string) => boolean;
   /** Security gate F-7: the user signed in recently (+MFA) — required to sign the offboarding ZIP URL. Default true. */
   recentAuth?: () => Promise<boolean>;
+  /** A-UI-12: who acts (the signed-in user); default MOCK_ACTOR (backend unit tests without a session). */
+  actor?: () => ActorRef;
 }
 
 /** Mock title-block detection: deterministic, a couple of Noah sheets have none (F-3 demo). */
@@ -186,6 +188,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
   const assertActive = (orgId: string) => {
     if (orgOf(orgId).status !== "active") throw new ApiError(403, "org_offboarding", "Organisation is being offboarded");
   };
+  const actor = (): ActorRef => deps.actor?.() ?? MOCK_ACTOR;
   const requireRole = (allowed: Role[]) => {
     if (!allowed.includes(deps.role())) throw new ApiError(403, "forbidden", "insufficient role");
   };
@@ -396,6 +399,9 @@ export function createSprint5Mock(deps: Sprint5Deps) {
   return {
     publicShare,
     audit: () => audit,
+    /** Stage 10 (members, approval invalidation): append to the same hash chain as the signed-in user. */
+    appendAudit: (e: Omit<AuditEvent, "id" | "hash" | "prevHash" | "at" | "actor"> & { actor?: ActorRef | null }, orgId = "org-demo") => append({ actor: actor(), ...e }, orgId),
+    actor,
     orgPatch(orgId: string) {
       const st = orgOf(orgId);
       return { settings: { ...settingsOf(orgId) }, slug: st.slug, status: st.status, deleteAfter: st.deleteAfter };
@@ -410,7 +416,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
 
     /** Called by the mock's patchLine wrapper with the line before / after. */
     recordLinePatch(projectId: string, before: BoqLine, after: BoqLine, req: PatchBoqLineRequest) {
-      const base = { actor: MOCK_ACTOR, entity: "boqLines", entityId: before.id, projectId };
+      const base = { actor: actor(), entity: "boqLines", entityId: before.id, projectId };
       const org = projectOrg(projectId);
       if (req.qtyOverride !== undefined && (before.qtyOverride ?? null) !== (after.qtyOverride ?? null))
         append({ ...base, action: "qtyOverride", before: { qty: before.qtyOverride ?? before.qty, override: before.qtyOverride ?? null }, after: { qty: after.qtyOverride ?? after.qty, override: after.qtyOverride ?? null }, meta: { kind: "qtyOverride", reason: req.reason?.trim() || null } }, org);
@@ -420,7 +426,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
         append({ ...base, action: "note", before: { note: before.note ?? null }, after: { note: after.note ?? null }, meta: { kind: "note" } }, org);
     },
     recordCorrection(projectId: string, c: { kind: string; class: string | null; detectionId: string | null }) {
-      append({ actor: MOCK_ACTOR, action: "create", entity: "corrections", entityId: c.detectionId, projectId, after: { kind: c.kind, class: c.class } }, projectOrg(projectId));
+      append({ actor: actor(), action: "create", entity: "corrections", entityId: c.detectionId, projectId, after: { kind: c.kind, class: c.class } }, projectOrg(projectId));
     },
 
     lineHistory(projectId: string, lineId: string): { items: LineHistoryItem[] } {
@@ -439,10 +445,13 @@ export function createSprint5Mock(deps: Sprint5Deps) {
         }));
       const detIds = new Set(deps.boq.evidence(projectId, lineId).items.map((x) => x.detectionId));
       for (const c of deps.corrections(projectId))
-        if (c.detectionId && detIds.has(c.detectionId))
-          items.push({ at: c.at, by: { uid: c.by, displayName: c.by === MOCK_ACTOR.uid ? MOCK_ACTOR.displayName : null }, action: "correction", before: null, after: { kind: c.kind, class: c.class, itemCode: c.itemCode }, reason: c.reason });
+        // A-UI-08 (mock side): a manual add / count / measure is evidence `m_<correctionId>`, not a detection id.
+        if ((c.detectionId && detIds.has(c.detectionId)) || detIds.has(`m_${c.id}`))
+          items.push({ at: c.at, by: { uid: c.by, displayName: c.by === actor().uid ? actor().displayName : c.by === MOCK_ACTOR.uid ? MOCK_ACTOR.displayName : null }, action: "correction", before: null, after: { kind: c.kind, class: c.class, itemCode: c.itemCode }, reason: c.reason });
       if (line.computedAt) items.push({ at: line.computedAt, by: null, action: "rebuild", before: null, after: { qty: line.qty }, reason: null });
-      items.sort((a, b) => b.at.localeCompare(a.at));
+      // A-UI-06 (mock side): same timestamp → the cause above its effect (override before the status reopen it caused).
+      const rank: Record<string, number> = { qtyOverride: 0, correction: 1, note: 2, status: 3, rebuild: 4 };
+      items.sort((a, b) => b.at.localeCompare(a.at) || (rank[a.action] ?? 9) - (rank[b.action] ?? 9));
       return { items };
     },
 
@@ -496,7 +505,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
         status: "queued",
         progress: 0,
         pageCount: null,
-        createdBy: MOCK_ACTOR.uid,
+        createdBy: actor().uid,
         createdAt: new Date(started).toISOString(),
         error: null,
         url: null,
@@ -505,7 +514,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
         readyAt: started + deps.tickMs * 6,
         pages,
       });
-      append({ actor: MOCK_ACTOR, action: "create", entity: "exports", entityId: exportId, projectId, after: { sheets: req.sheetIds?.length ?? "all", floorSplit: req.floorSplit, hideTitleBlock: req.hideTitleBlock } }, projectOrg(projectId));
+      append({ actor: actor(), action: "create", entity: "exports", entityId: exportId, projectId, after: { sheets: req.sheetIds?.length ?? "all", floorSplit: req.floorSplit, hideTitleBlock: req.hideTitleBlock } }, projectOrg(projectId));
       return { exportId };
     },
     getExport(projectId: string, exportId: string): ExportDoc {
@@ -532,7 +541,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       if (!req.label?.trim() || req.label.length > 120) throw new ApiError(400, "validation_failed", "label is required");
       const l = makeLink(projectId, req, randomToken());
       links.set(l.id, l);
-      append({ actor: MOCK_ACTOR, action: "create", entity: "shareLinks", entityId: l.id, projectId, after: { days: req.days, label: l.label, recipient: l.recipient, hideTitleBlock: l.hideTitleBlock, allowPdfDownload: l.allowPdfDownload } }, projectOrg(projectId));
+      append({ actor: actor(), action: "create", entity: "shareLinks", entityId: l.id, projectId, after: { days: req.days, label: l.label, recipient: l.recipient, hideTitleBlock: l.hideTitleBlock, allowPdfDownload: l.allowPdfDownload } }, projectOrg(projectId));
       deps.emit();
       const notMasked = (l.sheets ?? []).filter((x) => l.hideTitleBlock && !x.titleBlockMasked);
       const warnings: ShareLinkWarning[] = notMasked.length
@@ -555,7 +564,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       if (!l || l.projectId !== projectId) throw new ApiError(404, "not_found", "Link not found");
       if (!l.revokedAt) {
         l.revokedAt = now();
-        append({ actor: MOCK_ACTOR, action: "revoke", entity: "shareLinks", entityId: l.id, projectId }, projectOrg(projectId));
+        append({ actor: actor(), action: "revoke", entity: "shareLinks", entityId: l.id, projectId }, projectOrg(projectId));
       }
       return publicLink(l);
     },
@@ -570,7 +579,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       for (const k of allowed) {
         const v = req[k];
         if (v === undefined || v === cur[k]) continue;
-        append({ actor: MOCK_ACTOR, action: "update_settings", entity: "orgs", entityId: orgId, before: { [k]: cur[k] }, after: { [k]: v } }, orgId);
+        append({ actor: actor(), action: "update_settings", entity: "orgs", entityId: orgId, before: { [k]: cur[k] }, after: { [k]: v } }, orgId);
         (cur as unknown as Record<string, unknown>)[k] = v;
       }
       deps.emit();
@@ -583,7 +592,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       const started = Date.now();
       const doc = { id: exportId, orgId, status: "queued" as const, progress: 0, url: null, expiresAt: null, error: null, createdAt: new Date(started).toISOString(), readyAt: started + deps.tickMs * 8 };
       offExports.set(exportId, doc);
-      append({ actor: MOCK_ACTOR, action: "create", entity: "offboardingExports", entityId: orgId }, orgId);
+      append({ actor: actor(), action: "create", entity: "offboardingExports", entityId: orgId }, orgId);
       const { orgId: _o, readyAt: _r, ...out } = doc;
       return out;
     },
@@ -600,7 +609,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       if (out.status !== "succeeded") return { ...out, url: null, expiresAt: null };
       // F-7: signing the ZIP URL needs the same MFA + recent sign-in as creating it.
       if (deps.recentAuth && !(await deps.recentAuth())) throw new ApiError(403, "recent_auth_required", "sign in again (within the last 10 minutes) to do this");
-      append({ actor: MOCK_ACTOR, action: "download", entity: "offboardingExports", entityId: exportId }, orgId);
+      append({ actor: actor(), action: "download", entity: "offboardingExports", entityId: exportId }, orgId);
       return { ...out, url: blobUrl(EMPTY_ZIP, "application/zip"), expiresAt: new Date(Date.now() + DAY).toISOString() };
     },
     offboardOrg(orgId: string, confirm: string): OffboardResponse {
@@ -618,7 +627,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
           l.revokedAt = now();
           revoked++;
         }
-      append({ actor: MOCK_ACTOR, action: "offboard", entity: "orgs", entityId: orgId, after: { deleteAfter: st.deleteAfter, revokedShareLinks: revoked } }, orgId);
+      append({ actor: actor(), action: "offboard", entity: "orgs", entityId: orgId, after: { deleteAfter: st.deleteAfter, revokedShareLinks: revoked } }, orgId);
       deps.emit();
       return { status: st.status, deleteAfter: st.deleteAfter, revokedShareLinks: revoked };
     },

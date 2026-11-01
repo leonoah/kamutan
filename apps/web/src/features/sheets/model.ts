@@ -65,7 +65,8 @@ export function uncertainFields(row: SheetRow): Set<"discipline" | "floors" | "s
   if (!c) return out;
   const r = new Set(c.reasons);
   if (!c.discipline || r.has("NO_DISCIPLINE") || c.level === "red") out.add("discipline");
-  if (!c.floors.length || r.has("NO_FLOOR") || r.has("MULTI_FLOOR") || c.level === "red") out.add("floors");
+  // A-UI-19: FLOOR_TITLE_MISMATCH (floors vs the title, Worker-Accuracy) or any other FLOOR_* flag → floors unsure.
+  if (!c.floors.length || r.has("NO_FLOOR") || r.has("MULTI_FLOOR") || c.reasons.some((x) => x.startsWith("FLOOR_")) || c.level === "red") out.add("floors");
   if (!c.scaleText || r.has("NO_DIM_CHECK") || r.has("SCALE_CONFLICT") || c.level === "red") out.add("scale");
   return out;
 }

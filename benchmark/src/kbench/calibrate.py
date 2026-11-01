@@ -68,7 +68,8 @@ TABLE_SCHEMA = "kamutan.calibration/1"
 SPLITS_SCHEMA = "kamutan.gt-splits/1"
 TABLE_DOMAINS = ("electrical", "lighting", "plumbing", "tiling")
 DOMAIN_ALIAS = {"hvac": "plumbing"}  # AC drain points feed the plumbing chapter (3.01)
-R_RASTER = "רסטר"
+R_RASTER = "גיליון רסטר"  # worker reason since Stage 10 (A-pipeline-11)
+RASTER_REASONS = frozenset({R_RASTER, "רסטר"})  # + the pre-Stage-10 copy
 R_SCALE_CONFLICT = "קנה מידה סותר"
 ALL_SYMBOL_DISCIPLINES = ("electrical", "lighting")
 MAX_KNOTS = 256  # worker schema: scoreMap maxItems
@@ -485,7 +486,7 @@ def _sheet_docs(root: Path) -> dict[str, dict[str, Any]]:
     def add(sid: str, d: dict[str, Any]) -> None:
         reasons = list(((d.get("classification") or {}).get("reasons")) or [])
         cur = docs.setdefault(sid, {"raster": False, "scale_conflict": False})
-        cur["raster"] |= R_RASTER in reasons or d.get("inputType") == "raster"
+        cur["raster"] |= any(r in RASTER_REASONS for r in reasons) or d.get("inputType") == "raster"
         cur["scale_conflict"] |= R_SCALE_CONFLICT in reasons or d.get("scaleConflict") is True
 
     for p in root.rglob("*.json"):
@@ -518,7 +519,7 @@ def ceiling_checks(root: str | Path) -> dict[str, Any]:
         flags = docs.get(sid, {"raster": False, "scale_conflict": False})
         det_list = list((read_json_any(dets[sid]).get("detections") or []) if sid in dets else [])
         room_list = list((read_json_any(rooms[sid]).get("rooms") or []) if sid in rooms else [])
-        raster = bool(flags["raster"]) or any(R_RASTER in (d.get("reasons") or []) for d in det_list)
+        raster = bool(flags["raster"]) or any(r in RASTER_REASONS for d in det_list for r in (d.get("reasons") or []))
         if raster:
             raster_sheets.add(sid)
             for d in det_list + room_list:

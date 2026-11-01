@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_BOQ_TEMPLATE, type BoqLine, type BoqTemplate } from '@kamutan/contracts';
+import { type BoqLine, type BoqTemplate } from '@kamutan/contracts';
 import { toBoqLine } from '../../src/db/boq-docs';
 import {
   buildBoqWorkbook,
@@ -18,11 +18,14 @@ import {
   NOTES_TITLE,
   sanitizeCell,
   STATUS_TITLE,
+  ROOM_SHEET,
   type EvidenceGroup,
 } from '../../src/boq/excel';
 import { NOAH_FLOORS, noahLines } from '../fixtures/noah-boq';
+import { SAMPLE_BOQ_TEMPLATE } from '../fixtures/sample-template';
 
-const template: BoqTemplate = { ...structuredClone(DEFAULT_BOQ_TEMPLATE), updatedAt: null } as BoqTemplate;
+// Stage 10: the shipped default is generic now; the client-format checks use the sample's template (test fixture).
+const template: BoqTemplate = structuredClone(SAMPLE_BOQ_TEMPLATE);
 const lines = (opts: { allGreen?: boolean } = {}): BoqLine[] => noahLines(opts).map((l) => toBoqLine(l.id, { ...l } as Record<string, unknown>));
 
 async function read(buf: Buffer) {
@@ -77,7 +80,7 @@ describe('buildBoqWorkbook — client format (sample BOQ chapter 04 + 9.01)', ()
     writeFileSync(out, buf);
 
     const wb = await read(buf);
-    expect(wb.worksheets.map((w) => w.name)).toEqual([MAIN_SHEET, FLOOR_SHEET, EVIDENCE_SHEET]);
+    expect(wb.worksheets.map((w) => w.name)).toEqual([MAIN_SHEET, FLOOR_SHEET, ROOM_SHEET, EVIDENCE_SHEET]);
     const ws = wb.getWorksheet(MAIN_SHEET) as ExcelJS.Worksheet;
     for (const w of wb.worksheets) expect(w.views[0]?.rightToLeft).toBe(true);
 

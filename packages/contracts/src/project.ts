@@ -15,6 +15,13 @@ export const FloorMetaSchema = z.object({
 });
 export type FloorMeta = z.infer<typeof FloorMetaSchema>;
 
+/**
+ * Project card counters (Stage 10, A-LIVE-02): COMPUTED BY THE API ON READ (GET /v1/projects, GET /v1/projects/:id)
+ * from the live collections — nobody writes `stats` on the project doc (a stored value is ignored).
+ * sheets = current sheets (superseded old sheets of a revised upload excluded); boqLines/green/yellow/red = boqLines by
+ * level; reviewOpen = non-green lines not (effectively) approved + approved lines whose qty changed since approval.
+ * "% מאומת" (web) = green / (green + yellow + red).
+ */
 export const ProjectStatsSchema = z.object({
   sheets: z.number().int().nonnegative(),
   reviewOpen: z.number().int().nonnegative(),
@@ -23,6 +30,7 @@ export const ProjectStatsSchema = z.object({
   yellow: z.number().int().nonnegative(),
   green: z.number().int().nonnegative(),
 });
+export type ProjectStats = z.infer<typeof ProjectStatsSchema>;
 
 /**
  * orgs/{orgId}/projects/{projectId}. `projectId` (== doc id) and `orgId` are

@@ -60,6 +60,13 @@ export const FinalizeUploadRequestSchema = z
     uploadToken: z.string().min(16).max(4096),
     /** Display name for the sheet set; defaults to the sanitized filename. */
     name: z.string().trim().min(1).max(255).optional(),
+    /**
+     * Stage 10 (A-API-05): this upload is a REVISION of an existing set of the project. The old set's sheets become
+     * superseded versions of the matching new sheets (title/number + discipline/floor, else page order) once the
+     * revision is processed; the BOQ build then counts only the new sheets. 409 when the set is already superseded
+     * or the bytes are identical to it.
+     */
+    replacesSheetSetId: DocIdSchema.optional(),
   })
   .strict();
 export type FinalizeUploadRequest = z.infer<typeof FinalizeUploadRequestSchema>;

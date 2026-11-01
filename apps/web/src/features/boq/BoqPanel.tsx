@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, Hammer, History, RefreshCw } from "lucide-react";
-import type { BoqBuild, BoqChapter, BoqLine, ProjectBoqState } from "@/api/types";
+import { qtyChangedSinceApproval, type BoqBuild, type BoqChapter, type BoqLine, type ProjectBoqState } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -11,7 +11,7 @@ import { ReasonChip } from "@/components/ReasonChip";
 import { Ltr } from "@/components/Ltr";
 import { cn } from "@/lib/utils";
 import { StatusPill } from "./StatusPill";
-import { fmtQty, floorsOf, groupByChapter, isCompositeLine, isOverridden, receiptOf, effectiveQty, type StatusFilter } from "./model";
+import { chapterLabel, fmtQty, floorsOf, groupByChapter, isCompositeLine, isOverridden, receiptOf, effectiveQty, type StatusFilter } from "./model";
 import { isBuildActive } from "./queries";
 
 export type PanelTab = "boq" | "counts";
@@ -54,6 +54,10 @@ export interface BoqPanelProps {
   onHistory?: (line: BoqLine) => void;
   /** Sprint 5: the calibration badge ("כיול שמרני"), shown in the panel header. */
   calibrationBadge?: ReactNode;
+  /** Stage 10: every line before filters (counts of the "הכמות השתנתה" filter). */
+  allLines?: readonly BoqLine[];
+  /** Stage 10 (A-LIVE-01): default library in use / no library — explained above the table, with an import link. */
+  libraryNotice?: ReactNode;
 }
 
 const stripe = { green: "bg-transparent", yellow: "bg-conf-mid", red: "bg-conf-low" } as const;
@@ -73,6 +77,8 @@ export const BoqPanel = memo(function BoqPanel(p: BoqPanelProps) {
 
   return (
     <section id="boq-panel" tabIndex={-1} aria-label={t("boq.tabBoq")} className="flex min-h-0 flex-col bg-surface">
+      {/* heading outline under the page's sr-only <h1> (A-UI-16): h1 → h2 per pane → h3 in details */}
+      <h2 className="sr-only">{t("boq.tabBoq")}</h2>
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2">
         <div role="tablist" aria-label={t("boq.tabsLabel")} className="flex h-full items-stretch">
           {tabs.map((x) => (
@@ -112,6 +118,7 @@ export const BoqPanel = memo(function BoqPanel(p: BoqPanelProps) {
         </div>
       ) : (
         <div role="tabpanel" id="panel-boq" aria-labelledby="panel-tab-boq" className="flex min-h-0 flex-1 flex-col">
+          {p.libraryNotice}
           <BuildStatus {...p} building={building} />
           {p.state?.latestBuildId ? <BoqTable {...p} /> : null}
         </div>
@@ -203,7 +210,8 @@ function BoqTable(p: BoqPanelProps) {
     if (p.selectedLineId) rowRefs.current.get(p.selectedLineId)?.scrollIntoView?.({ block: "nearest" });
   }, [p.selectedLineId]);
 
-  const statuses: StatusFilter[] = ["all", "draft", "reviewed", "approved"];
+  const statuses: StatusFilter[] = ["all", "draft", "reviewed", "approved", "qtyChanged"];
+  const qtyChangedCount = useMemo(() => p.allLines?.filter(qtyChangedSinceApproval).length ?? 0, [p.allLines]);
   const hasOrder = useMemo(() => p.lines.some((l) => l.orderQty != null), [p.lines]);
   const order = Boolean(p.showOrder) && hasOrder;
   const cols = 6 + floors.length + (order ? 1 : 0);
@@ -234,7 +242,7 @@ function BoqTable(p: BoqPanelProps) {
           >
             {statuses.map((s) => (
               <option key={s} value={s}>
-                {t(`boq.status.${s}`)}
+                {s === "qtyChanged" ? t("boq.status.qtyChangedCount", { count: qtyChangedCount }) : t(`boq.status.${s}`)}
               </option>
             ))}
           </select>
@@ -324,7 +332,7 @@ function BoqTable(p: BoqPanelProps) {
                       className="sticky top-8 z-10 border-b border-border bg-surface-sunken px-3 py-2 text-start font-normal"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate font-bold text-foreground">{g.title}</span>
+                        <span className="min-w-0 flex-1 truncate font-bold text-foreground">{chapterLabel(g.code, g.title)}</span>
                         <span className="shrink-0 text-meta text-muted-foreground">{t("boq.chapterVerified", { pct: g.stats.pct })}</span>
                       </div>
                       <SectionProgress high={g.stats.green} mid={g.stats.yellow} low={g.stats.red} className="mt-1.5" />

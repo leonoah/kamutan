@@ -20,7 +20,6 @@ from ..ingest.pdf_vector import VectorSheet
 from ..ocr.dictionary import TextSpan
 from ..pipeline.artifacts import encode_primitives, encode_text
 from ..render.tiles import Pyramid, write_pyramid, write_thumbnail
-from .vectors import empty_sheet
 
 Progress = Callable[[str, int], None]
 
@@ -92,7 +91,8 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
         rs = RasterSource.open(src_path)
         render = rs.render
         w_mm, h_mm = rs.width_mm, rs.height_mm
-        vs = empty_sheet(0, w_mm, h_mm)
+        # Stage 10 (A-pipeline-06): the long straight ink runs as vectors — title-block cells and drawing regions
+        vs = rs.rule_sheet(index)
         raster = True
         dpi = rs.dpi  # the max level is the native resolution
         if not rs.dpi_known:
@@ -144,7 +144,7 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             spans = [span_from_line(ln) for ln in direct_lines]
             source = "dxf"
         elif raster and do_ocr:
-            direct_lines = rs.ocr_lines()
+            direct_lines = rs.ocr_lines(vs)
             spans = [span_from_line(ln) for ln in direct_lines]
             source = "tesseract"
         lap("ocr")

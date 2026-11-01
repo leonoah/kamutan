@@ -14,7 +14,7 @@ other class is capped at yellow with :data:`R_CONSERVATIVE`.
   the producer keeps ``raw_score`` as ``scoreRaw``.
 * ``level`` never becomes *more* permissive than the producer's heuristic ``level`` (when given): it is the
   minimum of that level and the level of the calibrated score; then the hard ceilings — ``raster`` (or a
-  ``רסטר`` reason) is never green, a green class the table does not allow becomes yellow (+ the reason), a
+  ``גיליון רסטר`` / legacy ``רסטר`` reason) is never green, a green class the table does not allow becomes yellow (+ the reason), a
   wilsonLb under the org's ``green_threshold`` becomes yellow (+ :data:`R_ORG_THRESHOLD`).
 * ``human=True`` (accepted / corrected by a person) stays green with :data:`R_HUMAN`.
 * a non-green result always carries ≥ 1 reason.
@@ -54,7 +54,9 @@ R_CONSERVATIVE = "כיול שמרני: אין מספיק נתוני אמת לס�
 R_ORG_THRESHOLD = "כיול: מתחת לסף הירוק של הארגון"
 R_CALIBRATED_LOW = "ביטחון נמוך לאחר כיול"
 R_HUMAN = "אושר ידנית"
-R_RASTER = "רסטר"
+R_RASTER = "גיליון רסטר"  # Stage 10 A-pipeline-11: the spec / UI copy
+R_RASTER_LEGACY = "רסטר"  # artifacts written before Stage 10
+RASTER_REASONS = frozenset({R_RASTER, R_RASTER_LEGACY})
 
 GREEN_MIN = 0.85  # brief level rule (contracts LEVEL_THRESHOLDS)
 RED_BELOW = 0.5
@@ -187,9 +189,9 @@ class CalibrationTable:
                 if R_CALIBRATED_LOW not in out:
                     out.append(R_CALIBRATED_LOW)
         capped = False
-        if lv == "green" and (raster or R_RASTER in out):
+        if lv == "green" and (raster or any(r in RASTER_REASONS for r in out)):
             lv, capped = "yellow", True
-            if R_RASTER not in out:
+            if not any(r in RASTER_REASONS for r in out):
                 out.append(R_RASTER)
         if lv == "green":
             ok, why = self.green_allowed(cls, green_threshold)

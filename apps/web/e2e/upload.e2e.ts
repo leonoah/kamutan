@@ -69,12 +69,68 @@ test.describe("Upload dialog", () => {
     await shot(page, info, "e2e14-01-set-with-failure", { fullPage: true });
   });
 
-  // A-UI-05: a failed set has a reason but no "העלה מחדש" action anywhere (ProcessingPanel.tsx / SheetGallery.tsx);
-  // the user has to guess to re-open the upload dialog. 07_test_plan E2E-14 requires the button.
-  test.fixme("A-UI-05 E2E-14 UI: the failed file offers 'העלה מחדש'", async ({ page }) => {
+  // A-UI-05 (fixed): a failed set had a reason but no "העלה מחדש" action anywhere. Now the failed job row offers it; the
+  // picked file is uploaded as the replacement of the failed set (`replacesSheetSetId`), which then leaves the list.
+  test("A-UI-05 E2E-14 UI: the failed file offers 'העלה מחדש', and the fixed file replaces the failed set", async ({ page }, info) => {
     await login(page, "/projects/p-levi");
     await fileInput(page).setInputFiles([pdf("one-encrypted.pdf", 8)]);
     await expect(page.getByText("הקובץ מוגן בסיסמה").first()).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByRole("button", { name: /העלה מחדש|העלו מחדש/ })).toBeVisible();
+    const again = page.getByRole("button", { name: /^העלה מחדש/ });
+    await expect(again).toBeVisible();
+    await expect(again).toHaveAccessibleName("העלה מחדש את one-encrypted.pdf");
+    await shot(page, info, "e2e14-02-reupload-offered");
+    await axe(page, info, "reupload");
+    await page.getByTestId("reupload-input").setInputFiles([pdf("one-fixed.pdf", 8)]);
+    // the replacement uploads with a "גרסה מתוקנת"/"מחליף את" badge, processes, and the failure is gone
+    await expect(page.locator("[data-set-status=superseded]")).toHaveCount(1, { timeout: 60_000 });
+    await expect(page.getByText("הקובץ מוגן בסיסמה")).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.getByRole("button", { name: /^העלה מחדש/ })).toHaveCount(0);
+    await expect(page.getByText(/מחליף את one-encrypted\.pdf/).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "לאישור הגיליון" }).first()).toBeVisible({ timeout: 90_000 });
+    await shot(page, info, "e2e14-03-reuploaded", { fullPage: true });
+  });
+
+  test("revised upload: 'מחליף את סט X' replaces an existing set; its sheets are superseded", async ({ page }, info) => {
+    test.setTimeout(150_000);
+    await login(page, "/projects/p-noah");
+    await expect(page.locator("[data-sheet]").first()).toBeVisible();
+    const before = await page.locator("[data-sheet]").count();
+    await page.getByRole("button", { name: "העלאת שרטוטים" }).click();
+    const dlg = page.getByRole("dialog", { name: "העלאת שרטוטים" });
+    const pick = dlg.getByLabel("מה הקבצים האלה?");
+    await expect(pick).toHaveValue(""); // default: a new set
+    const option = pick.locator("option").nth(1);
+    const label = (await option.textContent())!;
+    const oldName = label.replace(/^מחליף את סט /, "");
+    const oldId = (await option.getAttribute("value"))!;
+    await pick.selectOption(oldId);
+    await expect(dlg.getByText(/הגיליונות שלו יוחלפו בגיליונות החדשים/)).toBeVisible();
+    await shot(page, info, "up-04-replace-picker");
+    await axe(page, info, "upload-replace-dialog", '[role="dialog"]');
+    await fileInput(page).setInputFiles([pdf("noah-revision-B.pdf", 8)]);
+    const row = dlg.getByRole("listitem").filter({ hasText: "noah-revision-B.pdf" });
+    await expect(row).toContainText(`מחליף את ${oldName}`);
+    await expect(row).toContainText("הועלה", { timeout: 30_000 });
+    await expect(pick).toHaveValue(""); // back to "new set" for the next file
+    await page.keyboard.press("Escape");
+    await expect(dlg).toBeHidden();
+    // the old set is "הוחלף בגרסה חדשה", the new one says what it replaces; the old sheet left the gallery
+    await expect(page.locator("[data-set-status=superseded]")).toHaveCount(1, { timeout: 60_000 });
+    await expect(page.locator("[data-set-status=superseded]")).toContainText("הוחלף בגרסה חדשה");
+    await expect(page.locator("[data-replaces]").filter({ hasText: `מחליף את ${oldName}` })).toHaveCount(1);
+    await expect(page.locator(`[data-sheet^="${oldId}-"]`)).toHaveCount(0);
+    await expect.poll(() => page.locator("[data-sheet]").count(), { timeout: 60_000 }).toBe(before - 1 + 2);
+    await shot(page, info, "up-05-replaced", { fullPage: true });
+  });
+
+  // A-UI-23 (fixed): with a toast open, the first Escape only dismissed the toast (Radix layer order).
+  test("A-UI-23: one Escape closes the upload dialog even while a toast is open", async ({ page }) => {
+    await login(page, "/projects/p-noah");
+    await page.getByRole("button", { name: "העלאת שרטוטים" }).click();
+    const dlg = page.getByRole("dialog", { name: "העלאת שרטוטים" });
+    await fileInput(page).setInputFiles([pdf("E2E-esc.pdf")]);
+    await expect(page.getByText(/הועלה\. העיבוד התחיל\./).first()).toBeVisible({ timeout: 30_000 });
+    await page.keyboard.press("Escape");
+    await expect(dlg).toBeHidden();
   });
 });

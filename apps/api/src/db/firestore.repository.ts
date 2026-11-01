@@ -229,14 +229,17 @@ export class FirestoreRepository implements Repository {
   }
 
   // --- sheets & versions --------------------------------------------------------------
-  async listSheets(orgId: string, projectId: string, opts: { limit: number; cursor?: string; sheetSetId?: string }) {
+  async listSheets(orgId: string, projectId: string, opts: { limit: number; cursor?: string; sheetSetId?: string; includeSuperseded?: boolean }) {
     let q: Query = this.db.collection(fsPaths.sheets(orgId, projectId));
     if (opts.sheetSetId) q = q.where('sheetSetId', '==', opts.sheetSetId);
     q = q.orderBy(FieldPath.documentId());
     if (opts.cursor) q = q.startAfter(opts.cursor);
     const snap = await q.limit(opts.limit + 1).get();
     const docs = snap.docs.slice(0, opts.limit);
-    const sheets = docs.map((d) => mappers.toSheet(d.id, plain(d.data()) ?? {}));
+    // Stage 10 (A-API-05): superseded old sheets are skipped after the page read (no "!=" index; the cursor stays the
+    // last raw doc id, so a page may hold fewer than `limit` items).
+    const lastRawId = docs.at(-1)?.id ?? null;
+    const sheets = docs.map((d) => mappers.toSheet(d.id, plain(d.data()) ?? {})).filter((sh) => opts.includeSuperseded === true || sh.superseded !== true);
     const refs = sheets.flatMap((sh) => (sh.currentVersionId ? [this.db.doc(fsPaths.version(orgId, projectId, sh.id, sh.currentVersionId))] : []));
     const versions = new Map<string, SheetVersion>();
     if (refs.length) {
@@ -249,7 +252,7 @@ export class FirestoreRepository implements Repository {
       ...sh,
       currentVersion: versionSummary(sh.currentVersionId ? (versions.get(`${sh.id}/${sh.currentVersionId}`) ?? null) : null),
     }));
-    return { items, nextCursor: snap.docs.length > opts.limit && items.length ? (items.at(-1) as SheetSummary).id : null };
+    return { items, nextCursor: snap.docs.length > opts.limit && lastRawId ? lastRawId : null };
   }
 
   async getSheet(orgId: string, projectId: string, sheetId: string): Promise<Sheet | null> {

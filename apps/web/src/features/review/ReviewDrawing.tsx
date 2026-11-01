@@ -95,7 +95,8 @@ export const ReviewDrawing = memo(function ReviewDrawing(p: ReviewDrawingProps) 
         <DropdownMenu>
           <DropdownMenuTrigger
             disabled={p.rows.length === 0}
-            aria-label={t("viewer.sheetPicker")}
+            // starts with the visible "גיליון: …" (WCAG 2.5.3, A-UI-03), then what the button does
+            aria-label={`${t("review.sheet")}: ${row ? sheetName(row) : "—"} · ${t("viewer.sheetPicker")}`}
             className="inline-flex h-7 max-w-[55%] items-center gap-1 rounded-sm border border-input px-2 text-foreground hover:bg-muted disabled:opacity-50"
           >
             <span className="shrink-0">{t("review.sheet")}:</span>

@@ -185,7 +185,9 @@ def test_one_off_suggestions_are_yellow_and_need_a_cue():
     texts = [{"text": "הזנה חדשה לדוד שמש", "bboxMm": [0, 0, 10, 3]}]
     ln = lines(aggregate([replace(sh, texts=texts)], default_rules(), lib()))
     assert ln["3.10"].qty == 1
-    assert ln["3.10"].by_floor == {"basement": 1.0} and ln["3.10"].evidence == []
+    # A-pipeline-10: a text trigger is evidence too (the text line on the sheet, clickable)
+    assert ln["3.10"].by_floor == {"basement": 1.0}
+    assert [(e["sheetId"], e["detectionId"], e["floor"]) for e in ln["3.10"].evidence] == [("pl", "text_0", "basement")]
     # no cue at all → nothing
     empty = psheet("el", "electrical", [det(1, "socket_single")], [])
     assert not any(c.startswith("3.") for c in lines(aggregate([empty], default_rules(), lib())))

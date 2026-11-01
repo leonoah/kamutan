@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useApi, useBackend } from "@/api/client";
 import type {
   BoqBuild,
@@ -81,6 +81,31 @@ export function usePatchBoqLine(projectId: string) {
         cur ? { ...cur, items: cur.items.map((l) => (l.id === line.id ? line : l)) } : cur,
       ),
   });
+}
+
+/**
+ * A-UI-07: a drawing correction that adds / removes one counted item moves its BOQ line(s) at once (the receipt's
+ * manual part too); the server's re-derive / rebuild then replaces the cache (invalidateAfterCorrection). Returns a
+ * rollback for a failed write.
+ */
+export function bumpLinesOptimistic(qc: QueryClient, projectId: string, lineIds: readonly string[], delta: number): () => void {
+  if (!lineIds.length || !delta) return () => undefined;
+  const ids = new Set(lineIds);
+  const prev = qc.getQueriesData<BoqLinesResponse>({ queryKey: boqLinesKey(projectId) });
+  void qc.cancelQueries({ queryKey: boqLinesKey(projectId) });
+  qc.setQueriesData<BoqLinesResponse>({ queryKey: boqLinesKey(projectId) }, (cur) =>
+    cur
+      ? {
+          ...cur,
+          items: cur.items.map((l) =>
+            ids.has(l.id)
+              ? { ...l, qty: Math.max(0, l.qty + delta), ...(delta > 0 ? { manualCount: (l.manualCount ?? 0) + delta } : {}), evidenceCount: Math.max(0, l.evidenceCount + delta) }
+              : l,
+          ),
+        }
+      : cur,
+  );
+  return () => prev.forEach(([k, v]) => qc.setQueryData(k, v));
 }
 
 /* ---------------- evidence ---------------- */

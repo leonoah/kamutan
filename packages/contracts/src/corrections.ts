@@ -34,19 +34,21 @@ export const CorrectionKindSchema = z.enum(CORRECTION_KINDS);
 export type CorrectionKind = z.infer<typeof CorrectionKindSchema>;
 
 /**
- * Role needed per kind (decision, SEC-07 "תיקון פריטים ושינוי סטטוס"): accept / reject are review decisions
- * (reviewer+); every kind that changes WHAT is counted or measured is an edit (editor+), like `qtyOverride` in
- * Sprint 3. A batch needs the highest role of its items; a revert needs the role of the reverted kind.
+ * Role needed per kind (SEC-07 "תיקון פריטים ושינוי סטטוס" = reviewer ✓). Sprint 4 made the counting kinds editor-only;
+ * Stage 10 (A-API-03, orchestrator decision "follow the spec") makes every kind reviewer+ — the reviewer persona of
+ * E2E-02/03 adds / removes / reclassifies / moves / measures on the drawing. `qtyOverride` on a line stays editor+.
+ * A batch needs the highest role of its items; a revert needs the role of the reverted kind (kept for future splits).
  */
 export const CORRECTION_KIND_MIN_ROLE: Readonly<Record<CorrectionKind, 'editor' | 'reviewer'>> = Object.freeze({
-  add: 'editor',
-  remove: 'editor',
-  reclassify: 'editor',
-  move: 'editor',
-  link: 'editor',
-  unlink: 'editor',
-  measure: 'editor',
-  count: 'editor',
+  // Stage 10 (A-API-03, SEC-07 "תיקון פריטים" + E2E-02/03 personas): every drawing correction is reviewer-level.
+  add: 'reviewer',
+  remove: 'reviewer',
+  reclassify: 'reviewer',
+  move: 'reviewer',
+  link: 'reviewer',
+  unlink: 'reviewer',
+  measure: 'reviewer',
+  count: 'reviewer',
   accept: 'reviewer',
   reject: 'reviewer',
 });

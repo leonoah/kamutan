@@ -62,6 +62,16 @@ export const ROUTES: RouteCase[] = [
   { route: `PATCH ${V}/orgs/{orgId}/settings`, min: 'admin', spec: 'admin', specRow: `${ROW.admin} (+MFA, SEC-02)`, build: (o) => ({ method: 'patch', url: `${V}/orgs/${o.orgId}/settings`, body: { llmEnabled: false } }) },
   { route: `POST ${V}/orgs/{orgId}/offboarding/export`, min: 'admin', spec: 'admin', specRow: ROW.offboard, offboarding: true, build: (o) => ({ method: 'post', url: `${V}/orgs/${o.orgId}/offboarding/export`, body: {} }) },
   { route: `GET ${V}/orgs/{orgId}/offboarding/export/{exportId}`, min: 'admin', spec: 'admin', specRow: ROW.offboard, offboarding: true, build: (o) => ({ method: 'get', url: `${V}/orgs/${o.orgId}/offboarding/export/${o.offboardingExportId}` }) },
+  // Stage 10 (A-API-01): members + invitations (admin; mutations + MFA + recent sign-in)
+  { route: `GET ${V}/orgs/{orgId}/members`, min: 'admin', spec: 'admin', specRow: ROW.admin, build: (o) => ({ method: 'get', url: `${V}/orgs/${o.orgId}/members` }) },
+  // same role as today → a no-op change (200) that never alters the world
+  { route: `PATCH ${V}/orgs/{orgId}/members/{uid}`, min: 'admin', spec: 'admin', specRow: `${ROW.admin} (+MFA)`, build: (o) => ({ method: 'patch', url: `${V}/orgs/${o.orgId}/members/${o.uid('viewer')}`, body: { role: 'viewer' } }) },
+  { route: `DELETE ${V}/orgs/{orgId}/members/{uid}`, min: 'admin', spec: 'admin', specRow: `${ROW.admin} (+MFA)`, build: (o) => ({ method: 'delete', url: `${V}/orgs/${o.orgId}/members/${o.extraMemberUid}` }) },
+  { route: `POST ${V}/orgs/{orgId}/invites`, min: 'admin', spec: 'admin', specRow: `${ROW.admin} (+MFA); UX onboarding "הזמנת צוות"`, build: (o, r) => ({ method: 'post', url: `${V}/orgs/${o.orgId}/invites`, body: { email: `new-${r}@${o.key}.example.test`, role: 'viewer' } }) },
+  { route: `GET ${V}/orgs/{orgId}/invites`, min: 'admin', spec: 'admin', specRow: ROW.admin, build: (o) => ({ method: 'get', url: `${V}/orgs/${o.orgId}/invites` }) },
+  { route: `DELETE ${V}/orgs/{orgId}/invites/{inviteId}`, min: 'admin', spec: 'admin', specRow: `${ROW.admin} (+MFA)`, build: (o) => ({ method: 'delete', url: `${V}/orgs/${o.orgId}/invites/${o.revokeInviteId}` }) },
+  // the invite link: any signed-in user whose verified email is the invite's (each role has its own invite)
+  { route: `POST ${V}/invites/{inviteId}/accept`, min: 'any', spec: 'any', specRow: `${ROW.any} with the invited (verified) email`, offboarding: true, build: (o, r) => ({ method: 'post', url: `${V}/invites/${o.invites[r]}/accept`, body: {} }) },
   // body without `confirm` → 400 for an admin: the matrix never offboards the org
   { route: `POST ${V}/orgs/{orgId}/offboarding`, min: 'admin', spec: 'admin', specRow: ROW.offboard, offboarding: true, build: (o) => ({ method: 'post', url: `${V}/orgs/${o.orgId}/offboarding`, body: {} }) },
 
@@ -100,17 +110,17 @@ export const ROUTES: RouteCase[] = [
   { route: `PATCH ${V}/projects/{projectId}/boq/lines/{lineId}`, variant: 'status', min: 'reviewer', spec: 'reviewer', specRow: ROW.approve, build: (o) => ({ method: 'patch', url: `${P(o)}/boq/lines/${o.lines.status}`, body: { status: 'reviewed' } }) },
   { route: `PATCH ${V}/projects/{projectId}/boq/lines/{lineId}`, variant: 'qtyOverride', min: 'editor', spec: 'editor', specRow: 'E2E-11: "עורך משנה את הכמות"', build: (o, r) => ({ method: 'patch', url: `${P(o)}/boq/lines/${o.lines.override}`, body: { qtyOverride: 5, reason: `override by ${r}` } }) },
   { route: `GET ${V}/projects/{projectId}/boq/lines/{lineId}/evidence`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/boq/lines/${o.lines.status}/evidence` }) },
-  { route: `GET ${V}/projects/{projectId}/boq/lines/{lineId}/history`, min: 'reviewer', spec: 'viewer', specRow: ROW.view, defect: 'A-API-07', build: (o) => ({ method: 'get', url: `${P(o)}/boq/lines/${o.lines.status}/history` }) },
+  { route: `GET ${V}/projects/{projectId}/boq/lines/{lineId}/history`, min: 'viewer', spec: 'viewer', specRow: `${ROW.view} (A-API-07 fixed)`, build: (o) => ({ method: 'get', url: `${P(o)}/boq/lines/${o.lines.status}/history` }) },
 
   // ------------------------------------------------------------------ review (Sprint 4)
   { route: `POST ${V}/projects/{projectId}/corrections`, variant: 'accept', min: 'reviewer', spec: 'reviewer', specRow: ROW.fix, build: (o) => ({ method: 'post', url: `${P(o)}/corrections`, body: accept(o) }) },
-  { route: `POST ${V}/projects/{projectId}/corrections`, variant: 'add', min: 'editor', spec: 'reviewer', specRow: `${ROW.fix}; E2E-02 "הבודק … משייך אותו"`, defect: 'A-API-03', build: (o) => ({ method: 'post', url: `${P(o)}/corrections`, body: add(o) }) },
+  { route: `POST ${V}/projects/{projectId}/corrections`, variant: 'add', min: 'reviewer', spec: 'reviewer', specRow: `${ROW.fix}; E2E-02 "הבודק … משייך אותו" (A-API-03 fixed)`, build: (o) => ({ method: 'post', url: `${P(o)}/corrections`, body: add(o) }) },
   { route: `POST ${V}/projects/{projectId}/corrections/batch`, variant: 'accept', min: 'reviewer', spec: 'reviewer', specRow: ROW.fix, build: (o) => ({ method: 'post', url: `${P(o)}/corrections/batch`, body: { items: [accept(o)] } }) },
-  { route: `POST ${V}/projects/{projectId}/corrections/batch`, variant: 'add', min: 'editor', spec: 'reviewer', specRow: `${ROW.fix}; E2E-03 group approval`, defect: 'A-API-03', build: (o) => ({ method: 'post', url: `${P(o)}/corrections/batch`, body: { items: [add(o)] } }) },
+  { route: `POST ${V}/projects/{projectId}/corrections/batch`, variant: 'add', min: 'reviewer', spec: 'reviewer', specRow: `${ROW.fix}; E2E-03 group approval (A-API-03 fixed)`, build: (o) => ({ method: 'post', url: `${P(o)}/corrections/batch`, body: { items: [add(o)] } }) },
   { route: `POST ${V}/projects/{projectId}/corrections/{correctionId}/revert`, variant: 'accept', min: 'reviewer', spec: 'reviewer', specRow: ROW.fix, build: (o) => ({ method: 'post', url: `${P(o)}/corrections/${o.corrections.accept}/revert`, body: {} }) },
-  { route: `POST ${V}/projects/{projectId}/corrections/{correctionId}/revert`, variant: 'add', min: 'editor', spec: 'reviewer', specRow: ROW.fix, defect: 'A-API-03', build: (o) => ({ method: 'post', url: `${P(o)}/corrections/${o.corrections.add}/revert`, body: {} }) },
+  { route: `POST ${V}/projects/{projectId}/corrections/{correctionId}/revert`, variant: 'add', min: 'reviewer', spec: 'reviewer', specRow: `${ROW.fix} (A-API-03 fixed)`, build: (o) => ({ method: 'post', url: `${P(o)}/corrections/${o.corrections.add}/revert`, body: {} }) },
   { route: `POST ${V}/projects/{projectId}/correction-batches/{batchId}/revert`, variant: 'accept', min: 'reviewer', spec: 'reviewer', specRow: ROW.fix, build: (o) => ({ method: 'post', url: `${P(o)}/correction-batches/${o.batches.accept}/revert`, body: {} }) },
-  { route: `POST ${V}/projects/{projectId}/correction-batches/{batchId}/revert`, variant: 'add', min: 'editor', spec: 'reviewer', specRow: ROW.fix, defect: 'A-API-03', build: (o) => ({ method: 'post', url: `${P(o)}/correction-batches/${o.batches.add}/revert`, body: {} }) },
+  { route: `POST ${V}/projects/{projectId}/correction-batches/{batchId}/revert`, variant: 'add', min: 'reviewer', spec: 'reviewer', specRow: `${ROW.fix} (A-API-03 fixed)`, build: (o) => ({ method: 'post', url: `${P(o)}/correction-batches/${o.batches.add}/revert`, body: {} }) },
   { route: `GET ${V}/projects/{projectId}/corrections`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/corrections` }) },
   { route: `GET ${V}/projects/{projectId}/review-queue`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/review-queue` }) },
   { route: `GET ${V}/projects/{projectId}/rooms/{sheetId}/{roomId}/settings`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/rooms/${o.sheet.sheetId}/${o.roomId}/settings` }) },

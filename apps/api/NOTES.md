@@ -10,6 +10,123 @@ Runs as Cloud Functions 2nd gen `api` (europe-west1) behind the Firebase Hosting
 (same origin → no CORS needed), and locally via `src/main.ts`. Contracts (Zod, source of truth for DTOs,
 Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
 
+## Stage 10 fix round (API agent) — read this first, Web + Worker-BOQ
+
+### Contract requests / published (`packages/contracts`, all additive; `json-schema/` regenerated, 166 schemas, +11)
+
+- **Default library + template (A-LIVE-01)** — `library.ts`: `DEFAULT_ITEM_LIBRARY` (58 generic items, `source:
+  'default'`, `defaultsVersion` 1, ids = `itemIdFor(code, description)`): chapter 01 הריסה 1.01–1.10 (`קומפלט`, offered
+  by the worker's `r_template_demolition`), 03 / 04 / 05 / 09 = exactly one item per default-rule `itemCode`, with the
+  rule's description (brand-free wording for 3.06 / 4.06 / 4.23; trigram similarity ≥ 0.6 asserted in
+  `test/stage10.test.ts`) and the rule's unit (counts → `יח'`). `DEFAULT_ITEM_LIBRARY_VERSION`, `DEFAULT_UNITS`,
+  `defaultUnitFor(ruleUnit)`, `ITEM_SOURCES` + `'default'`, `ItemLibraryItem.defaultsVersion?`. `DEFAULT_BOQ_TEMPLATE`
+  is now the GENERIC template v2 (`DEFAULT_BOQ_TEMPLATE_VERSION` 2, `BoqTemplate.defaultsVersion?`): chapters 01 / 03 /
+  04 / 05 / 09, codePrefixes = chapter number, generic notes, no client wording. The Sprint-3 sample-format template
+  moved to the API test fixture `test/fixtures/sample-template.ts` (Excel fidelity tests). Worker data file:
+  `json-schema/defaults/library-defaults.json` `{version, templateVersion, template, items}`.
+- **Worker-BOQ requests 1–6 (workers/drawing/NOTES.md "Stage 10 — fix round (Worker-BOQ)") — all done**:
+  rule kinds `template_chapter` (`TemplateChapterMatchSchema`) and `fixture_combination`
+  (`FixtureCombinationMatchSchema`, 2..4 distinct classes) + default rule `r_template_demolition` in
+  `DEFAULT_BOQ_RULES` (no version bump; the worker mirror test is strict now and passes); `BoqLine.byRoom`
+  (`BoqLineRoomSchema`), `BoqLine.approvalInvalidated`, `BoqLine.approvedQty/approvedQtyAt`; `BoqBuild.approvalsInvalidated`
+  (≤ 500) + `approvalsAuditedAt`; item `source: 'default'`; project `stats` mapped (missing fields → 0).
+- **Approval invalidation (A-API-06 / A-pipeline-08)** — `boq.ts`: `QTY_CHANGED_REASON`, `qtyChangedReason(x, y)` =
+  "הכמות השתנתה מאז האישור (X → Y)", `isQtyChangedReason`, `needsReapproval(line)`, `effectiveStatus(line)`,
+  `exportBlockingLines(lines)`, `APPROVAL_INVALIDATED_ACTION`. `applyRebuild` (reference semantics) drops an approved
+  line whose computed qty differs from `approvedQty ?? previous qty` to `reviewed` (stamps cleared, reason first) —
+  NOT when the line has a `qtyOverride` (same rule as the worker). The API stamps `approvedQty = qty` /
+  `approvedQtyAt` on approve, clears them when the line leaves `approved`, and drops the qty-changed chip on re-approval.
+- **Corrections roles (A-API-03)**: `CORRECTION_KIND_MIN_ROLE` = reviewer for every kind.
+- **Members / invites (A-API-01)** — `members.ts`: `Invite` (+ derived `state` incl. `expired`), `CreateInviteRequest
+  {email (lower-cased), role}`, `CreateInviteResponse {invite, url}`, `InviteList`, `RevokeInviteResponse`,
+  `AcceptInviteResponse {orgId, role, alreadyMember}`, `MemberView` (+ `isSelf`), `MemberList`, `PatchMemberRequest`,
+  `MemberResponse`, `RemoveMemberResponse`, `INVITE_TTL_DAYS` 14, `MAX_PENDING_INVITES` 100,
+  `ADMIN_RECENT_AUTH_SECONDS` 600; `fsPaths.members/invites/invite`.
+- **Audit (A-UI-13)**: `AuditPage.items[]` + `summary` / `entityLabel` / `actionLabel`; pure `auditSummaryHe(event)`,
+  `AUDIT_ENTITY_HE`, `AUDIT_ACTION_HE`. `LineHistoryItem` + `summary?`, `sourceId?`.
+- **Revised upload (A-API-05)**: `FinalizeUploadRequest.replacesSheetSetId?`; `SheetSet.replacesSheetSetId?`,
+  `supersededBySetId?`, `supersededAt?`, `supersede? {status pending|matched, matchedAt, sheetMap}`; `Sheet.superseded?`,
+  `supersededBySetId?`, `supersededBy?`, `supersededMatch? title|page_order|none`, `supersedes?`;
+  `ListSheetsQuery.includeSuperseded?`.
+- **Evidence targets (Worker-BOQ A-pipeline-10)**: `BoqEvidenceItem.target? {kind detection|sheet|text|room, bboxMm?}`
+  (API-derived in `GET …/lines/:id/evidence`, never stored); `TEXT_ARTIFACT_PATH_RE` (server-side read of text.json.gz
+  for the boxes of `text_{n}` only — the text is never returned). **Web**: `sheet` / `room` / `text` targets open the
+  sheet; `text` centres on `bboxMm` when present.
+- **Share (A-API-09)**: `ShareLink.boqBuildId?`. **Project stats (A-LIVE-02)**: see `ProjectStatsSchema` doc.
+
+**Still requested from Worker-BOQ / ingest** (not blocking the API): (1) skip sheets with `superseded == true` in the
+BOQ build and in `stats.sheets` (the API writes `superseded: true` + `supersededBy` which may be **null** for an old
+sheet with no match — test the boolean, not `supersededBy`); (2) apply corrections whose `sheetId` is superseded to its
+`supersededBy` sheet's current version by anchor (cross-version rule of E2E-12), unmatched when `supersededBy` is null;
+(3) a library import should deactivate (`active: false`) `source: 'default'` items of the codes it imports (an import
+overrides the default; today both items of a code exist and the worker prefers… whatever `resolve` picks).
+
+### Stage 10 endpoints (new)
+
+| Method | Path | Min role | Notes |
+| --- | --- | --- | --- |
+| GET | `/orgs/:orgId/members` | admin | `MemberList`, admins first. |
+| PATCH | `/orgs/:orgId/members/:uid` | admin + MFA + sign-in ≤ 10 min | `{role}`; 409 for the last admin; audit `members/update_role {uid, from, to}`. Effective at the next request (membership read per request). |
+| DELETE | `/orgs/:orgId/members/:uid` | admin + MFA + sign-in ≤ 10 min | 409 for the last admin; audit `members/remove`. |
+| POST | `/orgs/:orgId/invites` | admin + MFA + sign-in ≤ 10 min | `{email, role}` → 201 `{invite, url}`; `url = ${PUBLIC_APP_ORIGIN}/invite/{id}` (the admin copies it; no mail service). A pending invite of the same email is renewed (role, +14 d). ≤ 100 pending (409). Audit `members/invite {inviteId, email, role}`. |
+| GET | `/orgs/:orgId/invites` | admin | Every state, newest first. |
+| DELETE | `/orgs/:orgId/invites/:inviteId` | admin + MFA + sign-in ≤ 10 min | Revoke (idempotent); audit `invites/revoke`. |
+| POST | `/invites/:inviteId/accept` | any signed-in user | The caller's **verified** email must equal the invite's; else (unknown / other email / unverified / revoked / expired / offboarding org) the same 404. Idempotent after the claim (`alreadyMember: true`). Audit `invites/accept`. |
+
+**Claim on first sign-in**: `GET /me` and `GET /orgs` first claim every pending, unexpired invite addressed to the
+token's verified email (collection-group `invites` `email ==`, ≤ 50) — one transaction per invite (member doc +
+invite accepted + audit). An existing membership keeps its role.
+
+**Changed**: `PATCH /orgs/:orgId/settings`, `PATCH /boq-templates/:id`, `PATCH /boq-rules/:id` → admin + MFA + sign-in
+≤ 10 min (`AccessService.requireSensitiveAdmin`, `mfa_required` / `recent_auth_required`; MFA flag =
+`OFFBOARDING_REQUIRE_MFA`, refused `false` in production). `GET …/boq/lines/:id/history` → **viewer**. Corrections of
+every kind (single, batch, revert) → **reviewer**. `POST …/sheet-sets` takes `replacesSheetSetId` (404 unknown set,
+409 set already replaced / identical bytes). `GET …/sheets` hides superseded sheets unless `includeSuperseded=true`.
+`POST …/boq/export/marked-pdf` and `POST …/share-links` → 409 `export_blocked` under `blockExportOnRed` like the xlsx.
+`GET /projects` and `GET /projects/:id` carry `stats`.
+
+### Fixes (defect → fix → test)
+
+| Defect | Fix | Test |
+| --- | --- | --- |
+| A-LIVE-01 | Shipped `DEFAULT_ITEM_LIBRARY` + generic template v2 (contracts). Seeding in `BoqRepository.seedDefaults` (both drivers): library seeded only when the org has **no** item (deterministic ids → idempotent; never re-seeded, so deletions / imports stay). **Backfill = lazy**: `seedDefaults` already runs on org bootstrap (`POST /orgs`), every `POST …/boq/build` (before the worker reads the library), export and GET templates / rules; `GET /library/items` seeds an empty library too. No admin script needed. Existing `tpl_default` docs are kept (create-if-missing). Worker side (unit / description fallback, exact-code resolution of default items, chapter 01 offers): Worker-BOQ. | contracts `test/stage10.test.ts` (validity, ids, generic text, alignment with every rule code incl. worker similarity, template, defaults json); `e2e/library.e2e.test.ts` (bootstrap seeds 58 items + `r_template_demolition`, idempotent, lazy backfill of an empty org, non-empty org untouched, other org gets defaults only) |
+| A-LIVE-02 | Nobody wrote `project.stats` and `toProject` dropped it → "0 גיליונות". `toProject` now maps the worker-written `stats` (Worker-BOQ: `stats.sheets` per ingest, `stats.{boqLines, green, yellow, red}` per build); `ProjectStateService.withStats` fills missing fields with live count() aggregations (Firestore, no doc reads) and always adds the API's `reviewOpen` (non-green lines not approved). After a supersede the API rewrites `stats.sheets`. | `e2e/stage10.e2e.test.ts` "A-LIVE-02" (counted fallback, worker counters preferred, reviewOpen); E2E-12 acceptance (`stats.sheets` after a revision = 2, not 3) |
+| A-API-01 | `src/members/` (service + 2 controllers), `MembersRepository` (memory + Firestore), claim in `OrgsService.myOrgs`. Last admin protected; audited; offboarding orgs never claimable. | `e2e/stage10.e2e.test.ts` "A-API-01"; roles matrix (+7 routes, offboarding sweep, isolation sweep) |
+| A-API-02 | `requireSensitiveAdmin` on settings / templates / rules. | acceptance `roles-matrix` A-API-02 (flipped), `e2e/library` (mfa_required + recent_auth_required) |
+| A-API-03 | `CORRECTION_KIND_MIN_ROLE` all reviewer. | acceptance A-API-03 (flipped) + matrix rows; `e2e/review`, `unit/review` updated |
+| A-API-04 | `boq/export-gate.ts` `assertExportAllowed` in xlsx, marked PDF and share-link creation. | acceptance `export-gate` ×2 (flipped); `e2e/stage10` (all three refuse a needs-reapproval line) |
+| A-API-05 | Finalize `replacesSheetSetId` → `ProjectStateRepository.startSupersede` (pending). `ProjectStateService.reconcileSupersedes` (called by GET sheets, GET project, BOQ build request, auto rebuilds): once the revision's set is ready and every new sheet's current version is terminal, `planSupersede` matches title + discipline + floors → unique title → page order; old sheets get `superseded: true, supersededBy, supersededMatch`, new ones `supersedes`, BOQ stale (`sheet`), audit `sheetSets/supersede`. Lists, share links (version lock), review queue and BOQ titles skip superseded sheets (`listSheets` default). | acceptance `e2e-12` "A-API-05" (replaces the todo + the "parallel set" test) |
+| A-API-06 | Gate counts `needsReapproval` lines (also legacy `approved` + `approvedQty ≠ qty` / chip); xlsx + share snapshot show "נבדק"; approve stamps `approvedQty`; contract `applyRebuild` demotes; audit: the API appends one `boqLines/approval_invalidated` event per `approvalsInvalidated` entry of the latest build (actor `system:boq.build`, idempotent via `approvalsAuditedAt`, on GET boq / export / line history); history shows status approved → reviewed + rebuild X → Y. | acceptance `export-gate` A-API-06 (flipped), `e2e-12` (approved 6 → 7 now reviewed + reason); `e2e/stage10` (events once, chain verifies, history); `unit/boq-docs`; contracts `boq.test` |
+| A-API-07 | History route + service viewer. | acceptance A-API-07 (flipped); `e2e/governance` |
+| A-API-08 | `before = prevQtyOverride ?? qty`. | acceptance `e2e-11` A-API-08 (flipped); `unit/governance` |
+| A-API-09 | Link stores `boqBuildId` (= the snapshot's build); overlay uses that build's evidence; legacy links use the snapshot's buildId and filter to snapshot ids. | acceptance `e2e-09` A-API-09 (flipped) |
+| A-API-10 | `AccessService.equalizeNotFound` = a dummy membership read on the not-found path of `requireProjectRole` and `GET /jobs/:id`. | acceptance `e2e-10` A-API-10 (flipped) |
+| A-API-11 | `watermarkPeriodFor(level)`: levels shorter than 2×384 px get period = half the short side (≥ 96 px, smaller font); pattern repeated to cover any 512 px tile at any phase. | acceptance `e2e-09` A-API-11 (flipped); `e2e/stage10` (period table) |
+| A-UI-06 | `compareHistoryItems`: at desc → qtyOverride > note > status > rebuild > correction → sourceId. | `e2e/governance` (override above the status it re-opened) |
+| A-UI-08 | Corrections join the line history also by evidence `correctionId` / `m_<correctionId>` (manual add / count / measure). Verified through the real HTTP stack (reviewer `add` → evidence → history). | `e2e/stage10` "A-UI-08 + A-UI-13" |
+| A-UI-13 | `summary` / `entityLabel` / `actionLabel` on `GET /orgs/:id/audit` items and `summary` on history items. | `e2e/stage10`; contracts `stage10.test` |
+| Worker-BOQ #4 | Excel sheet "פירוט לפי חדר" (between "פירוט לפי קומה" and "ראיות"): one row per (line, room) + `SUM` per line; lines without `byRoom` → one "—" row. | `e2e/stage10` (rows + SUM = qty), `unit/excel` |
+
+Firebase: `orgs/*/invites` admin-read / write false, members unchanged (API-only), collection-group field override
+`invites.email` (see firebase/NOTES.md). Acceptance suite: every `it.fails` / `it.todo` of the API's defects flipped;
+left: `it.todo` A-API-12 (ClamAV) and A-API-13 (quota) — deferred by the brief — and the CI-only rules channel of E2E-10.
+
+Commands (01.11.2026, all green): `pnpm turbo run lint typecheck test build --filter=@kamutan/api
+--filter=@kamutan/contracts --filter=@kamutan/firebase-tests --concurrency=2` (api 363 passed / 21 emulator-skipped /
+4 todo; acceptance 57 passed / 1 skipped-todo group; contracts 119; firebase-tests 50 passed / 199 emulator-skipped),
+`pnpm --filter @kamutan/contracts gen`, `pnpm --filter @kamutan/api openapi`; worker mirror check
+`uv run pytest tests/test_boq_contracts.py` 9 passed.
+
+Known gaps (Stage 10):
+- Supersede matching runs lazily on the next API read / build; until then (revision processed, nobody read the project)
+  a worker-initiated build would still see both sets — the worker's `superseded` skip (request 1) covers only matched
+  ones. Human state carried = corrections (re-match by the worker, request 2); confirmations / regions of the old sheet
+  are not copied to the new one (the drawing changed; the user confirms the new sheet).
+- `reviewOpen` (Firestore) = yellow + red − approved non-green, via count(); a legacy approved line with the chip but
+  no `approvedQty` is not counted open (the gate still blocks it).
+- Invites: no email sending (by decision); invite ids in links are not secrets (the verified-email match is the check).
+- The approval-invalidated audit is written on the first API read after the build, not at build time.
+
 ## Endpoints (all under `/api/v1`, JSON, `Authorization: Bearer <Firebase ID token>`)
 
 | Method | Path | Min role | Notes |

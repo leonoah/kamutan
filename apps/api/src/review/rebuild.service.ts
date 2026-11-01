@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Optional, Logger } from '@nestjs/common';
 import { BOQ_BUILD_JOB_SCHEMA_VERSION, BOQ_REBUILD_DEBOUNCE_MS, JOB_TYPES, type RebuildOutcome, type StaleReason } from '@kamutan/contracts';
 import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
+import { ProjectStateService } from '../project-state/project-state.service';
 import { REVIEW_REPOSITORY, type ReviewRepository } from '../db/review-repository';
 import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
 
@@ -22,9 +23,11 @@ export class RebuildService {
     @Inject(REVIEW_REPOSITORY) private readonly review: ReviewRepository,
     @Inject(BOQ_REPOSITORY) private readonly boq: BoqRepository,
     @Inject(INGEST_QUEUE) private readonly queue: IngestQueue,
+    @Optional() private readonly state?: ProjectStateService,
   ) {}
 
   async afterChange(orgId: string, projectId: string, reason: StaleReason, actorUid: string, traceparent: string): Promise<RebuildOutcome> {
+    await this.state?.reconcileSupersedes(orgId, projectId); // A-API-05: auto builds count only current sheets too
     let r;
     try {
       r = await this.review.scheduleAutoBuild(orgId, projectId, { reason, actorUid, jobType: JOB_TYPES.boqBuild, nowMs: Date.now(), debounceMs: this.debounceMs });

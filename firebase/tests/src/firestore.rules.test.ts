@@ -198,6 +198,45 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Stage 10 (A-API-01): invitations admin-read, memberships + invites API-only (no self-join, no role escalation).
+  describe('Stage 10: members + invites are API-only; invites admin-read', () => {
+    const inviteA = `orgs/${A.org}/invites/inv1`;
+    const invite = { email: 'new@example.test', role: 'editor', status: 'pending', invitedBy: A.users.admin, createdAt: Timestamp.now(), expiresAt: Timestamp.now(), acceptedBy: null, acceptedAt: null, revokedBy: null, revokedAt: null };
+    beforeEach(async () => {
+      await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc(inviteA).set(invite));
+    });
+
+    it('invites: org admin reads; editor / reviewer / viewer / other org / outsider / anon do not', async () => {
+      await assertSucceeds(db(A.users.admin).doc(inviteA).get());
+      await assertSucceeds(db(A.users.admin).collection(`orgs/${A.org}/invites`).get());
+      for (const uid of [A.users.editor, A.users.reviewer, A.users.viewer, B.users.admin, OUTSIDER, null]) await assertFails(db(uid).doc(inviteA).get());
+      await assertFails(db(A.users.editor).collectionGroup('invites').where('email', '==', 'new@example.test').get());
+    });
+
+    it('invites: nobody creates, edits (accept / role / revoke) or deletes from a client, not even the admin', async () => {
+      for (const uid of [A.users.admin, A.users.editor, A.users.viewer, OUTSIDER]) {
+        await assertFails(db(uid).doc(`orgs/${A.org}/invites/inv2`).set(invite));
+        await assertFails(db(uid).doc(inviteA).update({ status: 'accepted', acceptedBy: uid }));
+        await assertFails(db(uid).doc(inviteA).update({ role: 'admin' }));
+        await assertFails(db(uid).doc(inviteA).delete());
+      }
+    });
+
+    it('members: no self-join, no role change, no removal from a client (admin included)', async () => {
+      await assertFails(db(OUTSIDER).doc(`orgs/${A.org}/members/${OUTSIDER}`).set({ uid: OUTSIDER, role: 'admin', createdAt: Timestamp.now() }));
+      await assertFails(db(A.users.viewer).doc(`orgs/${A.org}/members/${A.users.viewer}`).update({ role: 'admin' }));
+      await assertFails(db(A.users.admin).doc(`orgs/${A.org}/members/${A.users.viewer}`).update({ role: 'editor' }));
+      await assertFails(db(A.users.admin).doc(`orgs/${A.org}/members/${A.users.viewer}`).delete());
+      await assertFails(db(A.users.admin).doc(`orgs/${A.org}/members/newbie`).set({ uid: 'newbie', role: 'viewer', createdAt: Timestamp.now() }));
+    });
+
+    it('offboarding org: even the admin cannot read its invites', async () => {
+      await env.withSecurityRulesDisabled((ctx) => ctx.firestore().doc(`orgs/${A.org}`).update({ status: 'offboarding' }));
+      await assertFails(db(A.users.admin).doc(inviteA).get());
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Security gate F-1 (SEC-52): an org being offboarded is closed to its members (adapted from the gate PoC).
   describe('F-1: offboarding org — every member read / write denied except the org doc + offboarding exports', () => {
     const offboard = (org: string) => env.withSecurityRulesDisabled(async (ctx) => {

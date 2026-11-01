@@ -63,6 +63,7 @@ class ImportOutcome:
     flags: list[str] = field(default_factory=list)
     sha256: str | None = None
     parsed: dict[str, Any] | None = None
+    defaults_deactivated: int = 0
 
     def stats(self) -> dict[str, Any]:
         return {
@@ -72,6 +73,7 @@ class ImportOutcome:
             "templates": int(self.template_id is not None),
             "skipped": self.skipped,
             "ambiguousCodes": self.ambiguous_codes[:1000],
+            "defaultsDeactivated": self.defaults_deactivated,
             "templateName": self.template_name,
         }
 
@@ -196,6 +198,7 @@ def write_library(org_id: str, source_ref: str, parsed: dict[str, Any], docs: Do
     base = f"orgs/{org_id}/itemLibrary"
     out = ImportOutcome("succeeded", parsed=parsed)
     seen: set[str] = set()
+    codes: set[str] = set()  # codes this import brings (written or already identical)
     for it in (parsed.get("items") or [])[:MAX_ITEMS]:
         if not isinstance(it, dict):
             out.skipped += 1
@@ -233,9 +236,13 @@ def write_library(org_id: str, source_ref: str, parsed: dict[str, Any], docs: Do
             out.skipped += 1
             continue
         elif any(cur.get(k) != v for k, v in fields.items()):
-            docs.set(f"{base}/{iid}", {**fields, "updatedAt": SERVER_TIMESTAMP})
+            # a default item with the same id becomes the imported one (active); otherwise `active` stays the admin's
+            act = {"active": True} if cur.get("source") == "default" else {}
+            docs.set(f"{base}/{iid}", {**fields, **act, "updatedAt": SERVER_TIMESTAMP})
             out.updated += 1
+        codes.add(code)
         out.items += 1
+    out.defaults_deactivated = deactivate_defaults(docs, base, codes, seen)
     if not _list(docs, f"orgs/{org_id}/boqTemplates"):
         tpl = template_from(parsed, source_ref)
         if tpl is not None:
@@ -243,6 +250,19 @@ def write_library(org_id: str, source_ref: str, parsed: dict[str, Any], docs: Do
             out.template_id = DEFAULT_TEMPLATE_ID
             out.template_name = str(tpl["name"])
     return out
+
+
+def deactivate_defaults(docs: DocStore, base: str, codes: set[str], keep: set[str]) -> int:
+    """Stage 10 (API request): an import overrides the shipped default library — every ``source: 'default'`` item of
+    a code the import brought is set ``active: false`` (never deleted: the import can be undone by re-activating)."""
+    n = 0
+    for iid, d in _list(docs, base):
+        if iid in keep or not isinstance(d, dict) or d.get("source") != "default":
+            continue
+        if d.get("code") in codes and d.get("active") is not False:
+            docs.set(f"{base}/{iid}", {"active": False, "updatedAt": SERVER_TIMESTAMP})
+            n += 1
+    return n
 
 
 def template_from(parsed: dict[str, Any], source_ref: str) -> dict[str, Any] | None:

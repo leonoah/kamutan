@@ -17,6 +17,7 @@ import { compareCodes } from "@/features/boq/model";
 import { className } from "@/features/understanding/taxonomy";
 import { useLibraryItems, usePatchLibraryItem, usePatchRule, useRules, useSetDefaultTemplate, useTemplates } from "@/features/boq/queries";
 import { ImportDialog } from "./ImportDialog";
+import { useReauthGate } from "@/features/auth/reauth";
 
 type Tab = "items" | "templates" | "rules";
 
@@ -86,7 +87,15 @@ function ItemsTab({ orgId, role }: { orgId: string; role: Role }) {
   const [debounced, setDebounced] = useState("");
   const [chapter, setChapter] = useState("");
   const [editing, setEditing] = useState<LibraryItem | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
+  // Stage 10: the BOQ's library notice links here with ?import=1 → open the import dialog once.
+  const [importOpen, setImportOpen] = useState(() => params.get("import") === "1" && (role === "admin" || role === "editor"));
+  useEffect(() => {
+    if (params.get("import") !== "1") return;
+    const next = new URLSearchParams(params);
+    next.delete("import");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
   useEffect(() => {
     const id = setTimeout(() => setDebounced(q.trim()), 200);
     return () => clearTimeout(id);
@@ -180,7 +189,7 @@ function ItemsTab({ orgId, role }: { orgId: string; role: Role }) {
                   <td className="hidden truncate px-3 py-2 text-muted-foreground md:table-cell">{i.chapterTitle ?? i.chapter}</td>
                   <td className="px-3 py-2">
                     <Badge variant={i.source === "import" ? "neutral" : "primary"}>
-                      {i.source === "import" ? t("library.sourceImport") : t("library.sourceManual")}
+                      {i.source === "import" ? t("library.sourceImport") : i.source === "default" ? t("library.sourceDefault") : t("library.sourceManual")}
                     </Badge>
                   </td>
                   <td className="px-3 py-2 text-end">
@@ -289,11 +298,20 @@ function TemplatesTab({ orgId, role }: { orgId: string; role: Role }) {
   const { t } = useTranslation();
   const templates = useTemplates(orgId);
   const setDefault = useSetDefaultTemplate(orgId);
+  const gate = useReauthGate();
+  const makeDefault = (tp: BoqTemplate) =>
+    setDefault.mutate(tp.id, {
+      onSuccess: () => toast({ title: t("library.defaultSet", { name: tp.name }), tone: "success" }),
+      onError: (e) => {
+        if (!gate.handle(e, () => makeDefault(tp))) toast({ title: t("library.saveError"), tone: "error" });
+      },
+    });
   if (templates.isError) return <p role="alert" className="text-body text-destructive">{t("library.loadError")}</p>;
   if (templates.isLoading) return <p role="status" className="text-body text-muted-foreground">{t("common.loading")}</p>;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-dense text-muted-foreground">{t("library.templateReadOnly")}</p>
+      {gate.element}
       <ul className="grid gap-3 md:grid-cols-2">
         {(templates.data ?? []).map((tp: BoqTemplate) => (
           <li key={tp.id} className={cn("flex flex-col gap-3 rounded-md border bg-surface p-4", tp.default ? "border-primary/50" : "border-border")}>
@@ -324,13 +342,8 @@ function TemplatesTab({ orgId, role }: { orgId: string; role: Role }) {
                 size="sm"
                 variant="secondary"
                 className="self-start"
-                disabled={setDefault.isPending}
-                onClick={() =>
-                  setDefault.mutate(tp.id, {
-                    onSuccess: () => toast({ title: t("library.defaultSet", { name: tp.name }), tone: "success" }),
-                    onError: () => toast({ title: t("library.saveError"), tone: "error" }),
-                  })
-                }
+                disabled={setDefault.isPending || gate.pending}
+                onClick={() => void gate.guard(() => makeDefault(tp))}
               >
                 <Star aria-hidden />
                 {t("library.setDefault")}
@@ -376,6 +389,17 @@ function RulesTab({ orgId, role }: { orgId: string; role: Role }) {
   const { t } = useTranslation();
   const rules = useRules(orgId);
   const patch = usePatchRule(orgId);
+  const gate = useReauthGate();
+  const toggle = (r: BoqRule) =>
+    patch.mutate(
+      { id: r.id, enabled: !r.enabled },
+      {
+        onSuccess: () => toast({ title: t("library.ruleToggled") }),
+        onError: (e) => {
+          if (!gate.handle(e, () => toggle(r))) toast({ title: t("library.saveError"), tone: "error" });
+        },
+      },
+    );
   const admin = role === "admin";
   const matchText = useMatchText();
   if (rules.isError) return <p role="alert" className="text-body text-destructive">{t("library.loadError")}</p>;
@@ -383,6 +407,7 @@ function RulesTab({ orgId, role }: { orgId: string; role: Role }) {
   return (
     <div className="flex flex-col gap-3">
       {!admin ? <p className="text-dense text-muted-foreground">{t("library.rulesAdminOnly")}</p> : null}
+      {gate.element}
       <div className="overflow-x-auto rounded-md border border-border bg-surface">
         <table className="w-full border-collapse text-dense">
           <caption className="sr-only">{t("library.rules")}</caption>
@@ -412,16 +437,8 @@ function RulesTab({ orgId, role }: { orgId: string; role: Role }) {
                       role="switch"
                       aria-checked={r.enabled}
                       aria-label={t("library.ruleToggle", { name })}
-                      disabled={!admin || patch.isPending}
-                      onClick={() =>
-                        patch.mutate(
-                          { id: r.id, enabled: !r.enabled },
-                          {
-                            onSuccess: () => toast({ title: t("library.ruleToggled") }),
-                            onError: () => toast({ title: t("library.saveError"), tone: "error" }),
-                          },
-                        )
-                      }
+                      disabled={!admin || patch.isPending || gate.pending}
+                      onClick={() => void gate.guard(() => toggle(r))}
                       className={cn(
                         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                         r.enabled ? "bg-primary" : "bg-muted-foreground/40",

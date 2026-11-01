@@ -407,6 +407,40 @@ describe('Sprint 4 — corrections, batches, room settings, similar searches (st
   });
 });
 
+describe('Stage 10 — members + invites (A-API-01) (static; behaviour in firestore.rules.test.ts, CI emulator)', () => {
+  const INV = `${DOCS}/orgs/{orgId}/invites/{inviteId}`;
+  const MEM = `${DOCS}/orgs/{orgId}/members/{uid}`;
+
+  it('invites: admin read only (active org), every client write denied', () => {
+    const allows = fs.allows.filter((a) => a.path === INV);
+    expect(allows.find((a) => a.methods.includes('read'))?.condition).toBe('isAdmin(orgId)');
+    const writes = allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)));
+    expect(writes.length).toBeGreaterThan(0);
+    for (const w of writes) expect(isDenyAll(w.condition), `line ${w.line}`).toBe(true);
+    expect(blockOf(FIRESTORE_RULES, 'invites')).not.toMatch(/AnyStatus/);
+  });
+
+  it('members stay API-only (no create / update / delete from a client, also not by an admin)', () => {
+    const allows = fs.allows.filter((a) => a.path === MEM);
+    expect(allows.find((a) => a.methods.includes('read'))?.condition).toBe('isMember(orgId)');
+    for (const w of allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)))) expect(isDenyAll(w.condition)).toBe(true);
+    // only the own-membership lookup is a collection-group match; nothing exposes invites across orgs
+    const groups = fs.matchPaths.filter((m) => m.includes('{path=**}'));
+    expect(groups.some((g) => /invites/.test(g))).toBe(false);
+    expect(fs.allows.filter((a) => a.path.includes('{path=**}/members')).map((a) => [a.methods.join(','), a.condition])).toEqual([['read', 'signedIn() && resource.data.uid == request.auth.uid']]);
+  });
+
+  it('model + index: invites collection, path helper, collection-group email override (claim lookup)', () => {
+    expect(COLLECTIONS).toContain('invites');
+    expect(paths.invite('o', 'i')).toBe('orgs/o/invites/i');
+    const idx = JSON.parse(readFileSync(join(FIREBASE_DIR, 'firestore.indexes.json'), 'utf8')) as { fieldOverrides: Array<{ collectionGroup: string; fieldPath: string; indexes: Array<{ queryScope: string }> }> };
+    expect(idx.fieldOverrides.find((f) => f.collectionGroup === 'invites' && f.fieldPath === 'email')?.indexes.map((i) => i.queryScope)).toContain('COLLECTION_GROUP');
+    const model = readFileSync(join(FIREBASE_DIR, 'model.ts'), 'utf8');
+    const iface = model.slice(model.indexOf('export interface Invite {'), model.indexOf('}\n', model.indexOf('export interface Invite {')));
+    for (const f of ['email', 'role', 'status', 'invitedBy', 'createdAt', 'expiresAt', 'acceptedBy', 'acceptedAt', 'revokedBy', 'revokedAt']) expect(iface, f).toContain(`  ${f}`);
+  });
+});
+
 describe('firestore.indexes.json', () => {
   const idx = JSON.parse(readFileSync(join(FIREBASE_DIR, 'firestore.indexes.json'), 'utf8')) as {
     indexes: Array<{ collectionGroup: string; fields: Array<{ fieldPath: string }> }>;

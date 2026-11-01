@@ -1,5 +1,6 @@
 import {
   BOQ_STATUS_HE,
+  effectiveStatus,
   chapterKey,
   compareItemCodes,
   CONFIDENCE_HE,
@@ -17,6 +18,8 @@ import ExcelJS from 'exceljs';
  *    "סטטוס" at the end = far left in RTL), per chapter: header row, "הערות:" + numbered notes, line rows (code as
  *    TEXT, empty unit price, total = qty × price formula), "סה"כ" row (SUM formula); grand totals before/after VAT.
  *  - Sheet "פירוט לפי קומה": quantity per floor (+ SUM formula) and the final (override-aware) quantity.
+ *  - Sheet "פירוט לפי חדר" (Stage 10, A-pipeline-12): one row per (line, room) from the worker's `byRoom` + a SUM per
+ *    line (= the line qty); a line without `byRoom` gets one row "—".
  *  - Sheet "ראיות": line → sheet / floor / number of items on the drawing.
  * Every text cell coming from users / OCR / templates is passed through `sanitizeCell` (formula injection).
  */
@@ -24,6 +27,9 @@ import ExcelJS from 'exceljs';
 export const MAIN_SHEET = 'כמויות';
 export const FLOOR_SHEET = 'פירוט לפי קומה';
 export const EVIDENCE_SHEET = 'ראיות';
+export const ROOM_SHEET = 'פירוט לפי חדר';
+export const NO_ROOM = '—';
+export const OUTSIDE_ROOMS = 'מחוץ לחדרים';
 export const CONFIDENCE_TITLE = 'רמת ביטחון';
 export const STATUS_TITLE = 'סטטוס';
 export const NOTES_TITLE = 'הערות:';
@@ -160,6 +166,7 @@ export async function buildBoqWorkbook(input: ExcelInput): Promise<Buffer> {
 
   buildMainSheet(wb, input, counts);
   buildFloorSheet(wb, input);
+  buildRoomSheet(wb, input);
   buildEvidenceSheet(wb, input);
 
   const out = await wb.xlsx.writeBuffer();
@@ -313,7 +320,8 @@ function writeLineRow(
     set('total', { formula, result: 0 }, { numFmt: CURRENCY_FMT });
   }
   set('confidence', CONFIDENCE_HE[l.level], { font: { bold: true, color: { argb: LEVEL_COLOR[l.level] } }, alignment: { horizontal: 'center', vertical: 'top' } });
-  set('status', BOQ_STATUS_HE[l.status], { alignment: { horizontal: 'center', vertical: 'top' } });
+  // Stage 10 (A-API-06): an approved line whose qty changed since the approval is exported as "נבדק", never "אושר".
+  set('status', BOQ_STATUS_HE[effectiveStatus(l)], { alignment: { horizontal: 'center', vertical: 'top' } });
 }
 
 function buildFloorSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
@@ -355,6 +363,43 @@ function buildFloorSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
     ws.getCell(r, sumCol + 2).value = CONFIDENCE_HE[l.level];
     ws.getCell(r, sumCol + 2).font = { color: { argb: LEVEL_COLOR[l.level] }, bold: true };
   });
+}
+
+function buildRoomSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
+  const ws = wb.addWorksheet(ROOM_SHEET, { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
+  const head = ['סעיף', 'תאור העבודה', 'יחידה', 'קומה', 'חדר', 'כמות'];
+  ws.columns = head.map((_, i) => ({ width: i === 1 ? 50 : i === 4 ? 22 : 12 }));
+  head.forEach((t, i) => {
+    const c = ws.getCell(1, i + 1);
+    c.value = sanitizeCell(t);
+    c.style = { font: { bold: true }, border: BORDER, alignment: { horizontal: 'center', wrapText: true }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } } };
+  });
+  let r = 2;
+  for (const l of [...input.lines].sort(byCode)) {
+    const fmt = qtyFormat(l.unit);
+    const rooms = l.byRoom && l.byRoom.length ? l.byRoom : null;
+    const first = r;
+    const rows = rooms ?? [{ floor: l.floor ?? null, name: null, roomId: null, qty: l.qty }];
+    for (const room of rows) {
+      ws.getCell(r, 1).value = sanitizeCell(l.code);
+      ws.getCell(r, 1).numFmt = '@';
+      ws.getCell(r, 2).value = sanitizeCell(l.description);
+      ws.getCell(r, 3).value = sanitizeCell(l.unit);
+      ws.getCell(r, 4).value = room.floor ? sanitizeCell(floorName(input, room.floor)) : '';
+      ws.getCell(r, 5).value = sanitizeCell(!rooms ? NO_ROOM : room.name || (room.roomId ? room.roomId : OUTSIDE_ROOMS));
+      ws.getCell(r, 6).value = room.qty;
+      ws.getCell(r, 6).numFmt = fmt;
+      r++;
+    }
+    if (rooms) {
+      ws.getCell(r, 2).value = sanitizeCell(`${CHAPTER_TOTAL} ${l.code}`);
+      ws.getCell(r, 2).font = { bold: true };
+      ws.getCell(r, 6).value = { formula: `SUM(F${first}:F${r - 1})`, result: rooms.reduce((a, x) => a + x.qty, 0) };
+      ws.getCell(r, 6).numFmt = fmt;
+      ws.getCell(r, 6).font = { bold: true };
+      r++;
+    }
+  }
 }
 
 function buildEvidenceSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {

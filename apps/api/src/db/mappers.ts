@@ -101,6 +101,8 @@ export function toProject(id: string, d: Doc): Project {
     templateId: (d.templateId as string | null | undefined) ?? null,
     floors: (d.floors as Project['floors']) ?? [],
     ...(d.boq && typeof d.boq === 'object' ? { boq: toProjectBoq(d.boq as Doc) } : {}),
+    // Stage 10 (A-LIVE-02): worker-written counters (missing fields → 0); the API adds reviewOpen on read.
+    ...(d.stats && typeof d.stats === 'object' ? { stats: toProjectStats(d.stats as Doc) } : {}),
     status: d.status as Project['status'],
     createdBy: String(d.createdBy),
     createdAt: iso(d.createdAt),
@@ -113,6 +115,11 @@ export function anyIso(v: unknown): string | null {
     return isoOrNull((v as { toDate(): Date }).toDate());
   }
   return isoOrNull(v);
+}
+
+function toProjectStats(d: Doc): NonNullable<Project['stats']> {
+  const n = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : 0);
+  return { sheets: n(d.sheets), reviewOpen: n(d.reviewOpen), boqLines: n(d.boqLines), red: n(d.red), yellow: n(d.yellow), green: n(d.green) };
 }
 
 export function toProjectBoq(d: Doc): ProjectBoqSummary {
@@ -142,6 +149,10 @@ export function toSheetSet(orgId: string, projectId: string, id: string, d: Doc)
     ...(typeof d.versionId === 'string' ? { versionId: d.versionId } : {}),
     ...(typeof d.pageCount === 'number' ? { pageCount: d.pageCount } : {}),
     createdAt: iso(d.createdAt),
+    ...(d.replacesSheetSetId !== undefined ? { replacesSheetSetId: idOrNull(d.replacesSheetSetId) } : {}),
+    ...(d.supersededBySetId !== undefined ? { supersededBySetId: idOrNull(d.supersededBySetId) } : {}),
+    ...(d.supersededAt !== undefined ? { supersededAt: isoOrNull(d.supersededAt) } : {}),
+    ...(d.supersede && typeof d.supersede === 'object' ? { supersede: toSupersede(d.supersede as Doc) } : {}),
   };
 }
 
@@ -167,7 +178,25 @@ export function toSheet(id: string, d: Doc): Sheet {
     ...(d.confirmedAt !== undefined ? { confirmedAt: isoOrNull(d.confirmedAt) } : {}),
     currentVersionId: str(d.currentVersionId),
     updatedAt: isoOrNull(d.updatedAt),
+    // Stage 10 (A-API-05): revised upload.
+    ...(d.superseded === true ? { superseded: true } : {}),
+    ...(d.supersededBySetId !== undefined ? { supersededBySetId: idOrNull(d.supersededBySetId) } : {}),
+    ...(d.supersededBy !== undefined ? { supersededBy: idOrNull(d.supersededBy) } : {}),
+    ...(d.supersededMatch === 'title' || d.supersededMatch === 'page_order' || d.supersededMatch === 'none' ? { supersededMatch: d.supersededMatch } : {}),
+    ...(d.supersedes !== undefined ? { supersedes: idOrNull(d.supersedes) } : {}),
   };
+}
+
+function toSupersede(d: Doc): NonNullable<SheetSet['supersede']> {
+  const map: Record<string, string | null> = {};
+  if (d.sheetMap && typeof d.sheetMap === 'object') for (const [k, v] of Object.entries(d.sheetMap as Doc)) if (/^[A-Za-z0-9_-]{1,128}$/.test(k)) map[k] = idOrNull(v);
+  const at = d.matchedAt && typeof (d.matchedAt as { toDate?: unknown }).toDate === 'function' ? (d.matchedAt as { toDate(): Date }).toDate() : d.matchedAt;
+  return { status: d.status === 'matched' ? 'matched' : 'pending', matchedAt: isoOrNull(at), ...(d.sheetMap ? { sheetMap: map } : {}) };
+}
+
+/** Doc-id-shaped string or null. */
+function idOrNull(v: unknown): string | null {
+  return typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v) ? v : null;
 }
 
 export function toProgress(v: unknown, status: SheetVersion['status']): VersionProgress {

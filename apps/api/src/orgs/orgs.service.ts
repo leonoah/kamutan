@@ -5,6 +5,7 @@ import type { AuthContext } from '../auth/auth-context';
 import { notFound } from '../common/api-exception';
 import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { REPOSITORY, type Repository } from '../db/repository';
+import { MembersService } from '../members/members.service';
 
 @Injectable()
 export class OrgsService {
@@ -12,11 +13,14 @@ export class OrgsService {
     private readonly access: AccessService,
     @Inject(REPOSITORY) private readonly repo: Repository,
     @Optional() @Inject(BOQ_REPOSITORY) private readonly boq?: BoqRepository,
+    @Optional() private readonly members?: MembersService,
   ) {}
 
   private readonly logger = new Logger('OrgsService');
 
   async myOrgs(user: AuthContext): Promise<MyOrg[]> {
+    // Stage 10 (A-API-01): pending invitations for the caller's verified email become memberships on first sign-in.
+    await this.members?.claimPending(user);
     const memberships = await this.repo.listMembershipsOf(user.uid);
     const orgs = await Promise.all(
       memberships.map(async (m) => {

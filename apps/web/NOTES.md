@@ -567,3 +567,66 @@ Screenshots (mock dev with the real Noah artifacts, Chromium 1194, 1440×900): `
 - The share viewer has no floor / room filter or receipt tooltips yet (spec S15 "זמין"). It has row ↔ drawing highlighting and a per-floor breakdown on the selected row.
 - The audit "details" column shows raw `after` JSON (admin evidence view). There is no per-action Hebrew rendering yet.
 - The real Google re-authentication popup and MFA are not testable in the sandbox. Firebase calls are covered by unit tests with mocks.
+
+# Stage 10 fix round (web + viewer)
+
+Brief: `docs/agents/STAGE10_FIX_BRIEF.md`. Defects: `/home/claude/kamutan-data/acceptance/{ui,live}/defects.md`.
+The viewer package (`packages/viewer`) needed no change.
+
+## Defects → fix → test
+| defect | fix | test |
+| --- | --- | --- |
+| A-UI-01 landing x-scroll at 390 | `overflow-x-clip` on the landing root; sample row `min-w-0` | e2e `ia-navigation` "A-UI-01" (was fixme) |
+| A-UI-02 app shell x-scroll at 390 | `TopBar`: icon-only logo below `sm`, tighter gaps / nav padding, `whitespace-nowrap` nav | e2e "A-UI-02" (was fixme; also hub + library, user menu fully in view), `stage10` members @mobile |
+| A-UI-03 label-content-name-mismatch | every aria-label starts with the visible text: hub thumbnail (`{state} · סנן…`), sheet confirm when confirmed (`אושר · name`), share revoke (`בטל קישור label`), sheet picker (`גיליון: name · בחירת גיליון`); queue card and share-viewer row buttons drop aria-label (visible text + sr-only prefix/suffix) | e2e `a11y-rtl` "A-UI-03 strict" (was fixme; hub, sheets, sheet analysis, share viewer); `KNOWN_A11Y` is now empty, so every axe call in the suite fails on any serious/critical finding |
+| A-UI-04 contrast | amber chips use `text-foreground` on the amber tint (hub phase chip, gallery "ממתין לאישור") | e2e "A-UI-04 strict" (was fixme) |
+| A-UI-05 no "העלה מחדש" | `ReuploadButton` on a failed job row (`העלה מחדש את <file>`): uploads the picked file with `replacesSheetSetId` = the failed set; the failed set shows "הוחלף בגרסה חדשה", its failed job leaves the list | e2e `upload` "A-UI-05" (was fixme), unit `stage10` |
+| A-UI-07 correction → line > 1 s | `bumpLinesOptimistic`: an add / remove on the drawing moves its counted line at once (qty, manual part), rolled back on error, replaced by the server's re-derive / rebuild | e2e `e2e02` "A-UI-07" (was fixme, asserts < 1 s) |
+| A-UI-08 (API-owned) | mock side only: the mock line history also joins manual items (`m_<correctionId>` evidence). The real API builder stays with the API agent | e2e `e2e02` "A-UI-08 / A-UI-12" (was fixme; passes on the mock) |
+| A-UI-06 (API-owned) | mock side only: history tie-break (override before the status reopen it caused) | e2e11 (existing) |
+| A-UI-09 locked queue not filtered | locked sheet: queue keeps items on the sheet + line cards of lines this sheet feeds | e2e `e2e06` "A-UI-09" (was fixme) |
+| A-UI-10 share viewer header at 390 | title block takes the first line (`basis-[calc(100%-4rem)]`), h1 wraps below `sm`, chips wrap below | e2e `e2e09` "A-UI-10" (was fixme) |
+| A-UI-11 two "% מאומת" | hub header uses the live BOQ lines once built (same as the BOQ card); mock project stats are derived from the lines after a build (card = hub) | e2e `ia-navigation` "A-UI-11" (was fixme) |
+| A-UI-12 mock actor always "דנה כהן" | mock audit / history / corrections / approvals use the signed-in user (`actor()`) | e2e `e2e02` "A-UI-08 / A-UI-12", unit `stage10` |
+| A-UI-13 (API-owned) | UI renders `AuditEvent.summary` (requested) and, until it ships, a Hebrew line for known shapes (corrections, statuses, quantities, roles, settings, replaced sets); raw before → after as tooltip | unit `stage10` |
+| A-UI-14 sheet header vs chips | locked sheet header counts this sheet's items (same unit as the level chips) | e2e `ia-navigation` "A-UI-14 / A-UI-15" |
+| A-UI-15 / A-LIVE-04 stale copy | "כתב הכמויות המלא יגיע בהמשך" replaced | same e2e |
+| A-UI-16 landmarks / h1 | review workspace: `<main>` + sr-only `<h1>` (+ sr-only `<h2>` per pane, heading order); share viewer: `<main>` | e2e `a11y-rtl` "A-UI-16" ×3 |
+| A-UI-17 truncated hub lines | 2-line clamp + `title` | e2e `ia-navigation` "hub BOQ card" |
+| A-UI-18 "פרק 03 · פרק 03 – …" | `chapterLabel(code, title)`: no duplicate code, en dash | same e2e + unit |
+| A-UI-19 floors vs title (worker flag) | reason `FLOOR_TITLE_MISMATCH` (any `FLOOR_*`) marks floors unsure: ◆ + hint in the hub gallery and the dashed field on the confirm card. **Worker-Accuracy: please emit `FLOOR_TITLE_MISMATCH` in `classification.reasons`** | unit `stage10` |
+| A-UI-20 PDF dialog | hide title block defaults ON (like share); unticking "כל הגיליונות" starts an empty subset | e2e `e2e13` (updated), unit `sprint5-ui` |
+| A-UI-21 phone row → drawing | stacked layout (< lg): a row tap scrolls the drawing into view; "חזרה לטבלה" scrolls back to the row | e2e `e2e09` "A-UI-21" |
+| A-UI-22 landing vs login copy | one sample (i18n `landing.visual.rows`) for both | — (copy) |
+| A-UI-23 Esc with a toast | the toast forwards Escape to the top-most open dialog (`forwardEscapeToDialog`, `data-dialog-close`) | e2e `upload` "A-UI-23", unit |
+
+## New flows (shapes mirrored in `src/api/types.ts` + `mock.ts`; see "Contract requests")
+- **Library state (A-LIVE-01):** `LibraryNotice` in the hub BOQ card and the BOQ panel: "נבנה מספריית ברירת המחדל" (all items `source: "default"`) or "אין ספריית סעיפים" (empty), with "ייבוא כתב כמויות קודם" → `/library?import=1` (opens the import dialog). Derived from the items' `source` (contracts `ITEM_SOURCES` has `default`), no new endpoint. Mock: `libraryMode` / `?mockLibrary=default|none`. Library table shows "ברירת מחדל" as the source.
+- **Revised upload (A-API-05):** the hub upload dialog asks "מה הקבצים האלה?": "סט חדש בפרויקט" (default) or "מחליף את סט X" (ready / failed sets not yet replaced); one file; `finalizeUpload({…, replacesSheetSetId})`. The set list shows "מחליף את X" / "הוחלף בגרסה חדשה". Firestore sheets with `supersededBy` are hidden. Mock: drops the old set's sheets, marks the set `superseded` + `supersededBySetId`, cancels its failed job, audit `sheetSets · supersede`, BOQ stale.
+- **Members (A-API-01):** `/settings/members` (tab "חברי צוות"): list (active + pending with expiry), invite by email + role (link shown once, copy; `/invite/:inviteId` accepts when signed in, else explains and sends to sign in), change role (own role locked), remove / revoke invitation behind an AlertDialog. Hebrew errors for `last_admin`, `already_member`, validation.
+- **MFA / reauth (A-API-02):** `features/auth/reauth.tsx` — `useReauthGate()` (+ `ReauthBox`, the offboarding box made reusable). Pre-checks `auth_time` and maps `recent_auth_required` / `mfa_required` answers; retries the action after a successful re-authentication. Used by org settings save, template "קבע כברירת מחדל", rule toggles and every member change. Offboarding keeps its own flow (same strings). Mock: those endpoints answer 403 `recent_auth_required` for a sign-in older than 10 min (`?mockAuthAge=3600`).
+- **Approval invalidated by a qty change (A-API-06 / A-pipeline-08):** mirrors contracts `QTY_CHANGED_REASON`, `qtyChangedReason`, `needsReapproval`, `approvedQty`. Chip "הכמות השתנתה מאז האישור (X → Y)" (amber, the change is an LTR island), status filter "הכמות השתנתה מאז האישור (n)", export gate counts `needsReapproval` lines like red ones. Mock rebuild implements contracts `applyRebuild` (approved + qty ≠ baseline → `reviewed`, chip, audit `boqLines · approval_invalidated`); approve stamps `approvedQty`.
+
+## Contracts (Stage 10) — aligned with the API agent's published shapes
+The API agent published `packages/contracts/src/members.ts`, `uploads.ts` (`replacesSheetSetId`), `sheets.ts`
+(`supersededBySetId`, `Sheet.supersededBy`), `boq.ts` (`approvedQty`, `qtyChangedReason`, `needsReapproval`) and
+`audit.ts` (`summary`). `src/api/http.ts` adapts them:
+- **Members:** `GET /orgs/:o/members {items: MemberView[]}` + `GET /orgs/:o/invites {items: Invite[]}` are merged into
+  one `OrgMember[]` (pending invites get the id `inv:<inviteId>`); `POST /orgs/:o/invites → {invite, url}`;
+  `PATCH /orgs/:o/members/:uid → {member}`; `DELETE /orgs/:o/members/:uid` or `DELETE /orgs/:o/invites/:id` (by the
+  `inv:` prefix); `POST /invites/:id/accept` from `/invite/:inviteId` when signed in. 409 `conflict` "…at least one
+  admin" is mapped to `last_admin`.
+- **Revised upload:** `finalize {replacesSheetSetId}`; a replaced set is recognised by `supersededBySetId` (or the mock's
+  `status: superseded`), `isSupersededSet()`; sheets with `supersededBy` are hidden by the Firestore listener.
+- **Audit:** `summary` is shown when present (A-UI-13); new actions `invite`, `update_role`, `remove`, `accept`,
+  `supersede`, `approval_invalidated` and entity `invites` have Hebrew labels.
+- **Still to confirm with the API:** "העלה מחדש" sends `replacesSheetSetId` = the FAILED set (nothing to match); the API
+  must accept it (409 only when already superseded). If it refuses failed sets, `ReuploadButton` should send a plain
+  upload. Org settings / templates / rules answer 403 `recent_auth_required` / `mfa_required` like offboarding.
+
+## Known gaps / not fixed
+- A-UI-08 / A-UI-06 / A-UI-13 are API-owned: only the mock and the UI side are done here.
+- A-UI-19 needs the worker flag; the UI shows any `FLOOR_*` reason.
+- A-UI-07 is optimistic for counted lines (one item = ±1). Composite (switch-group) and area / length lines still wait for the server.
+- Real MFA / Google reauth popups are not testable here (unit-tested through the mocked Firebase SDK, as before).
+- The share viewer on a phone is a scroll-to-drawing, not tabs; good enough for E2E-09, tabs would be nicer.

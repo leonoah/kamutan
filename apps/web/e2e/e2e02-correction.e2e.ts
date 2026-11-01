@@ -7,7 +7,8 @@ import { canvas, openReview, qtyButton, qtyOf, row } from "./review.helpers";
  */
 test.beforeEach(() => needsNoah());
 
-test("E2E-02: add a missed symbol on the drawing → 4.01 +1 within 1 s, item 'אושר ידנית', history entry", async ({ page }, info) => {
+/** Add tool → "שקע כפול" → click the drawing; returns 4.01 before, the click point, and click → cell update in ms. */
+async function addSocket(page: import("@playwright/test").Page) {
   await openReview(page);
   await expect(row(page, "4.01")).toBeVisible();
   const before = await qtyOf(page, "4.01");
@@ -45,9 +46,13 @@ test("E2E-02: add a missed symbol on the drawing → 4.01 +1 within 1 s, item '�
     const m = (window as unknown as { __e2e02: { t0: number; t1: number | null } }).__e2e02;
     return m.t1 === null ? Infinity : Math.round(m.t1 - m.t0);
   });
+  return { before, at, ms };
+}
+
+test("E2E-02: add a missed symbol on the drawing → 4.01 +1 within 1 s, item 'אושר ידנית', history entry", async ({ page }, info) => {
+  const { at, ms } = await addSocket(page);
   info.annotations.push({ type: "E2E-02 table update", description: `${ms} ms (click → cell text, in page; target ≤ 1000 ms)` });
-  // ≤ 1 s is tracked separately (A-UI-07): measured 1.1–1.3 s here (mock latency 250 ms + re-derive, SwiftShader).
-  expect(ms, "4.01 updated within 3 s").toBeLessThan(3_000);
+  expect(ms, "4.01 updated within 3 s").toBeLessThan(3_000); // ≤ 1 s: the A-UI-07 test below
   await shot(page, info, "e2e02-01-after-add");
 
   // the item: select tool, click it → details "אושר ידנית" + reason "נוסף ידנית"
@@ -77,10 +82,26 @@ test("E2E-02: add a missed symbol on the drawing → 4.01 +1 within 1 s, item '�
   await shot(page, info, "e2e02-04-audit");
 });
 
-// A-UI-07: click → 4.01 cell update measured 1124–1269 ms in a production mock build (07_test_plan: ≤ 1 s synced,
-// < 300 ms local). The overlay is optimistic but the BOQ line waits for the (mock) server round trip + re-derive.
-test.fixme("A-UI-07 E2E-02: the BOQ line reflects a drawing correction within 1 s", async () => {});
+// A-UI-07 (fixed): click → 4.01 cell update was 1124–1269 ms in a production mock build (07_test_plan: ≤ 1 s synced,
+// < 300 ms local) because the BOQ line waited for the server round trip + re-derive. The line now moves optimistically.
+test("A-UI-07 E2E-02: the BOQ line reflects a drawing correction within 1 s", async ({ page }, info) => {
+  const { ms } = await addSocket(page);
+  info.annotations.push({ type: "A-UI-07 click → 4.01", description: `${ms} ms` });
+  expect(ms, "4.01 updated within 1 s").toBeLessThan(1_000);
+});
 
-// A-UI-08: the line history of 4.01 after a manual add on the drawing shows only "חישוב מהשרטוטים · המערכת · אחרי: 16"
-// — no "תיקון על השרטוט · הוספת פריט ידני" entry with who/when (LineHistoryDialog / mock history builder).
-test.fixme("A-UI-08 E2E-02: the line history lists the drawing correction (who, when, kind)", async () => {});
+// A-UI-08 (mock side fixed by Web; the real API's line-history builder is the API agent's, see apps/api/NOTES.md): the
+// history of 4.01 after a manual add listed only "חישוב מהשרטוטים". A-UI-12: "who" is the signed-in user.
+test("A-UI-08 / A-UI-12 E2E-02: the line history lists the drawing correction (who, when, kind)", async ({ page }, info) => {
+  await addSocket(page);
+  await row(page, "4.01").hover();
+  await row(page, "4.01").getByRole("button", { name: "היסטוריית השינויים של 4.01" }).click();
+  const hist = page.getByRole("dialog", { name: /היסטוריית שינויים/ });
+  const entry = hist.getByRole("listitem").filter({ hasText: "תיקון על השרטוט" }).first();
+  await expect(entry).toBeVisible();
+  await expect(entry).toContainText(/הוספ/);
+  await expect(entry).toContainText("qa.reviewer@example.com");
+  await expect(entry).toContainText(/\d{2}\.\d{2}\.\d{4}/);
+  await expect(hist).not.toContainText("דנה כהן");
+  await shot(page, info, "e2e02-05-history-correction");
+});

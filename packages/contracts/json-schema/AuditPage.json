@@ -89,6 +89,18 @@
                     "type": "null"
                   }
                 ]
+              },
+              "summary": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "entityLabel": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "actionLabel": {
+                "type": "string",
+                "maxLength": 100
               }
             },
             "required": [

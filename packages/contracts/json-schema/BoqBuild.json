@@ -220,6 +220,49 @@
               "type": "null"
             }
           ]
+        },
+        "approvalsInvalidated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "code": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "fromQty": {
+                "type": "number"
+              },
+              "toQty": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "lineId",
+              "code",
+              "fromQty",
+              "toQty"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        },
+        "approvalsAuditedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

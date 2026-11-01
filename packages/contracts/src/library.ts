@@ -36,7 +36,8 @@ export function itemIdFor(code: string, description: string): string {
   return `it_${slug}_${sha256Hex(`${code.trim()}\n${normalizeDescription(description)}`).slice(0, 16)}`;
 }
 
-export const ITEM_SOURCES = ['import', 'manual'] as const;
+/** Stage 10: `default` = seeded from the shipped `DEFAULT_ITEM_LIBRARY` (an import / manual item of the same code wins). */
+export const ITEM_SOURCES = ['import', 'manual', 'default'] as const;
 
 const TagsSchema = z.array(z.string().trim().min(1).max(64)).max(32);
 
@@ -55,6 +56,8 @@ export const ItemLibraryItemSchema = z.object({
   active: z.boolean(),
   updatedAt: TimestampSchema.nullable(),
   updatedBy: UidSchema.nullable().optional(),
+  /** Stage 10: `DEFAULT_ITEM_LIBRARY_VERSION` of a seeded default item (absent on imported / manual items). */
+  defaultsVersion: z.number().int().positive().optional(),
 });
 export type ItemLibraryItem = z.infer<typeof ItemLibraryItemSchema>;
 
@@ -164,6 +167,8 @@ export const BoqTemplateSchema = z.object({
   vatRate: z.number().min(0).max(1),
   updatedAt: TimestampSchema.nullable(),
   updatedBy: UidSchema.nullable().optional(),
+  /** Stage 10: `DEFAULT_BOQ_TEMPLATE_VERSION` of a seeded default template (absent on Sprint-3 seeds and imports). */
+  defaultsVersion: z.number().int().positive().optional(),
 });
 export type BoqTemplate = z.infer<typeof BoqTemplateSchema>;
 
@@ -200,6 +205,9 @@ export const BOQ_RULE_KINDS = [
   'tiling_corner',
   'waterproofing',
   'one_off_suggestion',
+  // Stage 10 (Worker-BOQ, A-pipeline-07 / A-pipeline-12)
+  'template_chapter',
+  'fixture_combination',
 ] as const;
 export const BoqRuleKindSchema = z.enum(BOQ_RULE_KINDS);
 export type BoqRuleKind = z.infer<typeof BoqRuleKindSchema>;
@@ -337,6 +345,41 @@ export const OneOffSuggestionMatchSchema = z
   })
   .strict();
 
+/**
+ * Stage 10 (A-pipeline-07): when the project has a current ready sheet of one of `disciplines` (absent = always), every
+ * active library item of `chapters` (item.chapter, else the template chapter's codePrefixes) that no other rule produced
+ * becomes a line of `quantity` in the item's unit (else the rule's), never green, with the rule reasons; evidence = one
+ * whole-sheet item per triggering sheet (`detectionId: "sheet"`). `itemCode` must be null.
+ */
+export const TemplateChapterMatchSchema = z
+  .object({
+    chapters: z.array(ChapterCodeSchema).min(1).max(16),
+    disciplines: z.array(DisciplineSchema).max(8).optional(),
+    quantity: z.number().finite().positive().max(1000),
+    excludeCodes: z.array(ItemCodeSchema).max(64).optional(),
+  })
+  .strict();
+
+/**
+ * Stage 10 (A-pipeline-12): one unit of `itemCode` per complete set of fixtures — one live detection of each class, in
+ * the same room of its sheet when `sameRoom`, all within `radiusMm` (real-world mm, like the other rule radii; default 1500) of the first class. The
+ * members are consumed (not counted again by plumbing_point / class_to_item); incomplete sets fall through.
+ */
+export const FixtureCombinationMatchSchema = z
+  .object({
+    classes: z
+      .array(SymbolClassSchema)
+      .min(2)
+      .max(4)
+      .refine((c) => new Set(c).size === c.length, { message: 'classes must be distinct' }),
+    sameRoom: z.boolean(),
+    radiusMm: z.number().finite().min(0).max(5000).optional(),
+    floors: FloorsFilterSchema.optional(),
+    roomTypes: RoomTypesSchema.optional(),
+    roomNamePatterns: RoomNamePatternsSchema.optional(),
+  })
+  .strict();
+
 const ruleBase = {
   id: DocIdSchema,
   /** Target item (TEXT). null for authority rules. */
@@ -371,6 +414,8 @@ export const BoqRuleSchema = z.discriminatedUnion('kind', [
   z.object({ ...ruleBase, kind: z.literal('tiling_corner'), match: TilingCornerMatchSchema }),
   z.object({ ...ruleBase, kind: z.literal('waterproofing'), match: WaterproofingMatchSchema }),
   z.object({ ...ruleBase, kind: z.literal('one_off_suggestion'), match: OneOffSuggestionMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('template_chapter'), match: TemplateChapterMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('fixture_combination'), match: FixtureCombinationMatchSchema }),
 ]);
 export type BoqRule = z.infer<typeof BoqRuleSchema>;
 
@@ -480,98 +525,64 @@ export type LibraryImportView = z.infer<typeof LibraryImportViewSchema>;
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_BOQ_TEMPLATE_ID = 'tpl_default';
-export const DEFAULT_BOQ_TEMPLATE_NAME = 'תבנית ברירת מחדל (לפי כתב הכמויות לדוגמה)';
+export const DEFAULT_BOQ_TEMPLATE_NAME = 'תבנית ברירת מחדל';
+/**
+ * Version of the shipped default template. 1 = Sprint 3 (structure + notes of the client's sample BOQ, 8 chapters);
+ * 2 = Stage 10 (A-LIVE-01): generic trade chapters 01 / 03 / 04 / 05 / 09 matching the default rules and
+ * `DEFAULT_ITEM_LIBRARY`, generic notes, no client wording. Seeding is create-if-missing: orgs that already have
+ * `tpl_default` keep it (an admin edit or an import is never overwritten).
+ */
+export const DEFAULT_BOQ_TEMPLATE_VERSION = 2;
 
-/** Structure of the client's sample BOQ (sheet "כמויות"), notes as in the file (whitespace normalised). */
+/** Stage 10 generic default template (A-LIVE-01): chapters of the default rules, no client / project / price data. */
 const defaultTemplate: Omit<BoqTemplate, 'updatedAt' | 'updatedBy'> = {
   id: DEFAULT_BOQ_TEMPLATE_ID,
   name: DEFAULT_BOQ_TEMPLATE_NAME,
   default: true,
   source: 'default',
-  sourceRef: 'boq_sample.xls#כמויות',
+  sourceRef: `kamutan-defaults/template-v${DEFAULT_BOQ_TEMPLATE_VERSION}`,
   vatRate: 0.18,
-  titleRows: ['כתב כמויות ומחירים', 'שם הפרויקט: {projectName}'],
+  defaultsVersion: DEFAULT_BOQ_TEMPLATE_VERSION,
+  titleRows: ['כתב כמויות', 'שם הפרויקט: {projectName}'],
   columns: [
     { key: 'code', title: 'סעיף', width: 8 },
     { key: 'description', title: 'תאור העבודה', width: 60 },
     { key: 'unit', title: 'יחידה', width: 10 },
-    { key: 'qty', title: 'כמות סה"כ', width: 11 },
+    { key: 'qty', title: 'כמות', width: 11 },
     { key: 'unitPrice', title: "מחיר יח'", width: 11 },
     { key: 'total', title: 'סה"כ ₪', width: 14 },
   ],
   chapters: [
-    { code: '01', title: 'פרק 01 - עבודות הריסה ופינוי', notes: ['1. כלל הפינויים יהיו לשפך העירייה.'], codePrefixes: ['1'] },
     {
-      code: '02',
-      title: 'פרק 02 - עבודות בנייה',
-      notes: [
-        '1. כל הבלוקים בטון שחור.',
-        '2. העבודה כוללת שטרבות, עמודונים, קורות וחגורות בטון ע"פ תקן ומסביב לפתחים.',
-        '3. הקבלן יספק את הבלוקים והחומר השחור.',
-        '4. כלל העבודות ההנדסיות ייעשו בהתאם להוראות המהנדס בלבד (!) לרבות כמות וסוג הזיון, וסוג הבטון.',
-      ],
-      codePrefixes: ['2'],
+      code: '01',
+      title: 'פרק 01 – עבודות הריסה ופינוי',
+      notes: ['1. העבודות כוללות פינוי הפסולת לאתר מורשה.', '2. ההריסות יבוצעו לפי תכנית ההריסה בלבד.'],
+      codePrefixes: ['1'],
     },
     {
       code: '03',
       title: 'פרק 03 – עבודות אינסטלציה',
-      notes: [
-        '1. כלל צנרות המים יהיו מתוצרת SP ובעלי מחברי לחיצה (לא הברגה!)',
-        '2. ברזי ניל יסופקו ע"י הקבלן',
-        "3. העבודה כוללת התקנת כלל כיורים, ברזים תעלות ניקוז, אינטרפוצים, אסלות וכד'",
-        '4. העבודה תכלול ביטון כלל הצנרות',
-      ],
+      notes: ['1. העבודות כוללות חיבור לצנרת הקיימת ובדיקת לחץ.', '2. הכמויות לפי תכניות האינסטלציה המצורפות.'],
       codePrefixes: ['3'],
     },
     {
       code: '04',
       title: 'פרק 04 – עבודות חשמל',
-      notes: [
-        '1. כל העבודות יבוצעו בהתאם למפרט הסטנדרטי הבין משרדי לעבודות חשמל ע"י חשמלאי מוסמך.',
-        '2. תמחור כלל עבודות יתבצע על בסיס תכניות החשמל.',
-        '3. לכמויות ופרוט ראה תכניות חשמל מצורפות.',
-        '4. יש לקרוא פירוט זה בקפידה וביחד עם תכנית חשמל ותאורה',
-        '7. התכנית אינה כוללת התייחסות למערכת אזעקה.',
-      ],
+      notes: ['1. כל העבודות יבוצעו על ידי חשמלאי מוסמך ולפי התקנים המחייבים.', '2. הכמויות לפי תכניות החשמל המצורפות.'],
       codePrefixes: ['4'],
     },
     {
       code: '05',
-      title: 'פרק 05 - עבודות ריצוף, חיפוי ואיטום',
-      notes: [
-        '1. האריחים בלבד יסופקו ע"י המזמין.',
-        '2. חיבורי הפינות יהיו בגרונג בלבד ולא עם פינות מתכת!',
-        '3. ריצוף וחיפוי יבוצע על פי תכנית פריסות חדרי רחצה.',
-        '4. יש למלא רובה אקרילית בגווני האריח תוצרת מפאי, אלא אם התבקש אחרת.',
-        '5. יש להקפיד על שיפועים במקלחון, במדפים, ספסלים ונישות בתוך המקלחון .',
-        "7. כל החומר השחור - חול, מלט לבן, רובה וכ'ו יסופקו ע\"י הקבלן כולל אביזרי עזר כגון שומרי מרחק.",
-        '8. העבודה כוללת כיסוי הרצפות החדשות בקרטון גלי או חומר אחר עד גמר העבודה.',
-        '9. העבודה כוללת שינוע כלל החומר הלבן מהמדרכה אל תוך הבית',
-      ],
+      title: 'פרק 05 – עבודות ריצוף, חיפוי ואיטום',
+      notes: ['1. הכמויות במ"ר / מ"א לפי מידות התכנית; הפחת מפורט בעמודת כמות ההזמנה.', '2. האיטום יבוצע לפני הריצוף והחיפוי.'],
       codePrefixes: ['5'],
     },
     {
-      code: '06',
-      title: 'פרק 06 - עבודות גבס',
-      notes: [
-        '1. יש לעבוד עם פינות מתכת ולא פינות נייר.',
-        '2. יש לשתול מסגרות מעץ לחיזוק סביב המקומות המיועדים למשקופי הדלתות.',
-        "3. יש להתקין בקירות הגבס חיזוקים לתלית אביזרים כגון טלויזיה, מדפים, מתלה מגבות וכ'ו",
-        '4. כלל הקירות יהיו מלוחות גבס ירוק נגד מים.',
-        '5. בכלל מחיצות הגבס יותקנו מזרוני צמר סלעים עטוף בניילון 80 ק"ג למ"ק עם מקדם בליעה אקוסטי.',
-      ],
-      codePrefixes: ['7'],
+      code: '09',
+      title: 'פרק 09 – תאורה',
+      notes: ['1. התקנת גופי תאורה לפי תכנית התאורה המצורפת.'],
+      codePrefixes: ['9'],
     },
-    {
-      code: '07',
-      title: 'פרק 07 - עבודות שפכטל, טיח וצבע',
-      notes: [
-        '1. העבודה כוללת את כל ההכנות הנדרשות לביצוע עבודות הצבע לפי הוראות היצרן, כולל מספר שכבות הצבע הנדרשות.',
-        '3. לפני תחילת העבודה יש לשים מסקנטייפ על כל הפנלים ועל כל הסרגלים בצורה מוקפדת.',
-      ],
-      codePrefixes: ['8'],
-    },
-    { code: '08', title: 'פרק 08- שונות', notes: [], codePrefixes: ['9'] },
   ],
 };
 export const DEFAULT_BOQ_TEMPLATE: Readonly<Omit<BoqTemplate, 'updatedAt' | 'updatedBy'>> = Object.freeze(defaultTemplate);
@@ -731,6 +742,18 @@ export const DEFAULT_BOQ_RULES: readonly RuleSeed[] = Object.freeze([
     unit: null,
     priority: 0,
   } as RuleSeed,
+  // Stage 10 (A-pipeline-07): chapter 01 (demolition) items of the library offered as 1 קומפלט each when the project has
+  // a demolition plan. New id → created by the create-if-missing seeding (no DEFAULT_BOQ_RULES_VERSION bump).
+  {
+    id: 'r_template_demolition',
+    kind: 'template_chapter',
+    match: { chapters: ['01'], disciplines: ['demolition'], quantity: 1 },
+    itemCode: null,
+    itemDescription: 'סעיפי הריסה ופינוי מהתבנית',
+    unit: 'קומפלט',
+    priority: 10,
+    reasons: [ONE_OFF_SUGGESTION_REASON],
+  } as RuleSeed,
 ]);
 
 /**
@@ -755,3 +778,119 @@ export const defaultRuleDoc = (r: RuleSeed): Omit<BoqRule, 'updatedAt' | 'update
 /** True when a stored rule must be (re)seeded from the shipped defaults. */
 export const ruleNeedsReseed = (stored: { source?: string; defaultsVersion?: number } | null | undefined): boolean =>
   !stored || (stored.source === 'default' && (stored.defaultsVersion ?? 0) < DEFAULT_BOQ_RULES_VERSION);
+
+// ---------------------------------------------------------------------------
+// Stage 10 (A-LIVE-01): default item library
+// ---------------------------------------------------------------------------
+
+/**
+ * Version of the shipped default item library. Seeded per org when its library is EMPTY (org bootstrap, and lazily
+ * before a BOQ build / export / library or template read for orgs created before Stage 10); never re-seeded once the
+ * org has any item. 1 = Stage 10.
+ */
+export const DEFAULT_ITEM_LIBRARY_VERSION = 1;
+
+/** Units used by the defaults (Hebrew trade abbreviations). */
+export const DEFAULT_UNITS = Object.freeze({ count: "יח'", area: 'מ"ר', length: 'מ"א', lumpSum: 'קומפלט' });
+
+type DefaultItemSeed = { code: string; description: string; unit: string };
+const U = DEFAULT_UNITS;
+
+/**
+ * Generic trade items (no client names, prices or project data). Codes and units follow `DEFAULT_BOQ_RULES` (every
+ * rule with an `itemCode` has exactly one item of that code, with the rule's description or a brand-free wording of
+ * it), plus chapter 01 demolition items offered as one lump sum each (A-pipeline-07).
+ */
+const DEFAULT_ITEM_SEEDS: readonly DefaultItemSeed[] = [
+  // 01 — demolition (offered as 1 קומפלט each)
+  { code: '1.01', description: 'פירוק ריצוף קיים כולל שכבת המילוי, לרבות פינוי', unit: U.lumpSum },
+  { code: '1.02', description: 'פירוק חיפוי קירות קיים בחדרי רחצה ובמטבח, לרבות פינוי', unit: U.lumpSum },
+  { code: '1.03', description: 'פירוק כלים סניטריים, ברזים וצנרת גלויה קיימים', unit: U.lumpSum },
+  { code: '1.04', description: 'פירוק מטבח קיים, לרבות ארונות ומשטח עבודה', unit: U.lumpSum },
+  { code: '1.05', description: 'הריסת קירות ומחיצות לפי תכנית ההריסה', unit: U.lumpSum },
+  { code: '1.06', description: 'פירוק דלתות ומשקופים קיימים', unit: U.lumpSum },
+  { code: '1.07', description: 'פירוק נקודות חשמל, תאורה ותקשורת קיימות שאינן נשמרות', unit: U.lumpSum },
+  { code: '1.08', description: 'חציבות ופתיחת מעברים לצנרת ולתשתיות חדשות', unit: U.lumpSum },
+  { code: '1.09', description: 'פינוי פסולת בניין לאתר פסולת מורשה', unit: U.lumpSum },
+  { code: '1.10', description: 'ניקיון כללי בסיום עבודות ההריסה', unit: U.lumpSum },
+  // 03 — plumbing (rules r_plumb_* / r_oneoff_*)
+  { code: '3.01', description: 'ניקוז למזגן', unit: U.count },
+  { code: '3.02', description: "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז קיר", unit: U.count },
+  { code: '3.03', description: "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז פרח", unit: U.count },
+  { code: '3.04', description: "נק' מים וניקוז לניאגרה סמויה, לרבות ביטון הניאגרה, ותליית האסלה", unit: U.count },
+  { code: '3.05', description: "נק' מים וניקוז למכונת כביסה", unit: U.count },
+  { code: '3.06', description: "נק' מים קרים עבור מתקן מים/ ברז גן", unit: U.count },
+  { code: '3.07', description: "נק' מים וניקוז עבור ניאגרה מונובלוק. העבודה תכלול התקנת ניאגרה, אסלה ומושב", unit: U.count },
+  { code: '3.08', description: 'הזנת מים חדשה מהשעון הראשי ועד הבית', unit: U.lumpSum },
+  { code: '3.09', description: 'אספקה והתקנה של מרכזיית מים עם ברזי שליטה נפרדים', unit: U.lumpSum },
+  { code: '3.10', description: 'הזנת מים חדשה עבור דוד', unit: U.lumpSum },
+  { code: '3.11', description: "נק' מים חמים קרים וניקוז עבור מקלחון חדר רחצה", unit: U.count },
+  { code: '3.12', description: "נק' מים חמים קרים וניקוז לאמבטיה חדר רחצה", unit: U.count },
+  { code: '3.13', description: "נק' מים חמים קרים וניקוז למקלחון מרתף", unit: U.count },
+  { code: '3.14', description: 'אספקה והתקנה של משאבה לניקוז דלוחין קומת מרתף', unit: U.lumpSum },
+  { code: '3.15', description: 'אספקה והתקנה של משאבה לניקוז מי גשם בחצר אנגלית', unit: U.lumpSum },
+  // 04 — electrical (rules r_socket_* / r_comms_point / feeds / panel / lighting composites)
+  { code: '4.00', description: 'שקע בודד', unit: U.count },
+  { code: '4.01', description: 'שקע כפול', unit: U.count },
+  { code: '4.02', description: 'אביזר שלישיית שקעים', unit: U.count },
+  { code: '4.03', description: 'שקע כח', unit: U.count },
+  { code: '4.04', description: 'שקע כח כפול', unit: U.count },
+  { code: '4.05', description: "נק' תקשורת (כבלים/ טלפון/ רשת) הכנה עם חוט משיכה", unit: U.count },
+  { code: '4.06', description: "אביזר משולב הכולל 6 שקעים, נק' כבלים, נק' טלפון ונק' רשת", unit: U.count },
+  { code: '4.07', description: "נק' קצה לרמקול", unit: U.count },
+  { code: '4.09', description: "נק' מאור כוללת מפסק", unit: U.count },
+  { code: '4.10', description: "נק' מאור בעלת שני מפסקים מחליפים", unit: U.count },
+  { code: '4.11', description: "שתי נק' מאור משותפות בעלות מפסק בודד", unit: U.count },
+  { code: '4.12', description: 'הוספת מפסק מחליף לנקודת מאור קיימת', unit: U.count },
+  { code: '4.14', description: "הוספת מפסק למאוורר עבור נק' מאור קיימת", unit: U.count },
+  { code: '4.15', description: "נק' מאור ללא מפסק (חיישן תנועה)", unit: U.count },
+  { code: '4.16', description: 'שלוש נקודות מאור בעלות מפסק בודד', unit: U.count },
+  { code: '4.17', description: 'הזנה לתנור חימום+ מפסק', unit: U.count },
+  { code: '4.18', description: "נק' אינטרקום", unit: U.count },
+  { code: '4.20', description: 'צינור קוברה 50 מ"מ באורך 1.5 מ\'', unit: U.count },
+  { code: '4.21', description: 'שקע תלת פאזי', unit: U.count },
+  { code: '4.22', description: 'הזנה למפסק ופעמון', unit: U.count },
+  { code: '4.23', description: 'הזנה לדוד חשמל יחידת דיור כולל התקנת מפסק טיימר', unit: U.count },
+  { code: '4.24', description: 'אספקה והתקנת לוח חשמל', unit: U.count },
+  // 05 — tiling / cladding / waterproofing (rules r_tile_* / r_waterproofing_wet)
+  { code: '5.01', description: 'חיפוי קירות חדרי רחצה באריחי קרמיקה', unit: U.area },
+  { code: '5.02', description: 'ריצוף ריצפות חדרי רחצה וחצר אנגלית באריחי גרניט פורצלן', unit: U.area },
+  { code: '5.03', description: 'חיתוך גרונג במפגש אריחי קרמיקה בפינות חיצוניות', unit: U.length },
+  { code: '5.05', description: 'איטום ריצפות חדרי הרחצה בשתי שכבות סיכה', unit: U.lumpSum },
+  { code: '5.06', description: 'חיפוי קיר מטבח באריחי גרניט פורצלן', unit: U.area },
+  { code: '5.07', description: 'חיפוי קיר חלקי באריחי קרמיקה', unit: U.area },
+  // 09 — lighting installation (rule r_install_luminaires)
+  { code: '9.01', description: 'התקנת גופי התאורה בבית', unit: U.count },
+];
+
+const chapterOfCode = (code: string): string => (code.split('.')[0] ?? code).padStart(2, '0');
+const titleOfChapter = (ch: string): string => defaultTemplate.chapters.find((c) => c.code === ch)?.title ?? `פרק ${ch}`;
+
+/** The shipped default item library (doc ids = `itemIdFor(code, description)`; `source: 'default'`). */
+export const DEFAULT_ITEM_LIBRARY: readonly Omit<ItemLibraryItem, 'updatedAt' | 'updatedBy'>[] = Object.freeze(
+  DEFAULT_ITEM_SEEDS.map((s) =>
+    Object.freeze({
+      id: itemIdFor(s.code, s.description),
+      code: s.code,
+      chapter: chapterOfCode(s.code),
+      chapterTitle: titleOfChapter(chapterOfCode(s.code)),
+      description: s.description,
+      unit: s.unit,
+      tags: ['ברירת מחדל'],
+      source: 'default' as const,
+      sourceRef: `kamutan-defaults/library-v${DEFAULT_ITEM_LIBRARY_VERSION}`,
+      active: true,
+      defaultsVersion: DEFAULT_ITEM_LIBRARY_VERSION,
+    }),
+  ),
+);
+
+/** Unit of the default library item / rule for a unit kind (worker fallback when a line has no library item). */
+export function defaultUnitFor(ruleUnit: string | null | undefined): string {
+  if (!ruleUnit) return U.count;
+  const u = ruleUnit.trim();
+  if (['יחידה', "יח'", 'יח', 'unit'].includes(u)) return U.count;
+  if (['מ"ר', 'm2', 'מ״ר'].includes(u)) return U.area;
+  if (['מ"א', "מ'", 'm', 'מ״א'].includes(u)) return U.length;
+  return u;
+}

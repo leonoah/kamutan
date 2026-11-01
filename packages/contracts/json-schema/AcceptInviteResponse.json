@@ -1,0 +1,36 @@
+{
+  "$ref": "#/definitions/AcceptInviteResponse",
+  "definitions": {
+    "AcceptInviteResponse": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "editor",
+            "reviewer",
+            "viewer"
+          ]
+        },
+        "alreadyMember": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "orgId",
+        "role",
+        "alreadyMember"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/AcceptInviteResponse.json"
+}

@@ -100,7 +100,8 @@ export function createFirestoreRealtime(db: Firestore): RealtimeSource {
       const versionSubs = new Map<string, () => void>();
       const emit = () =>
         onData(
-          sheets.map((sheet) => ({
+          // Stage 10 revised upload: sheets of a replaced set are superseded versions, not current sheets.
+          sheets.filter((sheet) => !sheet.supersededBy).map((sheet) => ({
             sheet,
             version: sheet.currentVersionId ? (versions.get(`${sheet.id}/${sheet.currentVersionId}`) ?? null) : null,
           })),

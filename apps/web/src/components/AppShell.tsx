@@ -85,11 +85,13 @@ export function TopBar({ children, className }: { children?: ReactNode; classNam
   const { org } = useCurrentOrg();
   return (
     <header className={cn("sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur", className)}>
-      <div className="flex h-14 items-center gap-4 px-4 sm:px-6">
-        <Link to="/projects" className="rounded" aria-label={t("app.name")}>
-          <Logo />
+      {/* 390 px: icon-only logo, tighter gaps and nav padding so nav + user menu fit without sideways scroll (A-UI-02). */}
+      <div className="flex h-14 min-w-0 items-center gap-2 px-3 sm:gap-4 sm:px-6">
+        <Link to="/projects" className="shrink-0 rounded" aria-label={t("app.name")}>
+          <Logo className="sm:hidden" withText={false} />
+          <Logo className="max-sm:hidden" />
         </Link>
-        <nav aria-label={t("app.mainNav")} className="flex items-center gap-1">
+        <nav aria-label={t("app.mainNav")} className="flex min-w-0 items-center gap-0.5 sm:gap-1">
           {[
             { to: "/projects", label: t("projects.title") },
             { to: "/library", label: t("library.nav") },
@@ -100,7 +102,7 @@ export function TopBar({ children, className }: { children?: ReactNode; classNam
               to={l.to}
               className={({ isActive }) =>
                 cn(
-                  "rounded px-2.5 py-1.5 text-dense font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                  "whitespace-nowrap rounded px-1.5 py-1.5 text-dense font-medium sm:px-2.5 text-muted-foreground hover:bg-muted hover:text-foreground",
                   isActive && "bg-primary/[0.08] text-foreground",
                 )
               }

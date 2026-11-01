@@ -150,6 +150,10 @@
               "type": "null"
             }
           ]
+        },
+        "defaultsVersion": {
+          "type": "integer",
+          "exclusiveMinimum": 0
         }
       },
       "required": [

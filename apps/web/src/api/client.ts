@@ -47,6 +47,8 @@ export function createBackend(): Backend {
       // The share viewer demo needs lines (the mock seeds demo links: /s/demo-noah, /s/demo-expired, /s/demo-revoked).
       ...(q.get("mockBoq") === "built" || isShareViewerPath(path) ? { boqPrebuilt: true } : {}),
       ...(q.get("mockBoq") === "engine" ? { boqEngineOnly: true } : {}),
+      // Stage 10 (A-LIVE-01): ?mockLibrary=default|none (org library state shown by the BOQ panel and the hub).
+      ...(q.get("mockLibrary") === "default" || q.get("mockLibrary") === "none" ? { libraryMode: q.get("mockLibrary") as "default" | "none" } : {}),
       ...(role === "editor" || role === "reviewer" || role === "viewer" || role === "admin"
         ? { orgs: [{ id: "org-demo", name: "סטודיו נח לעיצוב פנים", role }] }
         : {}),

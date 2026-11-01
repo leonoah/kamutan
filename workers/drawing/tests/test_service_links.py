@@ -47,10 +47,14 @@ def test_links_artifact_uploaded_and_stats_written(monkeypatch):
     assert seen and seen[0]["floorsConfirmed"] is False
     v = docs.get(PRE[:-1])
     assert v["artifacts"]["links"] == PRE + "links.json.gz"
-    assert json.loads(gzip.decompress(blobs.read(PRE + "links.json.gz"))) == LINKS
+    up = json.loads(gzip.decompress(blobs.read(PRE + "links.json.gz")))
+    # Stage 10 (A-LIVE-03): the orchestrator's conservative table caps the sandbox's green group at yellow
+    (g,) = up["groups"]
+    assert g["level"] == "yellow" and g["reasons"] and {**g, "level": "green", "reasons": []} == LINKS["groups"][0]
     assert blobs.content_types[PRE + "links.json.gz"] == "application/gzip"
     st = v["stats"]["links"]
     assert st["groups"] == 1 and st["byKind"] == {"single": 1} and st["danglingEnds"] == 0
+    assert st["green"] == 0 and st["yellow"] == 1
 
 
 def test_floors_confirmed_passed_on_reprocess(monkeypatch):

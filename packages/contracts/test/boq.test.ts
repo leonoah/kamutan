@@ -16,6 +16,11 @@ import {
   CreateLibraryImportRequestSchema,
   DEFAULT_BOQ_RULES,
   DEFAULT_BOQ_TEMPLATE,
+  effectiveStatus,
+  exportBlockingLines,
+  isQtyChangedReason,
+  needsReapproval,
+  qtyChangedReason,
   defaultRuleDoc,
   effectiveQty,
   ExportBoqRequestSchema,
@@ -84,6 +89,17 @@ describe('boq lines', () => {
     expect(next).toMatchObject({ qty: 4, qtyOverride: 7, status: 'approved', approvedBy: 'u1', note: 'n', level: 'green' });
     expect(applyRebuild(null, { qty: 1 }).status).toBe('draft');
     expect(BOQ_LINE_PRESERVED_FIELDS).toContain('qtyOverride');
+  });
+  it('Stage 10: applyRebuild drops an approved line whose computed qty changed to reviewed (reason X → Y); kept when same qty / overridden', () => {
+    const approved = { qty: 16, status: 'approved', approvedBy: 'u1', approvedAt: '2026-11-01T00:00:00.000Z', approvedQty: 15, reasons: [] };
+    expect(applyRebuild(approved, { qty: 16, level: 'green', reasons: ['x'] })).toMatchObject({ status: 'reviewed', approvedBy: null, approvedAt: null, approvedQty: null, reasons: ['הכמות השתנתה מאז האישור (15 → 16)', 'x'] });
+    expect(applyRebuild({ ...approved, approvedQty: 16 }, { qty: 16, reasons: [] })).toMatchObject({ status: 'approved', approvedQty: 16 });
+    expect(applyRebuild({ ...approved, qtyOverride: 12 }, { qty: 20, reasons: [] })).toMatchObject({ status: 'approved' });
+    expect(qtyChangedReason(2.5, 3)).toBe('הכמות השתנתה מאז האישור (2.5 → 3)');
+    expect(isQtyChangedReason('הכמות השתנתה מאז האישור')).toBe(true);
+    expect(needsReapproval({ status: 'approved', qty: 7, approvedQty: 6, qtyOverride: 5 })).toBe(false);
+    expect(effectiveStatus({ status: 'approved', qty: 7, approvedQty: 6 })).toBe('reviewed');
+    expect(exportBlockingLines([{ status: 'draft', qty: 1, level: 'red' }, { status: 'approved', qty: 1, level: 'red' }, { status: 'approved', qty: 2, approvedQty: 1, level: 'green' }]).length).toBe(2);
   });
   it('PATCH request rules', () => {
     expect(PatchBoqLineRequestSchema.safeParse({}).success).toBe(false);

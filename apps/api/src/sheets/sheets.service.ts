@@ -24,6 +24,7 @@ import { ApiException, notFound } from '../common/api-exception';
 import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { RepoConflictError, REPOSITORY, type Repository } from '../db/repository';
 import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
+import { ProjectStateService } from '../project-state/project-state.service';
 import { validateRegions } from './region-validation';
 import { URL_SIGNER, type UrlSigner } from './url-signer';
 
@@ -40,11 +41,14 @@ export class SheetsService {
     @Inject(INGEST_QUEUE) private readonly queue: IngestQueue,
     @Inject(URL_SIGNER) private readonly signer: UrlSigner,
     @Optional() @Inject(BOQ_REPOSITORY) private readonly boq?: BoqRepository,
+    @Optional() private readonly state?: ProjectStateService,
   ) {}
 
   async list(user: AuthContext, projectId: string, q: ListSheetsQuery): Promise<SheetPage> {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'viewer');
-    const page = await this.repo.listSheets(orgId, projectId, { limit: q.limit, cursor: q.cursor, sheetSetId: q.sheetSetId });
+    // A-API-05: a processed revision supersedes its old sheets before they are listed.
+    if (!q.cursor) await this.state?.reconcileSupersedes(orgId, projectId);
+    const page = await this.repo.listSheets(orgId, projectId, { limit: q.limit, cursor: q.cursor, sheetSetId: q.sheetSetId, ...(q.includeSuperseded ? { includeSuperseded: true } : {}) });
     // Doc ids sort "p10" before "p2"; order each page by (set, pageIndex) for display.
     const items = [...page.items].sort((a, b) => (a.sheetSetId === b.sheetSetId ? a.pageIndex - b.pageIndex : a.sheetSetId < b.sheetSetId ? -1 : 1));
     return { items, nextCursor: page.nextCursor };

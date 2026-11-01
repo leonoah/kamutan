@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  DEFAULT_ITEM_LIBRARY,
   ApiErrorSchema,
   BoqRuleListSchema,
   BoqRuleSchema,
@@ -38,7 +39,7 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
   beforeAll(async () => {
     t = await createTestApp(testConfig({ THROTTLE_LIMIT: '1000', UPLOAD_THROTTLE_LIMIT: '100' }));
     http = request(t.app.getHttpServer());
-    for (const who of ['admin', 'editor', 'editor2', 'reviewer', 'viewer', 'outsider']) tok[who] = t.auth.issue(who);
+    for (const who of ['admin', 'editor', 'editor2', 'reviewer', 'viewer', 'outsider']) tok[who] = t.auth.issue(who, { mfa: who === 'admin' }); // Stage 10 (A-API-02): admin settings need MFA
     orgId = t.repo.seedOrg('Org', { admin: 'admin', editor: 'editor', editor2: 'editor', reviewer: 'reviewer', viewer: 'viewer' }).id;
     otherOrg = t.repo.seedOrg('Other', { outsider: 'admin' }).id;
     projectId = (await t.repo.createProject(orgId, { name: 'P' }, 'editor')).id;
@@ -79,7 +80,10 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
       expect(p1.items.length + p2.items.length).toBe(3);
       expect(p2.nextCursor).toBeNull();
       expect((await http.get(`/api/v1/library/items?orgId=${orgId}`).set(auth('outsider'))).status).toBe(404);
-      expect(LibraryItemPageSchema.parse((await http.get(`/api/v1/library/items?orgId=${otherOrg}`).set(auth('outsider'))).body).items).toEqual([]);
+      // Stage 10 (A-LIVE-01): the other (empty) org gets only the shipped default library — none of org A's items
+      const other = LibraryItemPageSchema.parse((await http.get(`/api/v1/library/items?orgId=${otherOrg}&limit=500`).set(auth('outsider'))).body).items;
+      expect(other.length).toBe(DEFAULT_ITEM_LIBRARY.length);
+      expect(other.every((i) => i.source === 'default')).toBe(true);
       expect((await http.get('/api/v1/library/items').set(auth('viewer'))).status).toBe(400);
     });
 
@@ -92,7 +96,8 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
       expect((await http.patch(`/api/v1/library/items/${id}?orgId=${orgId}`).set(auth('editor')).send({ description: 'x' })).status).toBe(400);
       expect((await http.patch(`/api/v1/library/items/${id}?orgId=${orgId}`).set(auth('reviewer')).send({ active: true })).status).toBe(403);
       expect((await http.patch(`/api/v1/library/items/${id}?orgId=${otherOrg}`).set(auth('editor')).send({ active: true })).status).toBe(404);
-      expect((await http.patch(`/api/v1/library/items/${id}?orgId=${otherOrg}`).set(auth('outsider')).send({ active: true })).status).toBe(404); // not in their org
+      // not in their org (their default library has 4.10 with the same text → same deterministic id; use another A item)
+      expect((await http.patch(`/api/v1/library/items/${itemIdFor('4.1', 'אחר')}?orgId=${otherOrg}`).set(auth('outsider')).send({ active: true })).status).toBe(404);
       expect((await http.patch(`/api/v1/library/items/nope?orgId=${orgId}`).set(auth('editor')).send({ active: true })).status).toBe(404);
       const active = LibraryItemPageSchema.parse((await http.get(`/api/v1/library/items?orgId=${orgId}&active=true`).set(auth('viewer'))).body);
       expect(active.items.map((i) => i.code).sort()).toEqual(['4.1', '9.01']);
@@ -207,7 +212,7 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
   });
 
   describe('templates', () => {
-    it('GET seeds the default template from the sample (once); editor PATCH 403; admin PATCH audited', async () => {
+    it('GET seeds the generic default template v2 (once); editor PATCH 403; admin without MFA 403; admin PATCH audited', async () => {
       const r = await http.get(`/api/v1/boq-templates?orgId=${orgId}`).set(auth('viewer'));
       expect(r.status).toBe(200);
       const list = BoqTemplateListSchema.parse(r.body);
@@ -215,7 +220,13 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
       const tpl = list.items[0];
       expect(tpl).toMatchObject({ id: 'tpl_default', default: true, source: 'default', vatRate: 0.18 });
       expect(tpl?.chapters.find((c) => c.code === '04')?.title).toBe('פרק 04 – עבודות חשמל');
-      expect(tpl?.columns.map((c) => c.title)).toEqual(['סעיף', 'תאור העבודה', 'יחידה', 'כמות סה"כ', "מחיר יח'", 'סה"כ ₪']);
+      expect(tpl?.chapters.map((c) => c.code)).toEqual(['01', '03', '04', '05', '09']);
+      expect(tpl).toMatchObject({ defaultsVersion: 2 });
+      expect(tpl?.columns.map((c) => c.title)).toEqual(['סעיף', 'תאור העבודה', 'יחידה', 'כמות', "מחיר יח'", 'סה"כ ₪']);
+      const noMfa = t.auth.issue('admin');
+      expect((await http.patch(`/api/v1/boq-templates/tpl_default?orgId=${orgId}`).set({ authorization: `Bearer ${noMfa}` }).send({ name: 'x' })).body.error.code).toBe('mfa_required');
+      const stale = t.auth.issue('admin', { mfa: true, authTime: Math.floor(Date.now() / 1000) - 3600 });
+      expect((await http.patch(`/api/v1/boq-rules/r_light_two_way?orgId=${orgId}`).set({ authorization: `Bearer ${stale}` }).send({ enabled: true })).body.error.code).toBe('recent_auth_required');
       expect(BoqTemplateListSchema.parse((await http.get(`/api/v1/boq-templates?orgId=${orgId}`).set(auth('viewer'))).body).items).toHaveLength(1);
 
       expect((await http.patch(`/api/v1/boq-templates/tpl_default?orgId=${orgId}`).set(auth('editor')).send({ name: 'x' })).status).toBe(403);
@@ -277,6 +288,23 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
       const id = (r.body as { id: string }).id;
       expect(t.repo.docs.has(fsPaths.boqTemplate(id, 'tpl_default'))).toBe(true);
       expect(t.repo.docs.has(fsPaths.boqRule(id, 'r_install_luminaires'))).toBe(true);
+      // Stage 10 (A-LIVE-01): the default item library, idempotent, every default rule code has its item
+      const items = () => [...t.repo.docs.keys()].filter((k) => k.startsWith(`orgs/${id}/itemLibrary/`));
+      expect(items().length).toBe(DEFAULT_ITEM_LIBRARY.length);
+      expect(await t.boq.seedDefaults(id)).toMatchObject({ items: 0 });
+      expect(items().length).toBe(DEFAULT_ITEM_LIBRARY.length);
+      expect(t.repo.docs.get(fsPaths.libraryItem(id, itemIdFor('5.01', 'חיפוי קירות חדרי רחצה באריחי קרמיקה')))).toMatchObject({ unit: 'מ"ר', chapter: '05', source: 'default', defaultsVersion: 1 });
+      expect(t.repo.docs.has(fsPaths.boqRule(id, 'r_template_demolition'))).toBe(true);
+    });
+
+    it('A-LIVE-01 backfill: an existing org with an EMPTY library gets the defaults lazily (first build / list); a non-empty library is never touched', async () => {
+      const empty = t.repo.seedOrg('ישן', { admin: 'admin' }).id;
+      expect([...t.repo.docs.keys()].some((k) => k.startsWith(`orgs/${empty}/itemLibrary/`))).toBe(false);
+      const list = LibraryItemPageSchema.parse((await http.get(`/api/v1/library/items?orgId=${empty}&limit=500`).set(auth('admin'))).body);
+      expect(list.items.length).toBe(DEFAULT_ITEM_LIBRARY.length);
+      // org A already had items → nothing seeded there
+      expect((await t.boq.seedDefaults(orgId)).items).toBe(0);
+      expect([...t.repo.docs.values()].filter((d) => d.source === 'default' && typeof d.code === 'string' && d.defaultsVersion === 1).length).toBeGreaterThanOrEqual(DEFAULT_ITEM_LIBRARY.length);
     });
   });
 });

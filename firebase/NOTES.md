@@ -129,6 +129,21 @@ lose access at once. Cost: one extra `get()` per rule evaluation. Tests: `firest
 `storage.rules.test.ts` (uploads refused), `rules.lint.test.ts` (static). Also new: storage `projects/*/share/**`
 deny-all (share BOQ snapshots, F-4).
 
+### Stage 10 — members + invites (A-API-01)
+
+| Path | Client read | Client write |
+| --- | --- | --- |
+| `orgs/*/members/{uid}` | members (unchanged; own memberships via the collection-group rule) | **none** — invite / role change / remove go through the API (admin + MFA + recent sign-in, audited, last admin kept) |
+| `orgs/*/invites/{inviteId}` `{email, role, status pending\|accepted\|revoked, invitedBy, createdAt, expiresAt, acceptedBy/At, revokedBy/At}` | **admin** of an active org | **none** — created / renewed / revoked and claimed by the API only (the claim matches the signed-in user's VERIFIED email) |
+
+No collection-group rule for `invites` (the claim lookup is the API's, firebase-admin). Index: field override
+`invites.email` (COLLECTION + COLLECTION_GROUP) for the API's claim query. `model.ts`: `Invite`, `paths.invite`,
+`COLLECTIONS` + `invites`. Tests: `rules.lint.test.ts` "Stage 10" (static, runs here: invites read = `isAdmin(orgId)`,
+writes deny-all, not AnyStatus, members writes deny-all, the only collection-group match is the own-membership read,
+model + index), `firestore.rules.test.ts` "Stage 10" (emulator, CI: admin-only read, editor/reviewer/viewer/other org/
+outsider/anon denied, collection-group query denied, no create / accept / role escalation / delete by any role, no
+self-join or role change on members, offboarding org closes invites).
+
 ## Running
 
 ```bash

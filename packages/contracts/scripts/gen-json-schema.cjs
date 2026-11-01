@@ -4,7 +4,15 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { zodToJsonSchema } = require('zod-to-json-schema');
-const { jsonSchemaRegistry, DEFAULT_BOQ_TEMPLATE, DEFAULT_BOQ_RULES, defaultRuleDoc } = require('../dist/cjs/index.js');
+const {
+  jsonSchemaRegistry,
+  DEFAULT_BOQ_TEMPLATE,
+  DEFAULT_BOQ_TEMPLATE_VERSION,
+  DEFAULT_BOQ_RULES,
+  defaultRuleDoc,
+  DEFAULT_ITEM_LIBRARY,
+  DEFAULT_ITEM_LIBRARY_VERSION,
+} = require('../dist/cjs/index.js');
 
 const outDir = path.join(__dirname, '..', 'json-schema');
 fs.rmSync(outDir, { recursive: true, force: true });
@@ -29,5 +37,10 @@ fs.mkdirSync(path.join(outDir, 'defaults'), { recursive: true });
 fs.writeFileSync(
   path.join(outDir, 'defaults', 'boq-defaults.json'),
   JSON.stringify({ template: DEFAULT_BOQ_TEMPLATE, rules: DEFAULT_BOQ_RULES.map(defaultRuleDoc) }, null, 2) + '\n',
+);
+// Stage 10 (A-LIVE-01): default item library (+ the template it belongs to), seeded per org by the API.
+fs.writeFileSync(
+  path.join(outDir, 'defaults', 'library-defaults.json'),
+  JSON.stringify({ version: DEFAULT_ITEM_LIBRARY_VERSION, templateVersion: DEFAULT_BOQ_TEMPLATE_VERSION, template: DEFAULT_BOQ_TEMPLATE, items: DEFAULT_ITEM_LIBRARY }, null, 2) + '\n',
 );
 console.log(`wrote ${names.length} JSON schemas to ${path.relative(process.cwd(), outDir) || outDir}`);

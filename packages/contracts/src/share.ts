@@ -45,6 +45,12 @@ export const ShareLinkSchema = z.object({
   excludedSheets: z.record(DocIdSchema, DocIdSchema).optional(),
   /** Security gate F-4: the BOQ frozen at creation (Storage `share/{linkId}/boq.json.gz`); the public API serves only it. */
   boqSnapshotPath: z.string().max(1024).nullable().optional(),
+  /**
+   * Stage 10 (A-API-09, SEC-26): the BOQ build the snapshot was taken from (project.boq.latestBuildId at creation).
+   * The public overlay maps detections → lineIds from THIS build's evidence, so every overlay lineId is in the
+   * snapshot. Absent on older links (they keep the Sprint-5 behaviour, ids filtered to the snapshot).
+   */
+  boqBuildId: DocIdSchema.nullable().optional(),
 });
 export type ShareLink = z.infer<typeof ShareLinkSchema>;
 

@@ -185,9 +185,10 @@ describe('Sprint 4 e2e — corrections, review queue, room settings, find-simila
   });
 
   describe('role matrix + isolation', () => {
-    it('accept/reject: reviewer+; other kinds: editor+; viewer never; outsider 404; anonymous 401', async () => {
+    it('every kind: reviewer+ (Stage 10, A-API-03 / SEC-07 "תיקון פריטים"); viewer never; outsider 404; anonymous 401', async () => {
       expect((await http.post(`${P()}/corrections`).set(auth('viewer')).send(accept())).status).toBe(403);
-      expect((await http.post(`${P()}/corrections`).set(auth('reviewer')).send(add())).status).toBe(403);
+      expect((await http.post(`${P()}/corrections`).set(auth('viewer')).send(add())).status).toBe(403);
+      expect((await http.post(`${P()}/corrections`).set(auth('reviewer')).send(add())).status).toBe(201);
       expect((await http.post(`${P()}/corrections`).set(auth('reviewer')).send({ ...accept(), kind: 'reject' })).status).toBe(201);
       for (const who of ['editor', 'admin']) expect((await http.post(`${P()}/corrections`).set(auth(who)).send(add())).status).toBe(201);
       expect((await http.post(`${P()}/corrections`).set(auth('outsider')).send(accept())).status).toBe(404);
@@ -196,9 +197,10 @@ describe('Sprint 4 e2e — corrections, review queue, room settings, find-simila
       finishPending();
     });
 
-    it('reviewer cannot revert an editor-only kind; cross-org ids are 404 everywhere', async () => {
+    it('reviewer reverts any kind, viewer never (Stage 10); cross-org ids are 404 everywhere', async () => {
       const c = CreateCorrectionResponseSchema.parse((await http.post(`${P()}/corrections`).set(auth('editor')).send(add())).body).correction;
-      expect((await http.post(`${P()}/corrections/${c.id}/revert`).set(auth('reviewer'))).status).toBe(403);
+      expect((await http.post(`${P()}/corrections/${c.id}/revert`).set(auth('viewer'))).status).toBe(403);
+      expect((await http.post(`${P()}/corrections/${c.id}/revert`).set(auth('reviewer'))).status).toBe(200);
       // org B admin with org A ids, and org A sheet ids under org B's project
       expect((await http.post(`${P()}/corrections/${c.id}/revert`).set(auth('outsider'))).status).toBe(404);
       expect((await http.post(`${P(otherProject)}/corrections/${c.id}/revert`).set(auth('outsider'))).status).toBe(404);
@@ -215,7 +217,7 @@ describe('Sprint 4 e2e — corrections, review queue, room settings, find-simila
   });
 
   describe('POST /corrections/batch', () => {
-    it('≤ 500 items, one batchId, one audit event; 501 → 400; mixed kinds by a reviewer → 403', async () => {
+    it('≤ 500 items, one batchId, one audit event; 501 → 400; mixed kinds by a reviewer → 201 (Stage 10), by a viewer → 403', async () => {
       const items = Array.from({ length: 500 }, (_, i) => ({ ...accept(`d_${i}`), anchorMm: { x: 10 + (i % 50), y: 10 + Math.floor(i / 50) } }));
       const auditsBefore = audits().length;
       const r = await http.post(`${P()}/corrections/batch`).set(auth('reviewer')).send({ items, source: 'cluster' });
@@ -228,7 +230,8 @@ describe('Sprint 4 e2e — corrections, review queue, room settings, find-simila
       expect(newAudits.filter((a) => a.entity === 'corrections')).toHaveLength(1);
       expect((newAudits[0]?.after as Doc).correctionIds).toHaveLength(500);
       expect((await http.post(`${P()}/corrections/batch`).set(auth('reviewer')).send({ items: [...items, accept()] })).status).toBe(400);
-      expect((await http.post(`${P()}/corrections/batch`).set(auth('reviewer')).send({ items: [accept(), add()] })).status).toBe(403);
+      expect((await http.post(`${P()}/corrections/batch`).set(auth('viewer')).send({ items: [accept(), add()] })).status).toBe(403);
+      expect((await http.post(`${P()}/corrections/batch`).set(auth('reviewer')).send({ items: [accept('d_mix'), add()] })).status).toBe(201);
       expect((await http.post(`${P()}/corrections/batch`).set(auth('reviewer')).send({ items: [] })).status).toBe(400);
       // all-or-nothing: one bad target → nothing written
       const count = [...t.repo.docs.keys()].filter((k) => k.includes('/corrections/')).length;

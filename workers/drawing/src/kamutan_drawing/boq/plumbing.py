@@ -149,19 +149,32 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s.replace("״", '"').replace("׳", "'")).strip()
 
 
+TextCue = tuple[str, float, float]  # (text, x, y) of a sheet text line, paper mm (bbox centre)
+
+
+def text_cue_det(sheet_id: str, version_id: str, discipline: str, index: int, x: float, y: float, floor: str | None) -> Det:
+    """Evidence item for a text-triggered suggestion (A-pipeline-10): ``detectionId`` = ``text_{n}`` (the n-th line of
+    the version's ``text.json.gz``), placed at the text — a clickable cue on the sheet even without a detection."""
+    return Det(sheet_id, version_id, f"text_{index}", "text", x, y, "yellow", [], floor, "new", None, discipline, 1.0)
+
+
 def suggestion_units(
     rules: list[Rule],
     dets: list[Det],
     canon: list[Room],
-    texts: dict[str, list[str]],
+    texts: dict[str, list[TextCue]],
     sheet_floors: dict[str, list[str]],
+    sheet_meta: dict[str, tuple[str, str]] | None = None,
 ) -> list[Unit]:
+    """``sheet_meta``: sheet id → (version id, discipline) for text cues (evidence); without it a text trigger has
+    no evidence item (pre-Stage-10 behaviour)."""
     live = sorted((d for d in dets if _live(d)), key=lambda d: d.key)
     out: list[Unit] = []
     for r in (x for x in rules if x.kind == "one_off_suggestion"):
         m = r.match
         fl = {str(f) for f in m.get("floors") or []}
         cue: list[Det] = []
+        text_cue: Det | None = None
         text_floor: str | None = None
         fired = bool(m.get("always"))
         cls = {str(c) for c in m.get("classes") or []}
@@ -175,10 +188,15 @@ def suggestion_units(
             for sid in sorted(texts):
                 if fl and not fl & set(sheet_floors.get(sid) or []):
                     continue
-                if any(p in _norm(t) for t in texts[sid] for p in pats):
+                hit = next(((i, t) for i, t in enumerate(texts[sid]) if any(p in _norm(t[0]) for p in pats)), None)
+                if hit is not None:
                     fired = True
                     floors = [f for f in sheet_floors.get(sid) or [] if not fl or f in fl]
                     text_floor = floors[0] if floors else None
+                    if sheet_meta and sid in sheet_meta:
+                        vid, disc = sheet_meta[sid]
+                        i, (_t, x, y) = hit
+                        text_cue = text_cue_det(sid, vid, disc, i, x, y, text_floor)
                     break
         types = {str(t) for t in m.get("roomTypes") or []}
         if types:
@@ -186,10 +204,73 @@ def suggestion_units(
             if rh:
                 fired = True
                 if not cue:
-                    cue.append(room_det(rh[0]))
+                    cue.append(room_det(rh[0]))  # a room is a better cue than a text line
+        if not cue and text_cue is not None:
+            cue.append(text_cue)
         if not fired:
             continue
         qty = float(m.get("quantity") or 1)
         reasons = [] if R_TEMPLATE in r.reasons else [R_TEMPLATE]
         out.append(Unit(r, [(d, None) for d in cue[:1]], qty, reasons, "yellow", floor=text_floor, ignore_member_levels=True))
     return out
+
+
+# ----------------------------------------------------------------------------- Stage 10: fixture combinations
+DEFAULT_COMBINATION_RADIUS_MM = 1500.0
+
+
+def combination_units(
+    dets: list[Det],
+    rules: list[Rule],
+    rooms: dict[tuple[str, str], Room],
+    scales: dict[str, int | None],
+) -> tuple[list[Unit], dict[str, Any]]:
+    """``fixture_combination`` rules (Stage 10 contract request): one unit of the rule's item per complete set — one
+    live detection of each of ``classes``, on the same sheet, all within ``radiusMm`` (real mm) of the set's first
+    member and, with ``sameRoom``, in the same room when both have one. Floors / room filters apply to the first
+    member. Members are consumed (``dropped_by = combination:{ruleId}``) so ``plumbing_point`` / ``class_to_item`` do
+    not count them again; incomplete sets fall through to those rules. Highest priority first (rules are sorted)."""
+    units: list[Unit] = []
+    stats: dict[str, Any] = {"sets": 0, "members": 0}
+    for r in (x for x in rules if x.kind == "fixture_combination"):
+        m = r.match
+        classes = [str(c) for c in m.get("classes") or []]
+        if len(classes) < 2 or len(set(classes)) != len(classes):
+            continue
+        fl = {str(f) for f in m.get("floors") or []}
+        types, pats = m.get("roomTypes"), m.get("roomNamePatterns")
+        rad = m.get("radiusMm")
+        radius = float(rad) if isinstance(rad, int | float) else DEFAULT_COMBINATION_RADIUS_MM
+        same_room = bool(m.get("sameRoom", True))
+        pool = {c: sorted((d for d in dets if _live(d) and d.cls == c), key=lambda d: d.key) for c in classes}
+        for a in pool[classes[0]]:
+            if a.dropped_by is not None or (fl and a.floor not in fl):
+                continue
+            room = rooms.get((a.sheet_id, a.room_id)) if a.room_id else None
+            if (types or pats) and room is not None:
+                if types and room.type not in types:
+                    continue
+                if pats and not any(str(p) in (room.name or "") for p in pats):
+                    continue
+            thr = radius / float(scales.get(a.sheet_id) or DEFAULT_SCALE)
+            members = [a]
+            for c in classes[1:]:
+                cands = [
+                    b
+                    for b in pool[c]
+                    if b.dropped_by is None
+                    and b.sheet_id == a.sheet_id
+                    and _dist(a, b) <= thr
+                    and not (same_room and a.room_id and b.room_id and a.room_id != b.room_id)
+                ]
+                if not cands:
+                    break
+                members.append(min(cands, key=lambda b: (_dist(a, b), b.key)))
+            if len(members) != len(classes):
+                continue
+            for d in members:
+                d.dropped_by = f"combination:{r.id}"
+            units.append(Unit(r, [(d, None) for d in members], 1.0))
+            stats["sets"] += 1
+            stats["members"] += len(members)
+    return units, stats

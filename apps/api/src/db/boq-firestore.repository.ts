@@ -1,6 +1,7 @@
 import {
   DEFAULT_BOQ_RULES,
   DEFAULT_BOQ_TEMPLATE,
+  DEFAULT_ITEM_LIBRARY,
   defaultRuleDoc,
   fsPaths,
   ruleNeedsReseed,
@@ -19,7 +20,7 @@ import {
   type StaleReason,
 } from '@kamutan/contracts';
 import { FieldPath, FieldValue, Timestamp, type DocumentData, type DocumentReference, type Firestore, type Query } from 'firebase-admin/firestore';
-import { planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
+import { approvalInvalidatedAudit, approvalsInvalidatedOf, planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
 import { isActive, ruleAudit } from './boq-memory.repository';
 import { MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BoqRepository } from './boq-repository';
 import type { FirestoreRepository } from './firestore.repository';
@@ -152,6 +153,7 @@ export class FirestoreBoqRepository implements BoqRepository {
       const ruleRefs = DEFAULT_BOQ_RULES.map((r) => this.db.doc(fsPaths.boqRule(orgId, r.id)));
       const [tpl, ...rules] = await tx.getAll(tplRef, ...ruleRefs);
       const defaults = await tx.get(this.db.collection(fsPaths.boqTemplates(orgId)).where('default', '==', true).limit(1));
+      const anyItem = await tx.get(this.db.collection(fsPaths.itemLibrary(orgId)).limit(1));
       const now = Timestamp.now();
       let templates = 0;
       let created = 0;
@@ -164,7 +166,15 @@ export class FirestoreBoqRepository implements BoqRepository {
         tx.set(ruleRefs[i] as DocumentReference, { ...strip(structuredClone(defaultRuleDoc(DEFAULT_BOQ_RULES[i] as (typeof DEFAULT_BOQ_RULES)[number]))), updatedAt: now, updatedBy: null });
         created++;
       });
-      return { templates, rules: created };
+      // Stage 10 (A-LIVE-01): empty library → the shipped defaults (deterministic ids; never re-seeded once non-empty).
+      let items = 0;
+      if (anyItem.empty) {
+        for (const it of DEFAULT_ITEM_LIBRARY) {
+          tx.set(this.db.doc(fsPaths.libraryItem(orgId, it.id)), { ...strip(structuredClone(it) as ItemLibraryItem), updatedAt: now, updatedBy: null });
+          items++;
+        }
+      }
+      return { templates, rules: created, items };
     });
   }
 
@@ -274,6 +284,21 @@ export class FirestoreBoqRepository implements BoqRepository {
       tx.update(this.db.doc(fsPaths.boqBuild(orgId, projectId, buildId)), { status: 'failed', error, finishedAt: FieldValue.serverTimestamp() });
       if (job.exists && job.get('orgId') === orgId) tx.update(job.ref, { status: 'failed', error, updatedAt: FieldValue.serverTimestamp() });
       if (project.exists && project.get('boq.pendingBuildId') === buildId) tx.update(pRef, { 'boq.pendingBuildId': null });
+    });
+  }
+
+  async auditApprovalsInvalidated(orgId: string, projectId: string, buildId: string): Promise<number> {
+    const ref = this.db.doc(fsPaths.boqBuild(orgId, projectId, buildId));
+    return this.db.runTransaction(async (tx) => {
+      const head = await this.core.auditHead(tx, orgId);
+      const snap = await tx.get(ref);
+      const d = snap.data() as Doc | undefined;
+      if (!d || d.status !== 'succeeded' || d.approvalsAuditedAt) return 0;
+      const list = approvalsInvalidatedOf(d.approvalsInvalidated);
+      if (list.length === 0) return 0;
+      for (const e of list) this.core.writeAudit(tx, orgId, head, approvalInvalidatedAudit(projectId, buildId, e));
+      tx.update(ref, { approvalsAuditedAt: Timestamp.now() });
+      return list.length;
     });
   }
 

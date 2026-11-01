@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AlertTriangle, Ban, Download, FileSpreadsheet, FileText } from "lucide-react";
-import { ApiError, EXPORT_ERROR_MESSAGES_HE, EXPORT_SHEETS_OMITTED_HE, type BoqLine, type BoqTemplate, type SheetRow } from "@/api/types";
+import { ApiError, EXPORT_ERROR_MESSAGES_HE, EXPORT_SHEETS_OMITTED_HE, type BoqLine, type BoqTemplate, type SheetRow, needsReapproval } from "@/api/types";
 import { Progress } from "@/components/ui/progress";
 import { sheetName } from "@/features/sheets/model";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,8 @@ export function ExportDialog({
     setTemplateId((cur) => cur || (templates.find((x) => x.default)?.id ?? templates[0]?.id ?? ""));
   }, [open, templates]);
 
-  const red = lines.filter((l) => l.level === "red" && l.status !== "approved").length;
+  // Stage 10 (contracts exportBlockingLines): an approved line whose qty changed since approval blocks like a red one.
+  const red = lines.filter((l) => needsReapproval(l) || (l.level === "red" && l.status !== "approved")).length;
   const yellow = lines.filter((l) => l.level === "yellow" && l.status !== "approved").length;
   const blocked = (blockOnRed && red > 0) || serverBlocked !== null;
   const warn = red + yellow > 0;
@@ -276,7 +277,8 @@ function MarkedPdfExport({
   const [exportId, setExportId] = useState<string | null>(null);
   const doc = useExportDoc(projectId, exportId, pollMs);
   const [floorSplit, setFloorSplit] = useState(false);
-  const [hideTitleBlock, setHideTitleBlock] = useState(false);
+  // Same privacy default as the share dialog (A-UI-20): a PDF sent out does not carry the client's address by accident.
+  const [hideTitleBlock, setHideTitleBlock] = useState(true);
   const [all, setAll] = useState(true);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [serverBlocked, setServerBlocked] = useState(false);
@@ -359,7 +361,8 @@ function MarkedPdfExport({
               checked={all}
               onChange={(e) => {
                 setAll(e.target.checked);
-                if (!e.target.checked) setPicked(new Set(sheets.map((r) => r.sheet.id)));
+                // Unticking "all" starts an empty subset (A-UI-20); the user ticks the sheets to include.
+                if (!e.target.checked) setPicked(new Set());
               }}
               className="size-4 accent-[rgb(var(--primary))]"
             />

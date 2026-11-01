@@ -30,8 +30,7 @@ from kamutan_drawing.stores.local import LocalBlobStore, LocalDocStore
 ORG, PROJECT = "org-acc", "p-acc"
 FAST = Options(ocr=False, dpi=100)
 R_SCALE_CONFLICT = "קנה מידה סותר"
-R_RASTER = "רסטר"
-R_RASTER_SPEC = "גיליון רסטר"
+R_RASTER_SPEC = "גיליון רסטר"  # spec / UI copy (the pre-Stage-10 worker wrote "רסטר", A-pipeline-11)
 
 
 def ingest(tmp: Path, name: str, data: bytes, *, set_id: str | None = None, opts: Options = FAST, **kw: Any) -> IngestResult:
@@ -124,7 +123,7 @@ def test_e2e05_raster_sheet_never_green(raster: tuple[Path, IngestResult]) -> No
     sheet, version = res.sheets[0]["sheet"], res.sheets[0]["version"]
     cls = sheet.get("classification") or {}
     assert cls.get("level") != "green"
-    assert R_RASTER in (cls.get("reasons") or []), cls
+    assert R_RASTER_SPEC in (cls.get("reasons") or []), cls  # A-pipeline-11 fixed: the spec copy
     dets = (
         (artifact(tmp, version, "detections").get("detections") or [])
         if (version.get("artifacts") or {}).get("detections")
@@ -133,7 +132,6 @@ def test_e2e05_raster_sheet_never_green(raster: tuple[Path, IngestResult]) -> No
     assert all(d.get("level") != "green" for d in dets)
 
 
-@pytest.mark.xfail(strict=True, reason="A-pipeline-11: the worker writes the reason 'רסטר', the spec/UI copy is 'גיליון רסטר'")
 def test_e2e05_raster_reason_copy(raster: tuple[Path, IngestResult]) -> None:
     _, res = raster
     assert R_RASTER_SPEC in (res.sheets[0]["sheet"].get("classification") or {}).get("reasons", [])
@@ -159,14 +157,12 @@ def test_e2e07_dxf_ingests_and_keeps_inserts(blocks: tuple[Path, IngestResult]) 
     assert names.count("SOCKET") == 7  # 6 plan INSERTs + 1 in the legend
 
 
-@pytest.mark.xfail(strict=True, reason="A-pipeline-05: DXF INSERT blocks are not used by symbol detection (0 sockets)")
 def test_e2e07_block_symbols_are_counted(blocks: tuple[Path, IngestResult]) -> None:
     tmp, res = blocks
     dets = artifact(tmp, res.sheets[0]["version"], "detections").get("detections") or []
     assert sum(1 for d in dets if str(d.get("class", "")).startswith("socket")) >= 6
 
 
-@pytest.mark.xfail(strict=True, reason="A-pipeline-05: INSERT block counts are parsed but never compared with the graphic count")
 def test_e2e07_block_vs_graphic_mismatch_is_yellow_with_both_numbers(blocks: tuple[Path, IngestResult]) -> None:
     tmp, res = blocks
     dets = artifact(tmp, res.sheets[0]["version"], "detections").get("detections") or []

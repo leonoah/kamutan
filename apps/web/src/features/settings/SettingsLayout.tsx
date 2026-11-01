@@ -15,6 +15,7 @@ export function SettingsLayout() {
   }
   const tabs = [
     { to: "/settings", end: true, label: t("settings.tabGeneral") },
+    { to: "/settings/members", end: false, label: t("settings.tabMembers") },
     { to: "/settings/audit", end: false, label: t("settings.tabAudit") },
     { to: "/settings/offboarding", end: false, label: t("settings.tabOffboarding") },
   ];
@@ -24,7 +25,7 @@ export function SettingsLayout() {
         <h1 className="text-screen font-bold text-foreground">{t("settings.title")}</h1>
         <p className="text-body text-muted-foreground">{t("settings.subtitle", { org: org.name })}</p>
       </div>
-      <nav aria-label={t("settings.tabsLabel")} className="flex gap-1 border-b border-border">
+      <nav aria-label={t("settings.tabsLabel")} className="flex gap-1 overflow-x-auto border-b border-border">
         {tabs.map((x) => (
           <NavLink
             key={x.to}

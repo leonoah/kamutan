@@ -83,8 +83,15 @@ export interface CreateUploadResponse {
 export interface FinalizeUploadRequest {
   uploadToken: string;
   name?: string;
+  /**
+   * Stage 10 (A-API-05, revised upload): this upload is a new revision of an existing set. The old set's sheets become
+   * superseded versions of the matching new sheets (title/number + discipline/floor, else page order); the BOQ build
+   * uses only current versions. Also used by "העלה מחדש" on a failed set (A-UI-05): nothing to match, the failed set is
+   * marked superseded. Requested in apps/web/NOTES.md "Contract requests (Stage 10)".
+   */
+  replacesSheetSetId?: string;
 }
-export type SheetSetStatus = "uploaded" | "queued" | "splitting" | "ready" | "failed";
+export type SheetSetStatus = "uploaded" | "queued" | "splitting" | "ready" | "failed" | "superseded";
 export type SheetVersionStatus = "uploaded" | "queued" | "processing" | "ready" | "failed";
 
 export interface SheetSet {
@@ -98,6 +105,12 @@ export interface SheetSet {
   name?: string;
   uploadedBy: string;
   createdAt: string;
+  /** Stage 10 revised upload (contracts sheets.ts): the set this one replaces / the set that replaced this one. */
+  replacesSheetSetId?: string | null;
+  supersededBySetId?: string | null;
+  supersededAt?: string | null;
+  /** Mock / older name of `supersededBySetId`. */
+  supersededBy?: string | null;
 }
 /* ---------- Sprint 1: ingest (docs/agents/SPRINT1_BRIEF.md, packages/contracts/src/sheets.ts + tiles.ts) ----------
  * TODO(contracts): hand-kept mirror of @kamutan/contracts (Sprint 1 shapes, still in flight on the API side).
@@ -162,6 +175,8 @@ export interface Sheet {
   confirmedBy?: string | null;
   confirmedAt?: string | null;
   updatedAt?: string;
+  /** Stage 10 revised upload: the sheet (of the new set) this one became a superseded version of. Hidden in lists. */
+  supersededBy?: string | null;
 }
 export interface SheetVersion {
   id: string;
@@ -542,6 +557,10 @@ export interface BoqLine {
   orderQty?: number | null;
   /** Per-room / per-fixture composition of the quantity (tiling formula lines, plumbing points per fixture). */
   breakdown?: BoqBreakdownRow[];
+  /* Stage 10 (contracts boq.ts, A-API-06 / A-pipeline-08) */
+  /** Computed qty at approval; a rebuild with another qty drops the line to "נבדק" (`qtyChangedReason`). */
+  approvedQty?: number | null;
+  approvedQtyAt?: string | null;
 }
 export interface BoqBreakdownRow {
   label: string;
@@ -686,7 +705,9 @@ export interface LibraryItem {
   description: string;
   unit: string;
   tags: string[];
-  source: "import" | "manual";
+  /** Stage 10: `default` = seeded from the shipped default library (contracts ITEM_SOURCES). */
+  source: "import" | "manual" | "default";
+  defaultsVersion?: number;
   sourceRef?: string | null;
   active: boolean;
   updatedAt: string | null;
@@ -1045,6 +1066,8 @@ export interface AuditEvent {
   meta?: Record<string, unknown> | null;
   hash?: string | null;
   prevHash?: string | null;
+  /** A-UI-13 (requested from the API, Stage 10): one readable Hebrew line, e.g. "הוספת פריט ידני · שקע כפול". */
+  summary?: string | null;
 }
 export interface AuditQuery {
   cursor?: string | null;
@@ -1237,6 +1260,64 @@ export interface OffboardResponse {
   revokedShareLinks?: number;
 }
 
+/** Stage 10 revised upload: this set was replaced by a newer revision (contracts `supersededBySetId`). */
+export const isSupersededSet = (s: Pick<SheetSet, "status" | "supersededBySetId" | "supersededBy">): boolean =>
+  s.status === "superseded" || Boolean(s.supersededBySetId) || Boolean(s.supersededBy);
+
+/* ---------- Stage 10: approval invalidated by a quantity change (mirror of contracts boq.ts) ---------- */
+/** Chip of a line whose computed quantity changed after a human approved it (prefix of the full reason). */
+export const QTY_CHANGED_REASON = "הכמות השתנתה מאז האישור";
+const fmtQtyReason = (n: number): string => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+/** "הכמות השתנתה מאז האישור (6 → 7)". */
+export const qtyChangedReason = (from: number, to: number): string => `${QTY_CHANGED_REASON} (${fmtQtyReason(from)} → ${fmtQtyReason(to)})`;
+export const isQtyChangedReason = (r: string): boolean => r === QTY_CHANGED_REASON || r.startsWith(`${QTY_CHANGED_REASON} (`);
+/** contracts `needsReapproval`: still `approved` but the qty moved since, or carrying the chip. */
+export function needsReapproval(l: Pick<BoqLine, "status" | "qty"> & { approvedQty?: number | null; reasons?: readonly string[] }): boolean {
+  if (l.status !== "approved") return false;
+  if (typeof l.approvedQty === "number" && Number.isFinite(l.approvedQty) && l.approvedQty !== l.qty) return true;
+  return (l.reasons ?? []).some(isQtyChangedReason);
+}
+/** A line that lost its approval because its quantity changed (dropped to "נבדק" with the chip) or needs re-approval. */
+export const qtyChangedSinceApproval = (l: Pick<BoqLine, "status" | "qty"> & { approvedQty?: number | null; reasons?: readonly string[] }): boolean =>
+  needsReapproval(l) || (l.status === "reviewed" && (l.reasons ?? []).some(isQtyChangedReason));
+
+/* ---------- Stage 10: members (A-API-01). Mirrored here until packages/contracts publishes them. ---------- */
+export type MemberStatus = "active" | "pending";
+/** GET /orgs/:orgId/members — an active member (doc id = uid) or a pending invitation (claimed on first sign-in). */
+export interface OrgMember {
+  /** uid for active members, invitation id for pending ones. */
+  id: string;
+  uid: string | null;
+  email: string | null;
+  displayName?: string | null;
+  role: Role;
+  status: MemberStatus;
+  addedBy?: string | null;
+  createdAt: string;
+  /** Pending only: the invitation link stops working after this. */
+  expiresAt?: string | null;
+}
+export interface MembersResponse {
+  members: OrgMember[];
+}
+/** POST /orgs/:orgId/invites */
+export interface InviteMemberRequest {
+  email: string;
+  role: Role;
+}
+/** The link is returned once; there is no email service yet, the admin copies it. */
+export interface InviteMemberResponse {
+  member: OrgMember;
+  inviteUrl: string;
+}
+/** PATCH /orgs/:orgId/members/:memberId */
+export interface PatchMemberRequest {
+  role: Role;
+}
+
+/* ---------- Stage 10: which item library the BOQ uses (A-LIVE-01), derived from the library items' `source` ---------- */
+export type LibrarySource = "imported" | "default" | "none";
+
 export interface ApiClient {
   getMe(): Promise<MeResponse>;
   listProjects(orgId: string): Promise<Project[]>;
@@ -1306,6 +1387,14 @@ export interface ApiClient {
   startOffboardingExport(orgId: string): Promise<OffboardingExport>;
   getOffboardingExport(orgId: string, exportId: string): Promise<OffboardingExport>;
   offboardOrg(orgId: string, req: OffboardRequest): Promise<OffboardResponse>;
+
+  /* Stage 10 — members (admin; MFA + recent sign-in like offboarding) */
+  listMembers(orgId: string): Promise<MembersResponse>;
+  inviteMember(orgId: string, req: InviteMemberRequest): Promise<InviteMemberResponse>;
+  patchMember(orgId: string, memberId: string, req: PatchMemberRequest): Promise<OrgMember>;
+  removeMember(orgId: string, memberId: string): Promise<void>;
+  /** POST /invites/:inviteId/accept (signed-in user whose verified email matches). */
+  acceptInvite(inviteId: string): Promise<{ orgId: string; role: Role; alreadyMember: boolean }>;
 }
 
 /* ---------- Storage (resumable uploads) ---------- */

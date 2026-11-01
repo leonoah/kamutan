@@ -68,7 +68,7 @@ describe("Sheet analysis route", () => {
     // Breadcrumb names the sheet; no sheet picker in the drawing header.
     const crumbs = screen.getByRole("navigation", { name: "מיקום" });
     expect(within(crumbs).getByText("ניתוח שרטוט")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "בחירת גיליון" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /בחירת גיליון$/ })).not.toBeInTheDocument();
     // Default panel = ספירה לפי סוג.
     await waitFor(() => expect(screen.getByRole("tab", { name: "ספירה לפי סוג" })).toHaveAttribute("aria-selected", "true"), LAZY);
   });

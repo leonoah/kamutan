@@ -73,7 +73,8 @@ describe('Stage 10 API/Sec — offboarding end to end: export → offboard → b
     const r = await w.http.post(`${O()}/offboarding`).set(w.auth(w.A.uid('admin'))).send({ confirm: w.A.orgName, reason: 'סיום התקשרות' });
     expect(r.status).toBe(200);
     const body = OffboardOrgResponseSchema.parse(r.body);
-    expect(body).toMatchObject({ status: 'offboarding', revokedShareLinks: 1, revokedSessions: 4 });
+    // Stage 10: the world has a 5th member (a_extra, target of DELETE /members)
+    expect(body).toMatchObject({ status: 'offboarding', revokedShareLinks: 1, revokedSessions: 5 });
     expect((Date.parse(body.deleteAfter) - Date.now()) / 86_400_000).toBeCloseTo(30, 0);
     for (const p of ['/meta', '/boq', `/sheets/${w.A.sheet.sheetId}/overlay`]) expect((await w.http.get(`/api/v1/public/share/${w.A.link.token}${p}`)).status).toBe(410);
     // old sessions are dead (revokeRefreshTokens → checkRevoked)
@@ -118,7 +119,7 @@ describe('Stage 10 API/Sec — offboarding end to end: export → offboard → b
     ev.certificate = cert;
     const { certificateSha256, ...rest } = cert;
     expect(certificateSha256).toBe(createHash('sha256').update(canonicalJson(rest)).digest('hex'));
-    expect(cert).toMatchObject({ orgId: w.A.orgId, counts: { members: 4, projects: 1 }, hashes: { auditHead } });
+    expect(cert).toMatchObject({ orgId: w.A.orgId, counts: { members: 5, projects: 1 }, hashes: { auditHead } });
     expect([...w.t.repo.docs.keys()].filter((k) => k.startsWith(`orgs/${w.A.orgId}`))).toEqual([]);
     expect(w.t.repo.docs.has(fsPaths.job(w.A.jobId))).toBe(false);
     expect([...w.t.repo.docs.entries()].filter(([k, v]) => k.startsWith('shareTokens/') && v.orgId === w.A.orgId)).toEqual([]);

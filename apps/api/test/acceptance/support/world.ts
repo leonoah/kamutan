@@ -39,6 +39,10 @@ export interface OrgWorld {
   templateId: string;
   ruleId: string;
   offboardingExportId: string;
+  /** Stage 10: a member only the DELETE /members route removes; per-role invites (accept route); one to revoke. */
+  extraMemberUid: string;
+  invites: Record<Role, string>;
+  revokeInviteId: string;
   uid: (r: Role) => string;
 }
 
@@ -151,6 +155,12 @@ async function seedOrgWorld(t: TestApp, http: Http, tok: Record<string, string>,
   t.repo.docs.set(fsPaths.job(jobId), { orgId, projectId, type: 'boq.build', status: 'succeeded', progress: { stage: 'done', pct: 100 }, attempts: 1, error: null, createdBy: uid('editor'), createdAt: new Date(), updatedAt: new Date() });
   const off = ok(await http.post(`/api/v1/orgs/${orgId}/offboarding/export`).set(auth(uid('admin'))).send({}), 202);
   settle();
+  // Stage 10 (A-API-01): an extra member to remove, an invite per role (addressed to that user's own email) and one to revoke
+  const extraMemberUid = `${key}_extra`;
+  t.repo.docs.set(fsPaths.member(orgId, extraMemberUid), { uid: extraMemberUid, role: 'viewer', email: `${extraMemberUid}@${key}.example.test`, createdAt: new Date() });
+  const invites = {} as Record<Role, string>;
+  for (const r of ROLES) invites[r] = (ok(await http.post(`/api/v1/orgs/${orgId}/invites`).set(auth(uid('admin'))).send({ email: `${uid(r)}@${key}.example.test`, role: 'viewer' }), 201).invite as Doc).id as string;
+  const revokeInviteId = (ok(await http.post(`/api/v1/orgs/${orgId}/invites`).set(auth(uid('admin'))).send({ email: `pending-${key}@${key}.example.test`, role: 'editor' }), 201).invite as Doc).id as string;
   return {
     key,
     orgId,
@@ -174,6 +184,9 @@ async function seedOrgWorld(t: TestApp, http: Http, tok: Record<string, string>,
     templateId: 'tpl_default',
     ruleId: 'r_light_two_way',
     offboardingExportId: (off.export as Doc).id as string,
+    extraMemberUid,
+    invites,
+    revokeInviteId,
     uid,
   };
 }

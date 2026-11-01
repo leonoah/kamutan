@@ -22,6 +22,7 @@ import { BoqPanel, type PanelTab } from "@/features/boq/BoqPanel";
 import { OverrideDialog } from "@/features/boq/OverrideDialog";
 import { ExportDialog } from "@/features/boq/ExportDialog";
 import { ReceiptGroups } from "@/features/boq/ReceiptGroups";
+import { LibraryNotice } from "@/features/boq/LibraryNotice";
 import { CalibrationBadge, cappedLines, resolveCalibration } from "@/features/calibration/CalibrationBadge";
 import { LineHistoryDialog } from "@/features/history/LineHistoryDialog";
 import { ShareDialog } from "@/features/share/ShareDialog";
@@ -77,7 +78,7 @@ import {
 } from "@/features/understanding/model";
 import { useOverlay, useResolveCluster } from "@/features/understanding/queries";
 import { className, domainOf } from "@/features/understanding/taxonomy";
-import { useLibraryItems } from "@/features/boq/queries";
+import { bumpLinesOptimistic, useLibraryItems } from "@/features/boq/queries";
 import { applyCorrections, applyLinkCorrections, baseCorrection, manualItems, newId } from "@/features/corrections/model";
 import {
   useCorrectionActions,
@@ -228,6 +229,7 @@ export function ReviewPage() {
   const capped = useMemo(() => cappedLines(allLines), [allLines]);
   const sheetNames = useMemo(() => Object.fromEntries(ready.map((r) => [r.sheet.id, sheetName(r)])), [ready]);
   const greenThreshold = org?.settings?.greenThreshold ?? null;
+  const libraryNotice = useMemo(() => <LibraryNotice orgId={orgId} canImport={role === "admin" || role === "editor"} />, [orgId, role]);
   const panelBadge = useMemo(
     () => <CalibrationBadge calibration={calibration} capped={capped} greenThreshold={greenThreshold} size="sm" />,
     [calibration, capped, greenThreshold],
@@ -371,17 +373,23 @@ export function ReviewPage() {
   const selRoomWalls = useMemo(() => (selRoom ? wallsOf(selRoom, scale) : []), [selRoom, scale]);
   const savedRoom = roomSettingsQ.data && !roomSettingsQ.data.isDefault ? roomSettingsQ.data.settings : null;
   const manual = useMemo(() => manualItems(corrections, sheetIdNow), [corrections, sheetIdNow]);
+  /** Sheet analysis: lines this sheet contributes to (allLines is already scoped). */
+  const sheetLineIds = useMemo(() => new Set(allLines.map((l) => l.id)), [allLines]);
   const queueItems = useMemo(() => {
     const lv = new Set(filters.levels);
     const dom = new Set(filters.domains);
+    // Locked sheet (IA level 3): only items on this sheet, plus line cards of lines this sheet feeds. Project-wide
+    // line cards with no sheet (template suggestions, other disciplines) stay in the project review (A-UI-09).
+    const onSheet = (i: ReviewQueueItem) =>
+      !lockedSheetId || i.sheetId === lockedSheetId || (i.kind === "line" && Boolean(i.lineId) && sheetLineIds.has(i.lineId!));
     return (queueQ.data?.items ?? []).filter(
       (i) =>
         !doneIds.has(i.id) &&
         (lv.has(i.level) || i.kind === "room" || i.kind === "line") &&
         (dom.size === 0 || !i.class || dom.has(domainOf(i.class))) &&
-        (!lockedSheetId || !i.sheetId || i.sheetId === lockedSheetId),
+        onSheet(i),
     );
-  }, [queueQ.data, doneIds, filters, lockedSheetId]);
+  }, [queueQ.data, doneIds, filters, lockedSheetId, sheetLineIds]);
   const activeItem = queueItems.find((i) => i.id === activeItemId) ?? null;
   const rowsById = useMemo(() => new Map(ready.map((r) => [r.sheet.id, r])), [ready]);
   const snapPoints = useMemo<Vec2[]>(
@@ -803,6 +811,20 @@ export function ReviewPage() {
     const first = ms[0]!;
     setLearnOffer({ sheetId, versionId: versionOf(sheetId), bboxMm: first.bboxMm, cls, detectionId: first.detectionId });
   };
+  /**
+   * A-UI-07: lines a counted item of `cls` feeds on this sheet (from an existing item of the same class), for the
+   * optimistic BOQ update. Composite (switch-group) and area / length lines are left to the server.
+   */
+  const countLinesOf = (detIds: readonly string[]) => {
+    const out = new Set<string>();
+    for (const id of detIds)
+      for (const lid of detToLines?.[id] ?? []) {
+        const l = allLines.find((x) => x.id === lid);
+        if (l && !isCompositeLine(l) && !l.breakdown?.length) out.add(lid);
+      }
+    return [...out];
+  };
+  const sameClassLines = (cls: string) => countLinesOf(dets.filter((d) => d.class === cls).slice(0, 50).map((d) => d.id)).slice(0, 1);
   const addAt = (mm: [number, number], cls: string, hitId: string | null) => {
     if (!row?.version) return;
     const room = roomAt(rooms.values(), mm);
@@ -812,7 +834,8 @@ export function ReviewPage() {
       { class: cls, roomId: room?.id ?? null, floor: room?.floor ?? floorOfSheet(row.sheet.id), geometry: { type: "point", mm: [{ x: mm[0], y: mm[1] }] } },
     );
     const label = t("tools.added", { name: className(cls) });
-    void actions.apply([req], { label });
+    const rollback = bumpLinesOptimistic(qc, projectId, sameClassLines(cls), 1);
+    void actions.apply([req], { label }).then((ok) => ok === null && rollback());
     say(label);
     setRecent((r) => [cls, ...r.filter((x) => x !== cls)].slice(0, 5));
     const hit = hitId ? byId.get(hitId) : null;
@@ -833,7 +856,8 @@ export function ReviewPage() {
     const d = e.hitId ? byId.get(e.hitId) : null;
     if (!d || !row) return;
     const label = t("tools.removed", { name: className(d.class) });
-    void actions.apply([detCorrection("reject", row.sheet.id, { detectionId: d.id, bboxMm: d.bboxMm }, d.class)], { label });
+    const rollback = bumpLinesOptimistic(qc, projectId, countLinesOf([d.id]), -1);
+    void actions.apply([detCorrection("reject", row.sheet.id, { detectionId: d.id, bboxMm: d.bboxMm }, d.class)], { label }).then((ok) => ok === null && rollback());
     say(label);
   };
   const onMove = (r: MoveResult) => {
@@ -1442,8 +1466,11 @@ export function ReviewPage() {
   );
 
   const lineStats = statsOf(allLines);
-  const pct = allLines.length ? lineStats.pct : verifiedPct(dets);
-  const toReview = allLines.length ? lineStats.red : dets.filter((d) => levelKeyOf(d) === "red" || levelKeyOf(d) === "unknown").length;
+  // Sheet analysis describes THIS sheet's items, in the same unit as the level chips below it (A-UI-14); the project
+  // review describes the BOQ lines.
+  const byLines = !locked && allLines.length > 0;
+  const pct = byLines ? lineStats.pct : verifiedPct(dets);
+  const toReview = byLines ? lineStats.red : dets.filter((d) => levelKeyOf(d) === "red" || levelKeyOf(d) === "unknown").length;
   const pick = (id: string) =>
     updateParams((next) => {
       next.set("sheet", id);
@@ -1507,7 +1534,7 @@ export function ReviewPage() {
                 <span className="font-medium text-foreground">{t("review.verifiedTotal", { pct })}</span>
                 <button
                   type="button"
-                  onClick={() => setFilters({ ...EMPTY_FILTERS, levels: allLines.length ? ["red"] : ["red", "unknown"] })}
+                  onClick={() => setFilters({ ...EMPTY_FILTERS, levels: byLines ? ["red"] : ["red", "unknown"] })}
                   className="inline-flex items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground"
                 >
                   <ConfidenceShape level="low" className="size-2.5" />
@@ -1535,6 +1562,9 @@ export function ReviewPage() {
         </div>
       </header>
 
+      {/* A-UI-16: one <main> landmark and one <h1> (the visible title is the breadcrumb). */}
+      <main id="main" tabIndex={-1} className="flex min-h-0 flex-1 flex-col outline-none">
+      <h1 className="sr-only">{locked ? `${t("review.sheetAnalysis")}: ${row ? sheetName(row) : ""} · ${name}` : `${t("review.title")} · ${name}`}</h1>
       <FilterBar
         filters={filters}
         onChange={setFilters}
@@ -1557,6 +1587,7 @@ export function ReviewPage() {
           canBuild={role !== "viewer"}
           hasReadySheets={ready.length > 0}
           lines={visibleLines}
+          allLines={allLines}
           totalLines={allLines.length}
           chapters={chapters}
           loading={linesQ.isLoading}
@@ -1576,8 +1607,10 @@ export function ReviewPage() {
           onClearFilters={fn.clearAllFilters}
           onHistory={fn.openHistory}
           calibrationBadge={panelBadge}
+          libraryNotice={libraryNotice}
         />
         <section id="drawing-panel" tabIndex={-1} aria-label={t("review.drawingPanel")} className="flex min-h-0 flex-col border-x border-border">
+          <h2 className="sr-only">{t("review.drawingPanel")}</h2>
           <ReviewDrawing
             projectId={projectId}
             rows={ready}
@@ -1645,6 +1678,8 @@ export function ReviewPage() {
           />
         )}
       </div>
+
+      </main>
 
       {/* Selection bar */}
       <footer className="flex h-12 shrink-0 items-center gap-3 border-t border-border bg-surface px-4 text-dense">

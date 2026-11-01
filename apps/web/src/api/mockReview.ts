@@ -35,6 +35,8 @@ export interface ReviewMockDeps {
   emit(): void;
   /** Delay before a find-similar job completes (ms). */
   similarMs: number;
+  /** A-UI-12: uid of the signed-in user (correction `by`). Default "mock-user". */
+  actorUid?: () => string;
 }
 
 /** Deterministic 0..1 from a string (FNV-1a) — the "random jitter" of candidate scores is stable per item. */
@@ -86,7 +88,7 @@ export function createReviewMock(deps: ReviewMockDeps) {
         out.push(existing);
         continue;
       }
-      const c = materialize(r, "mock-user");
+      const c = materialize(r, deps.actorUid?.() ?? "mock-user");
       l.push(c);
       out.push(c);
     }
@@ -203,7 +205,7 @@ export function createReviewMock(deps: ReviewMockDeps) {
       for (const p of req.partialCladding)
         if (!(p.toM > p.fromM && p.fromM >= 0 && p.heightM > 0)) throw new ApiError(400, "validation_failed", "partialCladding");
       const id = settingsDocId(sheetId, roomId);
-      const doc: RoomSettingsDoc = { ...structuredClone(req), id, sheetId, roomId, by: "mock-user", at: new Date().toISOString() };
+      const doc: RoomSettingsDoc = { ...structuredClone(req), id, sheetId, roomId, by: deps.actorUid?.() ?? "mock-user", at: new Date().toISOString() };
       let m = settings.get(projectId);
       if (!m) settings.set(projectId, (m = new Map()));
       m.set(id, doc);

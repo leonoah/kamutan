@@ -22,7 +22,7 @@ from ..titleblock.classify import DISCIPLINES, FLOORS, TitleBlock, _best_keyword
 GREEN_MIN = 0.85
 RED_BELOW = 0.5
 
-R_RASTER = "רסטר"
+R_RASTER = "גיליון רסטר"  # Stage 10 A-pipeline-11: the spec / UI copy (was "רסטר")
 R_SCALE_CONFLICT = "קנה מידה סותר"
 R_NO_SCALE = "קנה מידה לא נקרא"
 R_SCALE_UNVERIFIED = "קנה מידה לא אומת מול מידות"

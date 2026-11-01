@@ -15,8 +15,10 @@ import { DatabaseModule } from './db/database.module';
 import { GovernanceModule } from './governance/governance.module';
 import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
+import { MembersModule } from './members/members.module';
 import { OrgsModule } from './orgs/orgs.module';
 import { ProjectsModule } from './projects/projects.module';
+import { ProjectStateModule } from './project-state/project-state.module';
 import { QueueModule } from './queue/queue.module';
 import { ReviewModule } from './review/review.module';
 import { SheetsModule } from './sheets/sheets.module';
@@ -34,10 +36,12 @@ export class AppModule {
         // In-memory store: per function instance. Shared store + per-org quotas are a follow-up (NOTES.md).
         ThrottlerModule.forRoot([{ name: 'default', ttl: cfg.THROTTLE_TTL_MS, limit: cfg.THROTTLE_LIMIT }]),
         DatabaseModule,
+        ProjectStateModule,
         QueueModule,
         AuthModule,
         HealthModule,
         OrgsModule,
+        MembersModule,
         ProjectsModule,
         UploadsModule,
         SheetsModule,

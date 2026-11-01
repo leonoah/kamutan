@@ -17,6 +17,7 @@ rules_version = '2';
 //  * Sprint 5: shareLinks are NEVER client-readable (they carry tokenHash; the API lists them without it);
 //    auditLog readable by admin only; offboardingExports admin-read; shareTokens / offboardingCertificates /
 //    auditMeta / reprocessRequests have no client access at all.
+//  * Stage 10: orgs/*/invites admin-read, API-only writes (like members).
 //  * External share viewers never touch Firestore (API only).
 //  * Default deny.
 
@@ -100,7 +101,13 @@ service cloud.firestore {
 
       match /members/{uid} {
         allow read: if isMember(orgId);
-        allow write: if false;                     // memberships managed by admin via API
+        allow write: if false;                     // memberships managed by admin via API (Stage 10: invite / role / remove, audited)
+      }
+      // Stage 10 (A-API-01): pending invitations (email + role). Admin-readable (members screen); created, revoked and
+      // claimed only by the API (the claim matches the VERIFIED email of the signed-in user). No collection-group read.
+      match /invites/{inviteId} {
+        allow read: if isAdmin(orgId);
+        allow write: if false;
       }
 
       match /auditLog/{eventId} {

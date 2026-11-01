@@ -83,7 +83,7 @@ export class OrgGovernanceController {
     return this.audit.verify(user, orgId);
   }
 
-  /** greenThreshold (0.9–0.995), blockExportOnRed, llmEnabled, trainingOptIn. Audited `{field: {from, to}}`. */
+  /** greenThreshold (0.9–0.995), blockExportOnRed, llmEnabled, trainingOptIn. Admin + MFA + sign-in ≤ 10 min. Audited. */
   @Patch('settings')
   @RequireRole('admin', org)
   @ApiZodBody(PatchOrgSettingsRequestSchema)
@@ -143,9 +143,9 @@ export class ProjectGovernanceController {
     private readonly shares: ShareLinksService,
   ) {}
 
-  /** status / qtyOverride / note changes + corrections affecting the line, newest first (reviewer+). */
+  /** status / qtyOverride / note changes + corrections affecting the line, newest first (viewer+, Stage 10 A-API-07). */
   @Get('boq/lines/:lineId/history')
-  @RequireRole('reviewer', project)
+  @RequireRole('viewer', project)
   @ApiZodResponse(200, LineHistoryResponseSchema)
   @ApiErrors(401, 403, 404, 429)
   history(@Param('projectId') projectId: string, @Param('lineId') lineId: string, @CurrentUser() user: AuthContext): Promise<LineHistoryResponse> {

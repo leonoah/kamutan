@@ -14,8 +14,18 @@ import { formatBytes } from "@/lib/format";
 import { ACCEPT_ATTR } from "./validation";
 import { useUploadStore, type UploadEntry } from "./uploadStore";
 
-export function Dropzone({ projectId }: { projectId: string }) {
+/** A set the new upload can replace (Stage 10 revised upload, A-API-05). */
+export interface ReplaceableSet {
+  id: string;
+  name: string;
+}
+
+export function Dropzone({ projectId, replaceable = [] }: { projectId: string; replaceable?: readonly ReplaceableSet[] }) {
   const { t } = useTranslation();
+  const replaceId = useId();
+  /** "" = a new set; else the id of the set this upload replaces. */
+  const [replaces, setReplaces] = useState("");
+  const replacing = replaceable.find((r) => r.id === replaces) ?? null;
   const backend = useBackend();
   const qc = useQueryClient();
   const inputId = useId();
@@ -45,10 +55,23 @@ export function Dropzone({ projectId }: { projectId: string }) {
   const onFiles = useCallback(
     (list: FileList | null) => {
       if (!list || list.length === 0) return;
+      if (replacing) {
+        if (list.length !== 1) {
+          toast({ title: t("upload.replaceOneFile"), tone: "error" });
+          return;
+        }
+        void addFiles(backend, projectId, Array.from(list), { replacesSheetSetId: replacing.id });
+        setReplaces("");
+        return;
+      }
       void addFiles(backend, projectId, Array.from(list));
     },
-    [addFiles, backend, projectId],
+    [addFiles, backend, projectId, replacing, t],
   );
+  // Names of every set ever offered: a replaced set leaves `replaceable`, its row badge still names it.
+  const namesRef = useRef(new Map<string, string>());
+  for (const r of replaceable) namesRef.current.set(r.id, r.name);
+  const setNames = namesRef.current;
 
   const dragHandlers = {
     onDragEnter: (e: DragEvent) => {
@@ -75,6 +98,32 @@ export function Dropzone({ projectId }: { projectId: string }) {
 
   return (
     <section aria-labelledby={`${inputId}-title`} className="flex flex-col gap-4">
+      {replaceable.length > 0 ? (
+        <div className="flex flex-col gap-1.5" data-replace-picker>
+          <label htmlFor={replaceId} className="text-dense font-medium text-foreground">
+            {t("upload.replaceLabel")}
+          </label>
+          <select
+            id={replaceId}
+            value={replaces}
+            onChange={(e) => setReplaces(e.target.value)}
+            aria-describedby={replacing ? `${replaceId}-h` : undefined}
+            className="h-9 rounded border border-input bg-surface px-2 text-dense text-foreground"
+          >
+            <option value="">{t("upload.replaceNew")}</option>
+            {replaceable.map((r) => (
+              <option key={r.id} value={r.id}>
+                {t("upload.replaceSet", { name: r.name })}
+              </option>
+            ))}
+          </select>
+          {replacing ? (
+            <p id={`${replaceId}-h`} className="text-meta text-muted-foreground">
+              {t("upload.replaceHint")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div
         data-testid="dropzone"
         data-dragging={dragging || undefined}
@@ -107,7 +156,7 @@ export function Dropzone({ projectId }: { projectId: string }) {
           ref={inputRef}
           id={inputId}
           type="file"
-          multiple
+          multiple={!replacing}
           accept={ACCEPT_ATTR}
           className="sr-only"
           tabIndex={-1}
@@ -131,7 +180,7 @@ export function Dropzone({ projectId }: { projectId: string }) {
           </div>
           <ul className="divide-y divide-border" aria-label={t("upload.listLabel")}>
             {entries.map((e) => (
-              <FileRow key={e.id} entry={e} backend={backend} />
+              <FileRow key={e.id} entry={e} backend={backend} replacesName={e.replacesSheetSetId ? (setNames.get(e.replacesSheetSetId) ?? null) : null} />
             ))}
           </ul>
           {!inFlight && entries.length > 0 ? (
@@ -150,7 +199,7 @@ export function Dropzone({ projectId }: { projectId: string }) {
 const kindIcon = (kind: FileKind | null) =>
   kind === "png" ? FileImage : kind === null ? FileX2 : FileText;
 
-function FileRow({ entry, backend }: { entry: UploadEntry; backend: Backend }) {
+function FileRow({ entry, backend, replacesName }: { entry: UploadEntry; backend: Backend; replacesName: string | null }) {
   const { t } = useTranslation();
   const { pause, resume, cancel, retry, remove } = useUploadStore.getState();
   const Icon = kindIcon(entry.kind);
@@ -199,6 +248,11 @@ function FileRow({ entry, backend }: { entry: UploadEntry; backend: Backend }) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <bdi className="truncate text-body font-medium text-foreground">{entry.name}</bdi>
           <Ltr className="text-meta text-muted-foreground">{formatBytes(entry.size)}</Ltr>
+          {entry.replacesSheetSetId ? (
+            <Badge variant="primary" data-replaces={entry.replacesSheetSetId}>
+              {replacesName ? t("upload.replacingBadge", { name: replacesName }) : t("upload.revisionBadge")}
+            </Badge>
+          ) : null}
           {entry.kind === "png" ? (
             <Badge variant="warning">
               <AlertTriangle className="size-3 text-conf-mid" aria-hidden />

@@ -344,7 +344,7 @@ describe("Sprint 4: review queue, correction tools, learn from correction, rooms
     await open({ boqPrebuilt: true });
     await waitFor(() => expect(document.querySelector('tr[data-code="5.01"]')).not.toBeNull(), LAZY);
     const boq = screen.getByRole("region", { name: "כתב כמויות" });
-    expect(within(boq).getByRole("columnheader", { name: /פרק 05 - עבודות ריצוף, חיפוי ואיטום/ })).toBeInTheDocument();
+    expect(within(boq).getByRole("columnheader", { name: /פרק 05 – עבודות ריצוף, חיפוי ואיטום/ })).toBeInTheDocument();
     const row501 = document.querySelector<HTMLElement>('tr[data-code="5.01"]')!;
     expect(row501).toHaveTextContent('מ"ר');
     await user.click(within(boq).getByRole("checkbox", { name: "כמות להזמנה" }));

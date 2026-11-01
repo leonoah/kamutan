@@ -226,7 +226,7 @@ export function SheetCard({ projectId, row, draft, dirty, busy, onChange, onConf
           variant={confirmed ? "secondary" : "primary"}
           disabled={busy || missing.size > 0 || confirmed}
           onClick={onConfirm}
-          aria-label={t("sheets.confirmSheet", { name })}
+          aria-label={confirmed ? `${t("sheets.confirmed")} · ${name}` : t("sheets.confirmSheet", { name })}
         >
           {confirmed ? t("sheets.confirmed") : t("sheets.confirm")}
         </Button>

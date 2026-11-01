@@ -39,7 +39,7 @@ describe('Stage 10 API/Sec — roles matrix viewer / reviewer / editor / admin �
     expect(sorted(liveRoutes)).toEqual(sorted(table));
     expect(sorted(committedRoutes)).toEqual(sorted(table));
     if (expressRoutes.length > 0) expect(sorted(expressRoutes.filter((r) => !r.startsWith('HEAD ')))).toEqual(sorted(table));
-    expect(ROUTES.length).toBeGreaterThanOrEqual(59);
+    expect(ROUTES.length).toBeGreaterThanOrEqual(66);
   });
 
   it('every member endpoint: roles below the minimum → 403, at/above → authorized; unauthenticated → 401; outsider → 404', async () => {
@@ -80,17 +80,18 @@ describe('Stage 10 API/Sec — roles matrix viewer / reviewer / editor / admin �
   it('documents every implementation-vs-spec role difference with a defect id', () => {
     const diffs = ROUTES.filter((c) => c.min !== c.spec);
     expect(diffs.every((c) => typeof c.defect === 'string')).toBe(true);
-    expect(diffs.map((c) => c.defect).sort()).toEqual(['A-API-03', 'A-API-03', 'A-API-03', 'A-API-03', 'A-API-07']);
+    // Stage 10: A-API-03 (reviewer corrections) and A-API-07 (viewer history) fixed → no difference left.
+    expect(diffs.map((c) => c.defect).sort()).toEqual([]);
   });
 
-  // ---- spec-vs-implementation defects (see defects.md); `it.fails` = the spec behaviour, failing today
-  it.fails('A-API-03: SEC-07 / E2E-02 — a reviewer ("הבודק") can add a missed symbol as a correction', async () => {
+  // ---- spec-vs-implementation defects (see defects.md); fixed in the Stage 10 fix round
+  it('A-API-03: SEC-07 / E2E-02 — a reviewer ("הבודק") can add a missed symbol as a correction', async () => {
     const c = ROUTES.find((x) => x.variant === 'add' && x.route.endsWith('/corrections')) as RouteCase;
     const r = await send(w.http, c.build(w.A, 'reviewer'), w.auth(w.A.uid('reviewer')));
     expect(r.status).toBe(201);
   });
 
-  it.fails('A-API-07: SEC-07 "צפייה" — a viewer can read a BOQ line history', async () => {
+  it('A-API-07: SEC-07 "צפייה" — a viewer can read a BOQ line history', async () => {
     const r = await w.http.get(`/api/v1/projects/${w.A.projectId}/boq/lines/${w.A.lines.status}/history`).set(w.auth(w.A.uid('viewer')));
     expect(r.status).toBe(200);
   });
@@ -103,7 +104,7 @@ describe('Stage 10 API/Sec — roles matrix viewer / reviewer / editor / admin �
     expect([off.status, off.body.error.code]).toEqual([403, 'mfa_required']);
   });
 
-  it.fails('A-API-02: SEC-02 — org settings / LLM switch / BOQ template / rule changes need MFA (aal2)', async () => {
+  it('A-API-02: SEC-02 — org settings / LLM switch / BOQ template / rule changes need MFA (aal2)', async () => {
     const h = w.auth('a_admin_nomfa');
     const codes = [
       await w.http.patch(`/api/v1/orgs/${w.A.orgId}/settings`).set(h).send({ llmEnabled: true }),

@@ -20,6 +20,7 @@ Pipeline (all paper mm):
 from __future__ import annotations
 
 import functools
+import logging
 import math
 import re
 from collections import defaultdict
@@ -42,12 +43,14 @@ from .match import Candidate, Scene, build_scene, spot
 from .tags import Tag, find_tags
 from .template import Template, build_templates
 
+log = logging.getLogger(__name__)
+
 # ---- reason chips (Hebrew, user facing)
 R_WEAK = "התאמה חלשה לסמל במקרא"
 R_SIMILAR = "דומה לסמל אחר"
 R_NOT_IN_LEGEND = "סמל לא במקרא"
 R_SCALE = 'קנ"מ לא ודאי'
-R_RASTER = "רסטר"
+R_RASTER = "גיליון רסטר"  # Stage 10 A-pipeline-11: the spec / UI copy (was "רסטר")
 R_LABEL = "תווית המקרא לא ודאית"
 R_NO_CLASS = "סוג הפריט לא זוהה"
 R_TAG_ONLY = "סוג לפי תג בלבד"
@@ -82,7 +85,10 @@ WARNING_REASONS = {
     R_MARK_UNREAD,
     R_FLOOR,
     R_NOTE,
+    "סמל משורטט ללא בלוק",
+    "בלוק ללא שרטוט נראה",
 }
+R_BLOCK_COUNT_PREFIX = "ספירת בלוקים ("  # .blocks.R_BLOCK_COUNT (both numbers in the text)
 OVERLAP_MM = 4.0
 
 
@@ -96,6 +102,8 @@ def suggest_class(label: str, label_conf: float = 1.0) -> tuple[str | None, floa
 # picked the wrong sub-type more often than the plain fallback (tv 1/4 vs 4/8), so it is off until the
 # qualifier strokes are segmented better; the class stays yellow "דומה לסמל אחר" either way.
 READ_QUALIFIER_STROKES = False
+# Stage 10 (A-pipeline-01): read that word with Tesseract on narrow windows along the 8 directions (.qualifiers)
+READ_QUALIFIER_OCR = True
 CONTEST_MM = 3.0  # a second symbol this much farther than the nearest still competes for a text
 
 
@@ -201,6 +209,7 @@ class DetectResult:
     scale_estimated: bool = False
     stats: dict[str, Any] = field(default_factory=dict)
     legend: LegendResult | None = None  # raster sheets: the legend found in pixels
+    blocks: list[dict[str, Any]] = field(default_factory=list)  # DXF: block count vs graphic count per block
 
 
 # ----------------------------------------------------------------------------------- text
@@ -301,7 +310,7 @@ def score_detection(
     if raster:
         reasons.append(R_RASTER)
     s = max(0.0, min(1.0, s))
-    warn = any(r in WARNING_REASONS for r in reasons)
+    warn = any(r in WARNING_REASONS or r.startswith(R_BLOCK_COUNT_PREFIX) for r in reasons)
     # green = strong template fit AND a clear margin over the runner-up AND a specific, well-read class
     # AND no warning (ambiguous text attachment, overlap, uncertain floor…)
     strong = d.source == "vector" and q >= 0.86 and d.margin >= 0.3 and c >= 0.7
@@ -331,6 +340,147 @@ def _family_member(t: Template, near_texts: list[str]) -> tuple[LegendEntry | No
         # look-alikes told apart only by text that was not found here: the plain member is a guess
         return base[0], bool(named)
     return (named[0] if named else None), True
+
+
+def _is_text_family(t: Template) -> bool:
+    """A family of identical drawings named only by the word next to them (≥ 2 members of different classes, not
+    told apart by a 2X / 3X mark): BEZEK / TV / TEL / רשת brackets."""
+    members = [e for e in t.entries if e.multiplicity is None]
+    return len({e.suggested_class for e in members}) >= 2
+
+
+def _vector_detection(
+    c: Candidate,
+    b: BBox,
+    near: list[str],
+    entry: LegendEntry | None,
+    ambiguous: bool,
+    by_text: bool,
+    mappings: dict[str, dict[str, Any]],
+    markers: list[tuple[Candidate, LegendEntry]],
+    read_word: str | None = None,
+) -> Detection | None:
+    """One spotted candidate → a detection (or a marker / nothing). ``by_text``: the family member was named by
+    the word read next to the symbol (strokes or OCR), so it needs no other text and is not a look-alike guess."""
+    t = c.tpl
+    if entry is None:
+        return None
+    needs_text = entry.qualifier and entry.qualifier != "?" and entry.multiplicity is None
+    if t.complexity < 0.7 and (
+        (ambiguous and c.quality < 0.85) or (needs_text and not by_text and not _qualifier_near(entry.qualifier, near))
+    ):
+        return None  # a bare bracket / cross is everywhere on a plan; trust it only with its text or an exact fit
+    if _is_marker(t):
+        markers.append((c, entry))
+        return None
+    m = mappings.get(entry.signature)
+    cls = (m or {}).get("class") or entry.suggested_class or "unknown"
+    d = Detection(
+        cls=cls,
+        center=c.center,
+        bbox=b,
+        angle=c.angle_deg,
+        entry=entry,
+        quality=c.quality,
+        margin=c.quality - c.runner_up,
+        source="vector",
+        class_conf=0.95 if m else entry.class_conf,
+    )
+    if ambiguous or (by_text and not READ_QUALIFIER_OCR):
+        # the class hangs on text next to the symbol that the reader could not confirm
+        d.reasons.append(R_SIMILAR)
+        d.margin = min(d.margin, 0.05)
+    elif by_text:
+        if read_word:
+            d.annotations.append(read_word[:32])
+        # the drawing is shared by the family (runner-up = a sibling at the same fit); the word decides
+        d.margin = max(d.margin, 0.12)
+    return d
+
+
+def _resolve_by_ocr(
+    vs: VectorSheet,
+    deferred: list[tuple[Candidate, BBox, list[str], LegendEntry | None, bool]],
+    mappings: dict[str, dict[str, Any]],
+    markers: list[tuple[Candidate, LegendEntry]],
+) -> list[Detection]:
+    """A-pipeline-01: name each deferred family member by the word OCR reads at the end of its stem
+    (:mod:`.qualifiers`); unread ones keep the previous rule (plain member + ``דומה לסמל אחר``, or dropped)."""
+    from .qualifiers import read_qualifiers
+
+    fams = [[e for e in c.tpl.entries if e.multiplicity is None] for c, *_ in deferred]
+    try:
+        reads = read_qualifiers(
+            vs.segs,
+            vs.seg_path,
+            vs.path_bbox,
+            [c.center for c, *_ in deferred],
+            [float(c.tpl.size) for c, *_ in deferred],
+            fams,
+        )
+    except Exception:  # best effort: OCR context is an improvement, never a failure of the sheet
+        log.warning("qualifier OCR failed", exc_info=True)
+        reads = {}
+    out: list[Detection] = []
+    for i, (c, b, near, entry, ambiguous) in enumerate(deferred):
+        r = reads.get(i)
+        if r is not None:
+            d = _vector_detection(c, b, near, fams[i][r.entry], False, True, mappings, markers, r.token)
+        else:
+            d = _vector_detection(c, b, near, entry, ambiguous, False, mappings, markers)
+        if d is not None:
+            out.append(d)
+    return out
+
+
+def _block_detections(
+    vs: VectorSheet,
+    spans: list[TextSpan],
+    inserts: list[dict[str, Any]],
+    exclude: list[BBox],
+    legend: LegendResult,
+    dets: list[Detection],
+    res: DetectResult,
+) -> list[Detection]:
+    """One detection per distinct place of each labelled block (:mod:`.blocks`); a vector detection of the same class
+    at a block's place is the same symbol and is dropped. Mismatching counts → yellow with both numbers."""
+    from .blocks import R_BLOCK_COUNT, R_BLOCK_ONLY, R_GRAPHIC_ONLY, count_blocks
+
+    try:
+        counts = count_blocks(vs, spans, inserts, exclude=exclude, legend_boxes=legend.exclusion_boxes())
+    except Exception:  # best effort: the vector path still counts what it found
+        log.warning("block counting failed", exc_info=True)
+        return dets
+    out = list(dets)
+    stats: list[dict[str, Any]] = []
+    for bc in counts:
+        if bc.cls is None:
+            continue
+        merge = 0.5 * bc.size
+        out = [d for d in out if not (d.cls == bc.cls and any(math.dist(d.center, p.center) <= merge for p in bc.places))]
+        why = R_BLOCK_COUNT.format(blocks=bc.blocks, graphic=bc.graphic) if bc.mismatch else None
+        for p in bc.places:
+            d = Detection(
+                cls=bc.cls,
+                center=p.center,
+                bbox=p.bbox,
+                entry=bc.entry,
+                quality=1.0 if p.insert else 0.9,
+                margin=1.0,
+                source="block" if p.insert else "vector",
+                class_conf=bc.label_conf,
+            )
+            if why:
+                d.reasons.append(why)
+            if not p.insert:
+                d.reasons.append(R_GRAPHIC_ONLY)
+            elif p.graphics == 0:
+                d.reasons.append(R_BLOCK_ONLY)
+            out.append(d)
+        stats.append({"block": bc.name[:64], "class": bc.cls, "blocks": bc.blocks, "graphic": bc.graphic})
+    if stats:
+        res.blocks = stats
+    return out
 
 
 def _is_note(t: Template) -> bool:
@@ -380,6 +530,7 @@ def detect_symbols(
     text_paths: set[int] | None = None,
     unknown: bool = True,
     green_threshold: float | None = None,
+    inserts: list[dict[str, Any]] | None = None,
 ) -> DetectResult:
     res = DetectResult()
     regions = regions or []
@@ -409,6 +560,8 @@ def detect_symbols(
     dets: list[Detection] = []
     markers: list[tuple[Candidate, LegendEntry]] = []
     qual_clouds: dict[str, Any] = {}
+    # look-alike family members whose own text was not read by the glyph reader: decided after one OCR pass
+    deferred: list[tuple[Candidate, BBox, list[str], LegendEntry | None, bool]] = []
     for c in cands:
         t = c.tpl
         min_q = 0.6 if t.complexity >= 0.7 else 0.74
@@ -426,33 +579,18 @@ def detect_symbols(
             got, _ = read_qualifier(vs, qc, b, max(3.0, 1.0 * t.size), exclude=inner)
             if got is not None:
                 entry, ambiguous, by_strokes = got, False, True
-        if entry is None:
+        if READ_QUALIFIER_OCR and not by_strokes and _is_text_family(t) and (ambiguous or entry is None or not entry.qualifier):
+            deferred.append((c, b, near, entry, ambiguous))
             continue
-        needs_text = entry.qualifier and entry.qualifier != "?" and entry.multiplicity is None
-        if t.complexity < 0.7 and (
-            (ambiguous and c.quality < 0.85) or (needs_text and not by_strokes and not _qualifier_near(entry.qualifier, near))
-        ):
-            continue  # a bare bracket / cross is everywhere on a plan; trust it only with its text or an exact fit
-        if _is_marker(t):
-            markers.append((c, entry))
-            continue
-        m = mappings.get(entry.signature)
-        cls = (m or {}).get("class") or entry.suggested_class or "unknown"
-        d = Detection(
-            cls=cls,
-            center=c.center,
-            bbox=b,
-            angle=c.angle_deg,
-            entry=entry,
-            quality=c.quality,
-            margin=c.quality - c.runner_up,
-            source="vector",
-            class_conf=0.95 if m else entry.class_conf,
-        )
-        if ambiguous or by_strokes:  # the class hangs on text next to the symbol that the reader could not confirm
-            d.reasons.append(R_SIMILAR)
-            d.margin = min(d.margin, 0.05)
-        dets.append(d)
+        d = _vector_detection(c, b, near, entry, ambiguous, by_strokes, mappings, markers)
+        if d is not None:
+            dets.append(d)
+    if deferred:
+        dets.extend(_resolve_by_ocr(vs, deferred, mappings, markers))
+
+    # ---- DXF block references (Stage 10, A-pipeline-05): block count vs graphic count per block
+    if inserts:
+        dets = _block_detections(vs, plan_spans, inserts, exclude, legend, dets, res)
 
     # ---- fixture type tags
     tags: list[Tag] = []
@@ -503,6 +641,8 @@ def detect_symbols(
         d.id = f"d_{i}"
     res.detections = dets
     res.stats = {"templates": len(templates), "candidates": len(cands), "tags": len(tags), "markers": len(markers)}
+    if res.blocks:
+        res.stats["blocks"] = res.blocks
     return res
 
 
@@ -717,6 +857,13 @@ def _annotate(dets: list[Detection], tix: TextIndex, markers: list[tuple[Candida
             continue
         s = tix.spans[si]
         cls_txt, _ = suggest_class(s.text, s.conf) if len(s.text) <= 40 else (None, 0.0)
+        # a two-line note ("מפסק" over "למאוורר") names one thing: classify the block, not its second line alone
+        # (Stage 10: "למאוורר" alone refined the pendant next to a fan *switch* into a ceiling fan)
+        block = _note_block_text(si, tix)
+        if block is not None and len(block) <= 40:
+            cls_block, _ = suggest_class(block, s.conf)
+            if cls_block is not None and cls_block != cls_txt:
+                cls_txt = cls_block
         if cls_txt:
             ok = [
                 (di, g)
@@ -762,6 +909,31 @@ def _annotate(dets: list[Detection], tix: TextIndex, markers: list[tuple[Candida
             if "מוגן" in label:
                 label = "מוגן מים"
             dets[int(di)].annotations.append(label)
+
+
+def _note_block_text(si: int, tix: TextIndex) -> str | None:
+    """Text of the note block ``si`` belongs to: horizontal lines of about the same height stacked directly above
+    or below it with overlapping extents (top line first). None when the span stands alone."""
+    s = tix.spans[si]
+    x0, y0, x1, y1 = s.bbox
+    h = max(y1 - y0, 0.5)
+    lines = [(y0, s.text)]
+    for j, o in enumerate(tix.spans):
+        if j == si:
+            continue
+        a0, b0, a1, b1 = o.bbox
+        oh = max(b1 - b0, 0.5)
+        if not (0.6 <= oh / h <= 1.6):
+            continue
+        ov = min(x1, a1) - max(x0, a0)
+        if ov < 0.5 * min(x1 - x0, a1 - a0):
+            continue
+        gap = max(b0 - y1, y0 - b1)
+        if -0.2 * h <= gap <= 0.8 * h:
+            lines.append((b0, o.text))
+    if len(lines) == 1:
+        return None
+    return " ".join(t for _, t in sorted(lines))
 
 
 MARK_CLASSES = ("socket_single", "socket_double", "socket_triple", "socket_power", "socket_power_double")

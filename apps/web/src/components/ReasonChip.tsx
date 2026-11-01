@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
+import { QTY_CHANGED_REASON, isQtyChangedReason } from "@/api/types";
 
 /**
  * Reason → plain Hebrew chip (spec §צ'יפים של סיבות). Known codes (NOT_IN_LEGEND…) are translated; Sprint-2
@@ -23,6 +24,25 @@ export function ReasonChip({ code, className }: { code: string; className?: stri
         )}
       >
         {t("reasons.CONSERVATIVE_CALIBRATION")}
+      </span>
+    );
+  }
+  if (isQtyChangedReason(code)) {
+    // Stage 10: an approved line dropped to "נבדק" because its quantity changed. "(15 → 16)" is an LTR island so the
+    // arrow reads from the old to the new value in RTL too.
+    const change = code.slice(QTY_CHANGED_REASON.length).trim();
+    return (
+      <span
+        data-reason="QTY_CHANGED_SINCE_APPROVAL"
+        title={`${code}. ${t("reasonHints.QTY_CHANGED_SINCE_APPROVAL")}`}
+        className={cn("inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-conf-mid/60 bg-conf-mid/[0.08] px-1.5 text-meta text-foreground", className)}
+      >
+        {/* compact so the numbers survive in a narrow BOQ row; the full sentence is the tooltip */}
+        <span className="truncate">
+          {t("reasons.QTY_CHANGED_SHORT")}
+          <span className="sr-only">{QTY_CHANGED_REASON.slice(t("reasons.QTY_CHANGED_SHORT").length)}</span>
+        </span>
+        {change ? <bdi dir="ltr" className="shrink-0">{change}</bdi> : null}
       </span>
     );
   }

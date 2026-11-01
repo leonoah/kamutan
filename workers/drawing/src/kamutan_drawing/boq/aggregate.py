@@ -18,7 +18,7 @@ from typing import Any
 from .contracts import LinkGroup
 from .corrections import Correction, ManualQty, OldDetections, apply_corrections
 from .dedup import Det, SheetMeta, dedup
-from .plumbing import consumed_classes, plumbing_units, suggestion_units
+from .plumbing import combination_units, consumed_classes, plumbing_units, suggestion_units
 from .rules import (
     CLASS_HE,
     FIXTURE_CLASSES,
@@ -49,6 +49,7 @@ from .rules import (
     Rule,
 )
 from .spaces import Room, canonical_rooms, ceiling_heights, match_room, room_from_doc, settings_by_room
+from .template import SheetRef, template_units
 from .tiling import TilingParams, tiling_units
 from .units import Unit
 
@@ -93,6 +94,11 @@ class Contribution:
     order_qty: float | None = None
     waste: float | None = None
     ev_qty: dict[str, float] = field(default_factory=dict)
+    unit_hint: str | None = None  # unmatched line: the rule's unit (A-LIVE-01: never "יחידה" for an area line)
+
+
+RoomRef = tuple[str | None, str | None, str | None, str | None, str | None]  # (sheetId, roomId, name, type, floor)
+MAX_BY_ROOM = 200
 
 
 @dataclass
@@ -113,9 +119,13 @@ class Line:
     source_versions: list[dict[str, str]]
     order_qty: float | None = None
     waste_factor: float | None = None
+    by_room: list[dict[str, Any]] = field(default_factory=list)
 
     def computed_fields(self) -> dict[str, Any]:
-        extra: dict[str, Any] = {"manualCount": sum(1 for e in self.evidence if e.get("source") == "manual")}
+        extra: dict[str, Any] = {
+            "manualCount": sum(1 for e in self.evidence if e.get("source") == "manual"),
+            "byRoom": [dict(r) for r in self.by_room],
+        }
         if self.order_qty is not None:
             extra.update({"orderQty": self.order_qty, "wasteFactor": self.waste_factor})
         return {
@@ -542,6 +552,10 @@ def aggregate(
     stats["alignments"] = dd.alignments
 
     contribs: list[Contribution] = []
+    code_rules: dict[str, Rule] = {}
+    for rl in rules:  # rules are sorted by priority: the first rule of a code describes it
+        if rl.item_code and rl.item_code not in code_rules:
+            code_rules[rl.item_code] = rl
     resolved_cache: dict[tuple[str | None, str, bool], Resolution | None] = {}
 
     def resolve(code: str | None, desc: str, trust: bool) -> Resolution | None:
@@ -570,6 +584,7 @@ def aggregate(
         rule_reasons = list(extra_reasons)
         res: Resolution | None = None
         rid = rule.id if rule else None
+        unit_hint: str | None = None
         if item is not None:
             res = Resolution(item, "room", 1.0)
             if rule is not None:
@@ -578,14 +593,23 @@ def aggregate(
             res = resolve(user_code[0], "", True)
             rid = user_code[1]
             if res is None:
-                unmatched = (user_code[0], f"פריט {user_code[0]}")
+                # A-LIVE-01: the rule that targets this code (its description / unit), else the class name
+                ref = code_rules.get(user_code[0])
+                cls_he = next((CLASS_HE[d.cls] for d in dets if d.cls in CLASS_HE), None)
+                desc = (ref.description if ref and ref.description else None) or cls_he or f"סעיף {user_code[0]}"
+                unmatched = (user_code[0], desc)
+                if ref is not None and ref.unit:
+                    unit_hint = ref.unit
         elif unmatched is None and rule is not None:
             res = resolve(rule.item_code, rule.description, rule.source == "custom")
             rule_reasons.extend(rule.reasons)
             if res is None:
                 unmatched = ("X-" + _slug(rule.item_code or rule.id).replace("_", "-"), rule.description or rule.id)
+                unit_hint = rule.unit or None
             elif res.how == "similarity" and R_DEFAULT_RULE not in rule_reasons:
                 rule_reasons.append(R_DEFAULT_RULE)
+        if unit_hint is None and rule is not None and rule.unit:
+            unit_hint = rule.unit
         if unmatched is not None:
             level = "red"
             if R_NO_RULE not in rule_reasons:
@@ -609,6 +633,7 @@ def aggregate(
                 unit.order_qty if unit is not None else None,
                 unit.waste if unit is not None else None,
                 dict(unit.ev_qty) if unit is not None else {},
+                unit_hint,
             )
         )
 
@@ -715,13 +740,18 @@ def aggregate(
     }
     room_index = {(r.sheet_id, r.id): r for rs in rooms_by_sheet.values() for r in rs}
     scales = {s.sheet_id: s.scale for s in sheets}
+    c_units, c_stats = combination_units(all_dets, rules, room_index, scales)
+    for u in c_units:
+        add_unit(u)
+    stats["combinations"] = c_stats
     p_units, p_stats = plumbing_units(all_dets, rules, room_index, scales)
     for u in p_units:
         add_unit(u)
     consumed |= consumed_classes(rules)
     canon = canonical_rooms(rooms_by_sheet)
-    texts = {s.sheet_id: [str(t.get("text") or "") for t in s.texts] for s in sheets if s.texts}
-    for u in suggestion_units(rules, all_dets, canon, texts, {s.sheet_id: list(s.floors) for s in sheets}):
+    texts = {s.sheet_id: [_text_cue(t) for t in s.texts] for s in sheets if s.texts}
+    meta = {s.sheet_id: (s.version_id, s.discipline) for s in sheets}
+    for u in suggestion_units(rules, all_dets, canon, texts, {s.sheet_id: list(s.floors) for s in sheets}, meta):
         add_unit(u)
     stats["plumbing"] = p_stats
 
@@ -767,7 +797,29 @@ def aggregate(
     stats["unmapped"] = unmapped
     stats["skipped"] = dict(sorted(skipped.items()))
 
-    lines = _lines(contribs)
+    # --- template chapters offered as lump sums (chapter 01 demolition), items no other rule produced
+    produced = {c.resolution.item.id for c in contribs if c.resolution is not None}
+    refs = [SheetRef(s.sheet_id, s.version_id, s.discipline, tuple(s.floors), (s.page[0], s.page[1])) for s in sheets]
+    t_lines = template_units(rules, library, refs, produced)
+    for u in t_lines:
+        add_unit(u)
+    stats["templateLines"] = len(t_lines)
+
+    canon_keys = {c.key for c in canon}
+
+    def room_of(d: Det) -> RoomRef | None:
+        """The canonical room of an evidence item (the same physical room whatever sheet it was drawn on)."""
+        if not d.room_id:
+            return None
+        r = room_index.get((d.sheet_id, d.room_id))
+        if r is None:
+            return (d.sheet_id, d.room_id, d.room, None, d.floor)
+        c = r if r.key in canon_keys else (match_room(r, canon) or r)
+        if c.niche:  # a laundry niche (unnamed sub-room): contracts RoomType "niche"
+            return (c.sheet_id, c.id, c.name or "נישה", "niche", c.floor)
+        return (c.sheet_id, c.id, c.name, c.type, c.floor)
+
+    lines = _lines(contribs, room_of)
     stats["lines"] = len(lines)
     stats["evidence"] = sum(len(ln.evidence) for ln in lines)
     for lv in ("green", "yellow", "red"):
@@ -823,7 +875,46 @@ def _group_desc(f: GroupFeatures) -> str:
     return f"קבוצת מאור לא מסווגת ({f.kind}, {f.switches} מפסקים, {f.points} נק')"
 
 
-def _lines(contribs: list[Contribution]) -> list[Line]:
+def _text_cue(t: dict[str, Any]) -> tuple[str, float, float]:
+    bb = t.get("bboxMm")
+    if isinstance(bb, list | tuple) and len(bb) == 4:
+        try:
+            return str(t.get("text") or ""), (float(bb[0]) + float(bb[2])) / 2, (float(bb[1]) + float(bb[3])) / 2
+        except (TypeError, ValueError):
+            pass
+    return str(t.get("text") or ""), 0.0, 0.0
+
+
+def _by_room(cs: list[Contribution], room_of: Any) -> list[dict[str, Any]]:
+    """Per-room split of a line (A-pipeline-12): a contribution with per-item quantities (tiling / measures) splits
+    by item; otherwise its whole qty goes to the majority room of its items (a link group, a per-room plumbing unit)."""
+    acc: dict[RoomRef | None, float] = defaultdict(float)
+    for c in cs:
+        refs = [(d, room_of(d)) for d, _ in c.evidence]
+        if c.ev_qty:
+            for d, ref in refs:
+                acc[ref] += c.ev_qty.get(d.key, 0.0)
+            rest = c.qty - sum(c.ev_qty.get(d.key, 0.0) for d, _ in refs)
+            if abs(rest) > 1e-6:
+                acc[None] += rest
+            continue
+        votes = Counter(ref for _, ref in refs if ref is not None)
+        best = min(votes.items(), key=lambda kv: (-kv[1], tuple(x or "" for x in kv[0])))[0] if votes else None
+        acc[best] += c.qty
+    out = []
+    for ref, q in acc.items():
+        if abs(q) < 1e-9:
+            continue
+        sid, rid, name, rtype, floor = ref if ref is not None else (None, None, None, None, None)
+        out.append({"sheetId": sid, "roomId": rid, "name": (name or None) and str(name)[:100], "type": rtype,
+                    "floor": floor, "qty": round(q, 4)})  # fmt: skip
+    rank = {f: i for i, f in enumerate(FLOOR_ORDER)}
+    out.sort(key=lambda e: (e["roomId"] is None, rank.get(str(e["floor"]), len(rank)), str(e["floor"] or ""),
+                            str(e["name"] or ""), str(e["sheetId"] or ""), str(e["roomId"] or "")))  # fmt: skip
+    return out[:MAX_BY_ROOM]
+
+
+def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
     by_key: dict[str, list[Contribution]] = defaultdict(list)
     for c in contribs:
         by_key[c.key].append(c)
@@ -834,17 +925,19 @@ def _lines(contribs: list[Contribution]) -> list[Line]:
         first = cs[0]
         if first.resolution is not None:
             it = first.resolution.item
+            hint = next((c.unit_hint for c in cs if c.unit_hint), None)
             chapter, chapter_title, code, desc, unit, item_id = (
                 it.chapter,
                 it.chapter_title,
                 it.code,
                 it.description,
-                it.unit,
+                it.unit or hint or "יחידה",
                 it.id,
             )
         else:
             code, desc = first.unmatched or ("X", "?")
-            chapter, chapter_title, unit, item_id = UNMATCHED_CHAPTER, UNMATCHED_CHAPTER, "יחידה", None
+            hint = next((c.unit_hint for c in cs if c.unit_hint), None)
+            chapter, chapter_title, unit, item_id = UNMATCHED_CHAPTER, UNMATCHED_CHAPTER, hint or "יחידה", None
         lid = f"ln_{_slug(code)}" if first.resolution is not None else f"ln_{_slug(code.lower())}"
         if lid in used_ids:
             lid = f"{lid}_{hashlib.sha256(key.encode()).hexdigest()[:8]}"  # pragma: no cover
@@ -915,6 +1008,7 @@ def _lines(contribs: list[Contribution]) -> list[Line]:
                 [{"sheetId": s, "versionId": v} for s, v in sv],
                 round(sum(oq) + sum(c.qty for c in cs if c.order_qty is None), 4) if oq else None,
                 max(wastes) if wastes else None,
+                _by_room(cs, room_of) if room_of is not None else [],
             )
         )
     lines.sort(key=lambda ln: (ln.chapter == UNMATCHED_CHAPTER, ln.chapter, code_key(ln.code), ln.id))

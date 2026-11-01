@@ -102,6 +102,19 @@ import {
   ShareLinkSheetSchema,
   ShareLinkWarningSchema,
 } from './share.js';
+import {
+  AcceptInviteResponseSchema,
+  CreateInviteRequestSchema,
+  CreateInviteResponseSchema,
+  InviteListSchema,
+  InviteSchema,
+  MemberListSchema,
+  MemberResponseSchema,
+  MemberViewSchema,
+  PatchMemberRequestSchema,
+  RemoveMemberResponseSchema,
+  RevokeInviteResponseSchema,
+} from './members.js';
 import { AuditEventSchema, AuditPageSchema, AuditVerifyResponseSchema, LineHistoryItemSchema, LineHistoryResponseSchema } from './audit.js';
 import {
   CreateMarkedPdfRequestSchema,
@@ -333,4 +346,16 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   ShareBoqSnapshot: ShareBoqSnapshotSchema,
   ShareLinkSheet: ShareLinkSheetSchema,
   ShareLinkWarning: ShareLinkWarningSchema,
+  // Stage 10 (A-API-01)
+  Invite: InviteSchema,
+  CreateInviteRequest: CreateInviteRequestSchema,
+  CreateInviteResponse: CreateInviteResponseSchema,
+  InviteList: InviteListSchema,
+  RevokeInviteResponse: RevokeInviteResponseSchema,
+  AcceptInviteResponse: AcceptInviteResponseSchema,
+  MemberView: MemberViewSchema,
+  MemberList: MemberListSchema,
+  PatchMemberRequest: PatchMemberRequestSchema,
+  MemberResponse: MemberResponseSchema,
+  RemoveMemberResponse: RemoveMemberResponseSchema,
 });

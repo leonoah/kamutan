@@ -124,12 +124,15 @@ describe("Export dialog: PDF מסומן (FR-29, E2E-13)", { timeout: 30_000 }, (
     await user.click(within(dlg).getByRole("radio", { name: "PDF מסומן" }));
     expect(screen.getByRole("dialog", { name: "ייצוא PDF מסומן" })).toHaveTextContent("קוד · תיאור · כמות · צבע");
     await user.click(within(dlg).getByLabelText("עמוד נפרד לכל קומה"));
-    await user.click(within(dlg).getByLabelText("הסתר את טבלת הכותרת"));
-    // subset of sheets
+    // A-UI-20: hiding the title block is ON by default, as in the share dialog
+    expect(within(dlg).getByLabelText("הסתר את טבלת הכותרת")).toBeChecked();
+    // subset of sheets: unticking "all" starts from an empty subset (A-UI-20)
     await user.click(within(dlg).getByLabelText(`כל הגיליונות (${rows.length})`));
     const boxes = within(dlg).getAllByRole("checkbox").slice(3);
     expect(boxes).toHaveLength(rows.length);
-    for (const b of boxes.slice(1)) await user.click(b);
+    for (const b of boxes) expect(b).not.toBeChecked();
+    expect(within(dlg).getByText("בחרו לפחות גיליון אחד.")).toBeInTheDocument();
+    await user.click(boxes[0]!);
     expect(within(dlg).getByText(`גיליונות · 1 מתוך ${rows.length} גיליונות`)).toBeInTheDocument();
     await user.click(within(dlg).getByRole("button", { name: "צור PDF" }));
     expect(start).toHaveBeenCalledWith(PID, { sheetIds: [rows[0]!.sheet.id], floorSplit: true, hideTitleBlock: true });
@@ -148,7 +151,6 @@ describe("Export dialog: PDF מסומן (FR-29, E2E-13)", { timeout: 30_000 }, (
     const { unmount } = renderExport(backend, lines, rows);
     await user.click(screen.getByRole("radio", { name: "PDF מסומן" }));
     await user.click(screen.getByLabelText(`כל הגיליונות (${rows.length})`));
-    for (const b of screen.getAllByRole("checkbox").slice(3)) await user.click(b);
     expect(screen.getByText("בחרו לפחות גיליון אחד.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "צור PDF" })).toBeDisabled();
     unmount();
@@ -170,7 +172,7 @@ describe("Export dialog: PDF מסומן (FR-29, E2E-13)", { timeout: 30_000 }, (
     const rows = (await new Promise<SheetRow[]>((r) => backend.realtime.sheets("org-demo", PID, r, () => {}))).filter((x) => x.version?.status === "ready");
     const { unmount } = renderExport(backend, lines, rows);
     await user.click(screen.getByRole("radio", { name: "PDF מסומן" }));
-    await user.click(screen.getByLabelText("הסתר את טבלת הכותרת"));
+    expect(screen.getByLabelText("הסתר את טבלת הכותרת")).toBeChecked(); // default ON (A-UI-20)
     await user.click(screen.getByRole("button", { name: "צור PDF" }));
     await screen.findByRole("link", { name: "הורד PDF" }, WAIT);
     const omitted = document.querySelector<HTMLElement>("[data-omitted]")!;
@@ -180,10 +182,9 @@ describe("Export dialog: PDF מסומן (FR-29, E2E-13)", { timeout: 30_000 }, (
 
     renderExport(backend, lines, rows);
     await user.click(screen.getByRole("radio", { name: "PDF מסומן" }));
-    await user.click(screen.getByLabelText("הסתר את טבלת הכותרת"));
     await user.click(screen.getByLabelText(`כל הגיליונות (${rows.length})`));
     const boxes = screen.getAllByRole("checkbox").slice(3);
-    for (const [i, b] of boxes.entries()) if (rows[i]!.sheet.id === "noah-eb8be8a3-p0") await user.click(b);
+    for (const [i, b] of boxes.entries()) if (rows[i]!.sheet.id !== "noah-eb8be8a3-p0") await user.click(b);
     await user.click(screen.getByRole("button", { name: "צור PDF" }));
     expect(await screen.findByText(/לא נמצאה טבלת כותרת להסתרה באף גיליון/, {}, WAIT)).toHaveAttribute("data-export-error", "title_block_not_found");
     expect(screen.queryByRole("link", { name: "הורד PDF" })).toBeNull();

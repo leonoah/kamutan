@@ -262,10 +262,11 @@ export class InMemoryRepository implements Repository {
   }
 
   // --- sheets & versions -------------------------------------------------------
-  async listSheets(orgId: string, projectId: string, opts: { limit: number; cursor?: string; sheetSetId?: string }) {
+  async listSheets(orgId: string, projectId: string, opts: { limit: number; cursor?: string; sheetSetId?: string; includeSuperseded?: boolean }) {
     const all = this.children(fsPaths.sheets(orgId, projectId))
       .map(([k, d]) => [k.split('/').at(-1) as string, d] as const)
       .filter(([, d]) => !opts.sheetSetId || d.sheetSetId === opts.sheetSetId)
+      .filter(([, d]) => opts.includeSuperseded === true || d.superseded !== true)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     const start = opts.cursor ? all.filter(([id]) => id <= (opts.cursor as string)).length : 0;
     const page = all.slice(start, start + opts.limit);

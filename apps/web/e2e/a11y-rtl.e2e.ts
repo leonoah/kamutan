@@ -61,18 +61,47 @@ test.describe("a11y + RTL on every main screen", () => {
     await shot(page, info, "rtl-01-boq");
   });
 
-  // ---- strict versions of the known a11y defects (fail today) ----
-  test.fixme("A-UI-03 strict: no label-content-name-mismatch (hub sheet cards, share list revoke, share viewer rows)", async ({ page }, info) => {
+  // ---- strict versions of the former a11y defects (KNOWN_A11Y is empty now; these pin the screens named in defects.md) ----
+  test("A-UI-03 strict: no label-content-name-mismatch (hub sheet cards, sheets, sheet analysis queue, share list revoke, share viewer rows)", async ({ page }, info) => {
     await login(page, "/projects/p-noah");
     await expect(page.getByRole("link", { name: "לניתוח" }).first()).toBeVisible();
-    await axe(page, info, "hub-strict", undefined, true);
+    const only = (v: { id: string }[]) => v.filter((x) => x.id === "label-content-name-mismatch");
+    expect(only(await axe(page, info, "hub-strict", undefined, true))).toEqual([]);
+    if (NOAH_DATA) {
+      await page.goto("/projects/p-noah/sheets");
+      await expect(page.getByText(/מתוך 15 אושרו/)).toBeVisible();
+      expect(only(await axe(page, info, "sheets-strict", undefined, true))).toEqual([]);
+    }
+    await page.goto("/projects/p-noah/sheets/noah-eb8be8a3-p0");
+    await waitForWorkspace(page);
+    expect(only(await axe(page, info, "sheet-analysis-strict", undefined, true))).toEqual([]);
     await page.goto("/s/demo-noah");
     await expect(page.locator("[data-share-boq] tr[data-line]").first()).toBeVisible({ timeout: 60_000 });
-    await axe(page, info, "share-viewer-strict", undefined, true);
+    expect(only(await axe(page, info, "share-viewer-strict", undefined, true))).toEqual([]);
   });
-  test.fixme("A-UI-04 strict: no color-contrast failures (hub 'ממתין לאישור' chip and others listed in defects.md)", async ({ page }, info) => {
+  test("A-UI-04 strict: no color-contrast failures (hub 'ממתין לאישור' chip and others listed in defects.md)", async ({ page }, info) => {
     await login(page, "/projects/p-noah");
     await expect(page.getByRole("link", { name: "לניתוח" }).first()).toBeVisible();
-    await axe(page, info, "hub-contrast-strict", undefined, true);
+    const v = await axe(page, info, "hub-contrast-strict", undefined, true);
+    expect(v.filter((x) => x.id === "color-contrast")).toEqual([]);
+  });
+  // A-UI-16: the review workspace (sheet analysis + project BOQ) and the share viewer have one <main> and one <h1>.
+  for (const [name, path] of [["sheet-analysis", "/projects/p-noah/sheets/noah-eb8be8a3-p0"], ["project-boq", "/projects/p-noah/review?mockBoq=built"]] as const) {
+    test(`A-UI-16 ${name}: <main> + one <h1>, no landmark/heading/region findings`, async ({ page }, info) => {
+      await login(page, path);
+      await waitForWorkspace(page);
+      await expect(page.locator("main")).toHaveCount(1);
+      await expect(page.locator("h1")).toHaveCount(1);
+      const v = await axe(page, info, `${name}-landmarks`, undefined, true);
+      expect(v.filter((x) => ["landmark-one-main", "page-has-heading-one", "region"].includes(x.id)).map((x) => x.id)).toEqual([]);
+    });
+  }
+  test("A-UI-16 share viewer: <main> + one <h1>, no landmark/region findings", async ({ page }, info) => {
+    await page.goto("/s/demo-noah");
+    await expect(page.locator("[data-share-boq] tr[data-line]").first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("main")).toHaveCount(1);
+    await expect(page.locator("h1")).toHaveCount(1);
+    const v = await axe(page, info, "share-viewer-landmarks", undefined, true);
+    expect(v.filter((x) => ["landmark-one-main", "page-has-heading-one", "region"].includes(x.id)).map((x) => x.id)).toEqual([]);
   });
 });

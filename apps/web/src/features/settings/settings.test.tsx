@@ -175,7 +175,7 @@ describe("Offboarding (SEC-52)", { timeout: 40_000 }, () => {
     expect(screen.getByRole("link", { name: "הורד ZIP" })).toHaveAttribute("href", "/settings/offboarding");
     await router.navigate("/settings/offboarding");
     expect(await screen.findByRole("button", { name: "הכן ייצוא מלא" }, WAIT)).toBeInTheDocument();
-    expect(screen.getByText(/הארגון בתהליך סיום התקשרות\. הנתונים יימחקו ב-/)).toBeInTheDocument();
+    expect(await screen.findByText(/הארגון בתהליך סיום התקשרות\. הנתונים יימחקו ב-/, {}, WAIT)).toBeInTheDocument();
   });
 
   it("non-admin members of an offboarding org only see the blocked screen", async () => {

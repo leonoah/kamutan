@@ -11,12 +11,14 @@ import {
   type SheetRow,
   type SheetVersion,
   type IngestStage,
+  type OrgMember,
+  type Role,
 } from "./types";
 import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, rowFromDevIndex, sampleTiles, seedNoah, type DevIndexEntry } from "./mockSheets";
 import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
 import { createReviewMock } from "./mockReview";
-import { createSprint5Mock } from "./mockSprint5";
+import { createSprint5Mock, MOCK_ACTOR } from "./mockSprint5";
 import { getAuthService, hasRecentLogin } from "@/features/auth/authService";
 
 export interface MockOptions {
@@ -57,7 +59,20 @@ export interface MockOptions {
   auditBroken?: boolean;
   /** Security gate F-3 (tests): title-block detection per sheet (default: mock rule). */
   titleBlockDetected?: (sheetId: string) => boolean;
+  /** Stage 10 (A-LIVE-01): the org's item library — imported (default) / shipped default / none (`?mockLibrary=`). */
+  libraryMode?: "imported" | "default" | "none";
+  /** Stage 10: seed members of the demo org (default: the signed-in admin + 3 others + 1 pending invitation). */
+  members?: OrgMember[];
 }
+
+/** Stage 10 demo members of org-demo (A-API-01). The signed-in user is added as admin on first read. */
+export const demoMembers = (): OrgMember[] => [
+  { id: "uid-lea", uid: "uid-lea", email: "lea@example.com", displayName: "לאה לוי", role: "editor", status: "active", addedBy: "mock-user", createdAt: "2026-10-11T08:05:00.000Z" },
+  { id: "uid-yossi", uid: "uid-yossi", email: "yossi@example.com", displayName: "יוסי מזרחי", role: "reviewer", status: "active", addedBy: "mock-user", createdAt: "2026-10-12T09:30:00.000Z" },
+  { id: "uid-client", uid: "uid-client", email: "client@example.com", displayName: null, role: "viewer", status: "active", addedBy: "uid-lea", createdAt: "2026-10-20T14:10:00.000Z" },
+  { id: "inv-1", uid: null, email: "new.estimator@example.com", displayName: null, role: "editor", status: "pending", addedBy: "mock-user", createdAt: "2026-10-30T10:00:00.000Z", expiresAt: "2026-11-13T10:00:00.000Z" },
+];
+const ROLES: readonly Role[] = ["admin", "editor", "reviewer", "viewer"];
 
 export const DEMO_ORG_ID = "org-demo";
 /** Worker stages in order (brief: progress.stage). */
@@ -172,7 +187,35 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       })
       .finally(() => boq.startDevPolling());
   }
+  /** A-UI-12: the signed-in user acts (history / audit "who"); no session (backend unit tests) → the demo actor. */
+  const actor = () => {
+    const ses = getAuthService().getSession();
+    return ses ? { uid: ses.uid, displayName: ses.displayName ?? ses.email ?? null } : MOCK_ACTOR;
+  };
+  /** Stage 10 (A-API-02): admin settings / templates / rules / members need a sign-in from the last 10 minutes (+MFA). */
+  const requireRecentAuth = async () => {
+    const a = getAuthService();
+    if (a.getSession() && !(await hasRecentLogin(a))) throw new ApiError(403, "recent_auth_required", "sign in again (within the last 10 minutes) to do this");
+  };
+  const requireAdmin = () => {
+    if ((orgs[0]?.role ?? "viewer") !== "admin") throw new ApiError(403, "forbidden", "admins only");
+  };
+  const members = new Map<string, OrgMember>((opts.members ?? demoMembers()).map((m) => [m.id, structuredClone(m)]));
+  const memberList = (): OrgMember[] => {
+    const me = actor();
+    if (!members.has(me.uid) && ![...members.values()].some((m) => m.uid === me.uid)) {
+      const ses = getAuthService().getSession();
+      members.set(me.uid, { id: me.uid, uid: me.uid, email: ses?.email ?? null, displayName: me.displayName, role: orgs[0]?.role ?? "admin", status: "active", addedBy: null, createdAt: "2026-10-11T08:00:00.000Z" });
+    }
+    return [...members.values()].sort((a, b) => Number(a.status === "pending") - Number(b.status === "pending") || a.createdAt.localeCompare(b.createdAt));
+  };
+  const activeAdmins = () => memberList().filter((m) => m.status === "active" && m.role === "admin");
+
   const boq = createBoqMock({
+    libraryMode: opts.libraryMode ?? "imported",
+    onApprovalInvalidated: (projectId, line, from, to) => {
+      s5.appendAudit({ actor: null, actorKind: "system", action: "approval_invalidated", entity: "boqLines", entityId: line.id, projectId, before: { status: "approved", qty: from }, after: { status: "reviewed", qty: to }, meta: { kind: "status", reason: line.reasons?.[0] ?? null } }, projects.get(projectId)?.orgId ?? DEMO_ORG_ID);
+    },
     rows: (projectId) => sheets.get(projectId) ?? [],
     detections: (row) => understanding.detections(row),
     emit: () => emit(),
@@ -191,6 +234,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     boq: () => boq,
     emit: () => emit(),
     similarMs: opts.similarMs ?? (latency > 0 ? 600 : 0),
+    actorUid: () => actor().uid,
   });
   const s5 = createSprint5Mock({
     projects: () => projects,
@@ -218,6 +262,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       const a = getAuthService();
       return a.getSession() ? hasRecentLogin(a) : true;
     },
+    actor,
   });
   if (opts.blockExportOnRed) s5.setBlockExportOnRed(orgs[0]?.id ?? DEMO_ORG_ID, true);
   if (opts.boqPrebuilt && sheets.has("p-noah")) queueMicrotask(() => boq.buildBoq("p-noah"));
@@ -322,6 +367,19 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     }, jobTick);
   }
 
+  /**
+   * A-UI-11 / A-LIVE-02 (mock side): once a BOQ is built, the project card's counts come from the same lines as the
+   * hub (the API writes them on the project doc after each build).
+   */
+  const withLiveStats = (p: Project): Project => {
+    if (!boq.state(p.id)?.latestBuildId) return p;
+    const lines = boq.listLines(p.id).items;
+    if (!lines.length) return p;
+    const by = (lv: string) => lines.filter((l) => l.level === lv).length;
+    const ready = (sheets.get(p.id) ?? []).filter((r) => r.version?.status === "ready").length;
+    return { ...p, stats: { sheets: Math.max(p.stats?.sheets ?? 0, ready), boqLines: lines.length, green: by("green"), yellow: by("yellow"), red: by("red"), reviewOpen: lines.filter((l) => l.status !== "approved" && l.level !== "green").length } };
+  };
+
   const findRow = (projectId: string, sheetId: string) => {
     const row = (sheets.get(projectId) ?? []).find((r) => r.sheet.id === sheetId);
     if (!row) throw new ApiError(404, "not_found", "Sheet not found");
@@ -342,9 +400,9 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
           [...projects.values()]
             .filter((p) => p.orgId === orgId)
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-            .map((p) => structuredClone(p)),
+            .map((p) => withLiveStats(structuredClone(p))),
         ),
-      getProject: async (id) => delay(structuredClone(mustGet(id))),
+      getProject: async (id) => delay(withLiveStats(structuredClone(mustGet(id)))),
       createProject: async (input) => {
         const name = input.name.trim();
         if (!name) throw new ApiError(400, "validation_failed", "name is required");
@@ -405,6 +463,10 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         if (!uploadedPaths.has(`orgs/${p.orgId}/uploads/mock-user/${fileId}`)) {
           throw new ApiError(404, "upload_missing", "object not found");
         }
+        // Stage 10 (A-API-05): a revision replaces an existing set of this project.
+        const replaced = req.replacesSheetSetId ? (sheetSets.get(projectId) ?? []).find((x) => x.id === req.replacesSheetSetId) : null;
+        if (req.replacesSheetSetId && !replaced) throw new ApiError(404, "not_found", "Sheet set to replace not found");
+        if (replaced?.supersededBySetId) throw new ApiError(409, "already_superseded", "this set was already replaced");
         tokens.delete(req.uploadToken);
         const now = new Date().toISOString();
         const set: SheetSet = {
@@ -416,9 +478,20 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
           storagePath: `orgs/${p.orgId}/projects/${projectId}/sources/x.${t.kind}`,
           status: "uploaded",
           name: req.name ?? t.filename,
-          uploadedBy: "mock-user",
+          uploadedBy: actor().uid,
           createdAt: now,
+          ...(replaced ? { replacesSheetSetId: replaced.id } : {}),
         };
+        if (replaced) {
+          // The old set's sheets become superseded (the new sheets carry the current versions); the BOQ uses only these.
+          replaced.supersededBySetId = set.id;
+          replaced.supersededAt = now;
+          replaced.status = "superseded";
+          sheets.set(projectId, (sheets.get(projectId) ?? []).filter((r) => r.sheet.sheetSetId !== replaced.id));
+          for (const j of jobs) if (j.sheetSetId === replaced.id && j.status === "failed") j.status = "cancelled";
+          s5.appendAudit({ action: "supersede", entity: "sheetSets", entityId: replaced.id, projectId, after: { supersededBySetId: set.id } }, p.orgId);
+          boq.markStale(projectId);
+        }
         // Mock "split": a PDF becomes 2 sheets (pages), other kinds 1.
         const pages = t.kind === "pdf" ? 2 : 1;
         const rows: SheetRow[] = Array.from({ length: pages }, (_, i) => {
@@ -558,7 +631,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       patchBoqLine: async (projectId, lineId, req) => {
         s5.assertProjectActive(projectId);
         const before = boq.listLines(projectId).items.find((l) => l.id === lineId);
-        const after = boq.patchLine(projectId, lineId, req, "mock-user");
+        const after = boq.patchLine(projectId, lineId, req, actor().uid);
         if (before) s5.recordLinePatch(projectId, before, after, req);
         return delay(after);
       },
@@ -574,9 +647,15 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       startLibraryImport: async (_orgId, importId, uploadToken) => delay(boq.startImport(importId, uploadToken)),
       getLibraryImport: async (_orgId, importId) => delay(boq.getImport(importId)),
       listBoqTemplates: async () => delay(boq.templates()),
-      setDefaultBoqTemplate: async (_orgId, templateId) => delay(boq.setDefault(templateId)),
+      setDefaultBoqTemplate: async (_orgId, templateId) => {
+        await requireRecentAuth();
+        return delay(boq.setDefault(templateId));
+      },
       listBoqRules: async () => delay(boq.rules()),
-      patchBoqRule: async (_orgId, ruleId, req) => delay(boq.patchRule(ruleId, req.enabled, [...projects.keys()])),
+      patchBoqRule: async (_orgId, ruleId, req) => {
+        await requireRecentAuth();
+        return delay(boq.patchRule(ruleId, req.enabled, [...projects.keys()]));
+      },
 
       /* ---------- Sprint 4: corrections, queue, room settings, find-similar ---------- */
       listCorrections: async (projectId, q = {}) => delay(await review.listCorrections(projectId, q.sheetId)),
@@ -616,10 +695,56 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       },
       listShareLinks: async (projectId) => delay(s5.listShareLinks(projectId)),
       revokeShareLink: async (projectId, linkId) => delay(s5.revokeShareLink(projectId, linkId)),
-      patchOrgSettings: async (orgId, req) => delay(s5.patchOrgSettings(orgId, req)),
+      patchOrgSettings: async (orgId, req) => {
+        await requireRecentAuth();
+        return delay(s5.patchOrgSettings(orgId, req));
+      },
       startOffboardingExport: async (orgId) => delay(s5.startOffboardingExport(orgId)),
       getOffboardingExport: async (orgId, id) => delay(await s5.getOffboardingExport(orgId, id)),
       offboardOrg: async (orgId, req) => delay(s5.offboardOrg(orgId, req.confirm)),
+
+      /* ---------- Stage 10: members (A-API-01) ---------- */
+      listMembers: async () => {
+        requireAdmin();
+        return delay({ members: memberList().map((m) => ({ ...m })) });
+      },
+      inviteMember: async (orgId, req) => {
+        requireAdmin();
+        await requireRecentAuth();
+        const email = req.email.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError(400, "validation_failed", "invalid email");
+        if (!ROLES.includes(req.role)) throw new ApiError(400, "validation_failed", "invalid role");
+        if (memberList().some((m) => m.email?.toLowerCase() === email)) throw new ApiError(409, "already_member", "already a member or invited");
+        const m: OrgMember = { id: nextId("inv"), uid: null, email, displayName: null, role: req.role, status: "pending", addedBy: actor().uid, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 14 * 86_400_000).toISOString() };
+        members.set(m.id, m);
+        s5.appendAudit({ action: "invite", entity: "members", entityId: m.id, projectId: null, after: { email, role: req.role } }, orgId);
+        const origin = typeof location !== "undefined" ? location.origin : "https://kamutan.app";
+        // contracts: url = `${PUBLIC_APP_ORIGIN}/invite/{inviteId}`
+        return delay({ member: { ...m }, inviteUrl: `${origin}/invite/${m.id}` });
+      },
+      patchMember: async (orgId, memberId, req) => {
+        requireAdmin();
+        await requireRecentAuth();
+        const m = members.get(memberId);
+        if (!m) throw new ApiError(404, "not_found", "Member not found");
+        if (!ROLES.includes(req.role)) throw new ApiError(400, "validation_failed", "invalid role");
+        if (m.role === "admin" && req.role !== "admin" && m.status === "active" && activeAdmins().length <= 1) throw new ApiError(409, "last_admin", "the organisation needs at least one admin");
+        const before = m.role;
+        m.role = req.role;
+        s5.appendAudit({ action: "update_role", entity: "members", entityId: m.id, projectId: null, before: { role: before }, after: { role: req.role } }, orgId);
+        return delay({ ...m });
+      },
+      removeMember: async (orgId, memberId) => {
+        requireAdmin();
+        await requireRecentAuth();
+        const m = members.get(memberId);
+        if (!m) throw new ApiError(404, "not_found", "Member not found");
+        if (m.role === "admin" && m.status === "active" && activeAdmins().length <= 1) throw new ApiError(409, "last_admin", "the organisation needs at least one admin");
+        members.delete(memberId);
+        s5.appendAudit({ action: m.status === "pending" ? "revoke" : "remove", entity: m.status === "pending" ? "invites" : "members", entityId: m.id, projectId: null, before: { email: m.email, role: m.role } }, orgId);
+        return delay(undefined);
+      },
+      acceptInvite: async () => delay({ orgId: orgs[0]?.id ?? DEMO_ORG_ID, role: orgs[0]?.role ?? "viewer", alreadyMember: true }),
     },
 
     publicShare: {

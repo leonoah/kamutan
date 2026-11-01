@@ -33,6 +33,7 @@ import { AccessService } from '../access/access.service';
 import type { AuthContext } from '../auth/auth-context';
 import { BOQ_STORAGE, ImportTooLargeError, type BoqStorage } from '../boq/boq-storage';
 import { ApiException, notFound } from '../common/api-exception';
+import { APP_CONFIG, type AppConfig } from '../config/config';
 import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { REPOSITORY, RepoConflictError, type Repository } from '../db/repository';
 import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
@@ -53,12 +54,19 @@ export class LibraryService {
     @Inject(BOQ_REPOSITORY) private readonly boq: BoqRepository,
     @Inject(BOQ_STORAGE) private readonly storage: BoqStorage,
     @Inject(INGEST_QUEUE) private readonly queue: IngestQueue,
+    @Inject(APP_CONFIG) private readonly cfg: AppConfig,
   ) {}
 
   // ------------------------------------------------------------------ items
   async listItems(user: AuthContext, q: ListLibraryItemsQuery): Promise<LibraryItemPage> {
     await this.access.requireRole(user, q.orgId, 'viewer');
-    let items = await this.boq.listLibraryItems(q.orgId, { ...(q.chapter ? { chapter: q.chapter } : {}), ...(q.active !== undefined ? { active: q.active } : {}) });
+    const opts = { ...(q.chapter ? { chapter: q.chapter } : {}), ...(q.active !== undefined ? { active: q.active } : {}) };
+    let items = await this.boq.listLibraryItems(q.orgId, opts);
+    if (items.length === 0 && !q.chapter && q.active === undefined) {
+      // Stage 10 (A-LIVE-01): orgs created before the default library get it on first use (empty library only).
+      const seeded = await this.boq.seedDefaults(q.orgId);
+      if (seeded.items > 0) items = await this.boq.listLibraryItems(q.orgId, opts);
+    }
     if (q.q) {
       const needle = q.q.toLowerCase();
       items = items.filter((i) => i.code.toLowerCase().includes(needle) || i.description.toLowerCase().includes(needle));
@@ -222,8 +230,9 @@ export class LibraryService {
     return { items };
   }
 
+  /** Admin + MFA + sign-in ≤ 10 min (Stage 10, A-API-02 / SEC-02). */
   async patchTemplate(user: AuthContext, orgId: string, templateId: string, patch: PatchBoqTemplateRequest): Promise<BoqTemplate> {
-    await this.access.requireRole(user, orgId, 'admin');
+    await this.access.requireSensitiveAdmin(user, orgId, this.cfg.OFFBOARDING_REQUIRE_MFA);
     if (!validId(templateId)) throw notFound('template');
     const t = await this.boq.patchTemplate(orgId, templateId, patch, user.uid);
     if (!t) throw notFound('template');
@@ -242,9 +251,9 @@ export class LibraryService {
     return { items };
   }
 
-  /** enabled / priority / itemCode (admin, audited); every project's BOQ becomes stale. */
+  /** enabled / priority / itemCode (admin + MFA + sign-in ≤ 10 min, audited); every project's BOQ becomes stale. */
   async patchRule(user: AuthContext, orgId: string, ruleId: string, patch: PatchBoqRuleRequest): Promise<BoqRule> {
-    await this.access.requireRole(user, orgId, 'admin');
+    await this.access.requireSensitiveAdmin(user, orgId, this.cfg.OFFBOARDING_REQUIRE_MFA);
     if (!validId(ruleId)) throw notFound('rule');
     let rule: BoqRule | null;
     try {

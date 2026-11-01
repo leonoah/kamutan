@@ -1,8 +1,11 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
-import { DocIdSchema, roleSatisfies, type Role } from '@kamutan/contracts';
+import { ADMIN_RECENT_AUTH_SECONDS, DocIdSchema, roleSatisfies, type Role } from '@kamutan/contracts';
 import type { AuthContext, OrgAccess } from '../auth/auth-context';
 import { ApiException, forbidden, notFound } from '../common/api-exception';
 import { REPOSITORY, type Repository } from '../db/repository';
+
+/** Org id that never exists (org ids are 20-char auto ids), for the A-API-10 dummy membership read. */
+const NO_ORG = 'no-org-equalizer-read';
 
 /** Per-principal cache of memberships for the lifetime of one request. */
 const roleCache = new WeakMap<AuthContext, Map<string, Role | null>>();
@@ -85,10 +88,32 @@ export class AccessService {
     if (!ok) throw new ApiException(HttpStatus.FORBIDDEN, 'recent_auth_required', `sign in again (within the last ${Math.round(maxAgeSeconds / 60)} minutes) to do this`);
   }
 
+  /**
+   * Stage 10 (A-API-02, SEC-02): admin settings / templates / rules / member management = admin + MFA + a sign-in
+   * within `ADMIN_RECENT_AUTH_SECONDS` (same gate as offboarding). `requireMfa` = `OFFBOARDING_REQUIRE_MFA` (always true
+   * in production, R-A7).
+   */
+  async requireSensitiveAdmin(user: AuthContext, orgId: string, requireMfa = true): Promise<OrgAccess> {
+    const access = await this.requireRole(user, orgId, 'admin', { requireMfa });
+    this.requireRecentAuth(user, ADMIN_RECENT_AUTH_SECONDS);
+    return access;
+  }
+
+  /**
+   * Stage 10 (A-API-10): the same repository work for a missing id as for another org's real id (that path reads the
+   * caller's membership in the foreign org) — response time does not reveal that a leaked project / job id exists.
+   */
+  async equalizeNotFound(user: AuthContext): Promise<void> {
+    await this.repo.getMember(NO_ORG, user.uid).catch(() => null);
+  }
+
   /** Resolves a bare project id to its org and checks the caller's role there. */
   async requireProjectRole(user: AuthContext, projectId: string, minRole: Role, opts: AccessOpts = {}): Promise<OrgAccess> {
     const orgId = DocIdSchema.safeParse(projectId).success ? await this.repo.findProjectOrgId(projectId) : null;
-    if (!orgId) throw notFound('project');
+    if (!orgId) {
+      if (DocIdSchema.safeParse(projectId).success) await this.equalizeNotFound(user);
+      throw notFound('project');
+    }
     try {
       return await this.requireRole(user, orgId, minRole, opts);
     } catch (err) {

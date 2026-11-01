@@ -335,7 +335,7 @@ def test_raster_fallback_finds_legend_and_symbols_capped_at_yellow(tmp_path):
     classes = {e.suggested_class for e in res.legend.entries}
     assert {"socket_power", "luminaire_ceiling", "switch_single"} <= classes
     assert len(res.detections) >= 8
-    assert all(d.level != "green" and "רסטר" in d.reasons for d in res.detections)
+    assert all(d.level != "green" and "גיליון רסטר" in d.reasons for d in res.detections)
     for kind in ("ceiling", "switch", "power"):
         for pl in [q for q in PLACED if q.kind == kind]:
             assert any(math.hypot(d.center[0] - pl.x, d.center[1] - pl.y) < 2.5 for d in res.detections), pl

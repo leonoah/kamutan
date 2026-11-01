@@ -56,6 +56,12 @@ describe('OpenAPI', () => {
           '/api/v1/me',
           '/api/v1/orgs',
           '/api/v1/orgs/{orgId}',
+          // Stage 10 (A-API-01)
+          '/api/v1/orgs/{orgId}/members',
+          '/api/v1/orgs/{orgId}/members/{uid}',
+          '/api/v1/orgs/{orgId}/invites',
+          '/api/v1/orgs/{orgId}/invites/{inviteId}',
+          '/api/v1/invites/{inviteId}/accept',
           '/api/v1/projects',
           '/api/v1/projects/{projectId}',
           '/api/v1/projects/{projectId}/sheet-sets',

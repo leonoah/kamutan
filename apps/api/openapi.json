@@ -1220,6 +1220,3297 @@
         ]
       }
     },
+    "/api/v1/orgs/{orgId}/members": {
+      "get": {
+        "operationId": "OrgMembersController_list_v1",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "uid": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "admin",
+                              "editor",
+                              "reviewer",
+                              "viewer"
+                            ]
+                          },
+                          "email": {
+                            "type": "string",
+                            "maxLength": 320
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "addedBy": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "isSelf": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "uid",
+                          "role",
+                          "createdAt",
+                          "isSelf"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "members"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/members/{uid}": {
+      "patch": {
+        "operationId": "OrgMembersController_setRole_v1",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "uid",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "editor",
+                      "reviewer",
+                      "viewer"
+                    ]
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "member": {
+                      "type": "object",
+                      "properties": {
+                        "uid": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "admin",
+                            "editor",
+                            "reviewer",
+                            "viewer"
+                          ]
+                        },
+                        "email": {
+                          "type": "string",
+                          "maxLength": 320
+                        },
+                        "displayName": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "addedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "isSelf": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "uid",
+                        "role",
+                        "createdAt",
+                        "isSelf"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "member"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "members"
+        ]
+      },
+      "delete": {
+        "operationId": "OrgMembersController_remove_v1",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "uid",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "uid": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "removed": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "uid",
+                    "removed"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "members"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/invites": {
+      "post": {
+        "operationId": "OrgMembersController_invite_v1",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 320,
+                    "format": "email"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "editor",
+                      "reviewer",
+                      "viewer"
+                    ]
+                  }
+                },
+                "required": [
+                  "email",
+                  "role"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invite": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "orgId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "email": {
+                          "type": "string",
+                          "maxLength": 320
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "admin",
+                            "editor",
+                            "reviewer",
+                            "viewer"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "accepted",
+                            "revoked"
+                          ]
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "accepted",
+                            "revoked",
+                            "expired"
+                          ]
+                        },
+                        "invitedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "acceptedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "acceptedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "revokedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "revokedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "orgId",
+                        "email",
+                        "role",
+                        "status",
+                        "state",
+                        "invitedBy",
+                        "createdAt",
+                        "expiresAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "url": {
+                      "type": "string",
+                      "maxLength": 2048
+                    }
+                  },
+                  "required": [
+                    "invite",
+                    "url"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "members"
+        ]
+      },
+      "get": {
+        "operationId": "OrgMembersController_listInvites_v1",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          },
+                          "orgId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          },
+                          "email": {
+                            "type": "string",
+                            "maxLength": 320
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "admin",
+                              "editor",
+                              "reviewer",
+                              "viewer"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "accepted",
+                              "revoked"
+                            ]
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "accepted",
+                              "revoked",
+                              "expired"
+                            ]
+                          },
+                          "invitedBy": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "acceptedBy": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "nullable": true
+                          },
+                          "acceptedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "revokedBy": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "nullable": true
+                          },
+                          "revokedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "orgId",
+                          "email",
+                          "role",
+                          "status",
+                          "state",
+                          "invitedBy",
+                          "createdAt",
+                          "expiresAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "members"
+        ]
+      }
+    },
+    "/api/v1/orgs/{orgId}/invites/{inviteId}": {
+      "delete": {
+        "operationId": "OrgMembersController_revokeInvite_v1",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inviteId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invite": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "orgId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "email": {
+                          "type": "string",
+                          "maxLength": 320
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "admin",
+                            "editor",
+                            "reviewer",
+                            "viewer"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "accepted",
+                            "revoked"
+                          ]
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "accepted",
+                            "revoked",
+                            "expired"
+                          ]
+                        },
+                        "invitedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "acceptedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "acceptedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "revokedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "revokedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "orgId",
+                        "email",
+                        "role",
+                        "status",
+                        "state",
+                        "invitedBy",
+                        "createdAt",
+                        "expiresAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "invite"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "members"
+        ]
+      }
+    },
+    "/api/v1/invites/{inviteId}/accept": {
+      "post": {
+        "operationId": "InvitesController_accept_v1",
+        "parameters": [
+          {
+            "name": "inviteId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orgId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "editor",
+                        "reviewer",
+                        "viewer"
+                      ]
+                    },
+                    "alreadyMember": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "orgId",
+                    "role",
+                    "alreadyMember"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "members"
+        ]
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "operationId": "ProjectsController_list_v1",
@@ -3817,6 +7108,12 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 255
+                  },
+                  "replacesSheetSetId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
                   }
                 },
                 "required": [
@@ -3918,6 +7215,57 @@
                         "createdAt": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "replacesSheetSetId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "supersededBySetId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "supersededAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "supersede": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "pending",
+                                "matched"
+                              ]
+                            },
+                            "matchedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "nullable": true
+                            },
+                            "sheetMap": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$",
+                                "nullable": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
                         }
                       },
                       "required": [
@@ -4807,6 +8155,25 @@
                 }
               ]
             }
+          },
+          {
+            "name": "includeSuperseded",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              ]
+            }
           }
         ],
         "responses": {
@@ -4951,6 +8318,39 @@
                           "updatedAt": {
                             "type": "string",
                             "format": "date-time",
+                            "nullable": true
+                          },
+                          "superseded": {
+                            "type": "boolean"
+                          },
+                          "supersededBySetId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "nullable": true
+                          },
+                          "supersededBy": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "nullable": true
+                          },
+                          "supersededMatch": {
+                            "type": "string",
+                            "enum": [
+                              "title",
+                              "page_order",
+                              "none"
+                            ],
+                            "nullable": true
+                          },
+                          "supersedes": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$",
                             "nullable": true
                           },
                           "currentVersion": {
@@ -7066,6 +10466,39 @@
                       "type": "string",
                       "format": "date-time",
                       "nullable": true
+                    },
+                    "superseded": {
+                      "type": "boolean"
+                    },
+                    "supersededBySetId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$",
+                      "nullable": true
+                    },
+                    "supersededBy": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$",
+                      "nullable": true
+                    },
+                    "supersededMatch": {
+                      "type": "string",
+                      "enum": [
+                        "title",
+                        "page_order",
+                        "none"
+                      ],
+                      "nullable": true
+                    },
+                    "supersedes": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$",
+                      "nullable": true
                     }
                   },
                   "required": [
@@ -8380,6 +11813,39 @@
                         "updatedAt": {
                           "type": "string",
                           "format": "date-time",
+                          "nullable": true
+                        },
+                        "superseded": {
+                          "type": "boolean"
+                        },
+                        "supersededBySetId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "supersededBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "supersededMatch": {
+                          "type": "string",
+                          "enum": [
+                            "title",
+                            "page_order",
+                            "none"
+                          ],
+                          "nullable": true
+                        },
+                        "supersedes": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
                           "nullable": true
                         }
                       },
@@ -12930,7 +16396,8 @@
                             "type": "string",
                             "enum": [
                               "import",
-                              "manual"
+                              "manual",
+                              "default"
                             ]
                           },
                           "sourceRef": {
@@ -12952,6 +16419,11 @@
                             "maxLength": 128,
                             "pattern": "^[A-Za-z0-9_-]+$",
                             "nullable": true
+                          },
+                          "defaultsVersion": {
+                            "type": "integer",
+                            "exclusiveMinimum": true,
+                            "minimum": 0
                           }
                         },
                         "required": [
@@ -13420,7 +16892,8 @@
                       "type": "string",
                       "enum": [
                         "import",
-                        "manual"
+                        "manual",
+                        "default"
                       ]
                     },
                     "sourceRef": {
@@ -13442,6 +16915,11 @@
                       "maxLength": 128,
                       "pattern": "^[A-Za-z0-9_-]+$",
                       "nullable": true
+                    },
+                    "defaultsVersion": {
+                      "type": "integer",
+                      "exclusiveMinimum": true,
+                      "minimum": 0
                     }
                   },
                   "required": [
@@ -14050,7 +17528,8 @@
                       "type": "string",
                       "enum": [
                         "import",
-                        "manual"
+                        "manual",
+                        "default"
                       ]
                     },
                     "sourceRef": {
@@ -14072,6 +17551,11 @@
                       "maxLength": 128,
                       "pattern": "^[A-Za-z0-9_-]+$",
                       "nullable": true
+                    },
+                    "defaultsVersion": {
+                      "type": "integer",
+                      "exclusiveMinimum": true,
+                      "minimum": 0
                     }
                   },
                   "required": [
@@ -16920,6 +20404,11 @@
                             "maxLength": 128,
                             "pattern": "^[A-Za-z0-9_-]+$",
                             "nullable": true
+                          },
+                          "defaultsVersion": {
+                            "type": "integer",
+                            "exclusiveMinimum": true,
+                            "minimum": 0
                           }
                         },
                         "required": [
@@ -17542,6 +21031,11 @@
                       "maxLength": 128,
                       "pattern": "^[A-Za-z0-9_-]+$",
                       "nullable": true
+                    },
+                    "defaultsVersion": {
+                      "type": "integer",
+                      "exclusiveMinimum": true,
+                      "minimum": 0
                     }
                   },
                   "required": [
@@ -19901,6 +23395,351 @@
                               "match"
                             ],
                             "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$"
+                              },
+                              "itemCode": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32,
+                                "pattern": "^[0-9A-Za-z.\\-/]+$",
+                                "nullable": true
+                              },
+                              "itemDescription": {
+                                "type": "string",
+                                "maxLength": 2000,
+                                "nullable": true
+                              },
+                              "unit": {
+                                "type": "string",
+                                "maxLength": 32,
+                                "nullable": true
+                              },
+                              "priority": {
+                                "type": "integer",
+                                "minimum": -1000,
+                                "maximum": 1000
+                              },
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "reasons": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "maxItems": 8
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "default",
+                                  "user",
+                                  "custom"
+                                ]
+                              },
+                              "defaultsVersion": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "wasteFactor": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 0.5,
+                                "nullable": true
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "nullable": true
+                              },
+                              "updatedBy": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$",
+                                "nullable": true
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "template_chapter"
+                                ]
+                              },
+                              "match": {
+                                "type": "object",
+                                "properties": {
+                                  "chapters": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 32
+                                    },
+                                    "minItems": 1,
+                                    "maxItems": 16
+                                  },
+                                  "disciplines": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                                    },
+                                    "maxItems": 8
+                                  },
+                                  "quantity": {
+                                    "type": "number",
+                                    "exclusiveMinimum": true,
+                                    "minimum": 0,
+                                    "maximum": 1000
+                                  },
+                                  "excludeCodes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 32,
+                                      "pattern": "^[0-9A-Za-z.\\-/]+$"
+                                    },
+                                    "maxItems": 64
+                                  }
+                                },
+                                "required": [
+                                  "chapters",
+                                  "quantity"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "itemCode",
+                              "priority",
+                              "enabled",
+                              "source",
+                              "updatedAt",
+                              "kind",
+                              "match"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$"
+                              },
+                              "itemCode": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32,
+                                "pattern": "^[0-9A-Za-z.\\-/]+$",
+                                "nullable": true
+                              },
+                              "itemDescription": {
+                                "type": "string",
+                                "maxLength": 2000,
+                                "nullable": true
+                              },
+                              "unit": {
+                                "type": "string",
+                                "maxLength": 32,
+                                "nullable": true
+                              },
+                              "priority": {
+                                "type": "integer",
+                                "minimum": -1000,
+                                "maximum": 1000
+                              },
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "reasons": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "maxItems": 8
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "default",
+                                  "user",
+                                  "custom"
+                                ]
+                              },
+                              "defaultsVersion": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "wasteFactor": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 0.5,
+                                "nullable": true
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "nullable": true
+                              },
+                              "updatedBy": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$",
+                                "nullable": true
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "fixture_combination"
+                                ]
+                              },
+                              "match": {
+                                "type": "object",
+                                "properties": {
+                                  "classes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "socket_single",
+                                        "socket_double",
+                                        "socket_triple",
+                                        "socket_power",
+                                        "socket_power_double",
+                                        "socket_3phase",
+                                        "socket_box_6",
+                                        "socket_prep",
+                                        "data_point",
+                                        "tv_point",
+                                        "phone_point",
+                                        "speaker",
+                                        "intercom",
+                                        "doorbell",
+                                        "heater_feed",
+                                        "panel",
+                                        "breaker",
+                                        "switch_single",
+                                        "switch_2way",
+                                        "switch_fan",
+                                        "luminaire_ceiling",
+                                        "luminaire_wall",
+                                        "luminaire_pendant",
+                                        "luminaire_strip",
+                                        "luminaire_outdoor",
+                                        "ceiling_fan",
+                                        "fixture_wc_concealed",
+                                        "fixture_wc_monoblock",
+                                        "fixture_basin",
+                                        "faucet_basin",
+                                        "faucet_wall",
+                                        "fixture_shower",
+                                        "fixture_bath",
+                                        "fixture_kitchen_sink",
+                                        "fixture_washing_machine",
+                                        "garden_tap",
+                                        "ac_unit",
+                                        "room",
+                                        "floor_tiling",
+                                        "wall_cladding",
+                                        "region",
+                                        "note_point",
+                                        "bezek_point",
+                                        "waterproof_marker",
+                                        "switch_cross",
+                                        "switch_shutter",
+                                        "conduit_cobra",
+                                        "water_heater_feed",
+                                        "legend_entry",
+                                        "legend_box"
+                                      ]
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 4
+                                  },
+                                  "sameRoom": {
+                                    "type": "boolean"
+                                  },
+                                  "radiusMm": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 5000
+                                  },
+                                  "floors": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 32
+                                    },
+                                    "maxItems": 16
+                                  },
+                                  "roomTypes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "bathroom",
+                                        "wc",
+                                        "kitchen",
+                                        "bedroom",
+                                        "living",
+                                        "corridor",
+                                        "balcony",
+                                        "courtyard",
+                                        "storage",
+                                        "stairs",
+                                        "other",
+                                        "niche"
+                                      ]
+                                    },
+                                    "maxItems": 16
+                                  },
+                                  "roomNamePatterns": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 40
+                                    },
+                                    "maxItems": 8
+                                  }
+                                },
+                                "required": [
+                                  "classes",
+                                  "sameRoom"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "itemCode",
+                              "priority",
+                              "enabled",
+                              "source",
+                              "updatedAt",
+                              "kind",
+                              "match"
+                            ],
+                            "additionalProperties": false
                           }
                         ]
                       }
@@ -22208,6 +26047,351 @@
                         "match"
                       ],
                       "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "itemCode": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32,
+                          "pattern": "^[0-9A-Za-z.\\-/]+$",
+                          "nullable": true
+                        },
+                        "itemDescription": {
+                          "type": "string",
+                          "maxLength": 2000,
+                          "nullable": true
+                        },
+                        "unit": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "nullable": true
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -1000,
+                          "maximum": 1000
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "maxItems": 8
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "default",
+                            "user",
+                            "custom"
+                          ]
+                        },
+                        "defaultsVersion": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "wasteFactor": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 0.5,
+                          "nullable": true
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "updatedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "template_chapter"
+                          ]
+                        },
+                        "match": {
+                          "type": "object",
+                          "properties": {
+                            "chapters": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32
+                              },
+                              "minItems": 1,
+                              "maxItems": 16
+                            },
+                            "disciplines": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                              },
+                              "maxItems": 8
+                            },
+                            "quantity": {
+                              "type": "number",
+                              "exclusiveMinimum": true,
+                              "minimum": 0,
+                              "maximum": 1000
+                            },
+                            "excludeCodes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32,
+                                "pattern": "^[0-9A-Za-z.\\-/]+$"
+                              },
+                              "maxItems": 64
+                            }
+                          },
+                          "required": [
+                            "chapters",
+                            "quantity"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "itemCode",
+                        "priority",
+                        "enabled",
+                        "source",
+                        "updatedAt",
+                        "kind",
+                        "match"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "itemCode": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32,
+                          "pattern": "^[0-9A-Za-z.\\-/]+$",
+                          "nullable": true
+                        },
+                        "itemDescription": {
+                          "type": "string",
+                          "maxLength": 2000,
+                          "nullable": true
+                        },
+                        "unit": {
+                          "type": "string",
+                          "maxLength": 32,
+                          "nullable": true
+                        },
+                        "priority": {
+                          "type": "integer",
+                          "minimum": -1000,
+                          "maximum": 1000
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "maxItems": 8
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "default",
+                            "user",
+                            "custom"
+                          ]
+                        },
+                        "defaultsVersion": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "wasteFactor": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 0.5,
+                          "nullable": true
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "updatedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "fixture_combination"
+                          ]
+                        },
+                        "match": {
+                          "type": "object",
+                          "properties": {
+                            "classes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "socket_single",
+                                  "socket_double",
+                                  "socket_triple",
+                                  "socket_power",
+                                  "socket_power_double",
+                                  "socket_3phase",
+                                  "socket_box_6",
+                                  "socket_prep",
+                                  "data_point",
+                                  "tv_point",
+                                  "phone_point",
+                                  "speaker",
+                                  "intercom",
+                                  "doorbell",
+                                  "heater_feed",
+                                  "panel",
+                                  "breaker",
+                                  "switch_single",
+                                  "switch_2way",
+                                  "switch_fan",
+                                  "luminaire_ceiling",
+                                  "luminaire_wall",
+                                  "luminaire_pendant",
+                                  "luminaire_strip",
+                                  "luminaire_outdoor",
+                                  "ceiling_fan",
+                                  "fixture_wc_concealed",
+                                  "fixture_wc_monoblock",
+                                  "fixture_basin",
+                                  "faucet_basin",
+                                  "faucet_wall",
+                                  "fixture_shower",
+                                  "fixture_bath",
+                                  "fixture_kitchen_sink",
+                                  "fixture_washing_machine",
+                                  "garden_tap",
+                                  "ac_unit",
+                                  "room",
+                                  "floor_tiling",
+                                  "wall_cladding",
+                                  "region",
+                                  "note_point",
+                                  "bezek_point",
+                                  "waterproof_marker",
+                                  "switch_cross",
+                                  "switch_shutter",
+                                  "conduit_cobra",
+                                  "water_heater_feed",
+                                  "legend_entry",
+                                  "legend_box"
+                                ]
+                              },
+                              "minItems": 2,
+                              "maxItems": 4
+                            },
+                            "sameRoom": {
+                              "type": "boolean"
+                            },
+                            "radiusMm": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 5000
+                            },
+                            "floors": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32
+                              },
+                              "maxItems": 16
+                            },
+                            "roomTypes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "bathroom",
+                                  "wc",
+                                  "kitchen",
+                                  "bedroom",
+                                  "living",
+                                  "corridor",
+                                  "balcony",
+                                  "courtyard",
+                                  "storage",
+                                  "stairs",
+                                  "other",
+                                  "niche"
+                                ]
+                              },
+                              "maxItems": 16
+                            },
+                            "roomNamePatterns": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 40
+                              },
+                              "maxItems": 8
+                            }
+                          },
+                          "required": [
+                            "classes",
+                            "sameRoom"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "itemCode",
+                        "priority",
+                        "enabled",
+                        "source",
+                        "updatedAt",
+                        "kind",
+                        "match"
+                      ],
+                      "additionalProperties": false
                     }
                   ]
                 }
@@ -22794,6 +26978,43 @@
                           "minLength": 1,
                           "maxLength": 128,
                           "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "approvalsInvalidated": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "lineId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$"
+                              },
+                              "code": {
+                                "type": "string",
+                                "maxLength": 32
+                              },
+                              "fromQty": {
+                                "type": "number"
+                              },
+                              "toQty": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "lineId",
+                              "code",
+                              "fromQty",
+                              "toQty"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 500
+                        },
+                        "approvalsAuditedAt": {
+                          "type": "string",
+                          "format": "date-time",
                           "nullable": true
                         }
                       },
@@ -23519,6 +27740,43 @@
                               "maxLength": 128,
                               "pattern": "^[A-Za-z0-9_-]+$",
                               "nullable": true
+                            },
+                            "approvalsInvalidated": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "lineId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128,
+                                    "pattern": "^[A-Za-z0-9_-]+$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "maxLength": 32
+                                  },
+                                  "fromQty": {
+                                    "type": "number"
+                                  },
+                                  "toQty": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "lineId",
+                                  "code",
+                                  "fromQty",
+                                  "toQty"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 500
+                            },
+                            "approvalsAuditedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "nullable": true
                             }
                           },
                           "required": [
@@ -23811,6 +28069,104 @@
                           "manualCount": {
                             "type": "integer",
                             "minimum": 0
+                          },
+                          "approvedQty": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "approvedQtyAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "approvalInvalidated": {
+                            "type": "object",
+                            "properties": {
+                              "fromQty": {
+                                "type": "number"
+                              },
+                              "toQty": {
+                                "type": "number"
+                              },
+                              "approvedBy": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$",
+                                "nullable": true
+                              },
+                              "approvedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "nullable": true
+                              },
+                              "buildId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$",
+                                "nullable": true
+                              },
+                              "at": {
+                                "type": "string",
+                                "format": "date-time",
+                                "nullable": true
+                              }
+                            },
+                            "required": [
+                              "fromQty",
+                              "toQty"
+                            ],
+                            "additionalProperties": false,
+                            "nullable": true
+                          },
+                          "byRoom": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "sheetId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128,
+                                  "pattern": "^[A-Za-z0-9_-]+$",
+                                  "nullable": true
+                                },
+                                "roomId": {
+                                  "type": "string",
+                                  "maxLength": 128,
+                                  "nullable": true
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "maxLength": 100,
+                                  "nullable": true
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "maxLength": 32,
+                                  "nullable": true
+                                },
+                                "floor": {
+                                  "type": "string",
+                                  "maxLength": 32,
+                                  "nullable": true
+                                },
+                                "qty": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "sheetId",
+                                "roomId",
+                                "name",
+                                "type",
+                                "floor",
+                                "qty"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 200
                           }
                         },
                         "required": [
@@ -24434,6 +28790,104 @@
                         "manualCount": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "approvedQty": {
+                          "type": "number",
+                          "nullable": true
+                        },
+                        "approvedQtyAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "approvalInvalidated": {
+                          "type": "object",
+                          "properties": {
+                            "fromQty": {
+                              "type": "number"
+                            },
+                            "toQty": {
+                              "type": "number"
+                            },
+                            "approvedBy": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+$",
+                              "nullable": true
+                            },
+                            "approvedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "nullable": true
+                            },
+                            "buildId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+$",
+                              "nullable": true
+                            },
+                            "at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "nullable": true
+                            }
+                          },
+                          "required": [
+                            "fromQty",
+                            "toQty"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
+                        },
+                        "byRoom": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sheetId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$",
+                                "nullable": true
+                              },
+                              "roomId": {
+                                "type": "string",
+                                "maxLength": 128,
+                                "nullable": true
+                              },
+                              "name": {
+                                "type": "string",
+                                "maxLength": 100,
+                                "nullable": true
+                              },
+                              "type": {
+                                "type": "string",
+                                "maxLength": 32,
+                                "nullable": true
+                              },
+                              "floor": {
+                                "type": "string",
+                                "maxLength": 32,
+                                "nullable": true
+                              },
+                              "qty": {
+                                "type": "number"
+                              }
+                            },
+                            "required": [
+                              "sheetId",
+                              "roomId",
+                              "name",
+                              "type",
+                              "floor",
+                              "qty"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 200
                         }
                       },
                       "required": [
@@ -25039,6 +29493,49 @@
                           },
                           "verified": {
                             "type": "boolean"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "detection",
+                                  "sheet",
+                                  "text",
+                                  "room"
+                                ]
+                              },
+                              "bboxMm": {
+                                "type": "object",
+                                "properties": {
+                                  "x": {
+                                    "type": "number"
+                                  },
+                                  "y": {
+                                    "type": "number"
+                                  },
+                                  "w": {
+                                    "type": "number"
+                                  },
+                                  "h": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "x",
+                                  "y",
+                                  "w",
+                                  "h"
+                                ],
+                                "additionalProperties": false,
+                                "nullable": true
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "additionalProperties": false
                           }
                         },
                         "required": [
@@ -35015,6 +39512,18 @@
                             "type": "string",
                             "maxLength": 200,
                             "nullable": true
+                          },
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "entityLabel": {
+                            "type": "string",
+                            "maxLength": 100
+                          },
+                          "actionLabel": {
+                            "type": "string",
+                            "maxLength": 100
                           }
                         },
                         "required": [
@@ -38031,6 +42540,14 @@
                             "type": "string",
                             "maxLength": 500,
                             "nullable": true
+                          },
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "sourceId": {
+                            "type": "string",
+                            "maxLength": 256
                           }
                         },
                         "required": [
@@ -39676,6 +44193,13 @@
                           "maxLength": 1024,
                           "nullable": true
                         },
+                        "boqBuildId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
                         "projectId": {
                           "type": "string",
                           "minLength": 1,
@@ -40350,6 +44874,13 @@
                             "maxLength": 1024,
                             "nullable": true
                           },
+                          "boqBuildId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "nullable": true
+                          },
                           "projectId": {
                             "type": "string",
                             "minLength": 1,
@@ -40908,6 +45439,13 @@
                         "boqSnapshotPath": {
                           "type": "string",
                           "maxLength": 1024,
+                          "nullable": true
+                        },
+                        "boqBuildId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
                           "nullable": true
                         },
                         "projectId": {

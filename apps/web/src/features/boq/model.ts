@@ -1,3 +1,4 @@
+import { qtyChangedSinceApproval } from "@/api/types";
 import type { OverlayFeature, PathFeature, PolygonFeature, Rgba, Vec2 } from "@kamutan/viewer";
 import {
   BOQ_LINE_TRANSITIONS,
@@ -93,6 +94,19 @@ export function groupByChapter(lines: readonly BoqLine[], chapters: readonly Boq
     });
 }
 
+/**
+ * Display label of a chapter: "פרק 03 – עבודות אינסטלציה". Template titles often already carry the code
+ * ("פרק 03 – …", "03 - …"): then the title is used as is, with the dash normalised to an en dash (A-UI-18).
+ */
+export function chapterLabel(code: string, title: string | null | undefined): string {
+  const t = (title ?? "").trim().replace(/\s+[-‐‑–—]\s+/g, " – ");
+  if (!t) return `פרק ${code}`;
+  const esc = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (new RegExp(`^(פרק\\s*)?${esc}(\\D|$)`).test(t)) return t.startsWith("פרק") ? t : `פרק ${t}`;
+  if (/^פרק\s/.test(t)) return t;
+  return `פרק ${code} – ${t}`;
+}
+
 /* ---------------- receipts ---------------- */
 
 export interface Receipt {
@@ -171,7 +185,8 @@ export function lineDomain(l: Pick<BoqLine, "ruleId" | "chapter" | "code">): str
   return "other";
 }
 
-export type StatusFilter = BoqLineStatus | "all";
+/** `qtyChanged` (Stage 10): approved lines that dropped to "נבדק" because their quantity changed since the approval. */
+export type StatusFilter = BoqLineStatus | "all" | "qtyChanged";
 /** The drawing's filters applied to lines: תחום → line domain, קומה → line has qty on that floor, ביטחון → level. */
 export function filterLines(lines: readonly BoqLine[], f: OverlayFilters, status: StatusFilter = "all"): BoqLine[] {
   const dom = new Set(f.domains);
@@ -181,7 +196,7 @@ export function filterLines(lines: readonly BoqLine[], f: OverlayFilters, status
       lv.has(l.level) &&
       (dom.size === 0 || dom.has(lineDomain(l))) &&
       (f.floor === null || (l.byFloor?.[f.floor] ?? 0) > 0) &&
-      (status === "all" || l.status === status),
+      (status === "all" || (status === "qtyChanged" ? qtyChangedSinceApproval(l) : l.status === status)),
   );
 }
 

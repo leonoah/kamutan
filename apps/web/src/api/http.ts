@@ -2,6 +2,8 @@ import { env } from "@/lib/env";
 import {
   ApiError,
   type ApiClient,
+  type OrgMember,
+  type Role,
   type BoqBuild,
   type BoqLine,
   type BoqRule,
@@ -421,6 +423,53 @@ export type TokenGetter = () => Promise<string | null>;
  * REST adapter for the NestJS API (Cloud Functions `api`), same-origin under /api/v1
  * (Firebase Hosting rewrite in prod, Vite proxy in dev). Auth = Firebase ID token as Bearer.
  */
+/* ---------- Stage 10 members: contracts DTOs (members.ts) → app OrgMember ---------- */
+interface ContractMemberView {
+  uid: string;
+  role: Role;
+  email?: string;
+  displayName?: string;
+  addedBy?: string;
+  createdAt: string;
+  isSelf?: boolean;
+}
+interface ContractInvite {
+  id: string;
+  email: string;
+  role: Role;
+  state: "pending" | "accepted" | "revoked" | "expired";
+  invitedBy: string;
+  createdAt: string;
+  expiresAt: string;
+}
+const INVITE_PREFIX = "inv:";
+export const toOrgMember = (m: ContractMemberView): OrgMember => ({
+  id: m.uid,
+  uid: m.uid,
+  email: m.email ?? null,
+  displayName: m.displayName ?? null,
+  role: m.role,
+  status: "active",
+  addedBy: m.addedBy ?? null,
+  createdAt: m.createdAt,
+});
+export const inviteToMember = (i: ContractInvite): OrgMember => ({
+  id: `${INVITE_PREFIX}${i.id}`,
+  uid: null,
+  email: i.email,
+  displayName: null,
+  role: i.role,
+  status: "pending",
+  addedBy: i.invitedBy,
+  createdAt: i.createdAt,
+  expiresAt: i.expiresAt,
+});
+/** 409 `conflict` "must keep at least one admin" → `last_admin` (the UI's Hebrew message). */
+function mapMemberError(e: unknown): never {
+  if (e instanceof ApiError && e.status === 409 && /admin/i.test(e.message)) throw new ApiError(409, "last_admin", e.message, e.requestId);
+  throw e;
+}
+
 export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetchImpl: typeof fetch = fetch): ApiClient {
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const token = await getToken();
@@ -666,5 +715,28 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
     startOffboardingExport: async (orgId) => toOffboardingExport(await post(`/orgs/${enc(orgId)}/offboarding/export`, { includeSources: true })),
     getOffboardingExport: async (orgId, id) => toOffboardingExport(await request(`/orgs/${enc(orgId)}/offboarding/export/${enc(id)}`)),
     offboardOrg: (orgId, req) => post(`/orgs/${enc(orgId)}/offboarding`, req),
+
+    /* Stage 10 — members (contracts members.ts: members + invites are two collections; the UI shows one list) */
+    listMembers: async (orgId) => {
+      const [m, inv] = await Promise.all([
+        request<{ items: ContractMemberView[] }>(`/orgs/${enc(orgId)}/members`),
+        request<{ items: ContractInvite[] }>(`/orgs/${enc(orgId)}/invites`).catch(() => ({ items: [] as ContractInvite[] })),
+      ]);
+      return { members: [...m.items.map(toOrgMember), ...inv.items.filter((i) => i.state === "pending").map(inviteToMember)] };
+    },
+    inviteMember: async (orgId, req) => {
+      const r = await post<{ invite: ContractInvite; url: string }>(`/orgs/${enc(orgId)}/invites`, req).catch(mapMemberError);
+      return { member: inviteToMember(r.invite), inviteUrl: r.url };
+    },
+    patchMember: async (orgId, memberId, req) => {
+      const r = await request<{ member: ContractMemberView }>(`/orgs/${enc(orgId)}/members/${enc(memberId)}`, { method: "PATCH", body: JSON.stringify(req) }).catch(mapMemberError);
+      return toOrgMember(r.member);
+    },
+    removeMember: async (orgId, memberId) => {
+      // pending invitations have their own collection (the list marks them with an `inv:` id)
+      const path = memberId.startsWith(INVITE_PREFIX) ? `/orgs/${enc(orgId)}/invites/${enc(memberId.slice(INVITE_PREFIX.length))}` : `/orgs/${enc(orgId)}/members/${enc(memberId)}`;
+      await request<unknown>(path, { method: "DELETE" }).catch(mapMemberError);
+    },
+    acceptInvite: (inviteId) => post(`/invites/${enc(inviteId)}/accept`, {}),
   };
 }

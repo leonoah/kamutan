@@ -54,13 +54,13 @@ describe('Stage 10 API/Sec — export gate: unapproved vs approved red lines', (
     expect((await exportXlsx()).status).toBe(409);
   });
 
-  it.fails('A-API-04: the marked-PDF export honours the same policy (unapproved red line → 409 export_blocked)', async () => {
+  it('A-API-04: the marked-PDF export honours the same policy (unapproved red line → 409 export_blocked)', async () => {
     const r = await w.http.post(`${P()}/boq/export/marked-pdf`).set(ed()).send({});
     ev.markedPdfWithOpenRed = { status: r.status, body: r.body };
     expect(r.status).toBe(409);
   });
 
-  it.fails('A-API-04: a share link (frozen BOQ for the contractor) honours the same policy (unapproved red line → 409)', async () => {
+  it('A-API-04: a share link (frozen BOQ for the contractor) honours the same policy (unapproved red line → 409)', async () => {
     const r = await w.http.post(`${P()}/share-links`).set(ed()).send({ label: 'קבלן' });
     ev.shareWithOpenRed = { status: r.status };
     expect(r.status).toBe(409);
@@ -86,7 +86,7 @@ describe('Stage 10 API/Sec — export gate: unapproved vs approved red lines', (
     afterAll(async () => {
       await w2.t.app.close();
     });
-    it.fails('A-API-06: the export is blocked until a human re-approves the changed quantity (it is not "approved" any more)', async () => {
+    it('A-API-06: the export is blocked until a human re-approves the changed quantity (it is not "approved" any more)', async () => {
       const r = await w2.http.post(`/api/v1/projects/${w2.A.projectId}/boq/export`).set(w2.auth(w2.A.uid('editor'))).send({});
       ev.approvedButChanged = { status: r.status, body: r.body };
       expect(r.status).toBe(409);

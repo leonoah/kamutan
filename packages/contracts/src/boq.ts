@@ -81,6 +81,17 @@ export type SourceVersionRef = z.infer<typeof SourceVersionRefSchema>;
 
 const ReasonsSchema = z.array(z.string().min(1).max(200)).max(32);
 
+/** Stage 10: one room of `BoqLine.byRoom`. `type` = a RoomType of understanding.ts (kept open here). */
+export const BoqLineRoomSchema = z.object({
+  sheetId: DocIdSchema.nullable(),
+  roomId: z.string().max(128).nullable(),
+  name: z.string().max(100).nullable(),
+  type: z.string().max(32).nullable(),
+  floor: z.string().max(32).nullable(),
+  qty: z.number().finite(),
+});
+export type BoqLineRoom = z.infer<typeof BoqLineRoomSchema>;
+
 /**
  * orgs/{orgId}/projects/{projectId}/boqLines/{lineId}.
  * Worker-written (boq.build): chapter, code, description, qty, unit, floor, level, reasons, byFloor, evidenceCount,
@@ -133,8 +144,68 @@ export const BoqLineSchema = z.object({
   wasteFactor: z.number().finite().min(0).max(0.5).nullable().optional(),
   /** Manual items (corrections add/count/measure) behind this line. */
   manualCount: z.number().int().nonnegative().optional(),
+  // --- Stage 10 (A-API-06 / A-pipeline-08) ---
+  /**
+   * Computed `qty` at the moment of approval (API stamps it on approve; the worker keeps it while the approval holds).
+   * A rebuild whose qty differs from it invalidates the approval (`needsReapproval`).
+   */
+  approvedQty: z.number().finite().nullable().optional(),
+  /** `approvedAt` the `approvedQty` belongs to (worker bookkeeping: a re-approval starts a new baseline). */
+  approvedQtyAt: TimestampSchema.nullable().optional(),
+  /**
+   * Stage 10 (Worker-BOQ, A-pipeline-08): set by the rebuild that dropped an approved line to `reviewed` because its
+   * computed qty changed; kept while the line stays `reviewed`, removed on re-approval or when it goes back to draft.
+   */
+  approvalInvalidated: z
+    .object({
+      fromQty: z.number().finite(),
+      toQty: z.number().finite(),
+      approvedBy: UidSchema.nullable().optional(),
+      approvedAt: TimestampSchema.nullable().optional(),
+      buildId: DocIdSchema.nullable().optional(),
+      at: TimestampSchema.nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  /**
+   * Stage 10 (Worker-BOQ, A-pipeline-12): quantity per canonical room of the floor (≤ 200), sorted by floor then name;
+   * `roomId: null` = items outside every room. Sums to `qty`. Excel sheet "פירוט לפי חדר".
+   */
+  byRoom: z.array(BoqLineRoomSchema).max(200).optional(),
 });
 export type BoqLine = z.infer<typeof BoqLineSchema>;
+
+/** Stage 10: chip of a line whose computed quantity changed after a human approved it (prefix of the full reason). */
+export const QTY_CHANGED_REASON = 'הכמות השתנתה מאז האישור';
+const fmtQty = (n: number): string => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+/** "הכמות השתנתה מאז האישור (6 → 7)" — the reason the rebuild writes when it drops an approved line to "נבדק". */
+export const qtyChangedReason = (from: number, to: number): string => `${QTY_CHANGED_REASON} (${fmtQty(from)} → ${fmtQty(to)})`;
+/** True for reasons written by `qtyChangedReason` (or the bare Sprint-5 chip). */
+export const isQtyChangedReason = (r: string): boolean => r === QTY_CHANGED_REASON || r.startsWith(`${QTY_CHANGED_REASON} (`);
+
+/**
+ * Stage 10 decision: an approved line whose computed quantity changed since the approval is NOT approved any more
+ * (the export gate, the share snapshot and the Excel status treat it as "נבדק" until a human re-approves it). True when
+ * the line is still `approved` but its `approvedQty` differs from `qty`, or it carries the qty-changed chip (a worker
+ * that keeps the status, Sprint 5 behaviour).
+ */
+export function needsReapproval(l: Pick<BoqLine, 'status' | 'qty'> & { approvedQty?: number | null; qtyOverride?: number | null; reasons?: readonly string[] | undefined }): boolean {
+  if (l.status !== 'approved') return false;
+  const overridden = typeof l.qtyOverride === 'number';
+  if (!overridden && typeof l.approvedQty === 'number' && Number.isFinite(l.approvedQty) && l.approvedQty !== l.qty) return true;
+  return (l.reasons ?? []).some(isQtyChangedReason);
+}
+
+/** Status a line effectively has for exports / gates (`approved` lines that need re-approval count as `reviewed`). */
+export const effectiveStatus = (l: Parameters<typeof needsReapproval>[0]): BoqLineStatus => (needsReapproval(l) ? 'reviewed' : l.status);
+
+/**
+ * FR-31 export gate (Stage 10: every export — xlsx, marked PDF, share link): lines that block while the org's
+ * `blockExportOnRed` is on = red lines not (effectively) approved + approved lines whose qty changed since approval.
+ */
+export function exportBlockingLines<T extends Pick<BoqLine, 'status' | 'qty' | 'level'> & { approvedQty?: number | null; qtyOverride?: number | null; reasons?: readonly string[] | undefined }>(lines: readonly T[]): T[] {
+  return lines.filter((l) => needsReapproval(l) || (l.level === 'red' && l.status !== 'approved'));
+}
 
 /** Effective quantity of a line (override wins). */
 export const effectiveQty = (l: Pick<BoqLine, 'qty' | 'qtyOverride'>): number => l.qtyOverride ?? l.qty;
@@ -178,6 +249,11 @@ export const BOQ_LINE_PRESERVED_FIELDS = [
 /**
  * Reference semantics of a rebuild (the Python worker implements the same): computed fields come from the new build,
  * preserved fields from the existing doc; a new line starts as `draft` without override.
+ * Stage 10 (A-API-06 / A-pipeline-08 decision): an APPROVED line whose computed qty differs from the approved baseline
+ * (`approvedQty`, else the previous `qty`) drops to `reviewed` (approval stamps cleared) with the reason
+ * `qtyChangedReason(X, Y)` — it must be re-approved. Not when the line has a `qtyOverride` (the human quantity was
+ * approved, not the computed one). The worker lists it in the build's `approvalsInvalidated`; the
+ * API appends one audit event `boqLines/approval_invalidated` {projectId, buildId, code, fromQty, toQty} per entry.
  */
 export function applyRebuild<T extends Record<string, unknown>>(existing: Record<string, unknown> | null, computed: T): T & Record<string, unknown> {
   const out: Record<string, unknown> = { ...computed };
@@ -185,8 +261,28 @@ export function applyRebuild<T extends Record<string, unknown>>(existing: Record
     if (existing && f in existing) out[f] = existing[f];
     else if (f === 'status') out[f] = 'draft';
   }
+  const reasons = (Array.isArray(computed.reasons) ? (computed.reasons as unknown[]) : []).filter((r): r is string => typeof r === 'string' && !isQtyChangedReason(r));
+  // A line with a qtyOverride keeps its approval: the human quantity is what was approved (Worker-BOQ, same rule).
+  if (existing && existing.status === 'approved' && typeof computed.qty === 'number' && typeof existing.qtyOverride !== 'number') {
+    const base = typeof existing.approvedQty === 'number' ? existing.approvedQty : typeof existing.qty === 'number' ? existing.qty : null;
+    if (base !== null && base !== computed.qty) {
+      out.status = 'reviewed';
+      out.approvedBy = null;
+      out.approvedAt = null;
+      out.approvedQty = null;
+      out.approvedQtyAt = null;
+      out.reasons = [qtyChangedReason(base, computed.qty), ...reasons].slice(0, 32);
+      return out as T & Record<string, unknown>;
+    }
+    out.approvedQty = base;
+    out.approvedQtyAt = existing.approvedQtyAt ?? existing.approvedAt ?? null;
+  }
+  if (Array.isArray(computed.reasons)) out.reasons = reasons;
   return out as T & Record<string, unknown>;
 }
+
+/** Stage 10: audit action of the rebuild that drops an approved line to "נבדק" (worker-written, see applyRebuild). */
+export const APPROVAL_INVALIDATED_ACTION = 'approval_invalidated';
 
 // ---------------------------------------------------------------------------
 // Builds + project summary
@@ -237,6 +333,14 @@ export const BoqBuildSchema = z.object({
   debounceUntil: TimestampSchema.nullable().optional(),
   /** Follow-up build queued while another build was running: start only once that build is terminal. */
   afterBuildId: DocIdSchema.nullable().optional(),
+  // --- Stage 10 (A-pipeline-08 / A-API-06) ---
+  /** Worker: approved lines this build dropped to `reviewed` (qty changed), ≤ 500. */
+  approvalsInvalidated: z
+    .array(z.object({ lineId: DocIdSchema, code: z.string().max(32), fromQty: z.number().finite(), toQty: z.number().finite() }))
+    .max(500)
+    .optional(),
+  /** API: when it appended the `boqLines/approval_invalidated` audit events of `approvalsInvalidated` (idempotency stamp). */
+  approvalsAuditedAt: TimestampSchema.nullable().optional(),
 });
 export type BoqBuild = z.infer<typeof BoqBuildSchema>;
 
@@ -394,6 +498,14 @@ export const BoqEvidenceItemSchema = z
     roomId: z.string().max(128).nullable().optional(),
     /** Human-verified (accept correction) → the line's level is not lowered by this item. */
     verified: z.boolean().optional(),
+    /**
+     * Stage 10 (API-derived, never stored): what `detectionId` points at — a detection (`d_…`, `m_…`), the whole sheet
+     * (`sheet`), a text line (`text_{n}`, with its `bboxMm` from text.json.gz when readable) or a room id. The web opens
+     * the sheet and centres on `bboxMm` when present.
+     */
+    target: z
+      .object({ kind: z.enum(['detection', 'sheet', 'text', 'room']), bboxMm: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).nullable().optional() })
+      .optional(),
   })
   .strict();
 export type BoqEvidenceItem = z.infer<typeof BoqEvidenceItemSchema>;

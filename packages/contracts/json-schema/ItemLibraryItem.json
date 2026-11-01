@@ -48,7 +48,8 @@
           "type": "string",
           "enum": [
             "import",
-            "manual"
+            "manual",
+            "default"
           ]
         },
         "sourceRef": {
@@ -88,6 +89,10 @@
               "type": "null"
             }
           ]
+        },
+        "defaultsVersion": {
+          "type": "integer",
+          "exclusiveMinimum": 0
         }
       },
       "required": [

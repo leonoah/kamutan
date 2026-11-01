@@ -3,6 +3,13 @@ import {
   BOQ_EVIDENCE_PATH_RE,
   DocIdSchema,
   storagePaths,
+  APPROVAL_INVALIDATED_ACTION,
+  qtyChangedReason,
+  AUDIT_ACTION_HE,
+  AUDIT_ENTITY_HE,
+  auditSummaryHe,
+  BOQ_STATUS_HE,
+  SYMBOL_CLASS_INFO,
   type AuditEvent,
   type AuditPage,
   type AuditQuery,
@@ -100,7 +107,17 @@ export class AuditService {
     await this.access.requireRole(user, orgId, 'admin');
     const page = await this.gov.listAudit(orgId, { limit: q.limit, ...(q.cursor ? { cursor: q.cursor } : {}), ...(q.entity ? { entity: q.entity } : {}), ...(q.action ? { action: q.action } : {}), ...(q.entityId ? { entityId: q.entityId } : {}) });
     const names = await this.names(orgId);
-    return { items: page.items.map((e) => ({ ...e, actorName: e.actorKind === 'user' && e.actorId ? (names.get(e.actorId) ?? null) : null })), nextCursor: page.nextCursor };
+    return {
+      items: page.items.map((e) => ({
+        ...e,
+        actorName: e.actorKind === 'user' && e.actorId ? (names.get(e.actorId) ?? null) : null,
+        // Stage 10 (A-UI-13): readable Hebrew details instead of raw `after`.
+        summary: auditSummaryHe(e),
+        entityLabel: AUDIT_ENTITY_HE[e.entity] ?? e.entity,
+        actionLabel: AUDIT_ACTION_HE[e.action] ?? e.action,
+      })),
+      nextCursor: page.nextCursor,
+    };
   }
 
   async verify(user: AuthContext, orgId: string): Promise<AuditVerifyResponse> {
@@ -117,15 +134,19 @@ export class AuditService {
    * detection that is evidence of the line in the line's build).
    */
   async lineHistory(user: AuthContext, projectId: string, lineId: string): Promise<LineHistoryResponse> {
-    const { orgId } = await this.access.requireProjectRole(user, projectId, 'reviewer');
+    // Stage 10 (A-API-07, SEC-07 "צפייה"): history is a read → every member role.
+    const { orgId } = await this.access.requireProjectRole(user, projectId, 'viewer');
     if (!validId(lineId)) throw notFound('line');
     const [line, project] = await Promise.all([this.boq.getLine(orgId, projectId, lineId), this.repo.getProject(orgId, projectId)]);
     if (!line || !project) throw notFound('line');
-    const [events, names, corrections, evidenceIds] = await Promise.all([
+    // A-API-06: the audit events of the latest build's invalidated approvals exist before the history is read.
+    const latest = project.boq?.latestBuildId;
+    if (latest && validId(latest)) await this.boq.auditApprovalsInvalidated(orgId, projectId, latest).catch((err: unknown) => this.logger.warn({ err: (err as Error).message }, 'approval audit sync failed'));
+    const [events, names, corrections, evidence] = await Promise.all([
       this.gov.auditForEntity(orgId, 'boqLines', lineId),
       this.names(orgId),
       this.review.listCorrections(orgId, projectId, {}),
-      this.evidenceDetectionIds(orgId, projectId, line.evidenceRef ?? null, line.buildId ?? project.boq?.latestBuildId ?? null, lineId),
+      this.evidenceRefs(orgId, projectId, line.evidenceRef ?? null, line.buildId ?? project.boq?.latestBuildId ?? null, lineId),
     ]);
     const by = (uid: string | null) => (uid ? { uid, displayName: names.get(uid) ?? null } : null);
     const items: LineHistoryItem[] = [];
@@ -133,35 +154,86 @@ export class AuditService {
     // events of THIS project count (every boqLines audit payload carries projectId since Sprint 3).
     for (const e of events) if (e.after?.projectId === projectId) items.push(...historyItemsOf(e, by));
     for (const c of corrections) {
-      const affects = (c.itemCode !== null && c.itemCode === line.code) || (c.detectionId !== null && evidenceIds.has(c.detectionId));
+      // A-UI-08: a manual add / count / measure has no detection id of the build; it is evidence of the line through
+      // its correction id (evidence item `correctionId`, or the worker's `m_<correctionId>` detection id).
+      const affects =
+        (c.itemCode !== null && c.itemCode === line.code) ||
+        (c.detectionId !== null && evidence.detectionIds.has(c.detectionId)) ||
+        evidence.correctionIds.has(c.id) ||
+        evidence.detectionIds.has(`m_${c.id}`);
       if (!affects) continue;
+      const after = { correctionId: c.id, kind: c.kind, class: c.class, itemCode: c.itemCode, quantity: c.quantity, reverted: c.revertedAt !== null };
       items.push({
         at: c.at,
         by: by(c.by),
         action: 'correction',
         before: null,
-        after: { correctionId: c.id, kind: c.kind, class: c.class, itemCode: c.itemCode, quantity: c.quantity, reverted: c.revertedAt !== null },
+        after,
         reason: c.reason,
+        summary: correctionSummaryHe(c.kind, c.class, c.itemCode, c.quantity, c.revertedAt !== null),
+        sourceId: c.id,
       });
     }
-    items.sort((a, b) => b.at.localeCompare(a.at));
+    items.sort(compareHistoryItems);
     return { lineId, items };
   }
 
-  private async evidenceDetectionIds(orgId: string, projectId: string, evidenceRef: string | null, buildId: string | null, lineId: string): Promise<Set<string>> {
+  /** Detection ids + correction ids of the line's evidence in its build (lenient: malformed → empty). */
+  private async evidenceRefs(orgId: string, projectId: string, evidenceRef: string | null, buildId: string | null, lineId: string): Promise<{ detectionIds: Set<string>; correctionIds: Set<string> }> {
+    const empty = { detectionIds: new Set<string>(), correctionIds: new Set<string>() };
     const m = evidenceRef ? BOQ_EVIDENCE_PATH_RE.exec(evidenceRef) : null;
     const path = m && m[1] === orgId && m[2] === projectId ? evidenceRef : buildId && validId(buildId) ? storagePaths.boqEvidence(orgId, projectId, buildId) : null;
-    if (!path) return new Set();
+    if (!path) return empty;
     try {
       const raw = (await this.boqStorage.readEvidence(path)) as { lines?: Record<string, unknown> } | null;
       const items = raw?.lines?.[lineId];
-      if (!Array.isArray(items)) return new Set();
-      return new Set(items.map((it) => (it as { detectionId?: unknown })?.detectionId).filter((x): x is string => typeof x === 'string' && x.length <= 128));
+      if (!Array.isArray(items)) return empty;
+      const ids = (k: 'detectionId' | 'correctionId') =>
+        new Set(items.map((it) => (it as Record<string, unknown> | null)?.[k]).filter((x): x is string => typeof x === 'string' && x.length <= 128));
+      return { detectionIds: ids('detectionId'), correctionIds: ids('correctionId') };
     } catch (err) {
-      if (err instanceof ArtifactTooLargeError || err instanceof SyntaxError) return new Set();
+      if (err instanceof ArtifactTooLargeError || err instanceof SyntaxError) return empty;
       throw err;
     }
   }
+}
+
+const CORRECTION_KIND_HE: Readonly<Record<string, string>> = {
+  add: 'הוספת פריט ידני',
+  remove: 'הסרת פריט',
+  reclassify: 'שינוי סוג',
+  move: 'הזזת פריט',
+  link: 'קישור מפסק לגוף תאורה',
+  unlink: 'ביטול קישור',
+  measure: 'מדידה ידנית',
+  count: 'ספירה ידנית',
+  accept: 'אישור פריט',
+  reject: 'דחיית פריט',
+};
+
+/** "תיקון על השרטוט · הוספת פריט ידני · שקע כפול" (A-UI-08 line history entry of a drawing correction). */
+export function correctionSummaryHe(kind: string, cls: string | null, itemCode: string | null, quantity: number | null, reverted: boolean): string {
+  const parts = ['תיקון על השרטוט', CORRECTION_KIND_HE[kind] ?? kind];
+  if (cls) parts.push(cls in SYMBOL_CLASS_INFO ? SYMBOL_CLASS_INFO[cls as keyof typeof SYMBOL_CLASS_INFO].he : cls);
+  if (itemCode) parts.push(`סעיף ${itemCode}`);
+  if (quantity !== null && quantity !== undefined) parts.push(`כמות ${quantity}`);
+  if (reverted) parts.push('בוטל');
+  return parts.join(' · ');
+}
+
+/** Later step of ONE change first (an override that re-opened an approved line is listed above that status change). */
+const ACTION_RANK: Readonly<Record<string, number>> = { qtyOverride: 4, note: 3, status: 2, rebuild: 1, correction: 0 };
+
+/**
+ * Stage 10 (A-UI-06): total, stable order — newest first; equal timestamps: the later step of one change first
+ * (qtyOverride > note > status > rebuild), corrections after audit items, then sourceId desc (deterministic).
+ */
+export function compareHistoryItems(a: LineHistoryItem, b: LineHistoryItem): number {
+  const t = b.at.localeCompare(a.at);
+  if (t !== 0) return t;
+  const r = (ACTION_RANK[b.action] ?? 0) - (ACTION_RANK[a.action] ?? 0);
+  if (r !== 0) return r;
+  return (b.sourceId ?? '').localeCompare(a.sourceId ?? '');
 }
 
 /** One `boqLines` audit event → 0..3 history items. */
@@ -169,15 +241,27 @@ export function historyItemsOf(e: AuditEvent, by: (uid: string | null) => LineHi
   const a = e.after ?? {};
   const out: LineHistoryItem[] = [];
   const who = e.actorKind === 'user' ? by(e.actorId) : null;
+  const he = (v: unknown) => (typeof v === 'string' ? ((BOQ_STATUS_HE as Record<string, string>)[v] ?? v) : String(v ?? '—'));
+  const src = e.id;
   if (e.action === 'update') {
-    if ('to' in a) out.push({ at: e.at, by: who, action: 'status', before: a.from ?? null, after: a.to ?? null, reason: null });
+    if ('to' in a) out.push({ at: e.at, by: who, action: 'status', before: a.from ?? null, after: a.to ?? null, reason: null, summary: `שינוי סטטוס · ${he(a.from)} → ${he(a.to)}`, sourceId: src });
     if ('qtyOverride' in a) {
       const reason = typeof a.reason === 'string' ? a.reason.slice(0, 500) : null;
-      out.push({ at: e.at, by: who, action: 'qtyOverride', before: a.prevQtyOverride ?? null, after: a.qtyOverride ?? null, reason });
+      // A-API-08: "before" = the quantity the user saw before the change (previous override, else the computed qty).
+      const before = a.prevQtyOverride ?? (typeof a.qty === 'number' ? a.qty : null);
+      const summary = a.qtyOverride === null ? `ביטול כמות ידנית · ${he(before)} → ${he(a.qty)}` : `שינוי כמות ידני · ${he(before)} → ${he(a.qtyOverride)}`;
+      out.push({ at: e.at, by: who, action: 'qtyOverride', before, after: a.qtyOverride ?? null, reason, summary, sourceId: src });
     }
-    if (a.noteChanged === true) out.push({ at: e.at, by: who, action: 'note', before: null, after: null, reason: null });
+    if (a.noteChanged === true) out.push({ at: e.at, by: who, action: 'note', before: null, after: null, reason: null, summary: 'הערה עודכנה', sourceId: src });
+  } else if (e.action === APPROVAL_INVALIDATED_ACTION) {
+    // Stage 10 (A-API-06): the rebuild dropped an approved line to "נבדק" because its quantity changed.
+    const from = a.fromQty ?? a.prevQty ?? null;
+    const to = a.toQty ?? a.qty ?? null;
+    const reason = typeof from === 'number' && typeof to === 'number' ? qtyChangedReason(from, to) : null;
+    out.push({ at: e.at, by: who, action: 'rebuild', before: from, after: to, reason, summary: `חישוב מחדש · הכמות השתנתה ${he(from)} → ${he(to)}`, sourceId: src });
+    out.push({ at: e.at, by: who, action: 'status', before: a.from ?? 'approved', after: a.to ?? 'reviewed', reason, summary: `האישור בוטל · ${he(a.from ?? 'approved')} → ${he(a.to ?? 'reviewed')}`, sourceId: src });
   } else if (e.action === 'rebuild') {
-    out.push({ at: e.at, by: who, action: 'rebuild', before: a.from ?? a.prevQty ?? null, after: a.to ?? a.qty ?? null, reason: null });
+    out.push({ at: e.at, by: who, action: 'rebuild', before: a.from ?? a.prevQty ?? null, after: a.to ?? a.qty ?? null, reason: null, summary: `חישוב מחדש · ${he(a.from ?? a.prevQty)} → ${he(a.to ?? a.qty)}`, sourceId: src });
   }
   return out;
 }

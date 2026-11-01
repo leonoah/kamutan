@@ -36,6 +36,8 @@ import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
 import { ARTIFACT_READER, ArtifactTooLargeError, type ArtifactReader } from '../understanding/artifact-reader';
 import { sanitizeFilename } from '../uploads/filename';
 import { BOQ_STORAGE, type BoqStorage } from './boq-storage';
+import { assertExportAllowed } from './export-gate';
+import { ProjectStateService } from '../project-state/project-state.service';
 import { buildBoqWorkbook, floorsOf, type EvidenceGroup } from './excel';
 
 const validId = (s: string) => DocIdSchema.safeParse(s).success;
@@ -64,6 +66,7 @@ export class BoqService {
     @Inject(BOQ_STORAGE) private readonly storage: BoqStorage,
     @Inject(INGEST_QUEUE) private readonly queue: IngestQueue,
     @Optional() @Inject(ARTIFACT_READER) private readonly artifacts?: ArtifactReader,
+    @Optional() private readonly state?: ProjectStateService,
   ) {}
 
   /** Link groups of one sheet version (links.json.gz, immutable → cached per path). Empty map when absent/invalid. */
@@ -103,7 +106,8 @@ export class BoqService {
   // ------------------------------------------------------------------ build
   async requestBuild(user: AuthContext, projectId: string, traceparent: string): Promise<RequestBoqBuildResponse> {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
-    await this.boq.seedDefaults(orgId); // the worker needs the org's rules + template
+    await this.boq.seedDefaults(orgId); // the worker needs the org's rules + template (+ Stage 10: default library when empty)
+    await this.state?.reconcileSupersedes(orgId, projectId); // A-API-05: the build counts only current sheets
     const r = await this.boq.requestBuild(orgId, projectId, user.uid, JOB_TYPES.boqBuild);
     if (!r) throw notFound('project');
     if (!r.deduplicated && r.jobId) {
@@ -118,11 +122,23 @@ export class BoqService {
     return { build: r.build, deduplicated: r.deduplicated, jobId: r.jobId };
   }
 
+  /**
+   * Stage 10 (A-API-06): the worker cannot append to the hash-chained audit log — the first API read after a build
+   * succeeded writes one `boqLines/approval_invalidated` event per entry of the build's `approvalsInvalidated`
+   * (idempotent via `approvalsAuditedAt`). Best effort: never fails the user's request.
+   */
+  async syncApprovalAudits(orgId: string, projectId: string, project: Pick<Project, 'boq'> | null): Promise<void> {
+    const buildId = project?.boq?.latestBuildId;
+    if (!buildId || !validId(buildId)) return;
+    await this.boq.auditApprovalsInvalidated(orgId, projectId, buildId).catch((err: unknown) => this.logger.warn({ err: (err as Error).message, orgId, buildId }, 'approval audit sync failed'));
+  }
+
   // ------------------------------------------------------------------ view
   async view(user: AuthContext, projectId: string, q: GetBoqQuery): Promise<BoqView> {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'viewer');
     const [project, org, all] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
     if (!project) throw notFound('project');
+    await this.syncApprovalAudits(orgId, projectId, project);
     const lines = all.sort(compareLines);
     const filtered = lines.filter(
       (l) => (!q.chapter || chapterKey(l.chapter) === chapterKey(q.chapter)) && (!q.level || l.level === q.level) && (!q.status || l.status === q.status),
@@ -186,7 +202,7 @@ export class BoqService {
     const { path, buildId } = this.evidencePathOf(orgId, projectId, project, line);
     if (!path) return { lineId, buildId: null, items: [], bySheet: [], truncated: false };
     const all = await this.evidenceItems(path, lineId);
-    const items = all.slice(0, EVIDENCE_PAGE_MAX);
+    const items = await this.withTargets(orgId, projectId, all.slice(0, EVIDENCE_PAGE_MAX));
     const groups = groupEvidence(all);
     return {
       lineId,
@@ -196,6 +212,55 @@ export class BoqService {
       linkGroups: await this.linkGroupList(orgId, projectId, groups),
       truncated: all.length > items.length,
     };
+  }
+
+  /**
+   * Stage 10 (A-pipeline-10): evidence ids that are not detections — `sheet` (a whole-sheet item, e.g. chapter 01 lump
+   * sums), `text_{n}` (the n-th line of the version's text.json.gz; its box is resolved here, the text never leaves
+   * the server) and room ids (`r_…`) — get a `target` so the web opens the sheet (and centres on the box).
+   */
+  private async withTargets(orgId: string, projectId: string, items: BoqEvidenceItem[]): Promise<BoqEvidenceItem[]> {
+    const texts = new Map<string, Array<{ x: number; y: number; w: number; h: number } | null> | null>();
+    const out: BoqEvidenceItem[] = [];
+    for (const it of items) {
+      const id = it.detectionId;
+      const tm = /^text_(\d{1,6})$/.exec(id);
+      if (id === 'sheet') out.push({ ...it, target: { kind: 'sheet', bboxMm: null } });
+      else if (tm) {
+        const key = `${it.sheetId}/${it.versionId}`;
+        if (!texts.has(key)) texts.set(key, await this.textBoxes(orgId, projectId, it.sheetId, it.versionId));
+        out.push({ ...it, target: { kind: 'text', bboxMm: texts.get(key)?.[Number(tm[1])] ?? null } });
+      } else if (/^r_[A-Za-z0-9_-]+$/.test(id) && !it.linkGroupId) out.push({ ...it, target: { kind: 'room', bboxMm: null } });
+      else out.push({ ...it, target: { kind: 'detection', bboxMm: null } });
+      if (texts.size > 16) break;
+    }
+    return out.length === items.length ? out : [...out, ...items.slice(out.length)];
+  }
+
+  /** Text-line boxes (paper mm) of one version, by line index; null when unreadable. Cached per path. */
+  private readonly textCache = new Map<string, Array<{ x: number; y: number; w: number; h: number } | null> | null>();
+  private async textBoxes(orgId: string, projectId: string, sheetId: string, versionId: string) {
+    if (!this.artifacts || !validId(sheetId) || !validId(versionId)) return null;
+    const path = storagePaths.text(orgId, projectId, sheetId, versionId);
+    if (this.textCache.has(path)) return this.textCache.get(path) ?? null;
+    let raw: unknown = null;
+    try {
+      raw = await this.artifacts.readJson(path);
+    } catch (err) {
+      if (!(err instanceof ArtifactTooLargeError || err instanceof SyntaxError)) throw err;
+    }
+    const lines = raw && typeof raw === 'object' && Array.isArray((raw as { lines?: unknown }).lines) ? ((raw as { lines: unknown[] }).lines.slice(0, 50_000)) : null;
+    const boxes = lines
+      ? lines.map((l) => {
+          const bb = (l as { bboxMm?: unknown } | null)?.bboxMm;
+          if (!Array.isArray(bb) || bb.length !== 4 || !bb.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+          const [x0, y0, x1, y1] = bb as [number, number, number, number];
+          return { x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
+        })
+      : null;
+    this.textCache.set(path, boxes);
+    while (this.textCache.size > 16) this.textCache.delete(this.textCache.keys().next().value as string);
+    return boxes;
   }
 
   /** Marker → line lookup for one sheet version, from the latest build's evidence (web: click a marker → its line). */
@@ -268,14 +333,13 @@ export class BoqService {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
     const [project, org, all] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
     if (!project) throw notFound('project');
+    await this.syncApprovalAudits(orgId, projectId, project);
     if (all.length === 0) throw new ApiException(HttpStatus.CONFLICT, 'not_ready', 'the project has no BOQ lines yet; build the BOQ first');
     const lines = all.sort(compareLines);
     const counts = countLines(lines);
-    // A red line a human has approved is handled (spec: "לבדיקה" = still needs a person); only unapproved red lines block.
-    const openRed = lines.filter((l) => l.level === 'red' && l.status !== 'approved').length;
-    if ((org?.settings.blockExportOnRed ?? true) && openRed > 0) {
-      throw new ApiException(HttpStatus.CONFLICT, 'export_blocked', `export blocked by org policy: ${openRed} line(s) need review`, [{ path: 'red', message: String(openRed) }]);
-    }
+    // A red line a human has approved is handled (spec: "לבדיקה" = still needs a person); unapproved red lines and
+    // approved lines whose quantity changed since the approval (Stage 10, A-API-06) block.
+    assertExportAllowed(org, lines);
     const template = await this.templateFor(orgId, req.templateId);
 
     const latest = project.boq?.latestBuildId ?? null;

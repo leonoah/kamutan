@@ -180,7 +180,7 @@ describe("Review workspace with the Sprint-2 overlay", { timeout: 30_000 }, () =
     const { api } = await open();
     expect(screen.getByRole("progressbar", { name: /% מאומת$/ })).toBeInTheDocument();
     const queue = screen.getByRole("region", { name: "תור בדיקה" });
-    await waitFor(() => expect(within(queue).getAllByRole("button", { name: /^התמקד ב/ }).length).toBeGreaterThan(10), LAZY);
+    await waitFor(() => expect(within(queue).getAllByRole("button", { name: /^התמקד:/ }).length).toBeGreaterThan(10), LAZY);
     const ranked = (await api.getReviewQueue("p-noah")).items;
     const risks = ranked.map((i) => i.risk);
     expect(risks).toEqual([...risks].sort((a, b) => b - a));

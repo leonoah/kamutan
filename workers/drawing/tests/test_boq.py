@@ -103,7 +103,7 @@ def by_code(res) -> dict[str, Any]:
 # ----------------------------------------------------------------------------- rules / library
 def test_default_rules_and_seeding():
     rules = default_rules()
-    assert {r.kind for r in rules} == set(R.KINDS)
+    assert {r.kind for r in rules} == set(R.KINDS) - {"fixture_combination"}  # no default combination (custom only)
     assert rules == sorted(rules, key=lambda r: (-r.priority, r.id))
     docs = InMemoryDocStore()
     assert seed_rules(docs, "o1") == len(R.DEFAULT_RULES)
@@ -466,20 +466,30 @@ def test_rebuild_preserves_human_fields_and_flags_changed_approvals():
     build(blobs, docs, "b3")
     ls = lines_of(docs)
     s = ls["4.00"]
-    assert s["qty"] == 2 and s["status"] == "approved" and s["approvedBy"] == "u1" and s["level"] == "red"
-    assert s["reasons"][0] == R.R_QTY_CHANGED and s["approvedQty"] == 3
+    # A-pipeline-08 / A-API-06: no longer approved — "נבדק", stamps cleared, red, reason with both quantities
+    assert s["qty"] == 2 and s["status"] == "reviewed" and s["approvedBy"] is None and s["approvedAt"] is None
+    assert s["level"] == "red" and s["reasons"][0] == f"{R.R_QTY_CHANGED} (3 → 2)" and "approvedQty" not in s
+    assert s["approvalInvalidated"]["fromQty"] == 3 and s["approvalInvalidated"]["toQty"] == 2
+    assert s["approvalInvalidated"]["approvedBy"] == "u1" and s["approvalInvalidated"]["buildId"] == "b3"
+    bd = docs.get(f"{P}/boqBuilds/b3")
+    assert bd["approvalsInvalidated"] == [{"lineId": lid_s, "code": "4.00", "fromQty": 3.0, "toQty": 2.0}]
+    assert bd["stats"]["approvalsInvalidated"] == 1
     # the overridden 4.01 is obsolete now (no double sockets) but has an override → kept at qty 0, red
     d = ls["4.01"]
     assert d["qty"] == 0 and d["qtyOverride"] == 4 and d["qtyOverrideReason"] == "ספירה ידנית" and d["status"] == "reviewed"
     assert d["reasons"] == [R.R_OBSOLETE] and d["level"] == "red"
     assert docs.get(f"{P}/boqLines/ln_manual")["qty"] == 2  # manual line untouched
-    # the flag survives further rebuilds until re-approval
+    # the flag survives further rebuilds until re-approval; it is not reported (audited) twice
     build(blobs, docs, "b4")
-    assert lines_of(docs)["4.00"]["reasons"][0] == R.R_QTY_CHANGED
-    docs.set(f"{P}/boqLines/{lid_s}", {"approvedAt": "2026-10-15T09:00:00Z"})  # re-approved at qty 2
+    s = lines_of(docs)["4.00"]
+    assert s["status"] == "reviewed" and s["reasons"][0] == f"{R.R_QTY_CHANGED} (3 → 2)" and s["level"] == "red"
+    assert docs.get(f"{P}/boqBuilds/b4")["approvalsInvalidated"] == []
+    # re-approved at qty 2 (API: reviewed → approved with new stamps)
+    docs.set(f"{P}/boqLines/{lid_s}", {"status": "approved", "approvedBy": "u2", "approvedAt": "2026-10-15T09:00:00Z"})
     build(blobs, docs, "b5")
     s = lines_of(docs)["4.00"]
-    assert R.R_QTY_CHANGED not in s["reasons"] and s["level"] != "red" and s["approvedQty"] == 2
+    assert s["status"] == "approved" and s["approvedQty"] == 2 and "approvalInvalidated" not in s
+    assert not any(r.startswith(R.R_QTY_CHANGED) for r in s["reasons"]) and s["level"] != "red"
     # an obsolete draft line without override is deleted
     docs.set(f"{P}/boqLines/{lid_d}", {"qtyOverride": None, "status": "draft", "note": None})
     build(blobs, docs, "b6")

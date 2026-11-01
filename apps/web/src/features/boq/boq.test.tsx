@@ -114,7 +114,7 @@ describe("BOQ panel (Sprint 3)", { timeout: 40_000 }, () => {
     const rc = (await screen.findAllByText(/^\d+ = \d+ קבוצות מפסק↔גוף/))[0]!.closest("[data-receipt]")!;
     await waitFor(() => expect(rc.querySelector("[data-receipt-groups]")).toHaveTextContent(/ת\. תאורה \/ קומת קרקע: ק-\d+/), LAZY);
     // sheet switcher shows the line's units (groups) per sheet
-    await user.click(screen.getByRole("button", { name: "בחירת גיליון" }));
+    await user.click(screen.getByRole("button", { name: /בחירת גיליון$/ }));
     expect(await screen.findByRole("menuitemradio", { name: /ת\. תאורה \/ קומת קרקע.*(פריטים|קבוצות) של השורה/ })).toBeInTheDocument();
   });
 

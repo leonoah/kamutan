@@ -1,0 +1,64 @@
+{
+  "$ref": "#/definitions/MemberResponse",
+  "definitions": {
+    "MemberResponse": {
+      "type": "object",
+      "properties": {
+        "member": {
+          "type": "object",
+          "properties": {
+            "uid": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "admin",
+                "editor",
+                "reviewer",
+                "viewer"
+              ]
+            },
+            "email": {
+              "type": "string",
+              "maxLength": 320
+            },
+            "displayName": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "addedBy": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "isSelf": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "uid",
+            "role",
+            "createdAt",
+            "isSelf"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "member"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/MemberResponse.json"
+}

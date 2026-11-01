@@ -7,7 +7,7 @@ import { SectionProgress } from "@/components/SectionProgress";
 import { Ltr } from "@/components/Ltr";
 import { cn } from "@/lib/utils";
 import { SheetThumb } from "@/features/sheets/SheetThumb";
-import { sheetName } from "@/features/sheets/model";
+import { sheetName, uncertainFields } from "@/features/sheets/model";
 
 export type SheetState = "processing" | "failed" | "toConfirm" | "ready";
 
@@ -58,6 +58,13 @@ function SheetTile({ projectId, row, selected, onSelect }: { projectId: string; 
   // A sheet can be analysed before it is confirmed; the footer action still nudges to the confirm step first.
   const ctaHref = state === "toConfirm" ? `/projects/${projectId}/sheets` : analyzeHref;
   const openable = state === "ready" || state === "toConfirm";
+  // A-UI-19: floors the system is unsure about (e.g. they contradict the title) are marked until the sheet is confirmed.
+  const floorsUnsure = !row.sheet.confirmed && uncertainFields(row).has("floors") && floors.length > 0;
+  const floorHint = floorsUnsure
+    ? row.sheet.classification?.reasons.includes("FLOOR_TITLE_MISMATCH")
+      ? t("reasons.FLOOR_TITLE_MISMATCH")
+      : t("hub.floorsUnsure")
+    : undefined;
 
   return (
     <article
@@ -74,7 +81,7 @@ function SheetTile({ projectId, row, selected, onSelect }: { projectId: string; 
         type="button"
         onClick={() => onSelect(selected ? null : row.sheet.id)}
         aria-pressed={selected}
-        aria-label={t("hub.filterBySheet", { name })}
+        aria-label={t("hub.filterBySheetState", { state: t(`hub.sheetState.${state}`), name })}
         className="relative block w-full border-b border-border text-start outline-none focus-visible:ring-2 focus-visible:ring-primary"
       >
         {state === "processing" || state === "failed" ? (
@@ -93,7 +100,7 @@ function SheetTile({ projectId, row, selected, onSelect }: { projectId: string; 
           className={cn(
             "absolute top-1.5 start-1.5 rounded-sm px-1.5 py-0.5 text-meta font-medium",
             state === "ready" && "bg-conf-high/15 text-conf-high",
-            state === "toConfirm" && "bg-conf-mid/15 text-conf-mid",
+            state === "toConfirm" && "bg-conf-mid/15 text-foreground",
             state === "processing" && "bg-surface/90 text-muted-foreground",
             state === "failed" && "bg-destructive/10 text-destructive",
           )}
@@ -114,7 +121,18 @@ function SheetTile({ projectId, row, selected, onSelect }: { projectId: string; 
         </h3>
         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-meta text-muted-foreground">
           {discipline ? <span>{discipline}</span> : null}
-          {floors.length ? <span>· {floors.map((f) => t(`floors.${f}`, { defaultValue: f })).join(", ")}</span> : null}
+          {floors.length ? (
+            <span data-floors-unsure={floorsUnsure || undefined} title={floorHint}>
+              · {floors.map((f) => t(`floors.${f}`, { defaultValue: f })).join(", ")}
+              {floorsUnsure ? (
+                <>
+                  {" "}
+                  <span aria-hidden className="text-conf-mid">◆</span>
+                  <span className="sr-only">({floorHint})</span>
+                </>
+              ) : null}
+            </span>
+          ) : null}
           {row.sheet.scaleDenominator ? (
             <span>
               · <Ltr>{`1:${row.sheet.scaleDenominator}`}</Ltr>

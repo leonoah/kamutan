@@ -43,6 +43,9 @@ function phantom(o: OrgWorld): OrgWorld {
     templateId: `tpl_${rid(6)}`,
     ruleId: `r_${rid(6)}`,
     offboardingExportId: rid(),
+    extraMemberUid: `u_${rid(10)}`,
+    invites: { viewer: rid(), reviewer: rid(), editor: rid(), admin: rid() },
+    revokeInviteId: rid(),
   };
 }
 
@@ -210,7 +213,7 @@ describe('Stage 10 API/Sec — E2E-10 org isolation (URL / API)', () => {
     }
   });
 
-  it.fails('A-API-10: no timing oracle — the server does the same repository work for B\'s real project / job id as for a never-existing id', () => {
+  it('A-API-10: no timing oracle — the server does the same repository work for B\'s real project / job id as for a never-existing id', () => {
     const differing = results
       .filter((r) => r.target === 'B ids' && JSON.stringify(r.repoCalls) !== JSON.stringify(r.phantomRepoCalls))
       .map((r) => ({ case: r.case, real: r.repoCalls, phantom: r.phantomRepoCalls }));

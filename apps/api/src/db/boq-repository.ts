@@ -46,8 +46,11 @@ export interface BoqRepository {
   failLibraryImport(orgId: string, importId: string, status: 'rejected' | 'failed', error: ProcessingError): Promise<void>;
 
   // --- templates & rules -------------------------------------------------------
-  /** Create-if-missing: default template (only `default: true` when the org has no default yet) + default rules. */
-  seedDefaults(orgId: string): Promise<{ templates: number; rules: number }>;
+  /**
+   * Create-if-missing: default template (only `default: true` when the org has no default yet) + default rules
+   * (+ reseed of outdated `source: 'default'` rules) + Stage 10: the default item library when the org has NO item.
+   */
+  seedDefaults(orgId: string): Promise<{ templates: number; rules: number; items: number }>;
   listTemplates(orgId: string): Promise<BoqTemplate[]>;
   getTemplate(orgId: string, templateId: string): Promise<BoqTemplate | null>;
   /** Transaction; `default: true` unsets every other template's default; audit `boqTemplates/update`. */
@@ -66,6 +69,12 @@ export interface BoqRepository {
   /** Publish failure: build + job failed, pendingBuildId cleared. */
   failBuild(orgId: string, projectId: string, buildId: string, jobId: string, error: ProcessingError): Promise<void>;
   getBuild(orgId: string, projectId: string, buildId: string): Promise<BoqBuild | null>;
+  /**
+   * Stage 10 (A-API-06): transaction — when the build succeeded, lists `approvalsInvalidated` and has no
+   * `approvalsAuditedAt` yet, appends one `boqLines/approval_invalidated` audit event per entry and stamps
+   * `approvalsAuditedAt` (idempotent). Returns the number of events written.
+   */
+  auditApprovalsInvalidated(orgId: string, projectId: string, buildId: string): Promise<number>;
   /** Merge project.boq.{stale: true, staleReason, staleAt}. No-op when the project does not exist. */
   markStale(orgId: string, projectId: string, reason: StaleReason): Promise<void>;
   /** markStale for every project of the org (rule changes). */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyRebuild, BOQ_LINE_STATUSES, BOQ_LINE_TRANSITIONS, type BoqLine, type BoqLineStatus } from '@kamutan/contracts';
+import { applyRebuild, BOQ_LINE_STATUSES, BOQ_LINE_TRANSITIONS, exportBlockingLines, needsReapproval, type BoqLine, type BoqLineStatus } from '@kamutan/contracts';
 import { countLines, planLinePatch, toBoqLine } from '../../src/db/boq-docs';
 import { RepoConflictError } from '../../src/db/repository';
 import { groupEvidence } from '../../src/boq/boq.service';
@@ -93,8 +93,32 @@ describe('rebuild semantics (API side)', () => {
     const before = { chapter: '04', code: '4.01', description: 'שקע כפול', qty: 15, unit: 'יחידה', level: 'yellow', status: 'approved', approvedBy: 'u', qtyOverride: 14, qtyOverrideReason: 'r', note: 'n' };
     const rebuilt = applyRebuild(before, { chapter: '04', code: '4.01', description: 'שקע כפול', qty: 16, unit: 'יחידה', level: 'green', byFloor: { a: 16 } });
     const l = toBoqLine('l', rebuilt);
+    // Stage 10: an OVERRIDDEN approved line keeps its approval (the human quantity was approved)
     expect(l).toMatchObject({ qty: 16, qtyOverride: 14, status: 'approved', note: 'n', level: 'green' });
     expect(countLines([l])).toMatchObject({ overridden: 1, approved: 1, green: 1 });
+    // without an override the computed 15 → 16 drops it to "reviewed" with the reason (A-API-06 decision)
+    const plain = toBoqLine('l2', applyRebuild({ ...before, qtyOverride: null }, { chapter: '04', code: '4.01', description: 'שקע כפול', qty: 16, unit: 'יחידה', level: 'green' }));
+    expect(plain).toMatchObject({ status: 'reviewed', approvedBy: null });
+    expect(plain.reasons?.[0]).toBe('הכמות השתנתה מאז האישור (15 → 16)');
+  });
+
+  it('Stage 10: an approved line whose qty did NOT change stays approved (baseline kept); needsReapproval / gate helpers', () => {
+    const before = { qty: 6, status: 'approved', approvedBy: 'u', approvedAt: '2026-11-01T00:00:00.000Z', approvedQty: 6, reasons: ['הכמות השתנתה מאז האישור (5 → 6)'] };
+    const same = applyRebuild(before, { qty: 6, level: 'green', reasons: ['x'] });
+    expect(same).toMatchObject({ status: 'approved', approvedBy: 'u', approvedQty: 6, reasons: ['x'] });
+    // legacy worker: approved kept + chip / approvedQty differs → not approved for gates
+    expect(needsReapproval({ status: 'approved', qty: 7, approvedQty: 6 })).toBe(true);
+    expect(needsReapproval({ status: 'approved', qty: 7, reasons: ['הכמות השתנתה מאז האישור'] })).toBe(true);
+    expect(needsReapproval({ status: 'approved', qty: 6, approvedQty: 6 })).toBe(false);
+    expect(exportBlockingLines([{ status: 'approved', qty: 3, level: 'red' }, { status: 'reviewed', qty: 1, level: 'red' }, { status: 'approved', qty: 7, approvedQty: 6, level: 'green' }]).length).toBe(2);
+  });
+
+  it('Stage 10: approving stamps approvedQty (= computed qty) and drops the qty-changed chip; un-approving clears it', () => {
+    const cur = toBoqLine('l', { code: '4.01', qty: 7, level: 'red', status: 'reviewed', reasons: ['הכמות השתנתה מאז האישור (6 → 7)', 'אחר'] });
+    const p = planLinePatch('p', cur, { status: 'approved' }, 'u1', 'NOW');
+    expect(p.patch).toMatchObject({ status: 'approved', approvedBy: 'u1', approvedQty: 7, approvedQtyAt: 'NOW', reasons: ['אחר'] });
+    const back = planLinePatch('p', toBoqLine('l', { code: '4.01', qty: 7, status: 'approved', approvedQty: 7 }), { status: 'reviewed' }, 'u1', 'NOW');
+    expect(back.patch).toMatchObject({ approvedQty: null, approvedQtyAt: null });
   });
 
   it('toBoqLine tolerates worker docs with odd fields', () => {

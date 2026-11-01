@@ -30,6 +30,16 @@ export const useToastStore = create<ToastState>((set) => ({
 /** Imperative helper: toast({ title: "הפרויקט נוצר." }) */
 export const toast = (t: Parameters<ToastState["push"]>[0]) => useToastStore.getState().push(t);
 
+/**
+ * A-UI-23: a Radix toast is a dismissable layer mounted after any open dialog, so it is the "highest layer" and eats
+ * the Escape meant for the dialog. One Escape should close both: the toast closes itself (default) and the Escape is
+ * forwarded to the top-most open dialog through its close button.
+ */
+export function forwardEscapeToDialog(doc: Document = document) {
+  const open = [...doc.querySelectorAll<HTMLElement>('[role="dialog"][data-state="open"]')];
+  open.at(-1)?.querySelector<HTMLButtonElement>("[data-dialog-close]")?.click();
+}
+
 const toneBar: Record<ToastTone, string> = {
   neutral: "bg-primary",
   success: "bg-conf-high",
@@ -48,6 +58,7 @@ export function Toaster() {
           key={item.id}
           type={item.tone === "error" ? "foreground" : "background"}
           onOpenChange={(open) => !open && dismiss(item.id)}
+          onEscapeKeyDown={() => forwardEscapeToDialog()}
           className={cn(
             "group relative flex w-full items-start gap-3 overflow-hidden rounded border border-border bg-surface py-3 pe-10 ps-4 shadow-float",
             "data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",

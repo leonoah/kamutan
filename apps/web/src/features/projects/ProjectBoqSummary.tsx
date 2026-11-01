@@ -9,9 +9,11 @@ import { SectionProgress } from "@/components/SectionProgress";
 import { Ltr } from "@/components/Ltr";
 import { formatQuantity } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { effectiveQty, groupByChapter, statsOf } from "@/features/boq/model";
+import { chapterLabel, effectiveQty, groupByChapter, statsOf } from "@/features/boq/model";
 import { isBuildActive, useBoqBuild, useBoqLines, useBoqState, useBuildBoq } from "@/features/boq/queries";
 import { sheetName } from "@/features/sheets/model";
+import { LibraryNotice } from "@/features/boq/LibraryNotice";
+import { useCurrentOrg } from "@/features/org/useCurrentOrg";
 
 /**
  * Project hub — the BOQ column. One bill of quantities per project (that is how builds work), optionally
@@ -33,6 +35,7 @@ export function ProjectBoqSummary({
   onClearFilter: () => void;
 }) {
   const { t } = useTranslation();
+  const role = useCurrentOrg().org?.role ?? "viewer";
   const state = useBoqState(orgId, projectId);
   const buildId = state.data?.latestBuildId ?? null;
   const build = useBoqBuild(orgId, projectId, buildId);
@@ -73,6 +76,8 @@ export function ProjectBoqSummary({
         ) : null}
       </header>
 
+      <LibraryNotice orgId={orgId} canImport={role === "admin" || role === "editor"} variant="card" />
+
       {filterSheet ? (
         <div className="flex items-center gap-2 border-b border-border bg-primary/[0.06] px-4 py-1.5 text-dense">
           <span className="text-muted-foreground">{t("hub.filteredBy")}</span>
@@ -110,7 +115,7 @@ export function ProjectBoqSummary({
               <details key={c.code} open className="group border-b border-border last:border-0">
                 <summary className="sticky top-0 z-10 flex cursor-pointer list-none items-center gap-2 bg-surface px-4 py-2 text-dense hover:bg-surface-sunken/60">
                   <span className="font-medium text-foreground">
-                    {t("hub.chapter", { code: c.code })} · {c.title}
+                    {chapterLabel(c.code, c.title)}
                   </span>
                   <span className="ms-auto text-meta text-muted-foreground">
                     <Ltr>{`${c.stats.pct}%`}</Ltr> · {t("hub.linesCount", { count: c.lines.length })}
@@ -128,18 +133,19 @@ export function ProjectBoqSummary({
                   </thead>
                   <tbody>
                     {c.lines.map((l) => (
-                      <tr key={l.id} className="h-8 border-t border-border/60 hover:bg-surface-sunken/50">
-                        <td className="w-6 ps-4">
+                      <tr key={l.id} className="h-8 border-t border-border/60 align-top hover:bg-surface-sunken/50">
+                        <td className="w-6 ps-4 pt-2.5">
                           <ConfidenceShape level={levelFromDb(l.level)} className="size-2.5" />
                         </td>
-                        <td className="w-14 text-muted-foreground">
+                        <td className="w-14 py-1.5 text-muted-foreground">
                           <Ltr>{l.code}</Ltr>
                         </td>
-                        <td className="truncate pe-2 text-foreground" title={l.description}>
-                          {l.description}
+                        {/* Two lines, not one: lines like 3.02 / 3.03 / 3.11 differ only after the shared prefix (A-UI-17). */}
+                        <td className="py-1.5 pe-2 text-foreground" title={l.description}>
+                          <span className="line-clamp-2 break-words">{l.description}</span>
                         </td>
-                        <td className="w-12 text-muted-foreground">{l.unit}</td>
-                        <td className={cn("w-16 pe-4 text-end font-medium tabular-nums text-foreground", l.qtyOverride != null && "text-manual")}>
+                        <td className="w-12 py-1.5 text-muted-foreground">{l.unit}</td>
+                        <td className={cn("w-16 py-1.5 pe-4 text-end font-medium tabular-nums text-foreground", l.qtyOverride != null && "text-manual")}>
                           <Ltr>{formatQuantity(effectiveQty(l), l.unit)}</Ltr>
                         </td>
                       </tr>

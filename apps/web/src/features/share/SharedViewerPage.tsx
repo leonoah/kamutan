@@ -1,8 +1,8 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Clock, Download, Eye, Link2Off, SearchX } from "lucide-react";
+import { ArrowUp, Clock, Download, Eye, Link2Off, SearchX } from "lucide-react";
 import { useBackend } from "@/api/client";
 import { shareErrorKind } from "@/api/http";
 import { EXPORT_ERROR_MESSAGES_HE, type PublicBoqLine, type PublicShareMeta, type ShareErrorKind } from "@/api/types";
@@ -12,10 +12,16 @@ import { Logo } from "@/components/Logo";
 import { Ltr } from "@/components/Ltr";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { compareCodes, fmtQty } from "@/features/boq/model";
+import { chapterLabel, compareCodes, fmtQty } from "@/features/boq/model";
 import { useShareBoq, useShareMeta, useShareOverlay } from "./queries";
 
 const SharedDrawing = lazy(() => import("./SharedDrawing"));
+
+/** Below `lg` the BOQ and the drawing are stacked (A-UI-21): a row tap scrolls the drawing into view. */
+const STACKED_QUERY = "(max-width: 1023.98px)";
+const isStacked = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(STACKED_QUERY).matches;
+const scrollBehavior = (): ScrollBehavior =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
 /** `<meta name=…>` for the lifetime of the page (crawlers + referrer; the server sends the same as headers). */
 function useMeta(name: string, content: string) {
@@ -111,6 +117,8 @@ function SharedViewer({
   const [sheetId, setSheetId] = useState<string | null>(meta.sheets[0]?.id ?? null);
   const [jumped, setJumped] = useState<string | null>(null);
   const [lineId, setLineId] = useState<string | null>(null);
+  const drawingRef = useRef<HTMLElement>(null);
+  const boqRef = useRef<HTMLElement>(null);
   const sheet = meta.sheets.find((s) => s.id === sheetId) ?? null;
   const overlay = useShareOverlay(token, sheet?.id ?? null);
   const evidence = overlay.data?.evidence;
@@ -144,7 +152,7 @@ function SharedViewer({
       .sort(([a], [b]) => compareCodes(a, b))
       .map(([code, ls]) => ({
         code,
-        title: chapters.find((c) => c.code === code)?.title ?? ls[0]?.chapterTitle ?? code,
+        title: chapterLabel(code, chapters.find((c) => c.code === code)?.title ?? ls[0]?.chapterTitle ?? null),
         lines: ls.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || compareCodes(a.code, b.code)),
       }));
   }, [lines, chapters]);
@@ -160,6 +168,8 @@ function SharedViewer({
     }
     setLineId(id);
     setJumped(null);
+    // Stacked layout (phone / portrait tablet): the drawing sits below the whole table — bring it into view.
+    if (isStacked()) drawingRef.current?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
     if ((evidence?.[id] ?? []).length > 0) return;
     const order = [...meta.sheets].sort((a, b) => Number(b.id === sheetId) - Number(a.id === sheetId));
     for (const s of order) {
@@ -178,13 +188,18 @@ function SharedViewer({
     }
   };
   const selected = lines?.find((l) => l.id === lineId) ?? null;
+  const backToTable = () => {
+    const row = lineId ? [...(boqRef.current?.querySelectorAll<HTMLElement>("tr[data-line]") ?? [])].find((r) => r.dataset.line === lineId) : null;
+    (row ?? boqRef.current)?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+  };
 
   return (
     <div className="flex min-h-dvh flex-col bg-background lg:h-dvh lg:overflow-hidden" data-share-viewer>
       <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-4 py-2.5">
         <Logo withText={false} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <h1 className="truncate text-panel font-bold text-foreground">
+        {/* Phone: the title block takes the rest of the first line and wraps; the chips go to the next line (A-UI-10). */}
+        <div className="flex min-w-0 flex-1 basis-[calc(100%-4rem)] flex-col sm:basis-0">
+          <h1 className="break-words text-panel font-bold text-foreground sm:truncate">
             {meta.orgName ? `${meta.orgName} · ` : ""}
             {meta.projectName}
           </h1>
@@ -221,8 +236,8 @@ function SharedViewer({
         ) : null}
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(22rem,38%)_1fr]">
-        <section aria-label={t("shareViewer.boq")} className="flex min-h-0 flex-col border-b border-border bg-surface lg:border-b-0 lg:border-e">
+      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(22rem,38%)_1fr]">
+        <section ref={boqRef} aria-label={t("shareViewer.boq")} className="flex min-h-0 flex-col border-b border-border bg-surface lg:border-b-0 lg:border-e">
           <div className="flex shrink-0 items-baseline justify-between gap-3 border-b border-border px-4 py-2">
             <h2 className="text-panel font-bold text-foreground">{t("shareViewer.boq")}</h2>
             {snapshotAt ? (
@@ -284,7 +299,6 @@ function SharedViewer({
                             <button
                               type="button"
                               aria-pressed={on}
-                              aria-label={t("shareViewer.selectLine", { code: l.code })}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 void selectLine(l.id);
@@ -292,6 +306,7 @@ function SharedViewer({
                               className="block w-full rounded-sm text-start text-foreground"
                             >
                               <span className="line-clamp-2">{l.description}</span>
+                              <span className="sr-only"> · {t("shareViewer.showOnDrawing", { code: l.code })}</span>
                             </button>
                             {on && floors.length > 1 ? (
                               <span className="mt-1 block text-meta text-muted-foreground">
@@ -311,7 +326,7 @@ function SharedViewer({
           </div>
         </section>
 
-        <section aria-label={t("shareViewer.drawing")} className="flex min-h-[70vh] flex-col lg:min-h-0">
+        <section ref={drawingRef} aria-label={t("shareViewer.drawing")} className="flex min-h-[70vh] scroll-mt-2 flex-col lg:min-h-0" data-share-drawing>
           <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-surface px-4 py-2 text-dense">
             <label className="inline-flex items-center gap-2 text-muted-foreground">
               {t("shareViewer.sheet")}
@@ -339,6 +354,10 @@ function SharedViewer({
                 </>
               ) : null}
             </span>
+            <Button size="sm" variant="ghost" className="ms-auto lg:hidden" onClick={backToTable} data-back-to-table>
+              <ArrowUp aria-hidden />
+              {t("shareViewer.backToTable")}
+            </Button>
           </div>
           <div className="relative min-h-0 flex-1 bg-canvas">
             {sheet ? (
@@ -359,7 +378,7 @@ function SharedViewer({
             )}
           </div>
         </section>
-      </div>
+      </main>
       <footer className="shrink-0 border-t border-border bg-surface px-4 py-1.5 text-meta text-muted-foreground">{t("shareViewer.footer")}</footer>
     </div>
   );

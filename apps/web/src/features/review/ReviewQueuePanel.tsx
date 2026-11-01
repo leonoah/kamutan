@@ -180,9 +180,9 @@ const QueueCard = memo(function QueueCard(p: CardProps) {
       <button
         type="button"
         onClick={() => h.onActivate(it)}
-        aria-label={t("understanding.focusItem", { name: title })}
         className="flex w-full flex-col gap-1 rounded-sm text-start"
       >
+        <span className="sr-only">{t("understanding.focusPrefix")} </span>
         <span className="flex items-center gap-1.5">
           <ConfidenceBadge level={level} size="sm" />
           <span className="text-meta text-muted-foreground">{t(`queue.kind.${it.kind}`)}</span>

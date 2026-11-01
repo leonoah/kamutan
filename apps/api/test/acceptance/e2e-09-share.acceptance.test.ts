@@ -167,7 +167,7 @@ describe('Stage 10 API/Sec — E2E-09 external share link', () => {
     // the office keeps working after sharing
     const url = `${P()}/boq/lines/${w.A.lines.override}`;
     expect((await w.http.patch(url).set(w.auth(w.A.uid('editor'))).send({ qtyOverride: 40, reason: 'סיבה פנימית' })).status).toBe(200);
-    w.t.boq.seedLine(w.A.orgId, w.A.projectId, { id: 'ln_a_9_99', code: '9.99', description: 'שורה חדשה', qty: 9, level: 'red', status: 'draft' });
+    w.t.boq.seedLine(w.A.orgId, w.A.projectId, { id: 'ln_a_9_99', code: '9.99', description: 'שורה חדשה', qty: 9, level: 'yellow', status: 'draft' }); // yellow: an open red line would block later links (A-API-04)
     w.t.repo.docs.delete(fsPaths.boqLine(w.A.orgId, w.A.projectId, w.A.lines.plain));
     const after = (await w.http.get(S(snap.token) + '/boq').set(ip())).body;
     expect(after).toEqual(before);
@@ -177,7 +177,7 @@ describe('Stage 10 API/Sec — E2E-09 external share link', () => {
     expect(JSON.stringify(after)).not.toMatch(/9\.99|סיבה פנימית/);
   });
 
-  it.fails('A-API-11: SEC-28 — the overview tile (lowest zoom level, the "fit sheet" view) also carries the watermark', async () => {
+  it('A-API-11: SEC-28 — the overview tile (lowest zoom level, the "fit sheet" view) also carries the watermark', async () => {
     const r = await w.http.get(S(link.token) + `/sheets/${w.A.sheet.sheetId}/tiles/0/0/0`).set(ip()).buffer(true).parse((res, cb) => {
       const chunks: Buffer[] = [];
       res.on('data', (c: Buffer) => chunks.push(c));
@@ -190,7 +190,7 @@ describe('Stage 10 API/Sec — E2E-09 external share link', () => {
     expect(n).toBeGreaterThan(0);
   });
 
-  it.fails('A-API-09: the overlay is frozen with the BOQ — every overlay lineId exists in the link\'s BOQ snapshot after a rebuild', async () => {
+  it('A-API-09: the overlay is frozen with the BOQ — every overlay lineId exists in the link\'s BOQ snapshot after a rebuild', async () => {
     const snap = await create({ label: 'overlay-lock' });
     const lines = PublicShareBoqSchema.parse((await w.http.get(S(snap.token) + '/boq').set(ip())).body).lines.map((l) => l.id);
     // a later build maps the same detection to a new line id (e.g. after a rule change)

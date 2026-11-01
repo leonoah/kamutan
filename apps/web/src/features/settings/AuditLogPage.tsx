@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Ltr } from "@/components/Ltr";
 import { useOrgId } from "@/features/org/useCurrentOrg";
 import { formatDateTime } from "@/lib/format";
+import { className } from "@/features/understanding/taxonomy";
 
-const ENTITIES = ["boqLines", "shareLinks", "orgs", "exports", "offboardingExports", "corrections", "projects", "sheetSets", "sheets", "legendEntries", "roomSettings", "itemLibrary", "boqBuilds", "members", "users"] as const;
+const ENTITIES = ["boqLines", "shareLinks", "orgs", "exports", "offboardingExports", "corrections", "projects", "sheetSets", "sheets", "legendEntries", "roomSettings", "itemLibrary", "boqBuilds", "members", "invites", "users"] as const;
 /** contracts audit actions are verbs (entity + action), e.g. shareLinks · view. */
-const ACTIONS = ["create", "update", "update_settings", "status", "qtyOverride", "note", "confirm", "upload", "download", "read", "view", "revoke", "revoke_all", "revoke_sessions", "offboard", "deny", "login"] as const;
+const ACTIONS = ["create", "update", "update_settings", "status", "qtyOverride", "note", "confirm", "upload", "download", "read", "view", "revoke", "revoke_all", "revoke_sessions", "offboard", "deny", "login", "invite", "delete", "replace", "supersede", "update_role", "remove", "accept", "approval_invalidated"] as const;
 export const AUDIT_PAGE = 20;
 
 const short = (v: unknown): string => {
@@ -30,6 +31,37 @@ export function auditDetails(e: AuditEvent): string {
   if (b && a) return `${b} ← ${a}`;
   return a || b || short(e.meta && Object.fromEntries(Object.entries(e.meta).filter(([k]) => k !== "orgId")));
 }
+/**
+ * A-UI-13: the details column in plain Hebrew. The API's `summary` wins; until it ships, known shapes are rendered
+ * here (corrections, statuses, quantities, roles, settings, replaced sets); anything else stays the raw evidence line.
+ */
+export function auditSummary(e: AuditEvent, t: TFunction): string | null {
+  if (e.summary) return e.summary;
+  const a = (e.after ?? {}) as Record<string, unknown>;
+  const b = (e.before ?? {}) as Record<string, unknown>;
+  const reason = typeof e.meta?.reason === "string" && e.meta.reason !== "override_reopened" ? e.meta.reason : null;
+  const parts: string[] = [];
+  if (e.entity === "corrections" && typeof a.kind === "string") {
+    parts.push(t(`history.correctionKind.${a.kind}`, { defaultValue: a.kind }));
+    if (typeof a.class === "string") parts.push(className(a.class));
+  } else if (e.entity === "boqLines" && (typeof a.status === "string" || typeof b.status === "string")) {
+    parts.push(`${t(`boq.status.${String(b.status ?? "draft")}`)} ← ${t(`boq.status.${String(a.status ?? "draft")}`)}`);
+    if (reason) parts.push(reason);
+  } else if (e.entity === "boqLines" && (typeof a.qty === "number" || typeof b.qty === "number")) {
+    parts.push(`${String(b.qty ?? "—")} ← ${String(a.qty ?? "—")}`);
+    if (reason) parts.push(reason);
+  } else if (e.entity === "members" && (typeof a.role === "string" || typeof b.role === "string")) {
+    if (typeof a.email === "string") parts.push(a.email);
+    parts.push(b.role && a.role ? `${t(`members.roles.${String(b.role)}`)} ← ${t(`members.roles.${String(a.role)}`)}` : t(`members.roles.${String(a.role ?? b.role)}`));
+  } else if (e.entity === "orgs" && e.action === "update_settings") {
+    for (const k of Object.keys(a)) parts.push(`${t(`settings.${k}`, { defaultValue: k })}: ${fmtSetting(t, b[k])} ← ${fmtSetting(t, a[k])}`);
+  } else if (e.entity === "sheetSets" && (e.action === "replace" || e.action === "supersede")) {
+    parts.push(t("audit.replacedSet"));
+  } else return null;
+  return parts.filter(Boolean).join(" · ") || null;
+}
+const fmtSetting = (t: TFunction, v: unknown) => (typeof v === "boolean" ? t(v ? "settings.on" : "settings.off") : String(v ?? "—"));
+
 /** Action ids contain dots ("share.view"), so they are looked up in the object, not as i18next key paths. */
 export const actionLabel = (t: TFunction, a: string): string => (t("audit.actions", { returnObjects: true }) as Record<string, string>)[a] ?? a;
 
@@ -138,7 +170,17 @@ export function AuditLogPage() {
                     ) : null}
                   </td>
                   <td className="max-w-xs border-b border-border px-3 py-2 align-top text-meta text-muted-foreground">
-                    <Ltr className="break-words">{auditDetails(e)}</Ltr>
+                    {(() => {
+                      const s = auditSummary(e, t);
+                      // raw before → after stays available as the tooltip (evidence view)
+                      return s ? (
+                        <span className="break-words text-foreground" title={auditDetails(e)} data-audit-summary>
+                          {s}
+                        </span>
+                      ) : (
+                        <Ltr className="break-words">{auditDetails(e)}</Ltr>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}

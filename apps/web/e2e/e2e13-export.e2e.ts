@@ -49,13 +49,20 @@ test.describe("E2E-13 export", () => {
     await dlg.getByText("PDF מסומן", { exact: true }).first().click();
     await expect(dlg.getByText("עמוד נפרד לכל קומה")).toBeVisible();
     await expect(dlg.getByText("הסתר את טבלת הכותרת")).toBeVisible();
+    // A-UI-20 (b): hiding the title block defaults ON, like the share dialog
+    await expect(dlg.getByRole("checkbox", { name: "הסתר את טבלת הכותרת" })).toBeChecked();
     const all = dlg.getByRole("checkbox", { name: /^כל הגיליונות \(\d+\)$/ });
     await expect(all).toBeChecked();
-    // subset: unchecking "all" reveals the per-sheet list (all still ticked); untick one → "14 מתוך 15"
+    // A-UI-20 (a): unchecking "all" reveals the per-sheet list with nothing ticked; tick two → "2 מתוך 15"
     await all.uncheck();
-    const sheetBoxes = dlg.getByRole("group").getByRole("checkbox").filter({ hasNot: page.getByText(/^כל הגיליונות/) });
-    await sheetBoxes.nth(1).uncheck();
-    await expect(dlg.getByText(/14 מתוך 15 גיליונות/).first()).toBeVisible();
+    const sheetBoxes = dlg.locator("[data-marked-pdf] fieldset ul input[type=checkbox]");
+    await expect(sheetBoxes).toHaveCount(15);
+    for (let i = 0; i < 15; i++) await expect(sheetBoxes.nth(i)).not.toBeChecked();
+    await expect(dlg.getByText("בחרו לפחות גיליון אחד.")).toBeVisible();
+    await expect(dlg.getByRole("button", { name: "צור PDF" })).toBeDisabled();
+    await sheetBoxes.nth(0).check();
+    await sheetBoxes.nth(1).check();
+    await expect(dlg.getByText(/2 מתוך 15 גיליונות/).first()).toBeVisible();
     await all.check();
     await shot(page, info, "e2e13-03-pdf-options");
     await axe(page, info, "export-pdf-dialog", '[role="dialog"]');

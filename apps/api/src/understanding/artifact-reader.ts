@@ -1,5 +1,5 @@
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { UNDERSTANDING_ARTIFACT_PATH_RE } from '@kamutan/contracts';
+import { TEXT_ARTIFACT_PATH_RE, UNDERSTANDING_ARTIFACT_PATH_RE } from '@kamutan/contracts';
 import type { App } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 
@@ -21,7 +21,8 @@ export interface ArtifactReader {
 export class ArtifactTooLargeError extends Error {}
 
 export function assertUnderstandingArtifactPath(path: string): void {
-  if (!UNDERSTANDING_ARTIFACT_PATH_RE.test(path)) throw new Error('refusing to read a non-understanding artifact path');
+  // Stage 10: text.json.gz too — only for the boxes of `text_{n}` evidence items (the text itself is never returned).
+  if (!UNDERSTANDING_ARTIFACT_PATH_RE.test(path) && !TEXT_ARTIFACT_PATH_RE.test(path)) throw new Error('refusing to read a non-understanding artifact path');
 }
 
 export function decodeGzipJson(buf: Buffer): unknown {

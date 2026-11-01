@@ -28,9 +28,9 @@ describe('planAutoBuild (debounce decision table)', () => {
     const created = now - BOQ_REBUILD_MAX_WAIT_MS + 1000;
     expect(planAutoBuild(true, [{ id: 'q', status: 'queued', createdAtMs: created }], now, 5000)).toEqual({ kind: 'debounce', buildId: 'q', untilMs: created + BOQ_REBUILD_MAX_WAIT_MS });
   });
-  it('roleForKinds: reviewer only for accept/reject sets', () => {
+  it('roleForKinds: reviewer for every kind (Stage 10, A-API-03)', () => {
     expect(roleForKinds(['accept', 'reject'])).toBe('reviewer');
-    expect(roleForKinds(['accept', 'move'])).toBe('editor');
+    expect(roleForKinds(['accept', 'move', 'add', 'measure'])).toBe('reviewer');
   });
 });
 
@@ -121,7 +121,8 @@ describe('service-level isolation (no guards): org B admin gets 404 on org A; ro
     ];
     for (const [name, fn] of calls) await expect(fn(), name).rejects.toMatchObject({ code: 'not_found' });
     await expect(corr.create(user('viewer'), projectA, req, 'tp')).rejects.toMatchObject({ code: 'forbidden' });
-    await expect(corr.create(user('reviewer'), projectA, { ...req, kind: 'remove' }, 'tp')).rejects.toMatchObject({ code: 'forbidden' });
+    // Stage 10 (A-API-03): a reviewer may remove / add / measure (spec SEC-07); a viewer never
+    await expect(corr.create(user('viewer'), projectA, { ...req, kind: 'remove' }, 'tp')).rejects.toMatchObject({ code: 'forbidden' });
     await expect(rooms.put(user('reviewer'), projectA, s.sheetId, 'r_1', settings, 'tp')).rejects.toMatchObject({ code: 'forbidden' });
   });
 });

@@ -148,7 +148,7 @@ def test_cap_and_reason(allowed_table):
 def test_hard_ceilings_and_human(allowed_table):
     t = allowed_table
     c = t.calibrate("socket_single", 0.99, [], level="green", raster=True)
-    assert c.level == "yellow" and "רסטר" in c.reasons
+    assert c.level == "yellow" and "גיליון רסטר" in c.reasons
     assert t.calibrate("socket_single", 0.99, ["רסטר"], level="green").level == "yellow"
     h = t.calibrate("socket_double", 0.4, ["x"], level="red", human=True)
     assert h.level == "green" and R_HUMAN in h.reasons
@@ -249,7 +249,7 @@ def test_score_detection_keeps_raw_and_caps():
     assert d2.level == "green" and d2.reasons == []
     d3 = Detection(cls="socket_single", center=(10, 10), bbox=(9, 9, 11, 11), quality=0.95, margin=0.5, class_conf=0.9)
     score_detection(d3, raster=True, scale_uncertain=False, confirmed=False, table=allow)
-    assert d3.level == "yellow" and "רסטר" in d3.reasons
+    assert d3.level == "yellow" and "גיליון רסטר" in d3.reasons
 
 
 def test_confirmed_floors_restore_goes_through_the_table():

@@ -28,7 +28,9 @@ only discipline/floors/title/scale/confidence/level/reasons are written.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import json
 import logging
 import math
 import os
@@ -36,6 +38,7 @@ import re
 import shutil
 import tempfile
 import time
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -48,6 +51,8 @@ from ..errors import IngestError
 from ..formats import CONTENT_TYPES, compatible, detect_kind
 from ..ocr.shapes import GlyphStore, StoreDelta
 from ..pipeline.artifacts import glyph_store_path, version_prefix
+from ..pipeline.ceiling import cap_gz_json, detection_counts
+from ..pipeline.floor_check import flag_floor_contradiction
 from ..sandbox.runner import Limits, run_task, safe_output_path
 from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
 from .contracts import IngestSheetVersionJob
@@ -388,6 +393,7 @@ def _run(
 
     ok = [o for o in outcomes if o.status in ("ready", "skipped")]
     failed = [o for o in outcomes if o.status == "failed"]
+    _update_project_sheet_count(job, docs)
     if not job.is_reprocess:
         docs.set(paths.sheet_set, {"status": "ready" if ok else "failed", "pageCount": len(pages), "updatedAt": SERVER_TIMESTAMP})
     if failed:
@@ -426,6 +432,25 @@ def _result(job: IngestSheetVersionJob, outcomes: list[PageOutcome]) -> dict[str
         "failedPages": [o.index for o in outcomes if o.status == "failed"],
         "workerVersion": WORKER_VERSION,
     }
+
+
+def project_sheet_count(docs: DocStore, project_path: str) -> int:
+    """Sheets of the project with a current version (``superseded: true`` sheets of a revised upload excluded) — the project
+    card's "N גיליונות" (A-LIVE-02, contracts ``ProjectStats.sheets``)."""
+    return sum(
+        1
+        for _, s in _list_docs(docs, f"{project_path}/sheets")
+        if isinstance(s, dict) and s.get("currentVersionId") and s.get("superseded") is not True
+    )
+
+
+def _update_project_sheet_count(job: IngestSheetVersionJob, docs: DocStore) -> None:
+    """Best effort: a counter never fails the job."""
+    try:
+        if docs.get(job.project_path) is not None:  # never create a bare project doc
+            docs.set(job.project_path, {"stats": {"sheets": project_sheet_count(docs, job.project_path)}})
+    except Exception:
+        log.warning("job %s: project sheet count not updated", job.jobId, exc_info=True)
 
 
 def _schedule_dependents(job: IngestSheetVersionJob, docs: DocStore, sid: str) -> None:
@@ -575,6 +600,8 @@ def _process_page(
         if region_floors and vfields.get("regions"):
             # Sprint 4: floors inferred from the construction plans' walls (still "קומה לא ודאית" until confirmed)
             floors = list(dict.fromkeys(str(r["floor"]) for r in vfields["regions"] if r.get("floor"))) or floors
+        # Stage 10 (A-UI-19): floors read from the drawing that contradict the title are flagged on the sheet
+        sfields["classification"] = cls = flag_floor_contradiction(cls, floors)
         sfields.update(
             {
                 "title": cls["sheetTitle"],
@@ -707,19 +734,45 @@ def _understand(
     pre = paths.artifacts(sid)
     out_dir = str(res["outDir"])
     t_up = time.monotonic()
+    # Stage 10 (A-LIVE-03): the orchestrator's table is the one named in stats.calibration — enforce it on the
+    # (untrusted) sandbox output so no item is green unless that table allows its class
+    capped: dict[str, int] = {}
+    capped_lists: dict[str, list[Any]] = {}
+
+    def cap(rel: str, data: bytes) -> bytes:
+        kind_ = {
+            "detections.json.gz": "detections",
+            "rooms.json.gz": "rooms",
+            LINKS_FILE: "links",
+            FIXTURES_FILE: "fixtures",
+        }.get(rel)
+        if kind_ is None:
+            return data
+        out, n = cap_gz_json(kind_, data, default_table(), raster=kind in ("png", "jpg"), green_threshold=args["greenThreshold"])
+        if n:
+            capped[kind_] = n
+            if kind_ in ("detections", "links"):
+                key = "detections" if kind_ == "detections" else "groups"
+                capped_lists[kind_] = list(json.loads(gzip.decompress(out)).get(key) or [])
+        return out
+
     for f in res.get("files") or []:
         rel = str(f.get("path", ""))
         if not _UNDERSTAND_FILE.match(rel):
             raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid artifact name")
         ctype = "image/webp" if rel.endswith(".webp") else "application/gzip"
-        blobs.write(pre + rel, Path(safe_output_path(workdir, f"{out_dir}/{rel}")).read_bytes(), ctype, cache_control=IMMUTABLE)
+        blobs.write(
+            pre + rel, cap(rel, Path(safe_output_path(workdir, f"{out_dir}/{rel}")).read_bytes()), ctype, cache_control=IMMUTABLE
+        )
     legend = res.get("legend") or {}
     if _refine_labels(job, blobs, docs, opts, pre, legend):
         blobs.write(pre + "legend.json.gz", _gz_json(legend), "application/gzip", cache_control=IMMUTABLE)
     links: dict[str, str] = {str(k): str(v) for k, v in (res.get("legendLinks") or {}).items()}
     _write_legend_entries(job, docs, sid, pre, legend.get("entries") or [], links, args["mappings"])
     stats: dict[str, Any] = {
-        "detections": _clean_det_stats(res.get("detectionStats") or {}),
+        "detections": _clean_det_stats(
+            detection_counts(capped_lists["detections"]) if "detections" in capped_lists else (res.get("detectionStats") or {})
+        ),
         "rooms": max(0, int(res.get("rooms") or 0)),
         "legendEntries": max(0, int(res.get("legendEntries") or 0)),
         # Sprint 5: the table this worker applied (the orchestrator's own copy — the sandbox result is not trusted)
@@ -731,17 +784,21 @@ def _understand(
     if links_file is not None:
         if links_file != LINKS_FILE:
             raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid links artifact name")
-        data = Path(safe_output_path(workdir, f"{out_dir}/{LINKS_FILE}")).read_bytes()
+        data = cap(LINKS_FILE, Path(safe_output_path(workdir, f"{out_dir}/{LINKS_FILE}")).read_bytes())
         blobs.write(pre + LINKS_FILE, data, "application/gzip", cache_control=IMMUTABLE)
         artifacts["links"] = pre + LINKS_FILE
-        stats["links"] = _clean_link_stats(res.get("linkStats") or {})
+        link_stats = dict(res.get("linkStats") or {})
+        if "links" in capped_lists:  # the ceiling lowered groups: the level counts follow the uploaded artifact
+            lv = Counter(str(g.get("level")) for g in capped_lists["links"] if isinstance(g, dict))
+            link_stats.update({"green": lv.get("green", 0), "yellow": lv.get("yellow", 0), "red": lv.get("red", 0)})
+        stats["links"] = _clean_link_stats(link_stats)
     # Sprint 4 (Worker-A/B): extended fixture records next to detections.json.gz (not in the strict
     # SheetVersion.artifacts yet: readers find it by name under the version prefix)
     fx_file = res.get("fixturesFile")
     if fx_file is not None:
         if fx_file != FIXTURES_FILE:
             raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid fixtures artifact name")
-        data = Path(safe_output_path(workdir, f"{out_dir}/{FIXTURES_FILE}")).read_bytes()
+        data = cap(FIXTURES_FILE, Path(safe_output_path(workdir, f"{out_dir}/{FIXTURES_FILE}")).read_bytes())
         blobs.write(pre + FIXTURES_FILE, data, "application/gzip", cache_control=IMMUTABLE)
         if FIXTURES_IN_ARTIFACTS:
             artifacts["fixtures"] = pre + FIXTURES_FILE
@@ -754,6 +811,9 @@ def _understand(
         blobs.write(pre + WALLS_FILE, data, "application/gzip", cache_control=IMMUTABLE)
         if FIXTURES_IN_ARTIFACTS:
             artifacts["walls"] = pre + WALLS_FILE
+    if capped:
+        log.warning("job %s page %d: calibration ceiling lowered sandbox greens %s (table %s)", job.jobId, index, capped,
+                    stats["calibration"]["version"])  # fmt: skip
     region_floors = _clean_region_floors(res.get("regionFloors"), regions)
     return {
         "referenceSources": ref_sources,

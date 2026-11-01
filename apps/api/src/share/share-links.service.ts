@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DocIdSchema,
   effectiveQty,
+  effectiveStatus,
   JOB_TYPES,
   SHARE_BOQ_SNAPSHOT_SCHEMA,
   SHARE_TOKEN_BYTES,
@@ -28,6 +29,7 @@ import { GOVERNANCE_REPOSITORY, type GovernanceRepository } from '../db/governan
 import { autoId } from '../db/in-memory.repository';
 import { REPOSITORY, type Repository } from '../db/repository';
 import { compareLines } from '../boq/boq.service';
+import { assertExportAllowed } from '../boq/export-gate';
 import { floorsOf } from '../boq/excel';
 import { countLines } from '../db/boq-docs';
 import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
@@ -86,7 +88,7 @@ export function boqSnapshot(linkId: string, buildId: string | null, all: BoqLine
     linkId,
     buildId,
     snapshotAt: at.toISOString(),
-    lines: lines.map((l) => ({ id: l.id, chapter: l.chapter, code: l.code, description: l.description, unit: l.unit, qty: effectiveQty(l), level: l.level, status: l.status, floor: l.floor ?? null, byFloor: l.byFloor ?? {} })),
+    lines: lines.map((l) => ({ id: l.id, chapter: l.chapter, code: l.code, description: l.description, unit: l.unit, qty: effectiveQty(l), level: l.level, status: effectiveStatus(l), floor: l.floor ?? null, byFloor: l.byFloor ?? {} })),
     floors: floorsOf(lines),
     counts: { lines: c.lines, green: c.green, yellow: c.yellow, red: c.red, approved: c.approved },
   };
@@ -136,6 +138,9 @@ export class ShareLinksService {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
     const project = await this.repo.getProject(orgId, projectId);
     if (!project) throw notFound('project');
+    // Stage 10 (A-API-04): a share link hands the contractor a frozen BOQ → same blockExportOnRed gate as the export.
+    const [org, allLines] = await Promise.all([this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
+    assertExportAllowed(org, allLines, 'share link');
     // F-3: with hideTitleBlock, a sheet whose title block was not detected cannot be masked → excluded (fail closed)
     // unless the editor explicitly opts in. No guessed fallback strip anywhere.
     const ready = await this.currentReadyVersions(orgId, projectId);
@@ -161,7 +166,8 @@ export class ShareLinksService {
     const now = new Date();
     // F-4: freeze the BOQ now; the public API serves only this snapshot.
     const snapshotPath = storagePaths.shareBoqSnapshot(orgId, projectId, id);
-    await this.storage.writeShareSnapshot(snapshotPath, boqSnapshot(id, project.boq?.latestBuildId ?? null, await this.boq.listLines(orgId, projectId), now));
+    const snapshotBuildId = project.boq?.latestBuildId ?? null;
+    await this.storage.writeShareSnapshot(snapshotPath, boqSnapshot(id, snapshotBuildId, allLines, now));
     const base: Omit<ShareLink, 'pdfExportId'> = {
       id,
       tokenHash: sha256Hex(token),
@@ -179,6 +185,8 @@ export class ShareLinksService {
       includeUnmaskedSheets: req.includeUnmaskedSheets,
       excludedSheets: excluded,
       boqSnapshotPath: snapshotPath,
+      // A-API-09: the overlay maps detections → lines with THIS build's evidence (the snapshot's), never a later one.
+      boqBuildId: snapshotBuildId,
     };
     const wantPdf = req.allowPdfDownload && Object.keys(lock).length > 0 && !!project.boq?.latestBuildId;
     const options = { legend: true as const, floorSplit: false, watermark: linkWatermark(base), hideTitleBlock: req.hideTitleBlock };

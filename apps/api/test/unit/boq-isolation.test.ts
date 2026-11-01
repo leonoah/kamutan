@@ -8,6 +8,7 @@ import { InMemoryRepository } from '../../src/db/in-memory.repository';
 import { LibraryService } from '../../src/library/library.service';
 import { InMemoryIngestQueue } from '../../src/queue/ingest-queue';
 import { user } from '../support/fake-verifier';
+import { testConfig } from '../support/helpers';
 import { xlsxBytes } from '../support/spreadsheets';
 import { noahLines } from '../fixtures/noah-boq';
 
@@ -19,7 +20,7 @@ describe('BOQ + library service-level tenant isolation (no guards)', () => {
   const storage = new InMemoryBoqStorage();
   const queue = new InMemoryIngestQueue();
   const boq = new BoqService(access, repo, boqRepo, storage, queue);
-  const lib = new LibraryService(access, repo, boqRepo, storage, queue);
+  const lib = new LibraryService(access, repo, boqRepo, storage, queue, testConfig());
   const TRACE = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
   const A = repo.seedOrg('A', { aAdmin: 'admin', aEditor: 'editor', aReviewer: 'reviewer', aViewer: 'viewer' });
@@ -64,7 +65,9 @@ describe('BOQ + library service-level tenant isolation (no guards)', () => {
     await expect(lib.finalizeImport(b, B.id, imp.import.id, TRACE)).rejects.toMatchObject({ status: 404 });
     await expect(lib.getImport(b, B.id, imp.import.id)).rejects.toMatchObject({ status: 404 });
     // B's own library lists nothing of A
-    expect((await lib.listItems(b, { orgId: B.id, limit: 10 })).items).toEqual([]);
+    // (Stage 10: B's empty library gets the shipped defaults — never one of A's items)
+    const bItems = (await lib.listItems(b, { orgId: B.id, limit: 500 })).items;
+    expect(bItems.every((i) => i.source === 'default')).toBe(true);
     // A's object untouched
     expect(storage.objects.has(storagePaths.libraryImport(A.id, imp.import.id, 'xlsx'))).toBe(true);
   });

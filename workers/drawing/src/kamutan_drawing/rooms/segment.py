@@ -81,6 +81,32 @@ def _fill_holes(g: BaseGeometry) -> BaseGeometry:
     return shapely.union_all([Polygon(p.exterior) for p in _polys(g)]) if not g.is_empty else g
 
 
+FACE_INSET_MAX_MM = 0.5  # never grow a room by more than this (paper mm)
+
+
+def _to_wall_faces(faces: list[_Face], ws: WallSet, walls: BaseGeometry) -> list[_Face]:
+    """Stage 10 (A-pipeline-03/04, geometry only): free space ends at the *edge* of the wall outline's pen, but the
+    drawn wall face is the stroke's centre line — rooms came out a few cm small on every side (guest WC 2.21 vs
+    2.34 m², master bath 4.76 vs 5.25). Grow each face back by the half pen width (``faceInsetMm``), never past the
+    middle of the wall it touches (the wall eroded by the same amount stays out)."""
+    d = min(float(ws.stats.get("faceInsetMm", 0.0) or 0.0), FACE_INSET_MAX_MM)
+    if d <= 0.0 or walls.is_empty:
+        return faces
+    core = walls.buffer(-d, join_style="mitre")
+    out: list[_Face] = []
+    for f in faces:
+        g: BaseGeometry = f.poly.buffer(d, join_style="mitre", mitre_limit=2.0)
+        if not core.is_empty:
+            g = g.difference(core)
+        polys = [p for p in _polys(g) if p.area > 0]
+        if not polys:
+            out.append(f)
+            continue
+        best = max(polys, key=lambda p: p.intersection(f.poly).area)
+        out.append(_Face(Polygon(best.exterior), f.closed, f.open_share))
+    return out
+
+
 def _faces(ws: WallSet, bx: Polygon, mm_per_m: float) -> tuple[list[_Face], BaseGeometry]:
     r = CLOSE_GAP_M * mm_per_m
     w1 = shapely.union_all([ws.walls, *ws.bridges]) if ws.bridges else ws.walls
@@ -200,6 +226,7 @@ def segment(
         if ws.walls.is_empty:
             continue
         faces, closed_walls = _faces(ws, bx, mm_per_m)
+        faces = _to_wall_faces(faces, ws, closed_walls)
         reg_area = bx.area
         env = envelope_of(shapely.union_all([ws.walls, *ws.bridges]) if ws.bridges else ws.walls, mm_per_m)
         borrowed_zone = ws.borrowed.buffer(0.5) if ws.borrowed is not None else None

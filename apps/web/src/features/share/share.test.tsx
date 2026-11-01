@@ -93,7 +93,7 @@ describe("Share dialog (S12, FR-30)", { timeout: 30_000 }, () => {
 
     // revoke → confirm dialog (spec copy) → immediate
     const newest = dlg.querySelector<HTMLElement>("[data-share-list] [data-link]")!;
-    await user.click(within(newest).getByRole("button", { name: "בטל את הקישור קבלן חשמל" }));
+    await user.click(within(newest).getByRole("button", { name: "בטל קישור קבלן חשמל" }));
     const confirm = await screen.findByRole("alertdialog", { name: "לבטל את הקישור?" });
     expect(confirm).toHaveTextContent("מי שיפתח אותו יראה הודעה שהוא לא פעיל. אי אפשר להחזיר אותו, אבל אפשר ליצור קישור חדש.");
     await user.click(within(confirm).getByRole("button", { name: "בטל קישור" }));
@@ -185,9 +185,9 @@ describe("External viewer /s/:token (S15, E2E-09)", { timeout: 40_000 }, () => {
     expect(p.tool).toBe("select");
     for (const k of ["onToolChange", "onPointTool", "onMove", "onLink", "onCount", "onArea", "onLength", "onLasso", "onMeasure", "onCalibrate", "onBackgroundClick"] as const) expect(p[k]).toBeUndefined();
 
-    // no edit affordances anywhere: the only buttons select lines
-    const buttons = screen.getAllByRole("button");
-    for (const b of buttons) expect(b).toHaveAccessibleName(/^הצג את /);
+    // no edit affordances anywhere: the only buttons select lines (+ the phone-only "חזרה לטבלה" scroll button)
+    const buttons = screen.getAllByRole("button").filter((b) => !b.hasAttribute("data-back-to-table"));
+    for (const b of buttons) expect(b).toHaveAccessibleName(/·\s?הצג את \S+ על השרטוט$/);
     expect(screen.queryByRole("textbox")).toBeNull();
     void viewer;
     expect(screen.queryByRole("checkbox")).toBeNull();

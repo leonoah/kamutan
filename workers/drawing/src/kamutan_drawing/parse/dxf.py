@@ -290,6 +290,29 @@ def _choose_scale(w_mm: float, h_mm: float, declared: list[int]) -> int:
     return COMMON_SCALES[-1]
 
 
+def _insert_bbox_mm(doc: Any, e: Any, cache: dict[str, Any], to_mm: Any) -> list[float] | None:
+    """Paper-mm bbox ``[x0, y0, x1, y1]`` of one INSERT: the block definition's extents (cached per block, nested
+    blocks included) through the INSERT's own transform (base point, scale, rotation). None when the block is empty."""
+    from ezdxf import bbox as ezbbox
+
+    name = str(e.dxf.name)
+    if name not in cache:
+        blk = doc.blocks.get(name)
+        ext = ezbbox.extents(blk, fast=True) if blk is not None else None
+        cache[name] = ext if ext is not None and ext.has_data else None
+    ext = cache[name]
+    if ext is None:
+        return None
+    (ax, ay, _), (bx, by, _) = ext.extmin, ext.extmax
+    m = e.matrix44()
+    corners = [m.transform((x, y, 0.0)) for x, y in ((ax, ay), (bx, ay), (bx, by), (ax, by))]
+    pts = to_mm(np.array([[c.x, c.y] for c in corners], dtype=np.float64))
+    if not np.isfinite(pts).all():
+        return None
+    return [round(float(pts[:, 0].min()), 3), round(float(pts[:, 1].min()), 3),
+            round(float(pts[:, 0].max()), 3), round(float(pts[:, 1].max()), 3)]  # fmt: skip
+
+
 def extract_page(doc: Any, index: int) -> DxfPage:
     layouts = page_layouts(doc)
     if not 0 <= index < len(layouts):
@@ -350,22 +373,25 @@ def extract_page(doc: Any, index: int) -> DxfPage:
             }
         )
     inserts = []
+    block_ext: dict[str, Any] = {}
     for e in layout.query("INSERT"):
         try:
             ins = e.dxf.insert
             pos = to_mm(np.array([[ins.x, ins.y]]))[0]
             attribs = {a.dxf.tag: a.dxf.text for a in e.attribs}
-            inserts.append(
-                {
-                    "name": str(e.dxf.name),
-                    "layer": str(e.dxf.layer),
-                    "xMm": round(float(pos[0]), 3),
-                    "yMm": round(float(pos[1]), 3),
-                    "rotation": round(float(e.dxf.rotation or 0.0), 3),
-                    "scale": [float(e.dxf.xscale or 1.0), float(e.dxf.yscale or 1.0)],
-                    "attribs": attribs,
-                }
-            )
+            rec: dict[str, Any] = {
+                "name": str(e.dxf.name),
+                "layer": str(e.dxf.layer),
+                "xMm": round(float(pos[0]), 3),
+                "yMm": round(float(pos[1]), 3),
+                "rotation": round(float(e.dxf.rotation or 0.0), 3),
+                "scale": [float(e.dxf.xscale or 1.0), float(e.dxf.yscale or 1.0)],
+                "attribs": attribs,
+            }
+            bb = _insert_bbox_mm(doc, e, block_ext, to_mm)
+            if bb is not None:
+                rec["bboxMm"] = bb  # Stage 10 (A-pipeline-05): the drawn extent of this block reference on paper
+            inserts.append(rec)
         except Exception:  # noqa: BLE001, S112 - a malformed INSERT must not fail the sheet
             continue
     return DxfPage(

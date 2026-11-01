@@ -94,8 +94,8 @@ describe('CreateCorrectionRequest (per-kind rules)', () => {
     expect(ok({ kind: 'accept', detectionId: 'd_1', radiusMm: 51 })).toBe(false);
     expect(ok({ kind: 'accept', detectionId: 'd_1', by: 'x' })).toBe(false);
   });
-  it('role per kind: accept/reject reviewer, everything else editor', () => {
-    for (const k of CORRECTION_KINDS) expect(CORRECTION_KIND_MIN_ROLE[k]).toBe(k === 'accept' || k === 'reject' ? 'reviewer' : 'editor');
+  it('role per kind: reviewer for every kind (Stage 10, A-API-03 / SEC-07)', () => {
+    for (const k of CORRECTION_KINDS) expect(CORRECTION_KIND_MIN_ROLE[k]).toBe('reviewer');
   });
   it('stored doc carries by/at/batchId/revertedAt', () => {
     const doc = { id: 'c1', ...CreateCorrectionRequestSchema.parse({ ...base, kind: 'accept', detectionId: 'd_1' }), batchId: null, by: 'u1', at: '2026-10-14T10:00:00.000Z', revertedAt: null };

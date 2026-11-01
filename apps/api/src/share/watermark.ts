@@ -14,6 +14,19 @@ type OverlayOptions = Parameters<ReturnType<typeof sharp>['composite']>[0][numbe
 
 /** Spacing of the repeated watermark (level pixels). */
 export const WATERMARK_PERIOD_PX = 384;
+/** Smallest pattern period (overview levels). */
+export const WATERMARK_MIN_PERIOD_PX = 96;
+
+/**
+ * Stage 10 (A-API-11): the pattern period of a level. Large levels use the fixed 384 px period; a level smaller than
+ * two periods (the "fit sheet" overview, e.g. 155×110 px) gets a period of half its short side (≥ 96 px), so the text
+ * and the hatch always fall inside it. Constant per level → still seamless across that level's tiles.
+ */
+export function watermarkPeriodFor(levelWidthPx: number, levelHeightPx: number): number {
+  const short = Math.max(1, Math.min(levelWidthPx, levelHeightPx));
+  if (short >= 2 * WATERMARK_PERIOD_PX) return WATERMARK_PERIOD_PX;
+  return Math.min(WATERMARK_PERIOD_PX, Math.max(WATERMARK_MIN_PERIOD_PX, Math.floor(short / 2)));
+}
 
 export interface TileRect {
   x: number;
@@ -52,24 +65,25 @@ export function watermarkText(who: string, createdAt: Date, shortId: string): st
 }
 
 export class TileWatermarker {
-  /** text → 2×2 repeated pattern (raw RGBA, 2·PERIOD square). */
+  /** (period, text) → n×n repeated pattern (raw RGBA, n·period square, covers a 512 px tile at any phase). */
   private readonly patterns = new Map<string, Promise<{ data: Buffer; size: number }>>();
   private static readonly MAX_PATTERNS = 64;
 
   constructor(private readonly fontFile: string | null) {}
 
-  private pattern(text: string): Promise<{ data: Buffer; size: number }> {
-    const hit = this.patterns.get(text);
+  private pattern(text: string, period: number): Promise<{ data: Buffer; size: number }> {
+    const key = `${period}\n${text}`;
+    const hit = this.patterns.get(key);
     if (hit) return hit;
-    const p = this.buildPattern(text);
-    this.patterns.set(text, p);
-    p.catch(() => this.patterns.delete(text));
+    const p = this.buildPattern(text, period);
+    this.patterns.set(key, p);
+    p.catch(() => this.patterns.delete(key));
     while (this.patterns.size > TileWatermarker.MAX_PATTERNS) this.patterns.delete(this.patterns.keys().next().value as string);
     return p;
   }
 
-  private async buildPattern(text: string): Promise<{ data: Buffer; size: number }> {
-    const P = WATERMARK_PERIOD_PX;
+  private async buildPattern(text: string, period: number): Promise<{ data: Buffer; size: number }> {
+    const P = period;
     const layers: OverlayOptions[] = [];
     // Faint diagonal hatch: a mark even if text rendering were unavailable.
     const hatch = Buffer.from(
@@ -80,7 +94,7 @@ export class TileWatermarker {
       const txt = await sharp({
         text: {
           text: `<span foreground="#7a0019">${escapeMarkup(text)}</span>`,
-          font: 'DejaVu Sans 13',
+          font: `DejaVu Sans ${P >= 256 ? 13 : 9}`,
           ...(this.fontFile ? { fontfile: this.fontFile } : {}),
           rgba: true,
           dpi: 96,
@@ -106,14 +120,13 @@ export class TileWatermarker {
       .composite(layers)
       .png()
       .toBuffer();
-    const size = 2 * P;
+    // Repeat the cell so any tile (≤ 512 px) at any phase (< P) is fully covered.
+    const n = Math.max(2, Math.ceil((512 + P) / P));
+    const size = n * P;
+    const cells: OverlayOptions[] = [];
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) cells.push({ input: cell, left: i * P, top: j * P });
     const data = await sharp({ create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-      .composite([
-        { input: cell, left: 0, top: 0 },
-        { input: cell, left: P, top: 0 },
-        { input: cell, left: 0, top: P },
-        { input: cell, left: P, top: P },
-      ])
+      .composite(cells)
       .raw()
       .toBuffer();
     return { data, size };
@@ -121,15 +134,15 @@ export class TileWatermarker {
 
   /**
    * Returns a WebP tile with the watermark burned in and `masks` (tile-local px rects) filled opaque.
-   * `origin` = the tile's top-left in level pixels (pattern phase).
+   * `origin` = the tile's top-left in level pixels (pattern phase); `level` = the level size (pattern period, A-API-11).
    */
-  async apply(tile: Buffer, opts: { text: string; origin: { x: number; y: number }; masks: TileRect[] }): Promise<Buffer> {
+  async apply(tile: Buffer, opts: { text: string; origin: { x: number; y: number }; masks: TileRect[]; level?: { widthPx: number; heightPx: number } }): Promise<Buffer> {
     const base = sharp(tile, { limitInputPixels: 4096 * 4096 });
     const meta = await base.metadata();
     const w = meta.width ?? 256;
     const h = meta.height ?? 256;
-    const P = WATERMARK_PERIOD_PX;
-    const pat = await this.pattern(opts.text);
+    const P = opts.level ? watermarkPeriodFor(opts.level.widthPx, opts.level.heightPx) : WATERMARK_PERIOD_PX;
+    const pat = await this.pattern(opts.text, P);
     const left = ((opts.origin.x % P) + P) % P;
     const top = ((opts.origin.y % P) + P) % P;
     const overlay = await sharp(pat.data, { raw: { width: pat.size, height: pat.size, channels: 4 } })

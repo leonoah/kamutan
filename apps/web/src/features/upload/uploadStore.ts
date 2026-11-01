@@ -25,13 +25,15 @@ export interface UploadEntry {
   loaded: number;
   errorCode: UploadErrorCode | null;
   file: File;
+  /** Stage 10: this file is a new revision of that set ("מחליף את סט X", or "העלה מחדש" of a failed set). */
+  replacesSheetSetId?: string;
   /** Set after finalize: ingest job to follow live, and whether the bytes were already in the project. */
   result?: { jobId: string; sheetSetId: string; deduplicated: boolean };
 }
 
 interface UploadState {
   entries: UploadEntry[];
-  addFiles: (backend: Backend, projectId: string, files: File[]) => Promise<void>;
+  addFiles: (backend: Backend, projectId: string, files: File[], opts?: { replacesSheetSetId?: string }) => Promise<void>;
   pause: (id: string) => void;
   resume: (id: string) => void;
   cancel: (id: string) => void;
@@ -74,7 +76,11 @@ export const useUploadStore = create<UploadState>((set, get) => {
       await handle.done;
       handles.delete(entry.id);
       patch(entry.id, { status: "finalizing", loaded: entry.size });
-      const res = await backend.api.finalizeUpload(entry.projectId, { uploadToken: target.uploadToken, name: entry.name });
+      const res = await backend.api.finalizeUpload(entry.projectId, {
+        uploadToken: target.uploadToken,
+        name: entry.name,
+        ...(entry.replacesSheetSetId ? { replacesSheetSetId: entry.replacesSheetSetId } : {}),
+      });
       patch(entry.id, {
         status: "done",
         result: { jobId: res.jobId, sheetSetId: res.sheetSet.id, deduplicated: res.deduplicated },
@@ -100,7 +106,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
 
   return {
     entries: [],
-    async addFiles(backend, projectId, files) {
+    async addFiles(backend, projectId, files, opts = {}) {
       const existing = get().entries.filter(
         (e) => e.projectId === projectId && !["rejected", "canceled", "error"].includes(e.status),
       );
@@ -108,7 +114,16 @@ export const useUploadStore = create<UploadState>((set, get) => {
       const fresh: UploadEntry[] = [];
       for (const file of files) {
         const key = `${file.name}:${file.size}`;
-        const base = { id: `f${++entrySeq}`, projectId, name: file.name, size: file.size, loaded: 0, file };
+        const base = {
+          id: `f${++entrySeq}`,
+          projectId,
+          name: file.name,
+          size: file.size,
+          loaded: 0,
+          file,
+          // one file replaces one set
+          ...(opts.replacesSheetSetId && files.length === 1 ? { replacesSheetSetId: opts.replacesSheetSetId } : {}),
+        };
         if (seen.has(key)) {
           fresh.push({ ...base, kind: null, status: "rejected", errorCode: "duplicate" });
           continue;

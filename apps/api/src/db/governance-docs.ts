@@ -99,6 +99,8 @@ export function toShareLink(id: string, d: Doc): ShareLink {
     ...(typeof d.includeUnmaskedSheets === 'boolean' ? { includeUnmaskedSheets: d.includeUnmaskedSheets } : {}),
     ...(idRecord(d.excludedSheets) ? { excludedSheets: idRecord(d.excludedSheets) as Record<string, string> } : {}),
     boqSnapshotPath: str(d.boqSnapshotPath),
+    // Stage 10 (A-API-09): absent on older links (key omitted → the overlay falls back to the snapshot's buildId).
+    ...('boqBuildId' in d ? { boqBuildId: typeof d.boqBuildId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(d.boqBuildId) ? d.boqBuildId : null } : {}),
   };
 }
 

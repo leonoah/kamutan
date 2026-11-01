@@ -70,10 +70,9 @@ export async function shot(page: Page, info: TestInfo, name: string, opts: { ful
  * Known accessibility defects (defects.md). They are reported as test annotations instead of failing every flow; the
  * strict versions live in a11y.e2e.ts as test.fixme with the defect id. A NEW serious/critical violation still fails.
  */
-export const KNOWN_A11Y: { rule: string; defect: string }[] = [
-  { rule: "label-content-name-mismatch", defect: "A-UI-03" },
-  { rule: "color-contrast", defect: "A-UI-04" },
-];
+// A-UI-03 (label-content-name-mismatch) and A-UI-04 (color-contrast) were fixed in the Stage 10 fix round: every
+// serious/critical finding fails again.
+export const KNOWN_A11Y: { rule: string; defect: string }[] = [];
 
 type AxeViolation = { id: string; impact: string | null; help: string; nodes: { target: string[]; failureSummary?: string }[] };
 

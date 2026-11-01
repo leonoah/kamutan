@@ -44,7 +44,7 @@ describe('Sprint 5 e2e — line history, audit log + verify, marked PDF, org set
   beforeAll(async () => {
     t = await createTestApp(testConfig({ THROTTLE_LIMIT: '1000', UPLOAD_THROTTLE_LIMIT: '200', EXPORT_THROTTLE_LIMIT: '100' }));
     http = request(t.app.getHttpServer());
-    for (const who of ['admin', 'editor', 'reviewer', 'viewer', 'outsider']) tok[who] = t.auth.issue(who);
+    for (const who of ['admin', 'editor', 'reviewer', 'viewer', 'outsider']) tok[who] = t.auth.issue(who, { mfa: who === 'admin' }); // Stage 10 (A-API-02): admin settings need MFA
     orgId = t.repo.seedOrg('Org', { admin: 'admin', editor: 'editor', reviewer: 'reviewer', viewer: 'viewer' }).id;
     t.repo.docs.set(fsPaths.member(orgId, 'editor'), { uid: 'editor', role: 'editor', displayName: 'עורכת ראשית', createdAt: new Date() });
     otherOrg = t.repo.seedOrg('Other', { outsider: 'admin' }).id;
@@ -83,11 +83,14 @@ describe('Sprint 5 e2e — line history, audit log + verify, marked PDF, org set
       const r = await http.get(`${url}/history`).set(auth('reviewer'));
       expect(r.status).toBe(200);
       const h = LineHistoryResponseSchema.parse(r.body);
-      expect(h.items.map((i) => i.action)).toEqual(['correction', 'correction', 'note', 'status', 'qtyOverride', 'status', 'status']);
+      // Stage 10 (A-UI-06): one PATCH = one timestamp → the override is listed above the status reopen it caused
+      expect(h.items.map((i) => i.action)).toEqual(['correction', 'correction', 'note', 'qtyOverride', 'status', 'status', 'status']);
       const ats = h.items.map((i) => i.at);
       expect([...ats].sort().reverse()).toEqual(ats);
       const override = h.items.find((i) => i.action === 'qtyOverride');
-      expect(override).toMatchObject({ before: null, after: 3, reason: 'שקע נוסף במחסן', by: { uid: 'editor', displayName: 'עורכת ראשית' } });
+      // Stage 10 (A-API-08): before = the computed qty 2 (no earlier override)
+      expect(override).toMatchObject({ before: 2, after: 3, reason: 'שקע נוסף במחסן', by: { uid: 'editor', displayName: 'עורכת ראשית' }, summary: 'שינוי כמות ידני · 2 → 3' });
+      expect(h.items.every((i) => typeof i.summary === 'string' && i.summary.length > 0)).toBe(true);
       expect(h.items.filter((i) => i.action === 'status').map((i) => [i.before, i.after])).toEqual([
         ['approved', 'reviewed'],
         ['reviewed', 'approved'],
@@ -100,8 +103,8 @@ describe('Sprint 5 e2e — line history, audit log + verify, marked PDF, org set
       expect(corrections.find((c) => (c.after as Doc).kind === 'reject')).toMatchObject({ reason: 'כפול', by: { uid: 'reviewer' } });
     });
 
-    it('roles + isolation: viewer 403, outsider / other org / unknown line 404, other line has its own history', async () => {
-      expect((await http.get(`${P()}/boq/lines/bl_4_01/history`).set(auth('viewer'))).status).toBe(403);
+    it('roles + isolation: viewer 200 (Stage 10, A-API-07), outsider / other org / unknown line 404, other line has its own history', async () => {
+      expect((await http.get(`${P()}/boq/lines/bl_4_01/history`).set(auth('viewer'))).status).toBe(200);
       expect((await http.get(`${P()}/boq/lines/bl_4_01/history`).set(auth('outsider'))).status).toBe(404);
       expect((await http.get(`${P(otherProject)}/boq/lines/bl_4_01/history`).set(auth('admin'))).status).toBe(404);
       expect((await http.get(`${P()}/boq/lines/nope/history`).set(auth('admin'))).status).toBe(404);

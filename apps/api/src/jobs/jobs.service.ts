@@ -16,7 +16,10 @@ export class JobsService {
   async get(user: AuthContext, jobId: string): Promise<Job> {
     if (!DocIdSchema.safeParse(jobId).success) throw notFound('job');
     const job = await this.repo.getJob(jobId);
-    if (!job) throw notFound('job');
+    if (!job) {
+      await this.access.equalizeNotFound(user); // A-API-10: same reads as a foreign job (membership check)
+      throw notFound('job');
+    }
     try {
       await this.access.requireRole(user, job.orgId, 'viewer');
     } catch (err) {

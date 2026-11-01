@@ -191,6 +191,10 @@ def extract_walls(
                 lines.append(ls.buffer(w, cap_style="flat", join_style="mitre"))
     parts.extend(lines)
     stats["heavyStrokes"] = float(len(lines))
+    # Stage 10 (A-pipeline-03/04): the wall *face* is the centre line of the outline stroke; the wall polygons above
+    # reach half the pen width (+ the 0.05 mm union pad) into the room — rooms grow back by this much
+    hw = [max(float(vs.path_width_mm[i]) / 2.0, 0.15) for i in np.where(heavy)[0]]
+    stats["faceInsetMm"] = (float(np.median(hw)) if hw else 0.0) + 0.05
 
     src = "fills" if stats.get("fillPaths", 0) >= 5 else ("strokes" if lines else "none")
     walls: BaseGeometry = shapely.union_all([p.buffer(0.05, join_style="mitre") for p in parts]) if parts else Polygon()

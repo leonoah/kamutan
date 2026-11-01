@@ -29,6 +29,9 @@ import {
   type RoomSettings,
   type RoomsArtifact,
   type SheetRow,
+  isQtyChangedReason,
+  needsReapproval,
+  qtyChangedReason,
 } from "./types";
 import { computeBoq, synthesizeLinks, type EngineSheet } from "./mockBoqEngine";
 import { applyCorrectionDeltas, applyRoomSettingsDeltas, computePlumbing, computeTiling, type S4Sheet } from "./mockSprint4Engine";
@@ -72,6 +75,13 @@ export interface BoqMockDeps {
   rooms?(row: SheetRow): Promise<RoomsArtifact | null>;
   corrections?(projectId: string): readonly Correction[];
   roomSettings?(projectId: string): ReadonlyMap<string, RoomSettings>;
+  /**
+   * Stage 10 (A-LIVE-01): which library the org has — `imported` (the fixture, default), `default` (the shipped
+   * default library, items `source: "default"`) or `none` (empty library). Dev: `?mockLibrary=default|none`.
+   */
+  libraryMode?: "imported" | "default" | "none";
+  /** Stage 10: a rebuild dropped an approved line to "נבדק" (the API/worker audit `boqLines/approval_invalidated`). */
+  onApprovalInvalidated?(projectId: string, line: BoqLine, from: number, to: number): void;
 }
 
 const COMPOSITE = new Set(["4.09", "4.10", "4.11", "4.12", "4.14", "4.15", "4.16"]);
@@ -131,7 +141,12 @@ export function normalizeLine(raw: Record<string, unknown>, i: number): BoqLine 
 export function createBoqMock(deps: BoqMockDeps) {
   const blockOnRed = () => (typeof deps.blockExportOnRed === "function" ? deps.blockExportOnRed() : deps.blockExportOnRed);
   const projects = new Map<string, ProjectBoq>();
-  const library = new Map(libraryItems().map((i) => [i.id, i]));
+  const libraryMode = deps.libraryMode ?? "imported";
+  const library = new Map(
+    libraryMode === "none"
+      ? []
+      : libraryItems().map((i) => [i.id, libraryMode === "default" ? { ...i, source: "default" as const, defaultsVersion: 1, sourceRef: null } : i]),
+  );
   const templates = new Map<string, BoqTemplate>([DEFAULT_TEMPLATE, SECOND_TEMPLATE].map((t) => [t.id, structuredClone(t)]));
   const rules = new Map(defaultRules().map((r) => [r.id, r]));
   const imports = new Map<string, LibraryImport & { token: string; uploaded: boolean; orgId: string }>();
@@ -199,7 +214,7 @@ export function createBoqMock(deps: BoqMockDeps) {
       }
     } else lines = applyRoomSettingsDeltas(lines, sheets, settings, lib, at);
     const out = applyCorrectionDeltas({ lines, evidence }, perSheet, corrections, lib, at);
-    installDerived(p, out.lines, out.evidence);
+    installDerived(p, out.lines, out.evidence, projectId);
   }
 
   /** Re-derive after a correction / room-settings change (built BOQs only) — "the BOQ updates immediately". */
@@ -210,21 +225,35 @@ export function createBoqMock(deps: BoqMockDeps) {
     deps.emit();
   }
 
-  /** Keep overrides / statuses / notes of lines that survive a rebuild (brief: never overwritten). */
-  function installDerived(p: ProjectBoq, lines: BoqLine[], evidence: Record<string, BoqEvidenceItem[]>) {
+  /**
+   * Keep overrides / statuses / notes of lines that survive a rebuild (brief: never overwritten).
+   * Stage 10 (contracts `applyRebuild`): an APPROVED line whose computed qty moved away from the approved baseline drops
+   * to "נבדק" with `qtyChangedReason(X, Y)` and must be re-approved.
+   */
+  function installDerived(p: ProjectBoq, lines: BoqLine[], evidence: Record<string, BoqEvidenceItem[]>, projectId?: string) {
     const prev = p.lines;
+    const dropped: [BoqLine, number, number][] = [];
     p.lines = new Map(
       lines.map((l) => {
         const o = prev.get(l.id);
-        return [
-          l.id,
-          o
-            ? { ...l, qtyOverride: o.qtyOverride ?? null, qtyOverrideReason: o.qtyOverrideReason ?? null, status: o.status, note: o.note ?? null, reviewedBy: o.reviewedBy ?? null, reviewedAt: o.reviewedAt ?? null, approvedBy: o.approvedBy ?? null, approvedAt: o.approvedAt ?? null }
-            : l,
-        ];
+        if (!o) return [l.id, l];
+        const kept: BoqLine = { ...l, qtyOverride: o.qtyOverride ?? null, qtyOverrideReason: o.qtyOverrideReason ?? null, status: o.status, note: o.note ?? null, reviewedBy: o.reviewedBy ?? null, reviewedAt: o.reviewedAt ?? null, approvedBy: o.approvedBy ?? null, approvedAt: o.approvedAt ?? null };
+        const ownReasons = (l.reasons ?? []).filter((r) => !isQtyChangedReason(r));
+        // the chip of an earlier drop stays until a human re-approves (or the qty goes back)
+        const carried = o.status === "reviewed" ? (o.reasons ?? []).filter(isQtyChangedReason) : [];
+        kept.reasons = [...carried, ...ownReasons];
+        if (o.status === "approved") {
+          const base = typeof o.approvedQty === "number" ? o.approvedQty : o.qty;
+          if (base !== l.qty) {
+            Object.assign(kept, { status: "reviewed", approvedBy: null, approvedAt: null, approvedQty: null, approvedQtyAt: null, reasons: [qtyChangedReason(base, l.qty), ...ownReasons] });
+            dropped.push([kept, base, l.qty]);
+          } else Object.assign(kept, { approvedQty: base, approvedQtyAt: o.approvedQtyAt ?? o.approvedAt ?? null });
+        }
+        return [l.id, kept];
       }),
     );
     p.evidence = evidence;
+    if (projectId) for (const [l, from, to] of dropped) deps.onApprovalInvalidated?.(projectId, l, from, to);
   }
 
   /**
@@ -459,7 +488,8 @@ export function createBoqMock(deps: BoqMockDeps) {
         if (!allowedTransitions(role, l.status).includes(req.status)) throw new ApiError(403, "forbidden_transition", `${l.status} → ${req.status} not allowed for ${role}`);
         const at = now();
         if (req.status === "reviewed") Object.assign(l, { reviewedBy: uid, reviewedAt: at });
-        if (req.status === "approved") Object.assign(l, { approvedBy: uid, approvedAt: at });
+        // Stage 10: the approval baseline is the computed qty at this moment; a re-approval clears the qty-changed chip.
+        if (req.status === "approved") Object.assign(l, { approvedBy: uid, approvedAt: at, approvedQty: l.qty, approvedQtyAt: at, reasons: (l.reasons ?? []).filter((r) => !isQtyChangedReason(r)) });
         if (req.status === "draft") Object.assign(l, { reviewedBy: null, reviewedAt: null, approvedBy: null, approvedAt: null });
         l.status = req.status;
       }
@@ -500,7 +530,8 @@ export function createBoqMock(deps: BoqMockDeps) {
     exportBoq(projectId: string, req: ExportBoqRequest): ExportBoqResponse {
       const p = proj(projectId);
       if (!p.state) throw new ApiError(409, "boq_not_built", "Build the BOQ first");
-      const reds = [...p.lines.values()].filter((l) => l.level === "red" && l.status !== "approved").length;
+      // Stage 10 (contracts exportBlockingLines): red lines not approved + approved lines whose qty changed since.
+      const reds = [...p.lines.values()].filter((l) => needsReapproval(l) || (l.level === "red" && l.status !== "approved")).length;
       if (blockOnRed() && reds > 0) throw new ApiError(409, "export_blocked", `${reds} red lines`);
       const filename = `boq-${projectId}-${req.split}.xlsx`;
       return { url: `mock://exports/${filename}`, filename, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };

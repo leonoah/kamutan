@@ -218,10 +218,10 @@ function GoogleMark() {
 function LoginVisual() {
   const { t } = useTranslation();
   const rows = [
-    { level: "high" as const, code: "4.01", desc: "שקע כפול", qty: "15" },
-    { level: "high" as const, code: "4.09", desc: "נק' מאור", qty: "16" },
-    { level: "mid" as const, code: "4.10", desc: "נק' מאור בעלת שני מחליפים", qty: "2" },
-    { level: "low" as const, code: "4.11", desc: "שתי נק' מאור משותפות", qty: "5" },
+    { level: "high" as const, code: "4.01", desc: t("landing.visual.rows.r1"), qty: "15" },
+    { level: "high" as const, code: "4.09", desc: t("landing.visual.rows.r2"), qty: "16" },
+    { level: "mid" as const, code: "4.10", desc: t("landing.visual.rows.r3"), qty: "2" },
+    { level: "low" as const, code: "4.11", desc: t("landing.visual.rows.r4"), qty: "5" },
   ];
   return (
     <aside aria-hidden className="paper-grid relative hidden overflow-hidden border-s border-border lg:block">

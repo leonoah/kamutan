@@ -25,7 +25,7 @@ describe("Review workspace: real viewer in the drawing pane", { timeout: 20_000 
     const drawing = await screen.findByRole("region", { name: "שרטוט" });
     const app = await within(drawing).findByRole("application", { name: /^שרטוט ת\. חשמל \/ קומת קרקע/ }, LAZY);
     expect(app).toHaveAttribute("dir", "ltr");
-    expect(within(drawing).getByRole("button", { name: "בחירת גיליון" })).toHaveTextContent("ת. חשמל / קומת קרקע");
+    expect(within(drawing).getByRole("button", { name: /בחירת גיליון$/ })).toHaveTextContent("ת. חשמל / קומת קרקע");
     await waitFor(() => expect(seen.props?.tiles).toBeTruthy());
     const tiles = seen.props!.tiles!;
     expect(tiles.levels).toBe(6);
@@ -44,7 +44,7 @@ describe("Review workspace: real viewer in the drawing pane", { timeout: 20_000 
     const user = userEvent.setup();
     const { router } = await renderApp("/projects/p-noah/review", { signedIn: true });
     const drawing = await screen.findByRole("region", { name: "שרטוט" });
-    await user.click(await within(drawing).findByRole("button", { name: "בחירת גיליון" }));
+    await user.click(await within(drawing).findByRole("button", { name: /בחירת גיליון$/ }));
     const items = await screen.findAllByRole("menuitemradio");
     expect(items).toHaveLength(6);
     await user.click(screen.getByRole("menuitemradio", { name: /ת\. אינסטלציה \/ קומת מרתף/ }));

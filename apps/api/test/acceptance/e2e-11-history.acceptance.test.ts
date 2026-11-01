@@ -54,7 +54,7 @@ describe('Stage 10 API/Sec — E2E-11 override on an approved line, history, org
     const ov = h.items.find((i) => i.action === 'qtyOverride');
     expect(ov).toMatchObject({ after: 3, reason: 'שקע נוסף במחסן לפי שיחה עם הלקוח', by: { uid: w.A.uid('editor'), displayName: 'editor A' } });
     expect(Date.parse(ov?.at as string)).toBeGreaterThanOrEqual(t0 - 1000);
-    expect(Date.parse(ov?.at as string)).toBeLessThanOrEqual(Date.now());
+    expect(Date.parse(ov?.at as string)).toBeLessThanOrEqual(Date.now() + 1000); // the in-memory clock is strictly increasing (+1 ms per event) and can run a few ms ahead
     const statuses = h.items.filter((i) => i.action === 'status').map((i) => [i.before, i.after, i.by?.uid]);
     expect(statuses).toEqual([
       ['approved', 'reviewed', w.A.uid('editor')],
@@ -63,7 +63,7 @@ describe('Stage 10 API/Sec — E2E-11 override on an approved line, history, org
     ]);
   });
 
-  it.fails('A-API-08: the override history item shows the quantity BEFORE the change (2, the computed qty), not null', async () => {
+  it('A-API-08: the override history item shows the quantity BEFORE the change (2, the computed qty), not null', async () => {
     const h = LineHistoryResponseSchema.parse((await w.http.get(`${url}/history`).set(w.auth(w.A.uid('reviewer')))).body);
     expect(h.items.find((i) => i.action === 'qtyOverride')?.before).toBe(2);
   });

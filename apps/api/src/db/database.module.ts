@@ -10,6 +10,12 @@ import { GOVERNANCE_REPOSITORY, type GovernanceRepository } from './governance-r
 import { FirestoreGovernanceRepository } from './governance-firestore.repository';
 import { InMemoryGovernanceRepository } from './governance-memory.repository';
 import { InMemoryRepository } from './in-memory.repository';
+import { FirestoreMembersRepository } from './members-firestore.repository';
+import { InMemoryMembersRepository } from './members-memory.repository';
+import { MEMBERS_REPOSITORY, type MembersRepository } from './members-repository';
+import { FirestoreProjectStateRepository } from './project-state-firestore.repository';
+import { InMemoryProjectStateRepository } from './project-state-memory.repository';
+import { PROJECT_STATE_REPOSITORY, type ProjectStateRepository } from './project-state-repository';
 import { REPOSITORY, type Repository } from './repository';
 import { FirestoreReviewRepository } from './review-firestore.repository';
 import { InMemoryReviewRepository } from './review-memory.repository';
@@ -42,6 +48,20 @@ export function createGovernanceRepository(core: Repository): GovernanceReposito
   throw new Error('unsupported repository for the governance repository');
 }
 
+/** Stage 10: org members + invitations (A-API-01). */
+export function createMembersRepository(core: Repository): MembersRepository {
+  if (core instanceof InMemoryRepository) return new InMemoryMembersRepository(core);
+  if (core instanceof FirestoreRepository) return new FirestoreMembersRepository(core);
+  throw new Error('unsupported repository for the members repository');
+}
+
+/** Stage 10: project card counters (A-LIVE-02) + revised-upload supersede (A-API-05). */
+export function createProjectStateRepository(core: Repository): ProjectStateRepository {
+  if (core instanceof InMemoryRepository) return new InMemoryProjectStateRepository(core);
+  if (core instanceof FirestoreRepository) return new FirestoreProjectStateRepository(core);
+  throw new Error('unsupported repository for the project state repository');
+}
+
 @Global()
 @Module({
   providers: [
@@ -49,7 +69,9 @@ export function createGovernanceRepository(core: Repository): GovernanceReposito
     { provide: BOQ_REPOSITORY, inject: [REPOSITORY], useFactory: createBoqRepository },
     { provide: REVIEW_REPOSITORY, inject: [REPOSITORY], useFactory: createReviewRepository },
     { provide: GOVERNANCE_REPOSITORY, inject: [REPOSITORY], useFactory: createGovernanceRepository },
+    { provide: MEMBERS_REPOSITORY, inject: [REPOSITORY], useFactory: createMembersRepository },
+    { provide: PROJECT_STATE_REPOSITORY, inject: [REPOSITORY], useFactory: createProjectStateRepository },
   ],
-  exports: [REPOSITORY, BOQ_REPOSITORY, REVIEW_REPOSITORY, GOVERNANCE_REPOSITORY],
+  exports: [REPOSITORY, BOQ_REPOSITORY, REVIEW_REPOSITORY, GOVERNANCE_REPOSITORY, MEMBERS_REPOSITORY, PROJECT_STATE_REPOSITORY],
 })
 export class DatabaseModule {}

@@ -59,7 +59,8 @@ export class OffboardingService {
 
   // ------------------------------------------------------------------ settings
   async patchSettings(user: AuthContext, orgId: string, req: PatchOrgSettingsRequest): Promise<PatchOrgSettingsResponse> {
-    await this.access.requireRole(user, orgId, 'admin');
+    // Stage 10 (A-API-02, SEC-02): org settings / LLM switch = admin + MFA + sign-in ≤ 10 min.
+    await this.access.requireSensitiveAdmin(user, orgId, this.cfg.OFFBOARDING_REQUIRE_MFA);
     const settings = await this.gov.patchOrgSettings(orgId, req, user.uid);
     if (!settings) throw notFound('org');
     if (req.greenThreshold !== undefined || req.blockExportOnRed !== undefined) {

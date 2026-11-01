@@ -75,6 +75,37 @@ test.describe("IA v2 navigation", () => {
     await shot(page, info, "ia-06-hub-filtered");
   });
 
+  test("hub BOQ card: chapter titles not duplicated, one dash style (A-UI-18); similar lines distinguishable (A-UI-17)", async ({ page }) => {
+    needsNoah();
+    await login(page, "/projects/p-noah");
+    const boq = page.locator("section").filter({ has: page.getByRole("heading", { name: "כתב כמויות" }) }).first();
+    await expect(boq).toContainText(/\d+ שורות/);
+    const summaries = await boq.locator("summary").allTextContents();
+    expect(summaries.length).toBeGreaterThan(0);
+    for (const s of summaries) {
+      expect(s, "no 'פרק 03 · פרק 03 – …'").not.toMatch(/פרק \S+ · פרק/);
+      expect(s, "en dash only").not.toMatch(/\s-\s/);
+    }
+    // descriptions are clamped to two lines, not cut to one: the full text is in the cell and a title tooltip
+    const cell = boq.locator("tbody td[title]").first();
+    await expect(cell.locator(".line-clamp-2")).toHaveCount(1);
+    const desc = await cell.getAttribute("title");
+    await expect(cell).toHaveText(desc!);
+  });
+
+  test("sheet analysis: header stats describe the locked sheet (A-UI-14); no Sprint-2 placeholder copy (A-UI-15)", async ({ page }) => {
+    needsNoah();
+    await login(page, "/projects/p-noah/sheets/noah-b2046277-p0");
+    await waitForWorkspace(page);
+    const header = page.locator("header").first();
+    const toReview = Number((await header.getByRole("button", { name: /^\d+ לבדיקה$/ }).textContent())!.match(/\d+/)![0]);
+    // the level chips under the header count the same items (red + unknown)
+    const chips = page.getByRole("group", { name: "ביטחון", exact: true });
+    const n = async (label: string) => Number(((await chips.getByRole("button", { name: new RegExp(`^${label} \\(\\d+\\)$`) }).textContent()) ?? "").match(/\((\d+)\)/)?.[1] ?? "0");
+    expect(toReview).toBe((await n("לבדיקה")) + (await n("לא מוכר")));
+    await expect(page.getByText(/יגיע בהמשך/)).toHaveCount(0);
+  });
+
   test("an unauthenticated deep link goes to login; unknown routes show a 404 page", async ({ page }, info) => {
     await page.goto("/projects/p-noah");
     await expect(page).toHaveURL(/\/login/);
@@ -96,22 +127,29 @@ test.describe("IA v2 navigation", () => {
     await axe(page, info, "m-projects");
   });
 
-  // A-UI-01: the hero's decorative gradient blob (LandingPage.tsx, `end-[-10%] w-[520px]`) overflows → 15 px horizontal scroll.
-  test.fixme("A-UI-01 mobile 390: landing has no horizontal scroll @mobile-only @mobile", async ({ page }) => {
+  // A-UI-01 (fixed): the hero's decorative gradient blob overflowed → 15 px horizontal scroll; the page now clips x.
+  test("A-UI-01 mobile 390: landing has no horizontal scroll @mobile-only @mobile", async ({ page }) => {
     await page.goto("/");
     await expectNoHorizontalScroll(page);
   });
 
-  // A-UI-02: the AppShell header (nav + demo badge + avatar menu) does not fit 390 px → 15 px horizontal scroll, the
-  // user-menu chevron is cut off at the left edge (components/AppShell.tsx header row).
-  test.fixme("A-UI-02 mobile 390: projects (app shell) has no horizontal scroll @mobile-only @mobile", async ({ page }) => {
+  // A-UI-02 (fixed): the AppShell header (nav + demo badge + avatar menu) did not fit 390 px. Now: icon-only logo,
+  // tighter gaps; the user menu is fully on screen. Also the hub and the library inside the shell.
+  test("A-UI-02 mobile 390: projects (app shell) has no horizontal scroll @mobile-only @mobile", async ({ page }) => {
     await login(page);
+    await expect(page.getByText("בית משפחת נח")).toBeVisible();
     await expectNoHorizontalScroll(page);
+    await expect(page.getByRole("button", { name: "תפריט משתמש" })).toBeInViewport({ ratio: 1 });
+    for (const path of ["/projects/p-noah", "/library"]) {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+      await expectNoHorizontalScroll(page);
+    }
   });
 
-  // A-UI-11: the hub header says "87% מאומת" (static project.stats, also on the projects card) while the hub's own BOQ card
-  // says "14% מאומת" for the same project at the same moment (ProjectPage.tsx header vs ProjectBoqSummary.tsx).
-  test.fixme("A-UI-11 hub: '% מאומת' in the header equals the project BOQ's '% מאומת'", async ({ page }) => {
+  // A-UI-11 (fixed): the hub header said "87% מאומת" (static project.stats) while the hub's BOQ card said "14% מאומת".
+  // The header now uses the same live lines as the card once a BOQ is built.
+  test("A-UI-11 hub: '% מאומת' in the header equals the project BOQ's '% מאומת'", async ({ page }) => {
     await login(page, "/projects/p-noah");
     const header = (await page.getByText(/^\d+% מאומת$/).first().textContent())!;
     await expect(page.getByText(/\d+ שורות · \d+% מאומת/)).toContainText(header);

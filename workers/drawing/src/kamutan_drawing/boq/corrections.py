@@ -109,6 +109,18 @@ class Correction:
     floor: str | None
     batch_id: str | None
     at: str
+    # Stage 10 (A-API-05 / E2E-12): made on a sheet a revised upload superseded; ``sheet_id`` is the replacing sheet,
+    # this is the original one (its ``version_id`` is a version of THAT sheet → always re-matched by anchor)
+    origin_sheet_id: str | None = None
+
+    @property
+    def src_sheet(self) -> str:
+        """Sheet whose ``version_id`` the correction was made on (old-detection lookups)."""
+        return self.origin_sheet_id or self.sheet_id
+
+    def on_version(self, version_id: str) -> bool:
+        """Made on exactly this version of its (current) sheet → ids apply directly, no re-matching."""
+        return self.origin_sheet_id is None and self.version_id == version_id
 
     @staticmethod
     def from_doc(cid: str, d: dict[str, Any]) -> Correction | None:
@@ -270,7 +282,7 @@ class _SheetState:
         to the anchor (within the radius)."""
         if self.groups is None or not c.link_group_id:
             return None
-        if c.version_id == self.sheet.version_id or c.anchor is None:
+        if c.on_version(self.sheet.version_id) or c.anchor is None:
             return next((g for g in self.groups if g["id"] == c.link_group_id), None)
         best: tuple[float, str, dict[str, Any]] | None = None
         for g in self.groups:
@@ -285,7 +297,7 @@ class _SheetState:
         return best[2] if best else None
 
     def room(self, c: Correction) -> dict[str, Any] | None:
-        if c.version_id == self.sheet.version_id and c.room_id:
+        if c.on_version(self.sheet.version_id) and c.room_id:
             return next((r for r in self.rooms if r.get("id") == c.room_id and not r.get("_rejected")), None)
         rid = self.room_at(*c.anchor) if c.anchor else None
         return next((r for r in self.rooms if r.get("id") == rid), None) if rid else None
@@ -338,9 +350,10 @@ def apply_corrections(
                 continue
             payload = []
             for c in mine:
-                od = old(c.sheet_id, c.version_id).get(c.detection_id or "") if c.version_id != st0.sheet.version_id else None
+                od = old(c.src_sheet, c.version_id).get(c.detection_id or "") if not c.on_version(st0.sheet.version_id) else None
+                vid_ref = c.version_id if c.origin_sheet_id is None else f"{c.origin_sheet_id}/{c.version_id}"
                 payload.append({
-                    "id": c.id, "kind": c.kind, "sheetId": c.sheet_id, "versionId": c.version_id,
+                    "id": c.id, "kind": c.kind, "sheetId": c.sheet_id, "versionId": vid_ref,
                     "anchorMm": {"x": c.anchor[0], "y": c.anchor[1]} if c.anchor else None, "radiusMm": c.radius_mm,
                     "detectionId": c.detection_id, "class": c.cls, "signature": c.signature,
                     "fromClass": (od or {}).get("class") or None,
@@ -355,7 +368,7 @@ def apply_corrections(
         stats["unmatched"] += 1
 
     def target(c: Correction, st: _SheetState) -> dict[str, Any] | None:
-        same_version = c.version_id == st.sheet.version_id
+        same_version = c.on_version(st.sheet.version_id)
         if same_version and c.detection_id:
             d = st.by_id.get(c.detection_id)
             return d if d is not None and not d.get("_removed") else None
@@ -370,7 +383,7 @@ def apply_corrections(
         anchor = c.anchor
         fam = family(c.cls) if c.kind != "reclassify" else None
         if c.detection_id:
-            od = old(c.sheet_id, c.version_id).get(c.detection_id)
+            od = old(c.src_sheet, c.version_id).get(c.detection_id)
             if od is not None:
                 anchor = anchor or _center(od)
                 fam = family(str(od.get("class"))) or fam
@@ -384,13 +397,13 @@ def apply_corrections(
     def resolve_ids(c: Correction, st: _SheetState, ids: tuple[str, ...]) -> list[str] | None:
         res: list[str] = []
         for i in ids:
-            if c.version_id == st.sheet.version_id:
+            if c.on_version(st.sheet.version_id):
                 d = st.by_id.get(i)
                 if d is None or d.get("_removed"):
                     return None
                 res.append(i)
                 continue
-            od = old(c.sheet_id, c.version_id).get(i)
+            od = old(c.src_sheet, c.version_id).get(i)
             if od is None:
                 return None
             if _wa_rematch_ids is not None:
@@ -513,7 +526,7 @@ def _add(c: Correction, st: _SheetState, stats: dict[str, int], origin: str | No
     at = c.geometry[0] if c.geometry else c.anchor
     if at is None or not (c.cls or c.item_code):
         return False
-    if c.version_id != st.sheet.version_id and c.cls:
+    if not c.on_version(st.sheet.version_id) and c.cls:
         auto = st.by_id.get(auto_id) if auto_id else _nearest(st, at, c.radius_mm, family(c.cls), strict=True)
         if auto is not None and auto.get("_removed"):
             auto = None

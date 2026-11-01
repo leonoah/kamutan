@@ -8,7 +8,7 @@
  */
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { applyRebuild, BoqViewSchema, CorrectionPageSchema, CreateUploadResponseSchema, ExportStatusResponseSchema, FinalizeUploadResponseSchema, fsPaths, ReprocessSheetResponseSchema, ReviewQueuePageSchema, SheetVersionSchema, storagePaths } from '@kamutan/contracts';
+import { applyRebuild, BoqViewSchema, CorrectionPageSchema, CreateUploadResponseSchema, ExportStatusResponseSchema, FinalizeUploadResponseSchema, fsPaths, ProjectSchema, ReprocessSheetResponseSchema, SheetPageSchema, ReviewQueuePageSchema, SheetVersionSchema, storagePaths } from '@kamutan/contracts';
 import type { Doc } from '../../src/db/mappers';
 import { SAMPLE } from '../support/helpers';
 import { det } from '../support/review-fixtures';
@@ -93,7 +93,9 @@ describe('Stage 10 API/Sec — E2E-12 new sheet version keeps qtyOverride, appro
     const after = await linesById();
     const L = w.A.lines;
     expect(after[L.override]).toMatchObject({ qty: 5, qtyOverride: 5, qtyOverrideReason: 'ספירה ידנית', status: 'draft' });
-    expect(after[L.approved]).toMatchObject({ qty: 7, status: 'approved', approvedBy: w.A.uid('reviewer') });
+    // Stage 10 decision (A-API-06 / A-pipeline-08): the approved qty 6 changed to 7 → back to "נבדק", re-approval needed
+    expect(after[L.approved]).toMatchObject({ qty: 7, status: 'reviewed', approvedBy: null });
+    expect(after[L.approved]?.reasons?.[0]).toBe('הכמות השתנתה מאז האישור (6 → 7)');
     expect(after[L.status]).toMatchObject({ qty: 3, status: 'reviewed', reviewedBy: w.A.uid('reviewer') });
     const corr = CorrectionPageSchema.parse((await http.get(`${P()}/corrections`).set(as('viewer'))).body);
     expect(corr.items.map((c) => c.id)).toEqual(expect.arrayContaining([addId, rejectId]));
@@ -120,18 +122,45 @@ describe('Stage 10 API/Sec — E2E-12 new sheet version keeps qtyOverride, appro
     expect(r.url).toContain(storagePaths.boqExportFile(w.A.orgId, w.A.projectId, w.A.exportId).split('/').slice(-1)[0]);
   });
 
-  it('re-uploading a revised file of the set today creates a PARALLEL sheet set (documents current behaviour; see A-API-05)', async () => {
+  it('A-API-05: a revised upload (replacesSheetSetId) supersedes the old set: old sheets become old versions of the matching new sheets, counted once', async () => {
+    const oldSetId = w.A.sheet.sheetId.replace(/-p0$/, '');
+    const pp = fsPaths.project(w.A.orgId, w.A.projectId);
     const up = CreateUploadResponseSchema.parse((await http.post(`${P()}/uploads`).set(as('editor')).send({ filename: 'חשמל-גרסה-ב.pdf', sizeBytes: SAMPLE.pdf.length + 10 })).body);
     w.t.storage.objects.set(up.storagePath, { data: Buffer.concat([SAMPLE.pdf, Buffer.from('% rev B\n')]), contentType: 'application/pdf' });
-    const fin = FinalizeUploadResponseSchema.parse((await http.post(`${P()}/sheet-sets`).set(as('editor')).send({ uploadToken: up.uploadToken })).body);
-    expect(fin.deduplicated).toBe(false);
-    const sets = [...w.t.repo.docs.keys()].filter((k) => k.startsWith(`${fsPaths.project(w.A.orgId, w.A.projectId)}/sheetSets/`));
-    ev.setsAfterReupload = sets;
-    expect(sets.length).toBe(3); // the 2 seeded sets + the revision; nothing links the revision to the set it replaces
-    // the strict finalize contract has no way to say "this replaces set X"
-    const up2 = CreateUploadResponseSchema.parse((await http.post(`${P()}/uploads`).set(as('editor')).send({ filename: 'x.pdf', sizeBytes: 100 })).body);
-    expect((await http.post(`${P()}/sheet-sets`).set(as('editor')).send({ uploadToken: up2.uploadToken, replacesSheetSetId: fin.sheetSet.id })).status).toBe(400);
+    const res = await http.post(`${P()}/sheet-sets`).set(as('editor')).send({ uploadToken: up.uploadToken, replacesSheetSetId: oldSetId });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const fin = FinalizeUploadResponseSchema.parse(res.body);
+    const newSetId = fin.sheetSet.id;
+    expect(w.t.repo.docs.get(fsPaths.sheetSet(w.A.orgId, w.A.projectId, newSetId))).toMatchObject({ replacesSheetSetId: oldSetId, supersede: { status: 'pending' } });
+    expect(w.t.repo.docs.get(fsPaths.sheetSet(w.A.orgId, w.A.projectId, oldSetId))).toMatchObject({ supersededBySetId: newSetId });
+    // while the revision is processing the old sheet stays current
+    const listed = async (q = '') => SheetPageSchema.parse((await http.get(`${P()}/sheets${q}`).set(as('viewer'))).body).items;
+    expect((await listed()).map((x) => x.id)).toContain(w.A.sheet.sheetId);
+    // the worker splits + processes the revision (same title / discipline / floors as the old sheet)
+    const oldSheet = w.t.repo.docs.get(fsPaths.sheet(w.A.orgId, w.A.projectId, w.A.sheet.sheetId)) as Doc;
+    const ids = w.t.repo.seedWorkerSheet(w.A.orgId, w.A.projectId, newSetId, 0, { understanding: true });
+    const np = fsPaths.sheet(w.A.orgId, w.A.projectId, ids.sheetId);
+    w.t.repo.docs.set(np, { ...(w.t.repo.docs.get(np) as Doc), title: oldSheet.title ?? 'ת. חשמל', discipline: oldSheet.discipline ?? 'electrical', floors: oldSheet.floors ?? [] });
+    const sp = fsPaths.sheetSet(w.A.orgId, w.A.projectId, newSetId);
+    w.t.repo.docs.set(sp, { ...(w.t.repo.docs.get(sp) as Doc), status: 'ready', pageCount: 1 });
+    // next read: the old sheet is superseded by the new one; lists / counts use only current sheets
+    const now = (await listed()).map((x) => x.id);
+    expect(now).toContain(ids.sheetId);
+    expect(now).not.toContain(w.A.sheet.sheetId);
+    const all = await listed('?includeSuperseded=true');
+    expect(all.find((x) => x.id === w.A.sheet.sheetId)).toMatchObject({ superseded: true, supersededBy: ids.sheetId, supersededBySetId: newSetId, supersededMatch: 'title' });
+    expect(all.find((x) => x.id === ids.sheetId)).toMatchObject({ supersedes: w.A.sheet.sheetId });
+    expect((w.t.repo.docs.get(pp) as Doc).boq).toMatchObject({ stale: true, staleReason: 'sheet' });
+    const project = ProjectSchema.parse((await http.get(P()).set(as('viewer'))).body);
+    expect(project.stats?.sheets).toBe(2); // sheet2 + the revision (the old version is not counted twice)
+    // the corrections on the old sheet stay listed (the worker re-matches them onto the new sheet, as in E2E-12)
+    expect(CorrectionPageSchema.parse((await http.get(`${P()}/corrections`).set(as('viewer'))).body).items.some((c) => c.sheetId === w.A.sheet.sheetId)).toBe(true);
+    ev.supersede = { oldSetId, newSetId, sheets: all.map((x) => ({ id: x.id, superseded: x.superseded, supersededBy: x.supersededBy, supersedes: x.supersedes })) };
+    // a set can be replaced only once; an unknown set → 404
+    const up2 = CreateUploadResponseSchema.parse((await http.post(`${P()}/uploads`).set(as('editor')).send({ filename: 'x.pdf', sizeBytes: SAMPLE.pdf.length + 10 })).body);
+    w.t.storage.objects.set(up2.storagePath, { data: Buffer.concat([SAMPLE.pdf, Buffer.from('% rev C\n')]), contentType: 'application/pdf' });
+    expect((await http.post(`${P()}/sheet-sets`).set(as('editor')).send({ uploadToken: up2.uploadToken, replacesSheetSetId: oldSetId })).status).toBe(409);
+    const up3 = CreateUploadResponseSchema.parse((await http.post(`${P()}/uploads`).set(as('editor')).send({ filename: 'y.pdf', sizeBytes: 100 })).body);
+    expect((await http.post(`${P()}/sheet-sets`).set(as('editor')).send({ uploadToken: up3.uploadToken, replacesSheetSetId: 'f'.repeat(64) })).status).toBe(404);
   });
-
-  it.todo('A-API-05: E2E-12 / 04_architecture "העלאה חדשה יוצרת sheet_version" — a revised upload of an existing set becomes a new version of the SAME sheets (old sheets superseded, human state carried), not a parallel set that the BOQ build would count twice');
 });

@@ -527,7 +527,7 @@ Job doc + `boqBuilds/{buildId}` must exist (org/project checked); succeeded buil
 `artifacts.links` or next to it; paths must be under the version prefix). Writes `boq/{buildId}/evidence.json.gz`,
 upserts `boqLines` (full-doc replace so `byFloor` never keeps stale floors; `BOQ_LINE_PRESERVED_FIELDS` copied from
 the current doc — read-modify-write, a PATCH landing in between can be lost: TODO transaction in the GCP store).
-**Approved line whose qty changed**: status kept, chip `הכמות השתנתה מאז האישור`, level red; baseline
+**Approved line whose qty changed** (superseded in Stage 10: it now drops to `reviewed`, see "Stage 10 — fix round"): status kept, chip `הכמות השתנתה מאז האישור`, level red; baseline
 `approvedQty`/`approvedQtyAt` (extra fields) = the qty at the first rebuild after that approval; cleared when
 `approvedAt` changes (re-approval) or the qty returns. Obsolete worker lines: deleted when draft without
 override/note/lock (new `delete` on the three doc stores), else kept at qty 0, red `הסעיף לא נמצא בבנייה האחרונה`.
@@ -1448,3 +1448,283 @@ bandit -ll && pytest -q`): all green, 510 tests.
   false, and map `title_block_not_found` to a Hebrew message in the dialog. For share links the worker treats the
   presence of `watermark` as "share": always set it for share PDFs.
 * Checks (2026-10-21): ruff check / format clean, mypy (2.4.0) no issues, bandit clean, `pytest -q` 514 passed.
+
+## Stage 10 — fix round (Worker-BOQ)
+
+Brief: `docs/agents/STAGE10_FIX_BRIEF.md`. Defects: A-pipeline-07 / 08 / 10 / 12, A-LIVE-01 (worker side), A-LIVE-02
+(worker-written counters). Status of each fix, tests and the Noah re-run: see "Results" below (filled at the end of the
+round).
+
+### Contract requests (API agent) — Stage 10
+Everything is additive; the worker already writes / reads these shapes (extra fields are stripped by the non-strict
+zod objects until the contract lists them).
+1. **A-pipeline-08 / A-API-06 — approval invalidated by a rebuild.** Worker behaviour (`boq/build.py`
+   `_approval_check`): an `approved` line whose computed `qty` (no `qtyOverride`) differs from the qty it was approved
+   with → `status: "reviewed"`, `approvedBy/approvedAt: null` (same as the API's un-approve), level red, first reason
+   `הכמות השתנתה מאז האישור (16 → 17)`, and
+   `approvalInvalidated: {fromQty, toQty, approvedBy, approvedAt, buildId, at}` on the line (kept, with the reason
+   refreshed to the current qty, while the line stays `reviewed`; removed on re-approval or when it goes back to
+   draft). The build doc gets `approvalsInvalidated: [{lineId, code, fromQty, toQty}]` (≤ 500) and
+   `stats.approvalsInvalidated` (count). Please: (a) `BoqLineSchema.approvalInvalidated` (nullable, optional) +
+   mapper/DTO so the review UI can show it; (b) the export gate already blocks (`red && status !== 'approved'`) —
+   keep it, and treat a legacy doc (`status: 'approved'`, `approvedQty` present and ≠ `qty`) as not approved too;
+   (c) **audit**: the worker cannot append to the hash-chained audit log. Please emit one event per entry of
+   `boqBuilds/{id}.approvalsInvalidated` (`entity: 'boqLines'`, `entityId: lineId`, `action: 'approval_invalidated'`,
+   `actorId: 'system:boq.build'`, `after: {projectId, buildId, code, fromQty, toQty}`) idempotently when the API first
+   sees the succeeded build (e.g. stamp `approvalsAuditedAt` on the build doc), and show it in the line history.
+2. **A-pipeline-07 — new rule kind `template_chapter`** (`BOQ_RULE_KINDS` + `TemplateChapterMatchSchema`):
+   `match = {chapters: ChapterCode[] (1..16), disciplines?: Discipline[] (≤ 8), quantity: number (> 0, ≤ 1000),
+   excludeCodes?: ItemCode[] (≤ 64)}`, `itemCode: null`. Semantics: when the project has a current ready sheet of one
+   of `disciplines` (absent = always), every active library item of those chapters (`item.chapter`, else the template
+   chapter's `codePrefixes`) that no other rule produced becomes a line of `quantity` in the item's unit (else the
+   rule's), never green, with the rule reasons; evidence = one whole-sheet item per triggering sheet
+   (`detectionId: "sheet"`). New default rule (new id → created by the create-if-missing seeding, **no
+   DEFAULT_BOQ_RULES_VERSION bump needed**):
+   `{id: 'r_template_demolition', kind: 'template_chapter', match: {chapters: ['01'], disciplines: ['demolition'],
+   quantity: 1}, itemCode: null, itemDescription: 'סעיפי הריסה ופינוי מהתבנית', unit: 'קומפלט', priority: 10,
+   reasons: [ONE_OFF_SUGGESTION_REASON]}` — mirrored in `boq/rules.py` `DEFAULT_RULES` (the mirror test treats it as
+   pending until `boq-defaults.json` has it, then requires equality).
+3. **A-pipeline-12 — new rule kind `fixture_combination`** (`FixtureCombinationMatchSchema`): `match = {classes:
+   SymbolClass[] (2..4, distinct), sameRoom: boolean, radiusMm?: number (real mm, 0..5000; default 1500), floors?,
+   roomTypes?, roomNamePatterns?}`. One unit of `itemCode` per complete set (one live detection of each class, same
+   room of its sheet when `sameRoom`, all within `radiusMm` of the set's first class); the members are consumed (not
+   counted again by `plumbing_point` / `class_to_item`); incomplete sets fall through to the other rules. Example
+   (custom rule, "אסלה תלויה + מיכל סמוי = 1 × 3.04"): `{kind: 'fixture_combination', match: {classes:
+   ['fixture_wc_hung', 'cistern_concealed'], sameRoom: true}, itemCode: '3.04', unit: 'יחידה', priority: 150}`.
+   Taxonomy request for that example (detection = Worker-Accuracy; corrections can already add / reclassify):
+   `fixture_wc_hung` "אסלה תלויה", `cistern_concealed` "מיכל הדחה סמוי" (plumbing). No default rule.
+4. **A-pipeline-12 — `BoqLine.byRoom`** (optional): `Array<{sheetId: DocId | null, roomId: string (≤ 128) | null,
+   name: string (≤ 100) | null, type: RoomType | null, floor: string | null, qty: number}>` (≤ 200), sorted by floor
+   order then name; `roomId: null` = items outside every room. Rooms are the **canonical** rooms of the floor (the same
+   physical room has one entry whatever sheet the item came from). Please add the Excel sheet **"פירוט לפי חדר"**
+   (`apps/api/src/boq/excel.ts`): one row per (line, room) — סעיף (TEXT), תאור, יחידה, קומה, חדר, כמות — plus a SUM
+   per line that equals the line qty; lines without `byRoom` get one row "—" with the line qty.
+5. **A-LIVE-01 — default library**: the worker resolves an item whose doc has `source: 'default'` (or
+   `defaultsVersion`) by **exact code** (no description-similarity check), so the default library must use the
+   default rules' item codes. Please add `'default'` to `ITEM_SOURCES`. With no item the worker keeps the rule's unit
+   and description (see below); the build stats carry `library: {items, defaults}` (0 → the web can show the
+   "ייבאו כתב כמויות / השתמשו בברירת המחדל" prompt).
+6. **A-LIVE-02 — project counters**: the worker now writes `stats.sheets` (ingest: sheets with a current version)
+   and `stats.{boqLines, green, yellow, red}` (each build, all lines incl. manual) on the project doc (merge).
+   `reviewOpen` stays the API's. `toProject` (apps/api/src/db/mappers.ts) currently drops `stats` — please map it
+   (missing fields → 0, `reviewOpen` from the queue if you compute it).
+
+### Fixes (worker side)
+* **A-pipeline-08** (`boq/build.py` `_approval_check`, `upsert_lines` → `Upserted`): behaviour in request 1 above.
+  Not invalidated: same qty, or a `qtyOverride` on the line (the human quantity is what was approved). Reported once
+  (the build that changed it); later rebuilds refresh the chip `(from → current)` while the line stays `reviewed`; a
+  re-approval (`approved` + new `approvedAt`) starts a new baseline. `writes.approvalsInvalidated` / build
+  `stats.approvalsInvalidated` count it. With the current API gate (`red && status !== 'approved'`) the line blocks the
+  export until re-approved.
+* **A-pipeline-07** (`boq/template.py`, kind `template_chapter`, default rule `r_template_demolition`): chapter 01
+  library items (`chapter` "01", else code head "1.") offered as 1.0 in the item's unit (קומפלט), yellow, `הצעה –
+  לאשר ידנית`, `ruleId r_template_demolition`, evidence = one `detectionId: "sheet"` item per current demolition sheet
+  (byFloor = the lowest floor of those sheets). Items another rule already produced are not offered twice. Without a
+  demolition plan nothing is offered. Runs after every other rule.
+* **A-pipeline-10** (`boq/plumbing.py` `suggestion_units`): a one-off suggestion fired by a text pattern gets an
+  evidence item `detectionId: "text_{n}"` (n = index of the line in the version's `text.json.gz`, placed at the text
+  bbox centre, floor of the sheet). A room cue (e.g. a drawn courtyard) still wins over the text. **Web/API**: an
+  evidence `detectionId` that is not a detection — `text_{n}`, `sheet`, a room id (since Sprint 4) — should open the
+  sheet (and, for `text_{n}`, centre on that text line's `bboxMm`).
+* **A-pipeline-12**: `byRoom` on every computed line (`aggregate._by_room`; canonical rooms via `match_room`, niche
+  sub-rooms named "נישה" with type `niche`; per-item quantities split by item, other units go to the majority room of
+  their items; the split sums to `qty`). Rule kind `fixture_combination` (`plumbing.combination_units`, before the
+  plumbing points; members consumed via `dropped_by = combination:{ruleId}`). Excel sheet: request 4 (API).
+* **A-LIVE-01** (`aggregate.add` / `_lines`): a line without a library item keeps the rule's unit (`מ"ר`, `מ"א`,
+  `קומפלט`, `יחידה`) and description; a user-chosen code without an item takes the description / unit of the rule
+  that targets that code, else the class name — never `פריט 5.01` / `יחידה` for an area line. Default-library items
+  (`source: 'default'` or `defaultsVersion`) resolve by exact code. Build `stats.library {items, defaults}`.
+* **A-LIVE-02**: `service/pipeline.py` writes `stats.sheets` after every ingest job (sheets with a current version,
+  `supersededBy` / `status: superseded` excluded; only when the project doc exists); `boq.build` writes
+  `stats.{boqLines, green, yellow, red}` (all lines incl. manual). The API must map `stats` (request 6).
+
+### Results (Noah, `boq_local.py --no-corrections` on copies of the E2E-01 root, HEAD vs this round)
+* Every line that existed before: **identical** qty, byFloor, level, unit, description, chapter (41/42); 3.15
+  differs only in `evidenceCount` 0 → 1 (`text_…` on the plumbing sheet). Lines 42 → 52: + 1.01–1.10, each 1.0
+  קומפלט, yellow, 3 evidence items (the three demolition plans). Project `stats` {boqLines 52, green 0, yellow 50,
+  red 2}.
+* E2E-08 shape: 3.04 = 3, `byRoom` = ground שירותים 1, first חדר רחצה (r_2) 1, first חדר רחצה (r_5) 1 (Data/QA's
+  per-bathroom expectation); 5.02 split per bathroom + niches.
+* E2E-12 shape: approve 4.01 (15) → `add` correction of a double socket → rebuild: 4.01 qty 16, `reviewed`,
+  red, `הכמות השתנתה מאז האישור (15 → 16)`, build `approvalsInvalidated [{ln_4_01, 4.01, 15 → 16}]`.
+
+### Tests / commands
+`tests/test_boq_stage10.py` (chapter 01 offered / not offered / not twice; text-cue evidence + room cue wins; unit +
+description without an item; default-library resolution by code; fixture combination incl. leftovers; byRoom on
+canonical rooms, sums = qty; approved + override keeps approval; reason format; project counters from the build and
+the ingest), `tests/test_boq.py` (approval invalidation end to end incl. the build doc list, no double report,
+re-approval), `tests/test_boq_s4.py` (text trigger has evidence), `tests/test_boq_contracts.py` (pending-rule
+tolerance: `PENDING_CONTRACT_RULES` until `boq-defaults.json` lists them, then strict equality). No pipeline-acceptance
+xfail belongs to these defects (`benchmark/acceptance`: 9 passed, 3 xfailed = A-pipeline-05/11, Worker-Accuracy); the
+API's `it.fails('A-API-06 …')` flips on the API side.
+
+### Not done / open
+* Excel "פירוט לפי חדר" and the export/audit parts of A-API-06 live in `apps/api` (requests 1, 4).
+* Contracts for `template_chapter` / `fixture_combination` / `byRoom` / `approvalInvalidated` / item `source:
+  'default'` (requests 1–5). Until they land, the worker-seeded `r_template_demolition` doc is skipped by the API's
+  rule listing (`safeParse`).
+* `fixture_wc_hung` / `cistern_concealed` are not detected classes (taxonomy + Worker-Accuracy); on Noah the WC is one
+  class (`fixture_wc_concealed`), so the combination rule is proven on synthetic data only.
+* Chapter-01 lump sums are attributed to the lowest demolition floor in `byFloor` (a lump sum has no floor; the
+  contracts have no "project-wide" floor key).
+* Checks (2026-11-01): ruff check clean, ruff format clean on my files (repo-wide `--check` flags only Worker-Accuracy's
+  in-progress `symbols/qualifiers.py`), mypy 2.4.0 (CI way) no issues, bandit 1.9.4 `-ll` clean, `pytest -q` 528
+  passed, `pytest ../../benchmark/acceptance` 9 passed / 3 xfailed.
+
+### Follow-up for Worker-Accuracy's requests
+* **Calibration re-cap of stored artifacts (A-LIVE-03)** — `boq/build.load_inputs` runs `pipeline.ceiling.cap_document`
+  with this worker's `default_table()` (+ the org `settings.greenThreshold`) on every loaded `detections` / `links` /
+  `rooms` document before aggregation. Raster = the sheet's classification carries `גיליון רסטר` / `רסטר`. It only
+  lowers levels. Stored `אושר ידנית` items stay green, and corrections are applied afterwards in `aggregate`, so a
+  reviewer's accept is still green. Build `stats.calibrationCapped {detections, links, rooms}`. Test:
+  `test_boq_stage10.py::test_build_recaps_stored_greens_with_the_current_calibration_table` (3 stale greens capped; a
+  stored human accept and a correction accept stay green). Noah (current conservative artifacts): 0 capped, no line
+  changed.
+* **4.14 from a fan switch in any group — tried, NOT shipped.** Variant: each new `switch_fan` in a non-
+  `add_to_existing` group becomes its own 4.14 unit, and the group's other switches are matched as before.
+  E2E-01 root: no change (4.14 1 → 1). Worker-Accuracy's `fix-accuracy/after` root (note-block fix: the master fan
+  switch is now `switch_fan`, still paired with the fan as a `single` group): **4.09 16 → 15** (confirmed, GT 16) and
+  **4.14 1 → 2** (GT 1); nothing else moved. Today the rule would double-count that unit. Ship it together with the
+  arc-crossing re-pairing (Worker-Accuracy gap "4.10"), and re-verify then.
+
+### Follow-up for the API's requests (apps/api/NOTES.md "Stage 10 fix round")
+* **Superseded sheets (A-API-05)**: `boq.build` skips every sheet with `superseded == true` (the boolean is tested;
+  `supersededBy` may be null) → `skippedSheets[sid] = "superseded"`. Ingest `stats.sheets` counts the same way.
+* **Corrections follow the revision (E2E-12)**: `build.retarget_superseded` moves a correction made on a superseded
+  sheet onto the sheet that replaced it, following chains of up to 8 revisions. `Correction.origin_sheet_id` keeps the
+  original sheet, so the old detections are read from that sheet's version, and `Correction.on_version` makes it
+  always re-match by anchor + class family: a shared version id "v1" never counts as the same version. If
+  `supersededBy` is null, or the replacement is not in the build, the correction is reported unmatched (`הגיליון לא
+  נכלל בבנייה`).
+* **Imports override the default library**: `library_import.importer.deactivate_defaults` sets `active: false` on
+  every `source: 'default'` item of a code the import brings. Nothing is deleted. A default item whose id equals the
+  imported one becomes the imported item (active). Import stats `defaultsDeactivated`.
+* The contracts mirror test is strict again (`PENDING_CONTRACT_RULES` removed). It passes with the published
+  `r_template_demolition`.
+* Contract doc nit for the API: `FixtureCombinationMatchSchema.radiusMm` is documented as *paper* mm. The worker
+  treats it as **real** mm (divided by the sheet scale), like `faucetRadiusMm` / `roomMatchRadiusMm` — please fix the
+  comment. The taxonomy classes `fixture_wc_hung` / `cistern_concealed` are not in `SymbolClass` yet, so the
+  "אסלה תלויה + מיכל סמוי" example rule does not validate.
+* Tests (`test_boq_stage10.py`): superseded sheets skipped + their correction re-matched on the replacement, with an
+  orphan correction reported unmatched; import deactivates defaults (idempotent); written lines (with `byRoom` /
+  `approvalInvalidated`) and a `fixture_combination` rule validate against the published JSON schemas.
+* Checks after the follow-ups (2026-11-01): ruff check / format clean (my files), mypy 2.4.0 + bandit 1.9.4 clean,
+  `pytest -q` 556 passed, 1 failed = `test_rooms_v4::test_sample_mep_basement_split_with_reference`. That test reads the
+  shared `/home/claude/kamutan-data/artifacts` (stale data, listed in Worker-Accuracy's gaps) and is not touched by the
+  BOQ. Noah E2E-01 root re-run: still only + 1.01–1.10 and 3.15 evidence 0 → 1; every other line identical.
+
+## Stage 10 — fix round (Worker-Accuracy)
+
+Brief: `docs/agents/STAGE10_FIX_BRIEF.md` (owns `symbols/ legend/ links/ parse/ ocr/ pipeline/ rooms/ fixtures/`). Defects:
+`/home/claude/kamutan-data/acceptance/{pipeline,ui,live}/defects.md`. Tests: `tests/test_stage10_accuracy.py` (25) +
+the flipped acceptance tests in `benchmark/acceptance/test_pipeline_acceptance.py` (no xfail left for my defects).
+
+### Fixes
+* **A-pipeline-01 (4.05 comms)** — `symbols/qualifiers.py` (new), wired in `symbols/detect.py`
+  (`READ_QUALIFIER_OCR`, `_is_text_family`, `_resolve_by_ocr`). Members of a look-alike family (BEZEK / TV / TEL / רשת
+  brackets) whose word the SHX reader did not read are decided after one OCR pass: per candidate, 8 narrow windows
+  along the compass directions (start 0.45 × symbol size out, 2.1 sizes long, ±0.48 size wide; text-sized strokes
+  only; the symbol's own stem dropped), each turned so the text reads the way a drawing is read (from the bottom or
+  the right), all windows stacked into ONE image → Tesseract `eng` + `heb` (psm 6). Candidates still unread get ≤ 3
+  on-axis windows read as single words (psm 8; ≤ 24 calls per sheet). Words are matched to the family's tokens
+  (legend qualifier, or implied by the label: "לטלויזיה" → TV, "לטלפון" → TEL, "רשת" → רשת, "בזק" → BEZEK); short Latin
+  tokens need the same length (TV exact). Greedy global assignment; a window's strokes name one symbol only; two
+  members read equally well = no reading. A read member drops `דומה לסמל אחר` and gets the word as an annotation; a
+  bare bracket (q < 0.85) is now kept when its word is read (this recovered the 2 missed data points). No reading →
+  the previous rule, unchanged. Noah c054fd3a: tv 8 → tv 4 / data 4 / phone 2 = GT exactly. detect +1–3 s on the comms
+  sheet.
+* **Two-line notes** (`detect._note_block_text`): a nearby label is classified as its whole note block ("מפסק" over
+  "למאוורר" = fan *switch*); "למאוורר" alone had refined the master pendant into a ceiling fan (fan precision 0.83 → 1.0;
+  the switch becomes `switch_fan`).
+* **A-pipeline-11** — the raster reason is `גיליון רסטר` everywhere (`classify/sheet.py`, `symbols/detect.py`,
+  `calibration.R_RASTER`); the calibration ceiling and `kbench calibrate` still recognise the legacy `רסטר`
+  (`calibration.RASTER_REASONS`, kbench `RASTER_REASONS`).
+* **A-pipeline-06 (PNG only), partial** — `parse/raster.py`: `rule_sheet()` turns long horizontal / vertical ink runs
+  (≥ 4 mm, ≤ 0.8 mm thick, at 8 px/mm) into line segments, so the title block's cells and the drawing regions are
+  found as on a vector sheet (stored as the raster page's primitives); title-band OCR is up-sampled to 400 dpi; a
+  Tesseract line is split at a vertical rule between two words, at gaps > 1.2 line heights, and after a label word
+  (`:` read as `.` on scans). Noah PNGs at 200 dpi: c054fd3a electrical [basement, ground] (was "flooring", no floor),
+  1bbe4113 lighting [basement, ground], b2046277 lighting [ground], 8099ab2c construction [first]; eb8be8a3
+  electrical without a floor ("קרקע" misread), 08222cb2 no title block (landscape layout) — still yellow/red with
+  reasons. **Detections on rasters are not fixed** (see Gaps).
+* **A-pipeline-05 (DXF blocks)** — `parse/dxf.py` writes each INSERT's paper bbox (`bboxMm`: the block definition's
+  extents, cached per block, through the INSERT's own transform). `symbols/blocks.py` (new) + `detect._block_detections`:
+  a block is countable when a class-bearing label stands beside one of its INSERTs (legend sample = legend layer, a
+  legend table, or a "מקרא" title above; not counted) or its name is a known label (SOCKET, SWITCH, LAMP…). **Block
+  count** = plan INSERTs; **graphic count** = distinct places where the block's own exploded strokes are found
+  (`spot_template` with a template from the legend sample; a loose copy on top of an INSERT is the same place). One
+  detection per place (`source` block / vector), a vector detection of the same class at that place is dropped. Counts
+  differ → every detection of the block is yellow with `ספירת בלוקים (N) שונה מהספירה הגרפית (M)`; a place without an
+  INSERT also gets `סמל משורטט ללא בלוק`, an INSERT with no visible strokes `בלוק ללא שרטוט נראה`.
+  `DetectResult.stats.blocks` = `[{block, class, blocks, graphic}]`.
+* **A-pipeline-03/04 (geometry part only)** — `rooms/walls.py` records `stats.faceInsetMm` (median half pen width of the
+  wall outlines + the 0.05 mm union pad); `rooms/segment._to_wall_faces` grows every face back by that much (≤ 0.5 mm),
+  never past the middle of the wall it touches: the room polygon now sits on the wall *face* (the stroke's centre
+  line) instead of the pen's inner edge. Guest WC IoU vs GT 0.941 → 0.982. The convention questions (courtyard
+  GT-D-007, corners near doors GT-D-008, 4.09 GT-D-006) are unchanged.
+* **A-UI-19** — `pipeline/floor_check.py` (new), called by the orchestrator when the drawing's floors (Sprint 4 wall
+  alignment) replace the title's: classification reason `הקומות בשרטוט שונות מהכותרת (בשרטוט: …; בכותרת: …)`, green →
+  yellow; `classification.floors` keeps the title reading, the sheet's `floors` the drawing's. Noah: 6fa88f92 ("ת.
+  מאסטר"), c054fd3a, 1bbe4113 flagged.
+* **A-LIVE-03** — findings: `calibration/table.json` + `schema.json` ship in the wheel (uv_build) and the Docker image
+  (`COPY workers/drawing/` + `uv sync --no-editable`; the dockerignore drops `*.pdf/*.dxf/…`, not JSON); every worker
+  producer of a level calls `calibrate` (detections vector + raster, fixtures, rooms, link groups, confirmed floors);
+  the reprocess path creates a fresh version (`artifacts: {}`) and re-runs `understand`; the API and web pass levels
+  through unchanged (web `CountsPanel` counts `detection.level`; its header shows BOQ-*line* stats, so header and panel
+  measure different things — Web). The one real gap: the orchestrator wrote `stats.calibration` from *its* table but
+  uploaded the sandbox's levels unchecked (the sandbox output is untrusted; the child never sees
+  `KAMUTAN_CALIBRATION_TABLE`, and an older worker / image writes greens with no table at all). Most likely the live
+  sheet was produced by a pre-Sprint-5 worker (no `stats.calibration` on its version doc → check it; reprocess fixes it).
+  **Fix**: `pipeline/ceiling.py` (new) — `service/_understand` re-applies the orchestrator's table to every green item
+  of `detections / rooms / links / fixtures` before upload (only lowers; human acceptances kept; raster never green),
+  recomputes `stats.detections` and the level counts of `stats.links`, logs `calibration ceiling lowered sandbox greens …`. Tests: stale sandbox output
+  through the real pipeline, wheel built + imported in a fresh interpreter (table version = committed, not
+  `fallback-empty`), dockerignore check; `tests/test_service_links.py` now expects the stub's green group capped.
+
+### Noah, before / after (same BOQ code for both; `scripts/ingest_local.py --force` into scratch roots from frozen
+non-editable snapshots — before = `git archive HEAD`, after = this tree; `boq_local.py --no-corrections`; kbench
+gt-v0.4.1-draft). Roots: `/home/claude/kamutan-data/acceptance/fix-accuracy/{before,after}/`.
+| metric | before | after |
+| --- | --- | --- |
+| symbols micro-F1 (semantic / glyph) | 0.847 / 0.753 | **0.876 / 0.781** |
+| items correct before review | 78.8 % (LB 73.0) | **81.9 % (LB 76.3)** |
+| tv / data / phone F1 | 0.667 / 0 / 0 | **1.0 / 1.0 / 1.0** |
+| ceiling_fan P | 0.833 | 1.000 |
+| links exact R / P, kind acc | 0.933 / 0.966, 0.967 | unchanged |
+| fixtures micro-F1 | 0.941 | 0.941 |
+| tiling rooms: area / perimeter median PE | 0.118 / 0.134 | 0.091 / 0.122 (corners unchanged) |
+| eval-boq 3/4/5/9.01 gated: exact, ΣAE | 26/41, 36.14 | 26/41, **33.10** |
+| 4.05 (exp 11; drawing has 10) | 8 | **10** |
+| 4.10 (exp 2) | 1 | 1 (not fixed, see Gaps) |
+| 5.01 (57 ±3 %) | 56.30 | 57.19 |
+| 5.02 (18.1 ±2 %) | 17.06 (−5.7 %) | 17.59 (−2.8 %) |
+| 5.03 (15.6) | 12.20 | 12.20 (corner convention, owner) |
+| 9.01 (43, disputed) | 43 | 44 |
+Every other line identical. 9.01 +1: the master pendant is no longer a (false) ceiling fan; the old 43 hid another
+extra luminaire. Page times 7–45 s (max 1bbe4113), set ≈ 300 s on the shared box.
+
+### Gaps (not fixed)
+* **4.10 (A-pipeline-02)**: the missing two-way is the master suite (GT 1bbe4113-G13: existing 2-way at the bed head +
+  new 2-way → existing fan point). The stair two-way is correctly counted once (cross-sheet dedup). Two independent
+  errors remain: the bed-head switch is detected as `switch_single` and its note "מפסק מחליף קיים" is not read (SHX
+  noise), and at the dashed-arc junction below the fan switch the chaining pairs the fan switch with the fan and the
+  new 2-way with the type-23 spot (the GT-D-005 area: GT reads the opposite pairing). A semantic re-pairing at arc
+  crossings ("a 2-way needs a 2-way partner") was designed but needs the bed-head switch known as a 2-way first (OCR
+  of that note). With it, 4.14 would move to the fan switch's group: needs the BOQ rule "fan switch anywhere → 4.14"
+  (Worker-BOQ).
+* **PNG detections (A-pipeline-06)**: still 0 on Noah PNGs → raster BOQ lines empty. The old NCC path finds the legend
+  badly at 5 px/mm. A centre-line vectoriser (thinning + tracing, so the vector legend / chamfer machinery could run)
+  was prototyped: 20 s per A3 and symbols touching walls lose their shape (merged into the wall skeleton); not
+  shipped. Next step: thick-wall removal before thinning + full-page OCR for legend labels, or a learned detector.
+* 5.02 −2.8 % is the courtyard (GT-D-007, owner) + niches; 5.03 is GT-D-008 (owner).
+* Timing-budget tests (`test_integration_sample`, `test_understand_sample`, < 60 s) fail only when the shared 2-vCPU
+  box is loaded (load 6–8 from other agents during this round; they failed the same at HEAD on the first run); `test_rooms_v4::test_sample_mep_basement_split_with_reference` reads the shared
+  `/home/claude/kamutan-data/artifacts` (27.29 m² vs ≤ 27.0) and fails the same with the face growth off — stale data.
+
+### Requests
+* Worker-BOQ: `boq.build` reads stored artifacts of older versions — cap their greens with
+  `pipeline.ceiling.cap_document` (same table) so a pre-calibration version cannot feed green evidence; 4.14 from a
+  `switch_fan` in any group kind (see 4.10).
+* Web: the review header shows BOQ-line stats while "ספירה לפי סוג" shows detection levels — label or align them.
+* DevOps: optional build-time check in `infra/docker/worker-drawing.Dockerfile`:
+  `python -c "from kamutan_drawing.calibration import load_table; load_table()"`.

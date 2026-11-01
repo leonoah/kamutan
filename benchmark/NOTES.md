@@ -460,3 +460,10 @@ checks; it never writes `table.json` (no `--table`). Table updates are a reviewe
 - `perf.py` per-sheet "slowest stage" used a leaked loop variable (always the last row); fixed and tested on 21.10.
 - Perf runs on a 2-vCPU box shared with the other agents (load avg 5–9). Wall-clock numbers are an upper bound; CPU
   seconds are reported alongside. The test plan asks for 5 repeats on a production-size worker; the nightly default is 3.
+
+## Stage 10 (Worker-Accuracy)
+- `kbench calibrate` recognises the worker's new raster reason `גיליון רסטר` (A-pipeline-11) next to the legacy `רסטר`
+  (`RASTER_REASONS`) for the "no green on a raster sheet" ceiling.
+- Pipeline acceptance (`benchmark/acceptance`): the A-pipeline-05 (DXF blocks) and A-pipeline-11 (raster copy) xfails
+  are flipped to passing tests (12 passed). Before / after numbers: `workers/drawing/NOTES.md` "Stage 10 — fix round
+  (Worker-Accuracy)".

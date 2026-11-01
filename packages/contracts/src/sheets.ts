@@ -33,8 +33,30 @@ export const SheetSetSchema = z.object({
   /** Number of pages (sheets), set by the worker after splitting. */
   pageCount: z.number().int().nonnegative().nullable().optional(),
   createdAt: TimestampSchema,
+  // --- Stage 10 (A-API-05): revised upload ---
+  /** This set is a revision of that set (finalize `replacesSheetSetId`). */
+  replacesSheetSetId: DocIdSchema.nullable().optional(),
+  /** Set by the API on the OLD set when a revision replaces it: every sheet of this set is superseded. */
+  supersededBySetId: DocIdSchema.nullable().optional(),
+  supersededAt: TimestampSchema.nullable().optional(),
+  /**
+   * On the NEW set: `pending` until its sheets are split and processed, then `matched` once the API linked every old
+   * sheet to its new sheet (`Sheet.supersededBy`); `sheetMap` = {oldSheetId: newSheetId | null}.
+   */
+  supersede: z
+    .object({
+      status: z.enum(['pending', 'matched']),
+      matchedAt: TimestampSchema.nullable().optional(),
+      sheetMap: z.record(DocIdSchema.nullable()).optional(),
+    })
+    .nullable()
+    .optional(),
 });
 export type SheetSet = z.infer<typeof SheetSetSchema>;
+
+/** How an old sheet was matched to its revision (A-API-05). */
+export const SUPERSEDE_MATCH_KINDS = ['title', 'page_order', 'none'] as const;
+export type SupersedeMatchKind = (typeof SUPERSEDE_MATCH_KINDS)[number];
 
 // ---------------------------------------------------------------------------
 // Classification / confirmation
@@ -103,6 +125,16 @@ export const SheetSchema = z.object({
   confirmedAt: TimestampSchema.nullable().optional(),
   currentVersionId: DocIdSchema.nullable(),
   updatedAt: TimestampSchema.nullable(),
+  // --- Stage 10 (A-API-05): revised upload. A superseded sheet is an OLD version: lists, the BOQ build, the review
+  // queue, share links and project counts use only current sheets (`superseded !== true`).
+  superseded: z.boolean().optional(),
+  /** The set whose revision superseded this sheet. */
+  supersededBySetId: DocIdSchema.nullable().optional(),
+  /** The matching sheet of the revision (null while the revision is processing, or when nothing matched). */
+  supersededBy: DocIdSchema.nullable().optional(),
+  supersededMatch: z.enum(SUPERSEDE_MATCH_KINDS).nullable().optional(),
+  /** On the NEW sheet: the old sheet it replaces (corrections of that sheet re-match onto this one, as in E2E-12). */
+  supersedes: DocIdSchema.nullable().optional(),
 });
 export type Sheet = z.infer<typeof SheetSchema>;
 
@@ -338,6 +370,8 @@ export const ListSheetsQuerySchema = z
     cursor: z.string().max(512).optional(),
     limit: z.coerce.number().int().min(1).max(200).default(100),
     sheetSetId: DocIdSchema.optional(),
+    /** Stage 10: also list superseded (old) sheets of revised uploads. Default false. */
+    includeSuperseded: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   })
   .strict();
 export type ListSheetsQuery = z.infer<typeof ListSheetsQuerySchema>;

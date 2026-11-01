@@ -2,14 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { BookOpenCheck, ChevronRight, ClipboardCheck, Layers, MapPin, Pencil, UploadCloud } from "lucide-react";
-import type { SheetRow } from "@/api/types";
+import { isSupersededSet, type SheetRow } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Dropzone } from "@/features/upload/Dropzone";
-import { useLiveJobs, useLiveSheets, isActiveJob } from "@/features/realtime/hooks";
+import { useLiveJobs, useLiveSheetSets, useLiveSheets, isActiveJob } from "@/features/realtime/hooks";
 import { useCurrentOrg } from "@/features/org/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { useProject, projectPhase, verifiedPct, activeProgress } from "./queries";
+import { statsOf } from "@/features/boq/model";
+import { useBoqLines, useBoqState } from "@/features/boq/queries";
 import { ProcessingPanel } from "./ProcessingPanel";
 import { SheetGallery, sheetState } from "./SheetGallery";
 import { ProjectBoqSummary } from "./ProjectBoqSummary";
@@ -18,7 +20,8 @@ import { EditProjectDialog } from "./EditProjectDialog";
 const phaseTone = {
   draft: "bg-state-existing/15 text-muted-foreground",
   processing: "bg-primary/10 text-primary",
-  review: "bg-conf-mid/15 text-conf-mid",
+  // Amber text on an amber tint is 3.4:1 (A-UI-04): the tone is the tint, the text stays foreground.
+  review: "bg-conf-mid/15 text-foreground",
   ready: "bg-conf-high/15 text-conf-high",
   archived: "bg-state-existing/15 text-muted-foreground",
 } as const;
@@ -35,6 +38,19 @@ export function ProjectPage() {
   const orgId = project.data?.orgId ?? null;
   const sheets = useLiveSheets(orgId, projectId);
   const jobs = useLiveJobs(orgId, projectId);
+  const sets = useLiveSheetSets(orgId, projectId);
+  // Stage 10 revised upload: an upload can replace a processed (or failed) set that was not replaced yet.
+  const replaceable = useMemo(
+    () =>
+      (sets.data ?? [])
+        .filter((x) => (x.status === "ready" || x.status === "failed") && !isSupersededSet(x))
+        .map((x) => ({ id: x.id, name: x.name ?? x.id })),
+    [sets.data],
+  );
+  // One "% מאומת" on the hub (A-UI-11): once a BOQ is built, the header uses the same live lines as the BOQ card;
+  // project.stats (also shown on the projects list) is only the fallback before the first build.
+  const boqState = useBoqState(orgId, projectId);
+  const boqLines = useBoqLines(projectId, boqState.data?.latestBuildId ?? null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [filterSheetId, setFilterSheetId] = useState<string | null>(null);
@@ -83,7 +99,8 @@ export function ProjectPage() {
   const p = project.data;
   const phase = projectPhase(p, jobs.data ?? []);
   const live = activeProgress(p.id, jobs.data ?? []);
-  const pct = verifiedPct(p);
+  const liveLines = boqState.data?.latestBuildId ? (boqLines.data?.items ?? []) : [];
+  const pct = liveLines.length ? statsOf(liveLines).pct : verifiedPct(p);
   const empty = inlineUpload === true;
 
   return (
@@ -220,7 +237,7 @@ export function ProjectPage() {
             <DialogTitle>{t("hub.upload")}</DialogTitle>
             <DialogDescription>{t("hub.uploadBody")}</DialogDescription>
           </DialogHeader>
-          <Dropzone projectId={p.id} />
+          <Dropzone projectId={p.id} replaceable={replaceable} />
         </DialogContent>
       </Dialog>
 

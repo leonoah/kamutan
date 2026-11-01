@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
   INGEST_JOB_SCHEMA_VERSION,
@@ -16,7 +16,8 @@ import {
 import { AccessService } from '../access/access.service';
 import type { AuthContext } from '../auth/auth-context';
 import { ApiException } from '../common/api-exception';
-import { REPOSITORY, type Repository } from '../db/repository';
+import { PROJECT_STATE_REPOSITORY, type ProjectStateRepository } from '../db/project-state-repository';
+import { RepoConflictError, REPOSITORY, type Repository } from '../db/repository';
 import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
 import { kindFromFilename, sanitizeFilename } from './filename';
 import { inspectStream, TooLargeError } from './inspect';
@@ -36,6 +37,7 @@ export class UploadsService {
     @Inject(INGEST_QUEUE) private readonly queue: IngestQueue,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(UPLOAD_TOKEN_SIGNER) private readonly signer: UploadTokenSigner,
+    @Optional() @Inject(PROJECT_STATE_REPOSITORY) private readonly state?: ProjectStateRepository,
   ) {}
 
   /**
@@ -88,12 +90,18 @@ export class UploadsService {
     if (claims.prj !== projectId || claims.usr !== user.uid || claims.org !== orgId) {
       throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', 'upload token does not match this project');
     }
+    // Stage 10 (A-API-05): the set this revision replaces must exist in THIS project (404 like any foreign id).
+    if (req.replacesSheetSetId) {
+      const old = await this.repo.getSheetSet(orgId, projectId, req.replacesSheetSetId);
+      if (!old) throw new ApiException(HttpStatus.NOT_FOUND, 'not_found', 'sheet set not found');
+    }
 
     const stream = await this.storage.openRead(claims.path);
     if (!stream) {
       // Already moved by an earlier call with this token (e.g. publish failed afterwards): resume.
       const prior = await this.repo.findSheetSetByUploadFileId(orgId, projectId, claims.fid);
       if (!prior) throw new ApiException(HttpStatus.CONFLICT, 'upload_missing', 'uploaded object not found');
+      if (req.replacesSheetSetId) await this.supersede(orgId, projectId, req.replacesSheetSetId, prior.id, user.uid);
       return this.publishIfNeeded(orgId, projectId, prior, true, traceparent);
     }
 
@@ -120,6 +128,10 @@ export class UploadsService {
     }
 
     const sha256 = inspected.sha256;
+    if (req.replacesSheetSetId && req.replacesSheetSetId === sha256) {
+      await this.discard(claims.path);
+      throw new ApiException(HttpStatus.CONFLICT, 'conflict', 'the revised file is identical to the set it replaces', [{ path: 'replacesSheetSetId', message: 'same_set' }]);
+    }
     const destPath = storagePaths.projectUpload(orgId, projectId, sha256, detected);
     const existing = await this.repo.getSheetSet(orgId, projectId, sha256);
     const { sheetSet, deduplicated } = existing
@@ -144,7 +156,25 @@ export class UploadsService {
         metadata: { sha256, uploadedBy: user.uid, fileId: claims.fid, originalName: claims.name },
       });
     }
+    if (req.replacesSheetSetId) await this.supersede(orgId, projectId, req.replacesSheetSetId, sheetSet.id, user.uid);
     return this.publishIfNeeded(orgId, projectId, sheetSet, deduplicated, traceparent);
+  }
+
+  /**
+   * A-API-05: links the revision to the set it replaces (pending until the revision is processed; then the old sheets
+   * become superseded versions of the matching new sheets — ProjectStateService.reconcileSupersedes).
+   */
+  private async supersede(orgId: string, projectId: string, oldSetId: string, newSetId: string, actorUid: string): Promise<void> {
+    if (!this.state) return;
+    try {
+      await this.state.startSupersede(orgId, projectId, oldSetId, newSetId, actorUid);
+    } catch (err) {
+      if (err instanceof RepoConflictError) {
+        const msg = err.reason === 'already_superseded' ? 'that sheet set was already replaced by another revision' : err.reason === 'same_set' ? 'the revised file is identical to the set it replaces' : 'sheet set not found';
+        throw new ApiException(err.reason === 'not_found' ? HttpStatus.NOT_FOUND : HttpStatus.CONFLICT, err.reason === 'not_found' ? 'not_found' : 'conflict', msg, [{ path: 'replacesSheetSetId', message: err.reason }]);
+      }
+      throw err;
+    }
   }
 
   /** Publishes the initial ingest of a set that is still `uploaded` (never published), then marks it `queued`. */

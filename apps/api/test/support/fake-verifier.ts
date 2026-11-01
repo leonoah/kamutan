@@ -8,6 +8,10 @@ interface FakeOpts {
   email?: string;
   /** Sprint 5: `auth_time` (seconds since epoch); default = now (a fresh sign-in). */
   authTime?: number;
+  /** Stage 10: `email_verified` (default true). */
+  emailVerified?: boolean;
+  /** Stage 10: `name` claim (display name). */
+  name?: string;
 }
 
 /**
@@ -23,6 +27,8 @@ export class FakeIdTokenVerifier implements IdTokenVerifier {
       uid,
       auth_time: opts.authTime ?? Math.floor(Date.now() / 1000),
       email: opts.email ?? `${uid}@example.test`,
+      email_verified: opts.emailVerified ?? true,
+      ...(opts.name ? { name: opts.name } : {}),
       firebase: {
         sign_in_provider: opts.provider ?? 'password',
         ...(opts.mfa ? { sign_in_second_factor: 'totp' } : {}),

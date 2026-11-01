@@ -17,6 +17,8 @@ import {
 } from '@kamutan/contracts';
 import { AccessService } from '../access/access.service';
 import type { AuthContext } from '../auth/auth-context';
+import { assertExportAllowed } from '../boq/export-gate';
+import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { BOQ_STORAGE, type BoqStorage } from '../boq/boq-storage';
 import { ApiException, notFound } from '../common/api-exception';
 import { GOVERNANCE_REPOSITORY, type GovernanceRepository } from '../db/governance-repository';
@@ -52,6 +54,7 @@ export class ExportsService {
     @Inject(INGEST_QUEUE) private readonly queue: IngestQueue,
     @Inject(GOVERNANCE_STORAGE) private readonly storage: GovernanceStorage,
     @Inject(BOQ_STORAGE) private readonly boqStorage: BoqStorage,
+    @Inject(BOQ_REPOSITORY) private readonly boq: BoqRepository,
   ) {}
 
   /** Creates exports/{id} (queued) + job + audit, publishes `export.marked_pdf`. 409 when the project has no BOQ lines/sheets. */
@@ -60,6 +63,9 @@ export class ExportsService {
     const project = await this.repo.getProject(orgId, projectId);
     if (!project) throw notFound('project');
     if (!project.boq?.latestBuildId) throw new ApiException(HttpStatus.CONFLICT, 'not_ready', 'build the BOQ before exporting a marked PDF');
+    // Stage 10 (A-API-04): the marked PDF carries the quantities too → same blockExportOnRed gate as the xlsx.
+    const [org, lines] = await Promise.all([this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
+    assertExportAllowed(org, lines, 'marked PDF export');
     if (req.sheetIds) {
       for (const sid of req.sheetIds) {
         const sheet = await this.repo.getSheet(orgId, projectId, sid);

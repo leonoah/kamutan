@@ -26,14 +26,15 @@ import gzip
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
 from .. import errors as E
-from ..calibration import default_table
+from ..calibration import RASTER_REASONS, clean_green_threshold, default_table
 from ..errors import IngestError
 from ..pipeline.artifacts import version_prefix
+from ..pipeline.ceiling import cap_document
 from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
 from .aggregate import Line, Result, SheetInput, aggregate
 from .contracts import EVIDENCE_SCHEMA, BoqBuildJob, parse_links
@@ -79,6 +80,7 @@ class Inputs:
     correction_counts: dict[str, int] = field(default_factory=dict)
     room_settings: dict[str, dict[str, Any]] = field(default_factory=dict)
     old_detections: OldDetections | None = None
+    capped: dict[str, int] = field(default_factory=dict)  # stored greens lowered by the current calibration table
 
 
 @dataclass
@@ -115,8 +117,26 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
     mappings = {sig: m for sig, m in _list(docs, f"orgs/{org_id}/symbolMappings") if isinstance(m, dict)}
     sheets: list[SheetInput] = []
     skipped: dict[str, str] = {}
+    # Stage 10 (A-LIVE-03, Worker-Accuracy request): stored artifacts of older versions (possibly ingested before
+    # calibration existed, or by another image) are re-capped with THIS worker's table — only ever lowered; human
+    # acceptances ("אושר ידנית") kept; corrections are applied later, in aggregate, and may still make items green.
+    table = default_table()
+    org_settings = (docs.get(f"orgs/{org_id}") or {}).get("settings")
+    threshold = clean_green_threshold(org_settings.get("greenThreshold")) if isinstance(org_settings, dict) else None
+    capped: dict[str, int] = {"detections": 0, "links": 0, "rooms": 0}
+
+    def cap(kind: str, doc: Any, raster: bool) -> None:
+        if isinstance(doc, dict):
+            capped[kind] += cap_document(kind, doc, table, raster=raster, green_threshold=threshold)
+
     want_text = any(r.kind == "one_off_suggestion" and r.match.get("textPatterns") for r in rules)
+    superseded: dict[str, str | None] = {}
     for sid, s in sorted(_list(docs, f"{proj}/sheets")):
+        if s.get("superseded") is True:  # a revised upload replaced it (A-API-05); `supersededBy` may be null
+            sb = s.get("supersededBy")
+            superseded[sid] = str(sb) if isinstance(sb, str) and sb else None
+            skipped[sid] = "superseded"
+            continue
         disc = s.get("discipline")
         if not isinstance(disc, str) or not disc:
             continue
@@ -142,6 +162,9 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
             det = {}
         links_path = arts.get("links") or pre + "links.json.gz"
         links_obj = _gz_json(blobs, str(links_path)) if str(links_path).startswith(pre) else None
+        raster = any(r in RASTER_REASONS for r in ((s.get("classification") or {}).get("reasons") or []))
+        cap("detections", det, raster)
+        cap("links", links_obj, raster)
         dets = [d for d in (det.get("detections") or []) if isinstance(d, dict)]
         if disc in PLAN_DISCIPLINES:
             dets = [d for d in dets if d.get("class") in PLAN_CLASSES]
@@ -155,6 +178,7 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
             texts = [t for t in ((tobj or {}).get("lines") or []) if isinstance(t, dict)]
         rp = arts.get("rooms") or pre + "rooms.json.gz"
         robj = _gz_json(blobs, str(rp)) if str(rp).startswith(pre) else None
+        cap("rooms", robj, raster)
         room_docs = [r for r in ((robj or {}).get("rooms") or []) if isinstance(r, dict)]
         rooms = {str(r.get("id")): str(r.get("name") or "") for r in room_docs}
         regions = [r for r in (v.get("regions") or []) if isinstance(r, dict)]
@@ -183,6 +207,7 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
             )
         )
     corrections, ccounts = parse_corrections(_list(docs, f"{proj}/corrections"))
+    corrections = retarget_superseded(corrections, superseded, {x.sheet_id for x in sheets})
     settings = {k: v for k, v in _list(docs, f"{proj}/roomSettings") if isinstance(v, dict)}
     cache: dict[tuple[str, str], list[dict[str, Any]] | None] = {}
 
@@ -198,7 +223,28 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
             )
         return cache[(sheet_id, version_id)]
 
-    return Inputs(sheets, rules, library, entries, mappings, skipped, corrections, ccounts, settings, old_detections)
+    return Inputs(sheets, rules, library, entries, mappings, skipped, corrections, ccounts, settings, old_detections, capped)
+
+
+def retarget_superseded(corrections: list[Correction], superseded: dict[str, str | None], loaded: set[str]) -> list[Correction]:
+    """Corrections made on a superseded sheet apply to the sheet that replaced it (following a chain of revisions),
+    re-matched by anchor against its current version (E2E-12 cross-version rule). No replacement (``supersededBy``
+    null) or a replacement not in this build → left as is: reported unmatched (``הגיליון לא נכלל בבנייה``)."""
+    out: list[Correction] = []
+    for c in corrections:
+        if c.sheet_id not in superseded:
+            out.append(c)
+            continue
+        cur: str | None = c.sheet_id
+        for _ in range(8):
+            if cur is None or cur not in superseded:
+                break
+            cur = superseded[cur]
+        if cur is not None and cur in loaded and cur not in superseded:
+            out.append(replace(c, sheet_id=cur, origin_sheet_id=c.origin_sheet_id or c.sheet_id))
+        else:
+            out.append(c)
+    return out
 
 
 def evidence_path(org_id: str, project_id: str, build_id: str) -> str:
@@ -212,14 +258,29 @@ def evidence_bytes(lines: list[Line], build_id: str, corrections: dict[str, Any]
     return gzip.compress(json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(), mtime=0)
 
 
-def upsert_lines(
-    docs: DocStore, proj: str, lines: list[Line], build_id: str, evidence_ref: str
-) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
-    """Write the computed lines, preserving human fields; handle obsolete lines. Returns (docs written, counts)."""
+@dataclass
+class Upserted:
+    written: dict[str, dict[str, Any]]
+    counts: dict[str, int]
+    invalidated: list[dict[str, Any]] = field(default_factory=list)  # approvals invalidated by this build
+    all_lines: dict[str, dict[str, Any]] = field(default_factory=dict)  # every boqLines doc after the build
+
+
+def upsert_lines(docs: DocStore, proj: str, lines: list[Line], build_id: str, evidence_ref: str) -> Upserted:
+    """Write the computed lines, preserving human fields; handle obsolete lines. Returns the docs written, counts and
+    the approvals this build invalidated."""
     coll = f"{proj}/boqLines"
     existing = {lid: d for lid, d in _list(docs, coll) if isinstance(d, dict)}
     written: dict[str, dict[str, Any]] = {}
-    counts = {"created": 0, "updated": 0, "deleted": 0, "kept": 0, "qtyChanged": 0}
+    counts = {"created": 0, "updated": 0, "deleted": 0, "kept": 0, "qtyChanged": 0, "approvalsInvalidated": 0}
+    invalidated: list[dict[str, Any]] = []
+
+    def check(lid: str, cur: dict[str, Any], doc: dict[str, Any]) -> None:
+        inv = _approval_check(cur, doc, build_id)
+        if inv is not None:
+            invalidated.append({"lineId": lid, "code": doc.get("code"), "fromQty": inv["fromQty"], "toQty": inv["toQty"]})
+            counts["approvalsInvalidated"] += 1
+
     for ln in lines:
         cur = existing.get(ln.id)
         computed = {**ln.computed_fields(), "evidenceRef": evidence_ref, "buildId": build_id, "computedAt": SERVER_TIMESTAMP}
@@ -228,9 +289,9 @@ def upsert_lines(
             counts["created"] += 1
         else:
             doc = {**cur, **computed, **{k: cur[k] for k in PRESERVED if k in cur}, "updatedAt": SERVER_TIMESTAMP}
-            _approval_check(cur, doc)
+            check(ln.id, cur, doc)
             counts["updated"] += 1
-            counts["qtyChanged"] += int(R_QTY_CHANGED in doc["reasons"])
+            counts["qtyChanged"] += int(any(str(r).startswith(R_QTY_CHANGED) for r in doc["reasons"]))
         docs.set(f"{coll}/{ln.id}", doc, merge=False)
         written[ln.id] = doc
     computed_ids = {ln.id for ln in lines}
@@ -262,28 +323,79 @@ def upsert_lines(
             "computedAt": SERVER_TIMESTAMP,
             "updatedAt": SERVER_TIMESTAMP,
         }
-        _approval_check(cur, doc)
+        check(lid, cur, doc)
         docs.set(f"{coll}/{lid}", doc, merge=False)
         written[lid] = doc
         counts["kept"] += 1
-    return written, counts
+    all_lines = {lid: d for lid, d in existing.items() if lid not in written and not d.get("computedAt")}  # manual
+    all_lines.update(written)
+    return Upserted(written, counts, invalidated[:500], all_lines)
 
 
-def _approval_check(cur: dict[str, Any], doc: dict[str, Any]) -> None:
-    """Approved line whose computed qty moved: keep the status, flag it red (documented in NOTES)."""
-    if cur.get("status") != "approved":
+def _fmt_qty(q: Any) -> str:
+    v = round(float(q or 0.0), 2)
+    return str(int(v)) if v == int(v) else f"{v:g}"
+
+
+def qty_changed_reason(from_qty: Any, to_qty: Any) -> str:
+    """``הכמות השתנתה מאז האישור (16 → 17)`` (decision A-pipeline-08 / A-API-06)."""
+    return f"{R_QTY_CHANGED} ({_fmt_qty(from_qty)} → {_fmt_qty(to_qty)})"
+
+
+def _strip_qty_reason(reasons: Any) -> list[str]:
+    return [r for r in reasons or [] if not str(r).startswith(R_QTY_CHANGED)]
+
+
+def _flag_changed(doc: dict[str, Any], from_qty: Any) -> None:
+    doc["reasons"] = [qty_changed_reason(from_qty, doc.get("qty")), *_strip_qty_reason(doc.get("reasons"))][:32]
+    doc["level"] = "red"
+
+
+def _approval_check(cur: dict[str, Any], doc: dict[str, Any], build_id: str | None = None) -> dict[str, Any] | None:
+    """An approved line whose computed qty moved is no longer approved (decision A-pipeline-08 / A-API-06): it drops
+    to ``reviewed`` (approval stamps cleared, as the API's un-approve does), level red, first reason
+    ``הכמות השתנתה מאז האישור (X → Y)``, and ``approvalInvalidated`` keeps who / when / from → to until a human
+    approves again (or moves it back to draft). A line with a ``qtyOverride`` keeps its approval: the human quantity is
+    what was approved and did not change. Returns the invalidation (for the build doc / audit) when it happened now.
+
+    Baseline: ``approvedQty`` / ``approvedQtyAt`` (worker bookkeeping) = the qty at the first rebuild after that
+    approval (``approvedAt``), else the line's qty before this rebuild."""
+    status = cur.get("status")
+    marker = cur.get("approvalInvalidated")
+    if status != "approved":
         doc.pop("approvedQty", None)
         doc.pop("approvedQtyAt", None)
-        return
+        if status == "reviewed" and isinstance(marker, dict):
+            doc["approvalInvalidated"] = {**marker, "toQty": doc.get("qty")}
+            if float(doc.get("qty") or 0.0) != float(marker.get("fromQty") or 0.0):
+                _flag_changed(doc, marker.get("fromQty"))
+            else:
+                doc["reasons"] = _strip_qty_reason(doc.get("reasons"))
+        else:
+            doc.pop("approvalInvalidated", None)
+            doc["reasons"] = _strip_qty_reason(doc.get("reasons"))
+        return None
+    doc.pop("approvalInvalidated", None)
     at = cur.get("approvedAt")
     base = cur.get("approvedQty") if ("approvedQty" in cur and cur.get("approvedQtyAt") == at) else cur.get("qty")
     doc["approvedQty"] = base
     doc["approvedQtyAt"] = at
-    if base is not None and float(doc.get("qty") or 0.0) != float(base):
-        doc["reasons"] = [R_QTY_CHANGED, *[r for r in doc.get("reasons") or [] if r != R_QTY_CHANGED]][:32]
-        doc["level"] = "red"
-    else:
-        doc["reasons"] = [r for r in doc.get("reasons") or [] if r != R_QTY_CHANGED]
+    doc["reasons"] = _strip_qty_reason(doc.get("reasons"))
+    if base is None or cur.get("qtyOverride") is not None or float(doc.get("qty") or 0.0) == float(base):
+        return None
+    inv = {
+        "fromQty": float(base),
+        "toQty": float(doc.get("qty") or 0.0),
+        "approvedBy": cur.get("approvedBy"),
+        "approvedAt": at,
+        "buildId": build_id,
+        "at": SERVER_TIMESTAMP,
+    }
+    doc.update({"status": "reviewed", "approvedBy": None, "approvedAt": None, "approvalInvalidated": inv})
+    doc.pop("approvedQty", None)
+    doc.pop("approvedQtyAt", None)
+    _flag_changed(doc, base)
+    return inv
 
 
 def build_project(org_id: str, project_id: str, build_id: str, blobs: BlobStore, docs: DocStore) -> BuildOutcome:
@@ -310,7 +422,8 @@ def build_project(org_id: str, project_id: str, build_id: str, blobs: BlobStore,
         "application/gzip",
         cache_control="private, max-age=31536000, immutable",
     )
-    written, counts = upsert_lines(docs, proj, res.lines, build_id, ev_path)
+    up = upsert_lines(docs, proj, res.lines, build_id, ev_path)
+    written, counts = up.written, up.counts
     stats = {
         "lines": len(res.lines),
         "green": sum(1 for d in written.values() if d.get("level") == "green"),
@@ -336,10 +449,25 @@ def build_project(org_id: str, project_id: str, build_id: str, blobs: BlobStore,
         "tiling": res.stats.get("tiling", {}),
         "skippedSheets": inp.skipped_sheets,
         "writes": counts,
+        "approvalsInvalidated": counts["approvalsInvalidated"],
+        "approvalsInvalidatedList": up.invalidated,
+        "library": inp.library.stats(),
+        "calibrationCapped": dict(inp.capped),
         "durationMs": int((time.monotonic() - t0) * 1000),
         "calibration": default_table().stats(),
+        "projectStats": project_line_stats(up.all_lines),
     }
     return BuildOutcome("succeeded", res, stats, ev_path, written)
+
+
+def project_line_stats(lines: dict[str, dict[str, Any]]) -> dict[str, int]:
+    """Project-card counters (A-LIVE-02, contracts ``ProjectStatsSchema`` subset): every BOQ line incl. manual ones."""
+    out = {"boqLines": len(lines), "green": 0, "yellow": 0, "red": 0}
+    for d in lines.values():
+        lv = d.get("level")
+        if lv in ("green", "yellow", "red"):
+            out[str(lv)] += 1
+    return out
 
 
 def _stale_mark(docs: DocStore, project_path: str) -> Any:
@@ -449,7 +577,8 @@ def run_boq_build(job: BoqBuildJob, blobs: BlobStore, docs: DocStore) -> BuildOu
         if final:
             docs.set(f"{job.project_path}", {"boq": {"pendingBuildId": None}})
         raise err from None
-    drop = ("skippedSheets", "fallbackSheets", "writes", "unmatchedCorrections", "plumbing", "tiling")
+    drop = ("skippedSheets", "fallbackSheets", "writes", "unmatchedCorrections", "plumbing", "tiling",
+            "approvalsInvalidatedList", "projectStats")  # fmt: skip
     stats = {k: v for k, v in out.stats.items() if k not in drop}
     stats["fallbackSheets"] = len(out.stats.get("fallbackSheets") or [])
     docs.set(
@@ -462,12 +591,14 @@ def run_boq_build(job: BoqBuildJob, blobs: BlobStore, docs: DocStore) -> BuildOu
             "evidenceRef": out.evidence_ref,
             # review queue: "תיקון לא הותאם" (also in the evidence file, contracts `corrections.unmatched`)
             "unmatchedCorrections": out.stats.get("unmatchedCorrections", []),
+            # approvals this build invalidated (A-pipeline-08): the API audits them (NOTES Stage 10 request 1c)
+            "approvalsInvalidated": out.stats.get("approvalsInvalidatedList", []),
         },
     )
     summary: dict[str, Any] = {"latestBuildId": job.buildId, "builtAt": SERVER_TIMESTAMP, "pendingBuildId": None}
     if _stale_mark(docs, job.project_path) == stale_mark:  # nothing changed while we were building
         summary.update({"stale": False, "staleReason": None})
-    docs.set(job.project_path, {"boq": summary})
+    docs.set(job.project_path, {"boq": summary, "stats": out.stats.get("projectStats") or {}})
     docs.set(
         job_path,
         {

@@ -53,7 +53,7 @@ test.describe("E2E-09 share", () => {
     const item = dlg.getByRole("listitem").filter({ hasText: "קבלן חשמל — הצעת מחיר (E2E)" });
     await expect(item).toContainText("פעיל");
     await expect(item).toContainText("contractor@example.com");
-    await item.getByRole("button", { name: /בטל את הקישור/ }).click();
+    await item.getByRole("button", { name: /^בטל קישור / }).click();
     const confirm = page.getByRole("alertdialog", { name: "לבטל את הקישור?" });
     await expect(confirm).toBeVisible();
     await shot(page, info, "e2e09-03-revoke-confirm");
@@ -136,12 +136,39 @@ test.describe("E2E-09 share", () => {
     await shot(page, info, "m-04-share-revoked");
   });
 
-  // A-UI-10: at 390 px the viewer header squeezes the title to "ס…" and wraps the label / version / expiry one word per
-  // line (SharedViewerPage.tsx header row: title block + "לקריאה בלבד" + "הורד PDF מסומן" in one non-wrapping flex row).
-  test.fixme("A-UI-10 mobile 390: the share viewer title is readable (not truncated to one letter) @mobile-only @mobile", async ({ page }) => {
+  // A-UI-10 (fixed): at 390 px the viewer header squeezed the title to "ס…" and wrapped the label / version / expiry one
+  // word per line. Now the title block takes the full first line and the chips wrap below it.
+  test("A-UI-10 mobile 390: the share viewer title is readable (not truncated to one letter) @mobile-only @mobile", async ({ page }, info) => {
     await page.goto("/s/demo-noah");
     const h1 = page.locator("[data-share-viewer] h1");
     await expect(h1).toBeVisible({ timeout: 60_000 });
     expect(await h1.evaluate((e) => e.scrollWidth <= e.clientWidth + 1)).toBe(true);
+    // the title block is at least 2/3 of the phone width, and the meta line is not one word per line
+    const w = await h1.evaluate((e) => e.getBoundingClientRect().width);
+    expect(w).toBeGreaterThan(390 * 0.66);
+    const meta = page.locator("[data-share-viewer] header p").first();
+    const lineH = await meta.evaluate((e) => parseFloat(getComputedStyle(e).lineHeight) || 16);
+    expect(await meta.evaluate((e) => e.getBoundingClientRect().height)).toBeLessThanOrEqual(lineH * 2 + 2);
+    await expect(page.locator("[data-read-only]")).toBeInViewport();
+    await expectNoHorizontalScroll(page);
+    await shot(page, info, "m-05-share-header", { locator: page.locator("[data-share-viewer] header") });
+  });
+
+  // A-UI-21 (fixed): on a phone the drawing sits below the whole table; tapping a row now scrolls the drawing into view
+  // with the line's evidence focused, and "חזרה לטבלה" goes back to the row.
+  test("A-UI-21 mobile 390: tapping a row shows its evidence on the drawing @mobile-only @mobile", async ({ page }, info) => {
+    await page.goto("/s/demo-noah");
+    const boq = page.locator("[data-share-boq]");
+    await expect(boq.locator("tr[data-line]").first()).toBeVisible({ timeout: 60_000 });
+    const drawing = page.locator("[data-share-drawing]");
+    await expect(drawing).not.toBeInViewport();
+    const row = boq.locator("tr[data-line]").first();
+    await row.locator("button").tap();
+    await expect(row).toHaveClass(/outline-primary/);
+    await expect(page.getByRole("application").first()).toBeInViewport({ ratio: 0.5, timeout: 10_000 });
+    await expect(drawing).toContainText(/פריט|פריטים בגיליון|אין פריטים/);
+    await shot(page, info, "m-06-share-row-to-drawing");
+    await page.locator("[data-back-to-table]").tap();
+    await expect(row).toBeInViewport({ timeout: 10_000 });
   });
 });

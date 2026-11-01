@@ -104,6 +104,21 @@ export interface Member {
   createdAt: FsTimestamp;
 }
 
+/** Stage 10 (A-API-01): orgs/{orgId}/invites/{inviteId} — pending membership, API-only writes, admin-read. */
+export interface Invite {
+  /** lower-cased; claimed by the first sign-in whose VERIFIED email equals it */
+  email: string;
+  role: Role;
+  status: 'pending' | 'accepted' | 'revoked';
+  invitedBy: string;
+  createdAt: FsTimestamp;
+  expiresAt: FsTimestamp;
+  acceptedBy: string | null;
+  acceptedAt: FsTimestamp | null;
+  revokedBy: string | null;
+  revokedAt: FsTimestamp | null;
+}
+
 export interface FloorMeta {
   code: string; // '-1', '0', '1', 'R'
   name: string; // 'קומת קרקע'
@@ -568,6 +583,7 @@ export interface Job {
 export const paths = {
   org: (orgId: string) => `orgs/${orgId}`,
   member: (orgId: string, uid: string) => `orgs/${orgId}/members/${uid}`,
+  invite: (orgId: string, inviteId: string) => `orgs/${orgId}/invites/${inviteId}`,
   project: (orgId: string, projectId: string) => `orgs/${orgId}/projects/${projectId}`,
   sheetSet: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/sheetSets/${id}`,
   sheet: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/sheets/${id}`,
@@ -646,5 +662,7 @@ export const COLLECTIONS = [
   'correctionBatches', 'roomSettings', 'similarSearches',
   // Sprint 5
   'shareTokens', 'offboardingCertificates', 'auditMeta', 'offboardingExports', 'reprocessRequests',
+  // Stage 10
+  'invites',
 ] as const;
 export type CollectionId = (typeof COLLECTIONS)[number];

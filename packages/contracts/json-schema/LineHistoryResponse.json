@@ -75,6 +75,14 @@
                     "type": "null"
                   }
                 ]
+              },
+              "summary": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "sourceId": {
+                "type": "string",
+                "maxLength": 256
               }
             },
             "required": [

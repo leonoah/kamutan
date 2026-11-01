@@ -18,6 +18,7 @@ import {
   type PatchBoqLineRequest,
   type ProcessingError,
   OVERRIDE_REASON,
+  isQtyChangedReason,
 } from '@kamutan/contracts';
 import { anyIso, type Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -89,7 +90,35 @@ export function toBoqLine(id: string, d: Doc): BoqLine {
     ...(typeof d.orderQty === 'number' && Number.isFinite(d.orderQty) && d.orderQty >= 0 ? { orderQty: d.orderQty } : {}),
     ...(typeof d.wasteFactor === 'number' && d.wasteFactor >= 0 && d.wasteFactor <= 0.5 ? { wasteFactor: d.wasteFactor } : {}),
     ...(typeof d.manualCount === 'number' && Number.isInteger(d.manualCount) && d.manualCount >= 0 ? { manualCount: d.manualCount } : {}),
+    // Stage 10 (A-API-06): approval baseline (API on approve; worker keeps / clears it on rebuild).
+    ...(typeof d.approvedQty === 'number' && Number.isFinite(d.approvedQty) ? { approvedQty: d.approvedQty } : d.approvedQty === null ? { approvedQty: null } : {}),
+    ...(d.approvedQtyAt !== undefined ? { approvedQtyAt: anyIso(d.approvedQtyAt) } : {}),
+    ...(d.approvalInvalidated !== undefined ? { approvalInvalidated: approvalInvalidatedOf(d.approvalInvalidated) } : {}),
+    // Stage 10 (A-pipeline-12): per-room split (worker).
+    ...(Array.isArray(d.byRoom) ? { byRoom: byRoomOf(d.byRoom) } : {}),
   };
+}
+
+function approvalInvalidatedOf(v: unknown): BoqLine['approvalInvalidated'] {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Doc;
+  if (typeof o.fromQty !== 'number' || typeof o.toQty !== 'number' || !Number.isFinite(o.fromQty) || !Number.isFinite(o.toQty)) return null;
+  return { fromQty: o.fromQty, toQty: o.toQty, approvedBy: str(o.approvedBy), approvedAt: anyIso(o.approvedAt), buildId: str(o.buildId), at: anyIso(o.at) };
+}
+
+function byRoomOf(v: unknown[]): NonNullable<BoqLine['byRoom']> {
+  const s = (x: unknown, n: number) => (typeof x === 'string' ? x.slice(0, n) : null);
+  return (v as Doc[])
+    .filter((r) => r && typeof r.qty === 'number' && Number.isFinite(r.qty))
+    .slice(0, 200)
+    .map((r) => ({
+      sheetId: typeof r.sheetId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(r.sheetId) ? r.sheetId : null,
+      roomId: s(r.roomId, 128),
+      name: s(r.name, 100),
+      type: s(r.type, 32),
+      floor: s(r.floor, 32),
+      qty: r.qty as number,
+    }));
 }
 
 /** "כמות שונתה ידנית" is present iff the line has an override (derived, so a worker rebuild cannot drop it). */
@@ -113,8 +142,30 @@ export function toBoqBuild(id: string, d: Doc): BoqBuild {
     ...(d.trigger === 'manual' || d.trigger === 'auto' ? { trigger: d.trigger } : {}),
     ...(d.debounceUntil !== undefined ? { debounceUntil: anyIso(d.debounceUntil) } : {}),
     ...(d.afterBuildId !== undefined ? { afterBuildId: str(d.afterBuildId) } : {}),
+    ...(Array.isArray(d.approvalsInvalidated) ? { approvalsInvalidated: approvalsInvalidatedOf(d.approvalsInvalidated) } : {}),
+    ...(d.approvalsAuditedAt !== undefined ? { approvalsAuditedAt: anyIso(d.approvalsAuditedAt) } : {}),
   };
 }
+
+/** Stage 10: worker-written `approvalsInvalidated` (tolerant: malformed entries dropped, ≤ 500). */
+export function approvalsInvalidatedOf(v: unknown): NonNullable<BoqBuild['approvalsInvalidated']> {
+  if (!Array.isArray(v)) return [];
+  return (v as Doc[])
+    .filter((e) => e && typeof e.lineId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(e.lineId) && typeof e.fromQty === 'number' && Number.isFinite(e.fromQty) && typeof e.toQty === 'number' && Number.isFinite(e.toQty))
+    .slice(0, 500)
+    .map((e) => ({ lineId: e.lineId as string, code: String(e.code ?? '').slice(0, 32), fromQty: e.fromQty as number, toQty: e.toQty as number }));
+}
+
+/** Audit payload of one invalidated approval (A-API-06; actor = the build). */
+export const APPROVAL_INVALIDATED_ACTOR = 'system:boq.build';
+export const approvalInvalidatedAudit = (projectId: string, buildId: string, e: { lineId: string; code: string; fromQty: number; toQty: number }) => ({
+  actorId: APPROVAL_INVALIDATED_ACTOR,
+  actorKind: 'system' as const,
+  entity: 'boqLines',
+  entityId: e.lineId,
+  action: 'approval_invalidated',
+  after: { projectId, buildId, lineId: e.lineId, code: e.code, fromQty: e.fromQty, toQty: e.toQty, from: 'approved', to: 'reviewed' },
+});
 
 /** Strictly parsed (API- or worker-written); null when the doc does not match the contract. */
 export function toLibraryItem(id: string, d: Doc): ItemLibraryItem | null {
@@ -187,9 +238,15 @@ export function planLinePatch(projectId: string, cur: BoqLine, req0: PatchBoqLin
     if (!canTransition(cur.status, req.status)) throw new RepoConflictError('invalid_transition');
     patch.status = req.status;
     if (cur.status === 'draft' && req.status === 'reviewed') Object.assign(patch, { reviewedBy: actorUid, reviewedAt: now });
-    if (req.status === 'approved') Object.assign(patch, { approvedBy: actorUid, approvedAt: now });
+    if (req.status === 'approved') {
+      // Stage 10 (A-API-06): the computed qty a human approved — a rebuild that changes it invalidates the approval.
+      Object.assign(patch, { approvedBy: actorUid, approvedAt: now, approvedQty: cur.qty, approvedQtyAt: now });
+      const kept = (cur.reasons ?? []).filter((r) => !isQtyChangedReason(r));
+      if (kept.length !== (cur.reasons ?? []).length) patch.reasons = kept;
+      audit.qty = cur.qty;
+    }
     if (cur.status === 'reviewed' && req.status === 'draft') Object.assign(patch, { reviewedBy: null, reviewedAt: null });
-    if (cur.status === 'approved' && req.status === 'reviewed') Object.assign(patch, { approvedBy: null, approvedAt: null });
+    if (cur.status === 'approved' && req.status === 'reviewed') Object.assign(patch, { approvedBy: null, approvedAt: null, approvedQty: null, approvedQtyAt: null });
     audit.from = cur.status;
     audit.to = req.status;
   }
@@ -199,7 +256,7 @@ export function planLinePatch(projectId: string, cur: BoqLine, req0: PatchBoqLin
     } else {
       Object.assign(patch, { qtyOverride: req.qtyOverride, qtyOverrideReason: req.reason ?? null, qtyOverrideBy: actorUid, qtyOverrideAt: now });
     }
-    patch.reasons = withOverrideReason(cur.reasons ?? [], req.qtyOverride !== null);
+    patch.reasons = withOverrideReason((patch.reasons as string[] | undefined) ?? cur.reasons ?? [], req.qtyOverride !== null);
     audit.qty = cur.qty;
     audit.prevQtyOverride = cur.qtyOverride ?? null;
     audit.qtyOverride = req.qtyOverride;

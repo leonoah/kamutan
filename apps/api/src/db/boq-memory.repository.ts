@@ -2,6 +2,7 @@ import {
   BOQ_BUILD_STUCK_MS,
   DEFAULT_BOQ_RULES,
   DEFAULT_BOQ_TEMPLATE,
+  DEFAULT_ITEM_LIBRARY,
   defaultRuleDoc,
   fsPaths,
   ruleNeedsReseed,
@@ -20,7 +21,7 @@ import {
   type ProcessingError,
   type StaleReason,
 } from '@kamutan/contracts';
-import { planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
+import { approvalInvalidatedAudit, approvalsInvalidatedOf, planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
 import { MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BoqRepository } from './boq-repository';
 import { autoId, type InMemoryRepository } from './in-memory.repository';
 import type { Doc } from './mappers';
@@ -153,7 +154,16 @@ export class InMemoryBoqRepository implements BoqRepository {
         this.docs.set(p, { ...strip(structuredClone(defaultRuleDoc(r))), updatedAt: this.core.now(), updatedBy: null });
         rules++;
       }
-      return { templates, rules };
+      // Stage 10 (A-LIVE-01): an org whose library is EMPTY gets the shipped default library (never re-seeded later,
+      // so deleting / deactivating / importing items is kept). Deterministic ids → idempotent.
+      let items = 0;
+      if (this.core.children(fsPaths.itemLibrary(orgId)).length === 0) {
+        for (const it of DEFAULT_ITEM_LIBRARY) {
+          this.docs.set(fsPaths.libraryItem(orgId, it.id), { ...strip(structuredClone(it) as ItemLibraryItem), updatedAt: this.core.now(), updatedBy: null });
+          items++;
+        }
+      }
+      return { templates, rules, items };
     });
   }
 
@@ -262,6 +272,19 @@ export class InMemoryBoqRepository implements BoqRepository {
     const p = this.docs.get(pPath);
     const boq = p?.boq as Doc | undefined;
     if (p && boq && boq.pendingBuildId === buildId) this.docs.set(pPath, { ...p, boq: { ...boq, pendingBuildId: null } });
+  }
+
+  auditApprovalsInvalidated(orgId: string, projectId: string, buildId: string): Promise<number> {
+    return this.core.tx(() => {
+      const p = fsPaths.boqBuild(orgId, projectId, buildId);
+      const d = this.docs.get(p);
+      if (!d || d.status !== 'succeeded' || d.approvalsAuditedAt) return 0;
+      const list = approvalsInvalidatedOf(d.approvalsInvalidated);
+      if (list.length === 0) return 0;
+      for (const e of list) this.core.appendAuditSync(orgId, approvalInvalidatedAudit(projectId, buildId, e));
+      this.docs.set(p, { ...d, approvalsAuditedAt: this.core.now() });
+      return list.length;
+    });
   }
 
   async getBuild(orgId: string, projectId: string, buildId: string): Promise<BoqBuild | null> {

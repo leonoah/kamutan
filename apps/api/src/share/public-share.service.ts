@@ -256,12 +256,35 @@ export class PublicShareService {
     };
   }
 
-  /** detectionId / linkGroupId → line ids for one LOCKED version, from the latest build's evidence. */
+  /** The link's frozen BOQ snapshot (null when absent / unreadable / not this link's). */
+  private async snapshotOf(r: ResolvedShare) {
+    const path = storagePaths.shareBoqSnapshot(r.orgId, r.projectId, r.link.id);
+    if (r.link.boqSnapshotPath !== path) return null;
+    let raw: unknown = null;
+    try {
+      raw = await this.storage.readShareSnapshot(path);
+    } catch (err) {
+      if (!(err instanceof ArtifactTooLargeError || err instanceof SyntaxError)) throw err;
+    }
+    const snap = ShareBoqSnapshotSchema.safeParse(raw);
+    return snap.success && snap.data.linkId === r.link.id ? snap.data : null;
+  }
+
+  /**
+   * detectionId / linkGroupId → line ids for one LOCKED version. Stage 10 (A-API-09, SEC-26 version lock): from the
+   * evidence of the build the BOQ snapshot was taken from (`link.boqBuildId`), so every lineId is a line of the
+   * snapshot the contractor sees; older links (no boqBuildId) use the snapshot's buildId and are filtered to its ids.
+   */
   private async lineIndex(r: ResolvedShare, sheetId: string, versionId: string) {
     const detections = new Map<string, string[]>();
     const links = new Map<string, string[]>();
-    const project = await this.repo.getProject(r.orgId, r.projectId);
-    const buildId = project?.boq?.latestBuildId;
+    let buildId: string | null | undefined = r.link.boqBuildId;
+    let allowed: Set<string> | null = null;
+    if (buildId === undefined) {
+      const snap = await this.snapshotOf(r);
+      buildId = snap?.buildId ?? null;
+      allowed = new Set(snap?.lines.map((l) => l.id) ?? []);
+    }
     if (!buildId || !DocIdSchema.safeParse(buildId).success) return { detections, links };
     let raw: unknown = null;
     try {
@@ -277,7 +300,7 @@ export class PublicShareService {
       m.set(k, arr);
     };
     for (const [lineId, items] of Object.entries(lines as Record<string, unknown>)) {
-      if (!DocIdSchema.safeParse(lineId).success || !Array.isArray(items)) continue;
+      if (!DocIdSchema.safeParse(lineId).success || !Array.isArray(items) || (allowed && !allowed.has(lineId))) continue;
       for (const it of items.slice(0, 50_000) as Array<Record<string, unknown>>) {
         if (!it || it.sheetId !== sheetId || it.versionId !== versionId) continue;
         if (typeof it.detectionId === 'string' && it.detectionId.length <= 128) add(detections, it.detectionId, lineId);
@@ -301,6 +324,7 @@ export class PublicShareService {
     const out = await this.watermarker.apply(raw, {
       text: linkWatermark(r.link),
       origin: { x: x * t.tileSize, y: y * t.tileSize },
+      level: { widthPx: level.widthPx, heightPx: level.heightPx },
       masks: mask ? [maskToTile(mask, level.mmPerPx, x, y, t.tileSize)] : [],
     });
     await this.recordView(r, ctx, 'tiles');

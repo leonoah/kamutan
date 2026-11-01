@@ -27,6 +27,7 @@ export const routes: RouteObject[] = [
     children: [
       { path: "/login", element: <LoginPage /> },
       { path: "/auth/complete", element: <CompleteEmailLinkPage /> },
+      { path: "/invite/:token", lazy: async () => ({ Component: (await import("@/features/auth/InvitePage")).InvitePage }) },
       {
         element: (
           <RequireAuth>
@@ -49,6 +50,7 @@ export const routes: RouteObject[] = [
                 lazy: async () => ({ Component: (await import("@/features/settings/SettingsLayout")).SettingsLayout }),
                 children: [
                   { index: true, lazy: async () => ({ Component: (await import("@/features/settings/OrgSettingsPage")).OrgSettingsPage }) },
+                  { path: "members", lazy: async () => ({ Component: (await import("@/features/settings/MembersPage")).MembersPage }) },
                   { path: "audit", lazy: async () => ({ Component: (await import("@/features/settings/AuditLogPage")).AuditLogPage }) },
                   { path: "offboarding", lazy: async () => ({ Component: (await import("@/features/settings/OffboardingPage")).OffboardingPage }) },
                 ],

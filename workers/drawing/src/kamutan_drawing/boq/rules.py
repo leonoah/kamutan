@@ -41,6 +41,9 @@ KINDS = (
     "tiling_corner",
     "waterproofing",
     "one_off_suggestion",
+    # Stage 10 (contracts request, NOTES "Stage 10")
+    "template_chapter",
+    "fixture_combination",
 )
 TILING_KINDS = ("tiling_floor", "tiling_cladding", "tiling_corner", "waterproofing")
 
@@ -426,6 +429,18 @@ DEFAULT_RULES: list[dict[str, Any]] = [
             "roomMatchRadiusMm": 1600,
         },
     },
+    # Stage 10 (A-pipeline-07): chapter 01 (demolition) template lines offered as 1.0 קומפלט when the project has a
+    # demolition plan — new id, created by the create-if-missing seeding (no defaults-version bump)
+    {
+        "id": "r_template_demolition",
+        "kind": "template_chapter",
+        "match": {"chapters": ["01"], "disciplines": ["demolition"], "quantity": 1},
+        "itemCode": None,
+        "itemDescription": "סעיפי הריסה ופינוי מהתבנית",
+        "unit": "קומפלט",
+        "priority": 10,
+        "reasons": [R_TEMPLATE],
+    },
 ]
 
 # class_to_item counts new work only
@@ -519,6 +534,10 @@ def load_rules(docs: DocStore, org_id: str) -> list[Rule]:
 
 
 # ----------------------------------------------------------------------------- library
+def _code_sort(code: str) -> tuple[Any, ...]:
+    return tuple((0, int(p), len(p)) if p.isdigit() else (1, p, 0) for p in re.split(r"[.\-/]", code))
+
+
 _PUNCT = re.compile(r"[\"'״׳”“’`()\[\],.:;/\\+\-–—!?]")
 
 
@@ -558,6 +577,7 @@ class Item:
     chapter_title: str
     description: str
     unit: str
+    default: bool = False  # shipped default library (contracts defaults, A-LIVE-01): codes = the default rules' codes
 
 
 @dataclass(frozen=True)
@@ -585,10 +605,27 @@ class Library:
                     str(d.get("chapterTitle") or ""),
                     str(d.get("description") or ""),
                     str(d.get("unit") or ""),
+                    d.get("source") == "default" or isinstance(d.get("defaultsVersion"), int | float),
                 )
             )
         items.sort(key=lambda i: (i.chapter, i.code, i.id))
         return Library(items)
+
+    def stats(self) -> dict[str, int]:
+        return {"items": len(self.items), "defaults": sum(1 for i in self.items if i.default)}
+
+    def in_chapters(self, chapters: list[str] | tuple[str, ...], prefixes: dict[str, list[str]] | None = None) -> list[Item]:
+        """Items of the given chapter codes ("01"): ``item.chapter``, else the code's leading number ("1.05" → 01) or a
+        template chapter's ``codePrefixes``."""
+        want = {c.zfill(2) for c in chapters if c}
+        pre = {p for c in want for p in (prefixes or {}).get(c, [])}
+        out = []
+        for i in self.items:
+            ch = i.chapter.zfill(2) if i.chapter else ""
+            head = i.code.split(".")[0]
+            if ch in want or (not ch and (head.zfill(2) in want or head in pre)):
+                out.append(i)
+        return sorted(out, key=lambda i: (_code_sort(i.code), i.id))
 
     def by_code(self, code: str) -> list[Item]:
         return [i for i in self.items if i.code == code]
@@ -613,7 +650,7 @@ class Library:
 
                 best = max(same, key=lambda i: (code_sim(i), i.id))
                 s = code_sim(best)
-                if trust_code or not description or s >= CODE_MATCH_MIN:
+                if trust_code or not description or s >= CODE_MATCH_MIN or best.default:
                     return Resolution(best, "user_code" if trust_code else "code", s)
         if not description:
             return None

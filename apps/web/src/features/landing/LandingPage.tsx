@@ -17,7 +17,8 @@ export function LandingPage() {
   const signedIn = useAuthStore((s) => s.status) === "signedIn";
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background text-foreground">
+    // overflow-x-clip: decorative blobs and the sample table never widen the page on a phone (A-UI-01).
+    <div className="flex min-h-dvh flex-col overflow-x-clip bg-background text-foreground">
       <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur">
         <div className="container flex h-14 items-center justify-between">
           <Link to="/" className="rounded" aria-label={t("app.name")}>
@@ -179,7 +180,7 @@ function HeroVisual() {
           <div key={r.code} className="flex h-10 items-center gap-3 border-b border-border px-3 text-dense last:border-0">
             <ConfidenceBadge level={r.level} variant="indicator" />
             <Ltr className="w-9 text-muted-foreground">{r.code}</Ltr>
-            <span className="flex-1 truncate text-foreground">{r.desc}</span>
+            <span className="min-w-0 flex-1 truncate text-foreground">{r.desc}</span>
             <span className="text-muted-foreground">{t("landing.visual.unit")}</span>
             <Ltr className="w-6 text-end font-medium text-foreground">{r.qty}</Ltr>
           </div>

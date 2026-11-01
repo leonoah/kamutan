@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertOctagon, Download, KeyRound, PackageOpen } from "lucide-react";
 import { useApi } from "@/api/client";
-import { ApiError } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -12,11 +11,8 @@ import { getAuthService, hasRecentLogin } from "@/features/auth/authService";
 import { useCurrentOrg } from "@/features/org/useCurrentOrg";
 import { formatDate, formatDateTime } from "@/lib/format";
 
-/** API codes that mean "sign in again" (auth_time older than 10 min / MFA claim missing). */
-export const isReauthError = (e: unknown) =>
-  e instanceof ApiError && (e.status === 401 || e.status === 403) && /recent|reauth|auth_time|stale/i.test(e.code);
-/** API `mfa_required`: a fresh sign-in does not help without a second factor. */
-export const isMfaError = (e: unknown) => e instanceof ApiError && e.status === 403 && /mfa/i.test(e.code);
+import { isMfaError, isReauthError } from "@/features/auth/reauth";
+export { isMfaError, isReauthError };
 
 /** contracts OffboardOrgRequest: the confirmation is the org name, exact after trim. */
 export const confirmTextOf = (org: { name: string }) => org.name;

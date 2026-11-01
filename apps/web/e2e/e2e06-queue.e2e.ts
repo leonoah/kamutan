@@ -84,9 +84,9 @@ test.describe("E2E-06 review queue", () => {
     await page.keyboard.press("Escape");
   });
 
-  // A-UI-09: in the sheet-locked analysis (IA level 3) the queue still lists project-wide items that are not on the sheet
-  // (e.g. "שורה 3.15 · משאבה לניקוז מי גשם" at the top of the electrical sheet) — 09_ia_redesign says it is filtered.
-  test.fixme("A-UI-09 sheet analysis: every queue item belongs to the locked sheet", async ({ page }) => {
+  // A-UI-09 (fixed): the sheet-locked analysis (IA level 3) listed project-wide line cards that are not on the sheet
+  // (e.g. "שורה 3.15 · משאבה לניקוז מי גשם" on the electrical sheet). 09_ia_redesign: the queue is filtered to the sheet.
+  test("A-UI-09 sheet analysis: every queue item belongs to the locked sheet", async ({ page }) => {
     await login(page, "/projects/p-noah/sheets/noah-eb8be8a3-p0");
     await waitForWorkspace(page);
     const ids = await queue(page).locator("[data-queue-item]").evaluateAll((els) => els.map((e) => e.getAttribute("data-queue-item")!));

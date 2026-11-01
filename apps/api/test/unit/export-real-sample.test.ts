@@ -4,9 +4,10 @@ import { dirname, join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
-import { BoqEvidenceArtifactSchema, LinksArtifactSchema, DEFAULT_BOQ_TEMPLATE, effectiveQty, type BoqTemplate } from '@kamutan/contracts';
+import { BoqEvidenceArtifactSchema, LinksArtifactSchema, effectiveQty } from '@kamutan/contracts';
 import { groupEvidence } from '../../src/boq/boq.service';
 import { buildBoqWorkbook, EVIDENCE_SHEET, MAIN_SHEET, type EvidenceGroup } from '../../src/boq/excel';
+import { SAMPLE_BOQ_TEMPLATE } from '../fixtures/sample-template';
 import { toBoqLine } from '../../src/db/boq-docs';
 
 /**
@@ -58,7 +59,7 @@ describe.skipIf(!readable(join(ART, 'dev-index.json')))('export from the real lo
         }),
       );
     }
-    const template = { ...structuredClone(DEFAULT_BOQ_TEMPLATE), updatedAt: null } as BoqTemplate;
+    const template = structuredClone(SAMPLE_BOQ_TEMPLATE); // the client's format (Stage 10: shipped default is generic)
     const buf = await buildBoqWorkbook({ projectName: 'בית משפחת נח, גני תקווה', date: new Date(), template, lines, split: 'summed', markDraft: false, evidence, vatRate: 0.18 });
     const out = process.env.EXPORT_SAMPLE_PATH ?? join(tmpdir(), 'kamutan-export-real.xlsx');
     mkdirSync(dirname(out), { recursive: true });

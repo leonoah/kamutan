@@ -263,6 +263,7 @@ def understand(
     reference_walls: list[Any] | None = None,
     green_threshold: float | None = None,
     scale_conflict: bool = False,
+    inserts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run legend → detect → rooms → links on one sheet. Writes the artifacts into ``out_dir`` when given.
 
@@ -345,6 +346,7 @@ def understand(
             mappings=sig_maps,
             text_paths=text_paths,
             green_threshold=green_threshold,
+            inserts=inserts,
         )
         det.detections = [d for d in det.detections if not (d.entry is not None and d.entry.signature in ignored)]
     elif run_detect and raster and raster_image is not None:
@@ -854,6 +856,7 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             reference_walls=refs or None,
             green_threshold=clean_green_threshold(args.get("greenThreshold")),
             scale_conflict=bool(args.get("scaleConflict", False)),
+            inserts=[i for i in (prim.get("inserts") or []) if isinstance(i, dict)][:20000],
         )
     finally:
         close()

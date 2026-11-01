@@ -79,10 +79,10 @@ describe('line history mapping', () => {
     const items = historyItemsOf(ev({ from: 'approved', to: 'reviewed', qty: 2, prevQtyOverride: null, qtyOverride: 3, reason: 'מדידה', noteChanged: true }), by);
     expect(items.map((i) => [i.action, i.before, i.after, i.reason])).toEqual([
       ['status', 'approved', 'reviewed', null],
-      ['qtyOverride', null, 3, 'מדידה'],
+      ['qtyOverride', 2, 3, 'מדידה'], // Stage 10 (A-API-08): before = the computed qty
       ['note', null, null, null],
     ]);
-    expect(historyItemsOf(ev({ from: 4, to: 5 }, 'rebuild', 'system'), by)).toEqual([{ at: '2026-10-15T10:00:00.000Z', by: null, action: 'rebuild', before: 4, after: 5, reason: null }]);
+    expect(historyItemsOf(ev({ from: 4, to: 5 }, 'rebuild', 'system'), by)).toEqual([{ at: '2026-10-15T10:00:00.000Z', by: null, action: 'rebuild', before: 4, after: 5, reason: null, summary: 'חישוב מחדש · 4 → 5', sourceId: 'e' }]);
     expect(historyItemsOf(ev({}, 'create'), by)).toEqual([]);
   });
 });

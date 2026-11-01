@@ -49,7 +49,7 @@ describe('BOQ e2e — build, lines, review PATCH, evidence, export (fake auth, i
   beforeAll(async () => {
     t = await createTestApp(testConfig({ THROTTLE_LIMIT: '1000', UPLOAD_THROTTLE_LIMIT: '100', EXPORT_THROTTLE_LIMIT: '8' }));
     http = request(t.app.getHttpServer());
-    for (const who of ['admin', 'editor', 'reviewer', 'viewer', 'outsider', 'editor2']) tok[who] = t.auth.issue(who);
+    for (const who of ['admin', 'editor', 'reviewer', 'viewer', 'outsider', 'editor2']) tok[who] = t.auth.issue(who, { mfa: who === 'admin' }); // Stage 10 (A-API-02): admin settings need MFA
     orgId = t.repo.seedOrg('Org', { admin: 'admin', editor: 'editor', reviewer: 'reviewer', viewer: 'viewer', editor2: 'editor' }).id;
     otherOrg = t.repo.seedOrg('Other', { outsider: 'admin' }).id;
     projectId = (await t.repo.createProject(orgId, { name: 'בית משפחת נח' }, 'editor')).id;

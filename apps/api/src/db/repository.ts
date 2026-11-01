@@ -75,7 +75,8 @@ export interface Repository {
   listSheets(
     orgId: string,
     projectId: string,
-    opts: { limit: number; cursor?: string; sheetSetId?: string },
+    /** Stage 10: superseded (old) sheets of revised uploads are skipped unless `includeSuperseded`. */
+    opts: { limit: number; cursor?: string; sheetSetId?: string; includeSuperseded?: boolean },
   ): Promise<{ items: SheetSummary[]; nextCursor: string | null }>;
   getSheet(orgId: string, projectId: string, sheetId: string): Promise<Sheet | null>;
   getVersion(orgId: string, projectId: string, sheetId: string, versionId: string): Promise<SheetVersion | null>;

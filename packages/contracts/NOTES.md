@@ -213,3 +213,13 @@ unique ids + non-green ⇒ reason, PatchBoqLineRequest reason rules, template du
 Gap: `.refine()`/`.superRefine()` checks (filename extension, storagePath ↔ org/project/sheetSet/fileKind,
 sheetId ⇔ pageIndex, duplicate region ids, tiles-query range) are not expressible in JSON Schema; the Python side
 must re-check them. Bounds/self-intersection of regions are checked by the API against the page (geometry helpers).
+
+## Stage 10 fix round (API agent)
+All additive (see apps/api/NOTES.md "Stage 10 fix round" for the full list and the consumers): `members.ts` (invites /
+members DTOs); library `DEFAULT_ITEM_LIBRARY` (+ version, units, `defaultUnitFor`), generic `DEFAULT_BOQ_TEMPLATE` v2,
+`ITEM_SOURCES` + `default`, rule kinds `template_chapter` / `fixture_combination` + default rule
+`r_template_demolition`; boq `approvedQty`, `approvalInvalidated`, `byRoom`, build `approvalsInvalidated` /
+`approvalsAuditedAt`, evidence `target`, `needsReapproval` / `effectiveStatus` / `exportBlockingLines` /
+`qtyChangedReason`, `applyRebuild` demotes changed approvals (not overridden lines); corrections all reviewer; audit
+`summary` + `auditSummaryHe`; sheets / uploads supersede fields; share `boqBuildId`; `TEXT_ARTIFACT_PATH_RE`;
+`ProjectStats` type. New data file `json-schema/defaults/library-defaults.json`. Tests: `test/stage10.test.ts`.

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { Ltr } from "@/components/Ltr";
 import { useCurrentOrg } from "@/features/org/useCurrentOrg";
+import { useReauthGate } from "@/features/auth/reauth";
 import { cn } from "@/lib/utils";
 
 type Editable = Required<PatchOrgSettingsRequest>;
@@ -39,23 +40,30 @@ export function OrgSettingsPage() {
   useEffect(() => setDraft(saved), [saved]);
   const changes = diffSettings(saved, draft);
   const dirty = Object.keys(changes).length > 0;
+  // Stage 10 (A-API-02): MFA + a sign-in from the last 10 minutes, like offboarding.
+  const gate = useReauthGate();
   const save = useMutation({
     mutationFn: () => api.patchOrgSettings(org!.id, changes),
     onSuccess: () => {
       toast({ title: t("settings.saved"), tone: "success" });
       void qc.invalidateQueries({ queryKey: ["me"] });
     },
-    onError: () => toast({ title: t("settings.saveError"), tone: "error" }),
+    onError: (e) => {
+      if (!gate.handle(e, () => save.mutate())) toast({ title: t("settings.saveError"), tone: "error" });
+    },
   });
   const gtId = useId();
   if (!org) return null;
 
   return (
+    <div className="flex flex-col gap-4">
+    {/* outside the settings <form>: the re-authentication box has its own password form */}
+    {gate.element}
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (dirty) save.mutate();
+        if (dirty) void gate.guard(() => save.mutate());
       }}
       data-org-settings
     >
@@ -90,7 +98,7 @@ export function OrgSettingsPage() {
       </section>
 
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={!dirty || save.isPending}>
+        <Button type="submit" disabled={!dirty || save.isPending || gate.pending}>
           {save.isPending ? t("settings.saving") : t("settings.save")}
         </Button>
         {dirty ? (
@@ -103,6 +111,7 @@ export function OrgSettingsPage() {
         ) : null}
       </div>
     </form>
+    </div>
   );
 }
 
