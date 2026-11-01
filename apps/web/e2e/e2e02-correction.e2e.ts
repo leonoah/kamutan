@@ -28,7 +28,8 @@ async function addSocket(page: import("@playwright/test").Page) {
   await page.evaluate((code) => {
     const w = window as unknown as { __e2e02?: { t0: number; t1: number | null } };
     const cell = () => document.querySelector(`tr[data-code="${code}"]`);
-    const first = () => cell()?.querySelector("button[aria-label*='קבלה לשורה']")?.getAttribute("aria-label") ?? "";
+    // The quantity button's text (visible qty + hidden "— קבלה לשורה X").
+    const first = () => Array.from(cell()?.querySelectorAll("button") ?? []).find((b) => b.textContent?.includes("קבלה לשורה"))?.textContent ?? "";
     const initial = first();
     w.__e2e02 = { t0: 0, t1: null };
     document.addEventListener("pointerdown", () => (w.__e2e02!.t0 = performance.now()), { capture: true, once: true });

@@ -150,8 +150,11 @@ test.describe("IA v2 navigation", () => {
   // A-UI-11 (fixed): the hub header said "87% מאומת" (static project.stats) while the hub's BOQ card said "14% מאומת".
   // The header now uses the same live lines as the card once a BOQ is built.
   test("A-UI-11 hub: '% מאומת' in the header equals the project BOQ's '% מאומת'", async ({ page }) => {
-    await login(page, "/projects/p-noah");
-    const header = (await page.getByText(/^\d+% מאומת$/).first().textContent())!;
-    await expect(page.getByText(/\d+ שורות · \d+% מאומת/)).toContainText(header);
+    await login(page, "/projects/p-noah?mockBoq=built");
+    // Read both only after the live lines are in (the header falls back to project.stats until then).
+    const card = page.locator("p", { hasText: /שורות/ }).filter({ hasText: /% מאומת/ }).first();
+    await expect(card).toBeVisible();
+    const pct = /(\d+)% מאומת/.exec((await card.textContent()) ?? "")![1];
+    await expect(page.getByText(/^\d+% מאומת$/).first()).toHaveText(`${pct}% מאומת`);
   });
 });

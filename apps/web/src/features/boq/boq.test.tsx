@@ -170,7 +170,7 @@ describe("BOQ panel (Sprint 3)", { timeout: 40_000 }, () => {
     await user.type(within(dlg).getByLabelText(/למה משנים את הכמות/), "שקע נוסף במחסן");
     await user.click(within(dlg).getByRole("button", { name: "שמור כמות" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(within(row(code)).getByRole("button", { name: /^9 — קבלה/ })).toBeInTheDocument();
+    expect(within(row(code)).getByRole("button", { name: /^9\b.*— קבלה לשורה/ })).toBeInTheDocument();
     expect(toasts()).toContain("הכמות של 4.00 עודכנה ל-9.");
 
     await user.keyboard("n");

@@ -45,6 +45,7 @@ jobs:
       docker: ${{ steps.filter.outputs.docker }}
       python: ${{ steps.filter.outputs.python }}
       fuzz: ${{ steps.filter.outputs.fuzz }}
+      web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -66,6 +67,11 @@ jobs:
             python:
               - 'workers/**'
               - 'benchmark/**'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
             fuzz:
               - 'workers/drawing/**'
@@ -169,6 +175,9 @@ jobs:
           rc=$?
           if [ "$rc" -eq 5 ]; then echo "::warning::No tests collected in ${{ matrix.project }}"; exit 0; fi
           exit $rc
+      - name: Pipeline acceptance (Stage 10, synthetic inputs only)
+        if: matrix.project == 'workers/drawing'
+        run: uv run pytest -q ../../benchmark/acceptance
 
   # ---------------------------------------------------------------------------
   # Parser fuzzing, PR budget (SEC-16/17, Sprint-1 gate "fuzzing ראשוני ל-PDF ול-DXF ב-CI").
@@ -542,10 +551,50 @@ jobs:
   # ---------------------------------------------------------------------------
   # Single required check for branch protection.
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Web acceptance (Stage 10): Playwright on the mock build (desktop / iPad / mobile, axe gate).
+  # No drawings here: KAMUTAN_DEV_ARTIFACTS is unset, so data-dependent specs skip themselves.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: Web E2E (Playwright, mock)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install (frozen lockfile, SEC-44)
+        run: pnpm install --frozen-lockfile
+      - name: Chromium for the pinned @playwright/test
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright
+        working-directory: apps/web
+        env:
+          E2E_OUT: ${{ runner.temp }}/e2e-out
+        run: pnpm test:e2e
+      - name: Report (synthetic/mock data only)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: ${{ runner.temp }}/e2e-out
+          retention-days: 7
+          if-no-files-found: ignore
+
   ci-gate:
     name: ci-gate
     if: always()
-    needs: [changes, node, python, fuzz, infra-scripts, db, secrets-scan, semgrep, osv, docker, benchmark]
+    needs: [changes, node, python, fuzz, infra-scripts, db, secrets-scan, semgrep, osv, docker, benchmark, e2e]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

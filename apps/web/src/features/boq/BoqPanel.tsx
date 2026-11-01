@@ -524,18 +524,20 @@ function QtyWithReceipt({ line: l, onShow, extra }: { line: BoqLine; onShow: () 
             e.stopPropagation();
             onShow();
           }}
-          aria-label={`${fmtQty(effectiveQty(l))} — ${t("boq.receiptFor", { code: l.code })}`}
+          // Name = the visible content + a hidden suffix, so it always contains what is shown (axe
+          // label-content-name-mismatch), also when an override adds the original qty + "✎ ידני".
           className="inline-flex flex-col items-end rounded-sm px-1 leading-tight hover:bg-primary/10"
         >
           <span className="font-bold tabular text-foreground underline decoration-dotted decoration-muted-foreground/60 underline-offset-4">
             {fmtQty(effectiveQty(l))}
-          </span>
+          </span>{" "}
           {over ? (
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <s className="tabular">{fmtQty(l.qty)}</s>
+              <s className="tabular">{fmtQty(l.qty)}</s>{" "}
               <span className="text-manual">✎ {t("boq.manualTag")}</span>
             </span>
           ) : null}
+          <span className="sr-only"> — {t("boq.receiptFor", { code: l.code })}</span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="left" align="start">
