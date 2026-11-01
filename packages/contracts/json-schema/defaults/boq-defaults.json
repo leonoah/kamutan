@@ -4,9 +4,9 @@
     "name": "תבנית ברירת מחדל",
     "default": true,
     "source": "default",
-    "sourceRef": "kamutan-defaults/template-v2",
+    "sourceRef": "kamutan-defaults/template-v3",
     "vatRate": 0.18,
-    "defaultsVersion": 2,
+    "defaultsVersion": 3,
     "titleRows": [
       "כתב כמויות",
       "שם הפרויקט: {projectName}"
@@ -56,6 +56,17 @@
         ]
       },
       {
+        "code": "02",
+        "title": "פרק 02 – עבודות בנייה ובטון",
+        "notes": [
+          "1. העבודות יבוצעו לפי הנחיות הקונסטרוקטור ותכניות הבנייה המצורפות.",
+          "2. הכמויות לפי מידות התכנית."
+        ],
+        "codePrefixes": [
+          "2"
+        ]
+      },
+      {
         "code": "03",
         "title": "פרק 03 – עבודות אינסטלציה",
         "notes": [
@@ -89,8 +100,30 @@
         ]
       },
       {
+        "code": "06",
+        "title": "פרק 06 – עבודות גבס",
+        "notes": [
+          "1. העבודות כוללות פרופילים, ברגים, סרט שריון ושפכטל עד לגמר מוכן לצבע.",
+          "2. הכמויות לפי תכנית התקרה ותכנית הבנייה."
+        ],
+        "codePrefixes": [
+          "7"
+        ]
+      },
+      {
+        "code": "07",
+        "title": "פרק 07 – עבודות טיח, שפכטל וצבע",
+        "notes": [
+          "1. גוונים לבחירת המזמין.",
+          "2. העבודות כוללות הגנה על האלמנטים הקיימים וניקיון בסיום."
+        ],
+        "codePrefixes": [
+          "8"
+        ]
+      },
+      {
         "code": "09",
-        "title": "פרק 09 – תאורה",
+        "title": "פרק 09 – תאורה ושונות",
         "notes": [
           "1. התקנת גופי תאורה לפי תכנית התאורה המצורפת."
         ],
@@ -115,7 +148,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_socket_double",
@@ -131,7 +164,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_socket_triple",
@@ -147,7 +180,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_socket_power",
@@ -163,7 +196,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_socket_power_double",
@@ -179,7 +212,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_comms_point",
@@ -198,7 +231,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_socket_box_6",
@@ -214,7 +247,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_speaker",
@@ -230,7 +263,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_heater_feed",
@@ -246,7 +279,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_intercom",
@@ -262,7 +295,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_conduit_cobra",
@@ -278,7 +311,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_socket_3phase",
@@ -294,7 +327,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_doorbell",
@@ -310,7 +343,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_water_heater_feed",
@@ -326,7 +359,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_panel",
@@ -345,7 +378,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_light_single",
@@ -361,7 +394,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_light_two_way",
@@ -377,7 +410,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_light_shared_2",
@@ -393,7 +426,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_light_shared_3",
@@ -409,7 +442,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_light_add_2way",
@@ -427,7 +460,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_light_add_fan",
@@ -445,7 +478,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_light_sensor",
@@ -460,7 +493,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_install_luminaires",
@@ -487,7 +520,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_ac_drain",
@@ -504,7 +537,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_basin_wall_faucet",
@@ -526,7 +559,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_basin_flower_faucet",
@@ -548,7 +581,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_wc_concealed",
@@ -565,7 +598,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_washing_machine",
@@ -582,7 +615,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_garden_tap",
@@ -599,7 +632,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_wc_monoblock",
@@ -616,7 +649,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_shower_basement",
@@ -637,7 +670,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_shower",
@@ -659,7 +692,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_plumb_bath",
@@ -676,7 +709,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_oneoff_water_feed",
@@ -706,7 +739,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_oneoff_manifold",
@@ -736,7 +769,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_oneoff_heater_feed",
@@ -759,7 +792,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_oneoff_greywater_pump",
@@ -788,7 +821,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_oneoff_rain_pump",
@@ -811,7 +844,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_tile_cladding_wet",
@@ -836,7 +869,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_tile_floor_wet",
@@ -856,7 +889,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_tile_corners",
@@ -873,7 +906,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_waterproofing_wet",
@@ -895,7 +928,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_tile_partial_kitchen",
@@ -914,7 +947,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_tile_partial_other",
@@ -937,7 +970,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_waterproof_marker",
@@ -953,7 +986,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_note_point",
@@ -969,7 +1002,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_breaker",
@@ -985,7 +1018,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_legend_entry",
@@ -1001,7 +1034,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_legend_box",
@@ -1017,7 +1050,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_region",
@@ -1033,7 +1066,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_room",
@@ -1049,7 +1082,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_faucet_basin",
@@ -1065,7 +1098,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_faucet_wall",
@@ -1081,7 +1114,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_floor_tiling",
@@ -1097,7 +1130,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_none_wall_cladding",
@@ -1113,7 +1146,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_auth_sockets",
@@ -1138,7 +1171,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_auth_comms",
@@ -1163,7 +1196,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_auth_feeds",
@@ -1185,7 +1218,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_auth_switches",
@@ -1208,7 +1241,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_auth_luminaires",
@@ -1232,7 +1265,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_auth_fixtures",
@@ -1260,7 +1293,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     },
     {
       "id": "r_auth_ac",
@@ -1285,7 +1318,885 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_text_island_conduit",
+      "kind": "text_item",
+      "match": {
+        "scope": "any",
+        "qty": "count",
+        "patterns": [
+          "צינור\\s*(ריק|חופשי)",
+          "הכנה\\s*ל?שקעי\\s*שירות"
+        ],
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ],
+        "proximityMm": 300
+      },
+      "itemCode": "4.08",
+      "itemDescription": "צינור ריק מהרצפה כהכנה לשקעי שירות באי המטבח",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_text_ventilator_feed",
+      "kind": "text_item",
+      "match": {
+        "scope": "any",
+        "qty": "count",
+        "patterns": [
+          "(הזנה|נקודה|נק'?)\\s*ל?(ונטה|מפוח|מאוורר\\s*יניקה)"
+        ],
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ],
+        "proximityMm": 300
+      },
+      "itemCode": "4.19",
+      "itemDescription": "הזנה למפוח אוורור (ונטה) כולל מפסק",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_text_comms_panel",
+      "kind": "text_item",
+      "match": {
+        "scope": "any",
+        "qty": "count",
+        "patterns": [
+          "לוח\\s*תקשורת",
+          "ארון\\s*תקשורת"
+        ],
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ],
+        "nearClasses": [
+          "panel"
+        ],
+        "consumeNear": true,
+        "proximityMm": 40
+      },
+      "itemCode": "4.25",
+      "itemDescription": "אספקה והתקנת לוח תקשורת",
+      "unit": "יחידה",
+      "priority": 130,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_text_boiler_timer",
+      "kind": "text_item",
+      "match": {
+        "scope": "any",
+        "qty": "count",
+        "patterns": [
+          "החלפת\\s*מפסק\\s*(ה)?דוד",
+          "מפסק\\s*טיימר[^.]{0,30}קיים"
+        ],
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ],
+        "proximityMm": 300
+      },
+      "itemCode": "4.26",
+      "itemDescription": "החלפת מפסק דוד קיים במפסק טיימר",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_text_projector_conduit",
+      "kind": "text_item",
+      "match": {
+        "scope": "any",
+        "qty": "count",
+        "patterns": [
+          "קוברה[^.]{0,40}מקרן",
+          "הכנה\\s*ל?מקרן"
+        ],
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ],
+        "proximityMm": 300
+      },
+      "itemCode": "4.27",
+      "itemDescription": "צינור קוברה 50 מ\"מ לנקודת מקרן בתקרה",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_text_panel_36",
+      "kind": "text_item",
+      "match": {
+        "scope": "any",
+        "qty": "count",
+        "patterns": [
+          "לוח[^.]{0,20}36\\s*(מקום|מקומות|מודול)"
+        ],
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ],
+        "nearClasses": [
+          "panel"
+        ],
+        "consumeNear": true,
+        "proximityMm": 40
+      },
+      "itemCode": "4.28",
+      "itemDescription": "אספקה והתקנת לוח חשמל 36 מודולים",
+      "unit": "יחידה",
+      "priority": 130,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_text_vent_pipe",
+      "kind": "text_item",
+      "match": {
+        "scope": "any",
+        "qty": "count",
+        "patterns": [
+          "צינור\\s*(אוורור|איוורור)",
+          "4\"[^.]{0,20}(ונטה|מפוח|אוורור)"
+        ],
+        "proximityMm": 300
+      },
+      "itemCode": "9.03",
+      "itemDescription": "התקנת צינור אוורור 4\" למפוח ונטה",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_retaining_walls",
+      "kind": "area_item",
+      "match": {
+        "source": "wall_run",
+        "keys": [
+          "retaining_wall_area"
+        ],
+        "measure": "wall_area"
+      },
+      "itemCode": "2.01",
+      "itemDescription": "יציקת קירות תומכים מבטון מזוין לפי הנחיות הקונסטרוקטור",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_retaining_walls",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "קיר(ות)?\\s*תומכ",
+            "חצר\\s*אנגלית"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "2.01",
+      "itemDescription": "יציקת קירות תומכים מבטון מזוין לפי הנחיות הקונסטרוקטור",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_slab_stairs",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "יציקת?\\s*(רצפה|ריצפה)",
+            "מדרגות\\s*(ירידה|ל?מרתף)",
+            "גרם\\s*מדרגות"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט לפי תכנית הקונסטרוקציה – לאשר"
+      },
+      "itemCode": "2.02",
+      "itemDescription": "יציקת רצפה ומדרגות בטון לפי הנחיות הקונסטרוקטור",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_opening_closure_block",
+      "kind": "area_item",
+      "match": {
+        "source": "wall_run",
+        "keys": [
+          "block_wall_area"
+        ],
+        "measure": "wall_area"
+      },
+      "itemCode": "2.03",
+      "itemDescription": "סגירת פתח קיים בבנייה בבלוקים",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_opening_closure_block",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "סגירת\\s*פתח",
+            "סגירה\\s*ב?בלוק"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "2.03",
+      "itemDescription": "סגירת פתח קיים בבנייה בבלוקים",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_stair_treads",
+      "kind": "area_item",
+      "match": {
+        "source": "stair",
+        "keys": [
+          "stair_treads"
+        ],
+        "measure": "treads"
+      },
+      "itemCode": "5.04",
+      "itemDescription": "ריצוף מדרגות במדרכי אבן (שלח ורום)",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_stair_treads",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "מדרגות"
+          ]
+        },
+        "estimate": null,
+        "reason": "לספור את המדרכים בתכנית – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "5.04",
+      "itemDescription": "ריצוף מדרגות במדרכי אבן (שלח ורום)",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_backsplash",
+      "kind": "area_item",
+      "match": {
+        "source": "hatch",
+        "keys": [
+          "kitchen_backsplash_area"
+        ],
+        "measure": "area"
+      },
+      "itemCode": "5.06",
+      "itemDescription": "חיפוי קיר מטבח באריחי גרניט פורצלן",
+      "unit": "מ\"ר",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_backsplash",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "architecture",
+            "architecture_master"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "5.06",
+      "itemDescription": "חיפוי קיר מטבח באריחי גרניט פורצלן",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_cladding_partial",
+      "kind": "area_item",
+      "match": {
+        "source": "hatch",
+        "keys": [
+          "wc_partial_cladding_area"
+        ],
+        "measure": "area"
+      },
+      "itemCode": "5.07",
+      "itemDescription": "חיפוי קיר חלקי באריחי קרמיקה",
+      "unit": "מ\"ר",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_cladding_partial",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "חיפוי\\s*חלקי",
+            "דמוי\\s*(בריק|לבנים)"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "5.07",
+      "itemDescription": "חיפוי קיר חלקי באריחי קרמיקה",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_courtyard_waterproofing",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "חצר\\s*אנגלית"
+          ]
+        },
+        "estimate": {
+          "kind": "geometry",
+          "match": {
+            "source": "room",
+            "keys": [
+              "courtyard_waterproofing"
+            ]
+          }
+        },
+        "reason": "קומפלט לפי הנחיות יועץ האיטום – לאשר"
+      },
+      "itemCode": "5.08",
+      "itemDescription": "איטום קירות חצר אנגלית לפי הנחיות יועץ האיטום",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_gypsum_ceiling",
+      "kind": "area_item",
+      "match": {
+        "source": "hatch",
+        "keys": [
+          "gypsum_ceiling_area"
+        ],
+        "measure": "area"
+      },
+      "itemCode": "7.01",
+      "itemDescription": "תקרת גבס לפי תכנית התקרה",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_gypsum_ceiling",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "תקרת?\\s*גבס",
+            "תקרה\\s*מונמכת"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "7.01",
+      "itemDescription": "תקרת גבס לפי תכנית התקרה",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_valance_equipment",
+      "kind": "length_item",
+      "match": {
+        "source": "polyline",
+        "keys": [
+          "valance_ventilator_length"
+        ],
+        "measure": "length"
+      },
+      "itemCode": "7.02",
+      "itemDescription": "סינר גבס כמסתור לציוד (מפוח / מזגן)",
+      "unit": "מ\"א",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_valance_equipment",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "סינר[^.]{0,30}(ונטה|מפוח|מזגן|מאייד|מסתור)"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "7.02",
+      "itemDescription": "סינר גבס כמסתור לציוד (מפוח / מזגן)",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_gypsum_closure",
+      "kind": "area_item",
+      "match": {
+        "source": "polyline",
+        "keys": [
+          "window_closure_area"
+        ],
+        "measure": "area"
+      },
+      "itemCode": "7.03",
+      "itemDescription": "סגירה פנימית בגבס של פתח או חלון קיים",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_gypsum_closure",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "סגירה\\s*(פנימית\\s*)?ב?גבס"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "7.03",
+      "itemDescription": "סגירה פנימית בגבס של פתח או חלון קיים",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_text_access_panel",
+      "kind": "text_item",
+      "match": {
+        "scope": "any",
+        "qty": "count",
+        "patterns": [
+          "פתח\\s*(שירות|ביקורת|גישה)",
+          "אורבונד"
+        ],
+        "proximityMm": 300
+      },
+      "itemCode": "7.04",
+      "itemDescription": "אספקה והתקנה של פתח שירות בתקרת גבס",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_access_panel",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "תקרת?\\s*גבס"
+          ]
+        },
+        "estimate": null,
+        "reason": "לספור פתחי שירות בתקרה – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "7.04",
+      "itemDescription": "אספקה והתקנה של פתח שירות בתקרת גבס",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_valance_curtain",
+      "kind": "length_item",
+      "match": {
+        "source": "polyline",
+        "keys": [
+          "valance_curtain_length"
+        ],
+        "measure": "length"
+      },
+      "itemCode": "7.05",
+      "itemDescription": "סינר גבס מסתור לווילון",
+      "unit": "מ\"א",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_valance_curtain",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "סינר[^.]{0,30}וילון",
+            "מסתור\\s*ל?וילון"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "7.05",
+      "itemDescription": "סינר גבס מסתור לווילון",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_gypsum_partition",
+      "kind": "area_item",
+      "match": {
+        "source": "wall_run",
+        "keys": [
+          "gypsum_partition_area"
+        ],
+        "measure": "wall_area",
+        "sides": 1
+      },
+      "itemCode": "7.06",
+      "itemDescription": "מחיצות גבס עם בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_gypsum_partition",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "מחיצ(ה|ות)\\s*(ה)?גבס"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "7.06",
+      "itemDescription": "מחיצות גבס עם בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_gypsum_partition_double",
+      "kind": "area_item",
+      "match": {
+        "source": "wall_run",
+        "keys": [
+          "gypsum_double_partition_area"
+        ],
+        "measure": "wall_area",
+        "sides": 1
+      },
+      "itemCode": "7.07",
+      "itemDescription": "מחיצות גבס כפולות (דו קרומיות) עם בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_gypsum_partition_double",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "דו[- ]?קרומי",
+            "מחיצ(ה|ות)\\s*גבס\\s*כפול"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "7.07",
+      "itemDescription": "מחיצות גבס כפולות (דו קרומיות) עם בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_repairs_after_demolition",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "demolition"
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – נדרש לאחר הריסות – לאשר"
+      },
+      "itemCode": "8.01",
+      "itemDescription": "תיקוני טיח ושפכטל לאחר עבודות הריסה ופירוק",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_geo_plaster_walls",
+      "kind": "area_item",
+      "match": {
+        "source": "wall_run",
+        "keys": [
+          "plaster_new_walls_area"
+        ],
+        "measure": "wall_area"
+      },
+      "itemCode": "8.02",
+      "itemDescription": "שתי שכבות טיח על קירות חצר אנגלית וקירות בלוק חדשים",
+      "unit": "מ\"ר",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_plaster_walls",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "טיח",
+            "חצר\\s*אנגלית"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית"
+      },
+      "itemCode": "8.02",
+      "itemDescription": "שתי שכבות טיח על קירות חצר אנגלית וקירות בלוק חדשים",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_paint_interior",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "architecture",
+            "architecture_master",
+            "construction",
+            "demolition",
+            "ceiling"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – צביעת פנים לאחר השיפוץ – לאשר"
+      },
+      "itemCode": "8.03",
+      "itemDescription": "צביעת פנים הבית בצבע אקרילי",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
+    },
+    {
+      "id": "r_suggest_putty",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "architecture",
+            "architecture_master",
+            "construction",
+            "demolition",
+            "ceiling"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר את היקף ההחלקה",
+        "level": "red"
+      },
+      "itemCode": "8.04",
+      "itemDescription": "החלקת קירות ותקרות בשפכטל בשלוש שכבות",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 7
     },
     {
       "id": "r_template_demolition",
@@ -1308,7 +2219,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 5
+      "defaultsVersion": 7
     }
   ]
 }

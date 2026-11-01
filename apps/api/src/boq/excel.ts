@@ -9,6 +9,9 @@ import {
   type BoqTemplate,
   type BoqTemplateColumnKey,
   type ConfidenceLevel,
+  lineOrigin,
+  LINE_ORIGIN_HE,
+  NEEDS_INPUT_HE,
 } from '@kamutan/contracts';
 import ExcelJS from 'exceljs';
 
@@ -308,7 +311,11 @@ function writeLineRow(
   set('code', sanitizeCell(l.code), { numFmt: '@', alignment: { horizontal: 'center', vertical: 'top' } });
   set('description', sanitizeCell(row.suffix ? `${l.description} – ${row.suffix}` : l.description));
   set('unit', sanitizeCell(l.unit), { alignment: { horizontal: 'center', vertical: 'top' } });
-  set('qty', row.qty, { numFmt: qtyFormat(l.unit), alignment: { horizontal: 'center', vertical: 'top' } });
+  // Sprint 6: a line still waiting for a manual quantity ("להשלמה ידנית") gets an EMPTY quantity cell + a note (the
+  // row, formulas and layout stay exactly as for any other line).
+  const awaiting = l.needsInput === true && (l.qtyOverride === null || l.qtyOverride === undefined);
+  set('qty', awaiting ? null : row.qty, { numFmt: qtyFormat(l.unit), alignment: { horizontal: 'center', vertical: 'top' } });
+  if (awaiting) ws.getCell(r, qtyCol).note = NEEDS_INPUT_HE;
   if (l.qtyOverride !== null && l.qtyOverride !== undefined) {
     const c = ws.getCell(r, qtyCol);
     c.note = sanitizeCell(`כמות שונתה ידנית (מחושב: ${l.qty})${l.qtyOverrideReason ? `: ${l.qtyOverrideReason}` : ''}`);
@@ -404,8 +411,8 @@ function buildRoomSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
 
 function buildEvidenceSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
   const ws = wb.addWorksheet(EVIDENCE_SHEET, { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
-  const head = ['סעיף', 'תאור העבודה', 'גיליון', 'קומה', 'כמות בשרטוט', 'סיבות', 'מזהי פריטים', 'קבוצות מפסק↔גוף תאורה'];
-  ws.columns = [{ width: 8 }, { width: 45 }, { width: 30 }, { width: 14 }, { width: 12 }, { width: 50 }, { width: 40 }, { width: 60 }];
+  const head = ['סעיף', 'תאור העבודה', 'גיליון', 'קומה', 'כמות בשרטוט', 'סיבות', 'מזהי פריטים', 'קבוצות מפסק↔גוף תאורה', ORIGIN_TITLE];
+  ws.columns = [{ width: 8 }, { width: 45 }, { width: 30 }, { width: 14 }, { width: 12 }, { width: 50 }, { width: 40 }, { width: 60 }, { width: 22 }];
   head.forEach((t, i) => {
     const c = ws.getCell(1, i + 1);
     c.value = t;
@@ -433,10 +440,15 @@ function buildEvidenceSheet(wb: ExcelJS.Workbook, input: ExcelInput): void {
         c.value = sanitizeCell(g.linkGroups.map(linkGroupText).join('\n'));
         c.alignment = { wrapText: true, vertical: 'top' };
       }
+      if (i === 0) ws.getCell(r, 9).value = sanitizeCell(originText(l));
       r++;
     });
   }
 }
+
+/** Sprint 6: column "מקור" of "ראיות" — where the line's quantity comes from (+ "להשלמה ידנית"). */
+export const ORIGIN_TITLE = 'מקור';
+export const originText = (l: Pick<BoqLine, 'origin' | 'needsInput'>): string => `${LINE_ORIGIN_HE[lineOrigin(l)]}${l.needsInput ? ` – ${NEEDS_INPUT_HE}` : ''}`;
 
 /** Area / length units (m², m') of the sample and the correction units. */
 const MEASURED_UNIT_RE = /^(מ"ר|מ''ר|מ״ר|מ"א|מ''א|מ״א|מ'|מטר|m2|m²|m|sqm)$/i;

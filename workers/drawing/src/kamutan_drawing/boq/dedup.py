@@ -80,6 +80,13 @@ class Det:
     source: str = "auto"  # auto | manual (added / measured by a correction)
     correction_id: str | None = None
     verified: bool = False  # accepted / reclassified / added by a human
+    # Sprint 6: evidence ``kind`` of an item that is not a detection — ``text`` (bbox), ``geometry`` / ``stair``
+    # (shape = polygon when ``closed`` else polyline, paper mm; treads, risers), ``sheet``, ``room``
+    target: str | None = None
+    bbox: tuple[float, float, float, float] | None = None
+    shape: tuple[tuple[float, float], ...] | None = None
+    closed: bool = True
+    treads: tuple[int, int | None] | None = None
 
     @property
     def key(self) -> str:

@@ -238,4 +238,27 @@ describe("REST client", () => {
       { exemplar: { sheetId: "s1", versionId: "v1", bboxMm: { x: 0, y: 0, w: 2, h: 2 }, class: "socket_power" }, scope: "project", correctionId: null },
     ]);
   });
+
+  it("Sprint 6: quick-measure and batch-status routes; null qty → needsInput; ids in `updated` tolerated", async () => {
+    const ln = { id: "l1", code: "7.01", qty: null, unit: 'מ"ר', level: "red", status: "draft", chapter: "06", description: "x" };
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.endsWith("/quick-measure")
+        ? json({ line: { ...ln, qty: 4.2 }, correction: { id: "c1" } })
+        : json({ updated: [{ ...ln, qty: 1, status: "approved" }, "l2"], skipped: [{ lineId: "l3", reason: "red" }] }),
+    );
+    const api = createHttpClient(async () => "t", "/api/v1", fetchImpl as unknown as typeof fetch);
+    const req = { kind: "measure_area" as const, quantity: 4.2, unit: "m2" as const, sheetId: "s1", versionId: "v1", geometry: { type: "polygon" as const, mm: [{ x: 0, y: 0 }] }, floor: "ground" };
+    const q = await api.quickMeasureBoqLine("p1", "l 1", req);
+    expect(q.line.qty).toBe(4.2);
+    expect(q.correction?.id).toBe("c1");
+    const b = await api.batchBoqLineStatus("p1", { lineIds: ["l1", "l2", "l3"], to: "approved", includeRed: false });
+    expect(b.updated.map((l) => l.id)).toEqual(["l1", "l2"]);
+    expect(b.updated[0]!.status).toBe("approved");
+    expect(b.skipped).toEqual([{ lineId: "l3", reason: "red" }]);
+    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([u, i]) => [u, i.method, JSON.parse(i.body as string)])).toEqual([
+      ["/api/v1/projects/p1/boq/lines/l%201/quick-measure", "POST", req],
+      ["/api/v1/projects/p1/boq/lines/batch-status", "POST", { lineIds: ["l1", "l2", "l3"], to: "approved", includeRed: false }],
+    ]);
+  });
 });

@@ -109,6 +109,9 @@ export const ROUTES: RouteCase[] = [
   { route: `POST ${V}/projects/{projectId}/boq/export/marked-pdf`, min: 'editor', spec: 'editor', specRow: ROW.export, build: (o) => ({ method: 'post', url: `${P(o)}/boq/export/marked-pdf`, body: {} }) },
   { route: `PATCH ${V}/projects/{projectId}/boq/lines/{lineId}`, variant: 'status', min: 'reviewer', spec: 'reviewer', specRow: ROW.approve, build: (o) => ({ method: 'patch', url: `${P(o)}/boq/lines/${o.lines.status}`, body: { status: 'reviewed' } }) },
   { route: `PATCH ${V}/projects/{projectId}/boq/lines/{lineId}`, variant: 'qtyOverride', min: 'editor', spec: 'editor', specRow: 'E2E-11: "עורך משנה את הכמות"', build: (o, r) => ({ method: 'patch', url: `${P(o)}/boq/lines/${o.lines.override}`, body: { qtyOverride: 5, reason: `override by ${r}` } }) },
+  // Sprint 6: bulk review / approve (same role as the single status PATCH) and quick measure of a line (= a correction)
+  { route: `POST ${V}/projects/{projectId}/boq/lines/batch-status`, min: 'reviewer', spec: 'reviewer', specRow: ROW.approve, build: (o) => ({ method: 'post', url: `${P(o)}/boq/lines/batch-status`, body: { lineIds: [o.lines.status], to: 'reviewed' } }) },
+  { route: `POST ${V}/projects/{projectId}/boq/lines/{lineId}/quick-measure`, min: 'reviewer', spec: 'reviewer', specRow: ROW.fix, build: (o) => ({ method: 'post', url: `${P(o)}/boq/lines/${o.lines.plain}/quick-measure`, body: { kind: 'confirm', sheetId: o.sheet.sheetId, quantity: 1 } }) },
   { route: `GET ${V}/projects/{projectId}/boq/lines/{lineId}/evidence`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/boq/lines/${o.lines.status}/evidence` }) },
   { route: `GET ${V}/projects/{projectId}/boq/lines/{lineId}/history`, min: 'viewer', spec: 'viewer', specRow: `${ROW.view} (A-API-07 fixed)`, build: (o) => ({ method: 'get', url: `${P(o)}/boq/lines/${o.lines.status}/history` }) },
 

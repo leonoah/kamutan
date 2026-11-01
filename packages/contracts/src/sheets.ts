@@ -208,6 +208,10 @@ export const VersionArtifactsSchema = z.object({
   fixtures: z.string().max(1024).optional(),
   /** Sprint 4: walls.json.gz (kamutan.walls/1, reference wall polygons of construction / architecture sheets) */
   walls: z.string().max(1024).optional(),
+  /** Sprint 6: text_items.json.gz (kamutan.text-items/1, Worker-Text) — notes / callouts / legend rows / panel schedules */
+  textItems: z.string().max(1024).optional(),
+  /** Sprint 6: geometry.json.gz (kamutan.geometry/1, Worker-Geometry) — hatches / wall runs / polylines / stairs */
+  geometry: z.string().max(1024).optional(),
 });
 export type VersionArtifacts = z.infer<typeof VersionArtifactsSchema>;
 

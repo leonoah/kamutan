@@ -234,6 +234,8 @@ export function auditSummaryHe(e: Pick<AuditEvent, 'entity' | 'action' | 'entity
     case 'boqLines': {
       parts.push(typeof a.code === 'string' ? `שורה ${a.code}` : ent);
       if ('to' in a) parts.push(`סטטוס ${fmt(a.from)} → ${fmt(a.to)}`);
+      // Sprint 6: bulk status change (POST …/boq/lines/batch-status) — every event of one call shares `batchId`.
+      if ('to' in a && typeof a.batchId === 'string') parts.push('(פעולה קבוצתית)');
       if ('qtyOverride' in a) {
         const before = a.prevQtyOverride ?? a.qty;
         parts.push(a.qtyOverride === null ? `ביטול כמות ידנית (חזרה ל-${fmt(a.qty)})` : `כמות ידנית ${fmt(before)} → ${fmt(a.qtyOverride)}`);

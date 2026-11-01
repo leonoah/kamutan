@@ -1,14 +1,14 @@
 {
-  "version": 1,
-  "templateVersion": 2,
+  "version": 2,
+  "templateVersion": 3,
   "template": {
     "id": "tpl_default",
     "name": "תבנית ברירת מחדל",
     "default": true,
     "source": "default",
-    "sourceRef": "kamutan-defaults/template-v2",
+    "sourceRef": "kamutan-defaults/template-v3",
     "vatRate": 0.18,
-    "defaultsVersion": 2,
+    "defaultsVersion": 3,
     "titleRows": [
       "כתב כמויות",
       "שם הפרויקט: {projectName}"
@@ -58,6 +58,17 @@
         ]
       },
       {
+        "code": "02",
+        "title": "פרק 02 – עבודות בנייה ובטון",
+        "notes": [
+          "1. העבודות יבוצעו לפי הנחיות הקונסטרוקטור ותכניות הבנייה המצורפות.",
+          "2. הכמויות לפי מידות התכנית."
+        ],
+        "codePrefixes": [
+          "2"
+        ]
+      },
+      {
         "code": "03",
         "title": "פרק 03 – עבודות אינסטלציה",
         "notes": [
@@ -91,8 +102,30 @@
         ]
       },
       {
+        "code": "06",
+        "title": "פרק 06 – עבודות גבס",
+        "notes": [
+          "1. העבודות כוללות פרופילים, ברגים, סרט שריון ושפכטל עד לגמר מוכן לצבע.",
+          "2. הכמויות לפי תכנית התקרה ותכנית הבנייה."
+        ],
+        "codePrefixes": [
+          "7"
+        ]
+      },
+      {
+        "code": "07",
+        "title": "פרק 07 – עבודות טיח, שפכטל וצבע",
+        "notes": [
+          "1. גוונים לבחירת המזמין.",
+          "2. העבודות כוללות הגנה על האלמנטים הקיימים וניקיון בסיום."
+        ],
+        "codePrefixes": [
+          "8"
+        ]
+      },
+      {
         "code": "09",
-        "title": "פרק 09 – תאורה",
+        "title": "פרק 09 – תאורה ושונות",
         "notes": [
           "1. התקנת גופי תאורה לפי תכנית התאורה המצורפת."
         ],
@@ -902,7 +935,7 @@
       "id": "it_9-01_0b8340a8ee864d15",
       "code": "9.01",
       "chapter": "09",
-      "chapterTitle": "פרק 09 – תאורה",
+      "chapterTitle": "פרק 09 – תאורה ושונות",
       "description": "התקנת גופי התאורה בבית",
       "unit": "יח'",
       "tags": [
@@ -912,6 +945,351 @@
       "sourceRef": "kamutan-defaults/library-v1",
       "active": true,
       "defaultsVersion": 1
+    },
+    {
+      "id": "it_2-01_cf53698f9477de80",
+      "code": "2.01",
+      "chapter": "02",
+      "chapterTitle": "פרק 02 – עבודות בנייה ובטון",
+      "description": "יציקת קירות תומכים מבטון מזוין לפי הנחיות הקונסטרוקטור",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_2-02_dd52377906b49825",
+      "code": "2.02",
+      "chapter": "02",
+      "chapterTitle": "פרק 02 – עבודות בנייה ובטון",
+      "description": "יציקת רצפה ומדרגות בטון לפי הנחיות הקונסטרוקטור",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_2-03_7047d6b8a9770ec3",
+      "code": "2.03",
+      "chapter": "02",
+      "chapterTitle": "פרק 02 – עבודות בנייה ובטון",
+      "description": "סגירת פתח קיים בבנייה בבלוקים",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_4-08_5166ac49073c8e57",
+      "code": "4.08",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "צינור ריק מהרצפה כהכנה לשקעי שירות באי המטבח",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_4-19_9a1cf4c6d5bdb018",
+      "code": "4.19",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "הזנה למפוח אוורור (ונטה) כולל מפסק",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_4-25_3dbc543b928add17",
+      "code": "4.25",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת לוח תקשורת",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_4-26_52a737a6463138df",
+      "code": "4.26",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "החלפת מפסק דוד קיים במפסק טיימר",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_4-27_df98dd562df8d0a7",
+      "code": "4.27",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "צינור קוברה 50 מ\"מ לנקודת מקרן בתקרה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_4-28_70ee9cb8e526fa3e",
+      "code": "4.28",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת לוח חשמל 36 מודולים",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_5-04_fa5619530214b5b6",
+      "code": "5.04",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "ריצוף מדרגות במדרכי אבן (שלח ורום)",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_5-08_e6d6502220fa9ea9",
+      "code": "5.08",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "איטום קירות חצר אנגלית לפי הנחיות יועץ האיטום",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_7-01_e6c6cbf4d7aa53da",
+      "code": "7.01",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "תקרת גבס לפי תכנית התקרה",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_7-02_5cbb80b66b3a8b46",
+      "code": "7.02",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "סינר גבס כמסתור לציוד (מפוח / מזגן)",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_7-03_7babe5a4a6089620",
+      "code": "7.03",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "סגירה פנימית בגבס של פתח או חלון קיים",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_7-04_cb7b93d8bb79dc4e",
+      "code": "7.04",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "אספקה והתקנה של פתח שירות בתקרת גבס",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_7-05_4741fa5b35cc7373",
+      "code": "7.05",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "סינר גבס מסתור לווילון",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_7-06_e141553ead3b3365",
+      "code": "7.06",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "מחיצות גבס עם בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_7-07_34feceef1bddf3e7",
+      "code": "7.07",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "מחיצות גבס כפולות (דו קרומיות) עם בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_8-01_9a4db4e51af61303",
+      "code": "8.01",
+      "chapter": "07",
+      "chapterTitle": "פרק 07 – עבודות טיח, שפכטל וצבע",
+      "description": "תיקוני טיח ושפכטל לאחר עבודות הריסה ופירוק",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_8-02_21a892f2baf62b7d",
+      "code": "8.02",
+      "chapter": "07",
+      "chapterTitle": "פרק 07 – עבודות טיח, שפכטל וצבע",
+      "description": "שתי שכבות טיח על קירות חצר אנגלית וקירות בלוק חדשים",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_8-03_7ef9b7b5b8cc6e46",
+      "code": "8.03",
+      "chapter": "07",
+      "chapterTitle": "פרק 07 – עבודות טיח, שפכטל וצבע",
+      "description": "צביעת פנים הבית בצבע אקרילי",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_8-04_bb16fb32ced54ff1",
+      "code": "8.04",
+      "chapter": "07",
+      "chapterTitle": "פרק 07 – עבודות טיח, שפכטל וצבע",
+      "description": "החלקת קירות ותקרות בשפכטל בשלוש שכבות",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
+    },
+    {
+      "id": "it_9-03_aeb1b0459c428f3c",
+      "code": "9.03",
+      "chapter": "09",
+      "chapterTitle": "פרק 09 – תאורה ושונות",
+      "description": "התקנת צינור אוורור 4\" למפוח ונטה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v2",
+      "active": true,
+      "defaultsVersion": 2
     }
   ]
 }

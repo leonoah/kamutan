@@ -81,13 +81,15 @@ export class UnderstandingService {
     const linksPath = a.links ? storagePaths.links(orgId, projectId, sheetId, versionId) : null;
     const fixturesPath = a.fixtures ? storagePaths.fixtures(orgId, projectId, sheetId, versionId) : null;
     const wallsPath = a.walls ? storagePaths.walls(orgId, projectId, sheetId, versionId) : null;
+    // Sprint 6: geometry take-off (hatches / wall runs / stairs) for the drawing highlight; text_items are never signed.
+    const geometryPath = a.geometry ? storagePaths.geometry(orgId, projectId, sheetId, versionId) : null;
 
     const ids = await this.thumbIdsOf(storagePaths.versionArtifacts(orgId, projectId, sheetId, versionId), legendPath, detectionsPath);
     const thumbPaths = new Map<string, string>();
     for (const id of ids.legend) thumbPaths.set(id, storagePaths.legendThumb(orgId, projectId, sheetId, versionId, id));
     for (const id of ids.clusters) thumbPaths.set(id, storagePaths.unknownThumb(orgId, projectId, sheetId, versionId, id));
 
-    const all = [legendPath, detectionsPath, roomsPath, linksPath, fixturesPath, wallsPath, ...thumbPaths.values()].filter((p): p is string => p !== null);
+    const all = [legendPath, detectionsPath, roomsPath, linksPath, fixturesPath, wallsPath, geometryPath, ...thumbPaths.values()].filter((p): p is string => p !== null);
     const signed = all.length ? await this.signer.signRead(all) : new Map<string, SignedUrl>();
     let expires = Number.POSITIVE_INFINITY;
     const ref = (p: string | null) => {
@@ -107,6 +109,7 @@ export class UnderstandingService {
     const links = ref(linksPath);
     const fixtures = ref(fixturesPath);
     const walls = ref(wallsPath);
+    const geometry = ref(geometryPath);
     return {
       sheetId,
       versionId,
@@ -116,6 +119,7 @@ export class UnderstandingService {
       links,
       fixtures,
       walls,
+      geometry,
       thumbs,
       stats: v.stats,
       expiresAt: new Date(Number.isFinite(expires) ? expires : Date.now()).toISOString(),

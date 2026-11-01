@@ -1,0 +1,39 @@
+{
+  "$ref": "#/definitions/QuickAction",
+  "definitions": {
+    "QuickAction": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "measure_area",
+            "measure_length",
+            "count",
+            "confirm"
+          ]
+        },
+        "sheetId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "sheetId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/QuickAction.json"
+}

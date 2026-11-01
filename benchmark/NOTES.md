@@ -467,3 +467,96 @@ checks; it never writes `table.json` (no `--table`). Table updates are a reviewe
 - Pipeline acceptance (`benchmark/acceptance`): the A-pipeline-05 (DXF blocks) and A-pipeline-11 (raster copy) xfails
   are flipped to passing tests (12 passed). Before / after numbers: `workers/drawing/NOTES.md` "Stage 10 — fix round
   (Worker-Accuracy)".
+
+## Sprint 6: GT for every client-BOQ line + `eval-boq` coverage over all chapters
+
+New module `coverage.py`. `kbench eval-boq` always adds a `coverage` section over **every** truth line, whatever
+`--scope` says. `--scope all` also puts every chapter in the per-line AE table. `--computability FILE` defaults to
+`TRUTH/s6_lines.json`. `--target-ok N` defaults to 45 (brief target). Tests: `tests/test_sprint6.py`, synthetic only,
+11 tests including a Hypothesis property test.
+
+```bash
+uv run kbench eval-boq --truth $GT --pred-lines ROOT/orgs/org-demo/projects/p-noah/boq/boq-lines.json --scope all \
+    --out $GT/eval/sprint6_<tag>.json --report $GT/eval/sprint6_<tag>.md [--computability $GT/s6_lines.json]
+```
+
+### Coverage status per line (mutually exclusive, first match wins)
+- Predicted lines with the same TEXT code are pooled. Q̂ = sum of the non-null `qty`, before review (`qtyOverride` ignored).
+- A line is *suggested* when `origin == "suggested"` or `needsInput` is true.
+- Units compare by kind after normalisation: `״`→`"`, `יח'` = `יחידה`; count / area / length / lump sum.
+
+| status | condition |
+| --- | --- |
+| `exact` | right unit and Q̂ == Q (lump sums too, so a suggested `קומפלט 1` with qty 1 is exact) |
+| `within_tol` | right unit, area/length line, PE within the line tolerance (cladding 3 %, flooring 2 %, length 2 %, other area 2 %) |
+| `suggested_right_unit` | only suggested lines, right unit, qty null or out of tolerance |
+| `suggested_wrong_unit` | only suggested lines, wrong unit |
+| `wrong_unit` | a computed line with the wrong unit |
+| `wrong_qty` | a computed line, right unit, qty out of tolerance |
+| `missing` | no predicted line: a silent omission |
+
+- **Reported sets:** all 77, gated (not disputed), and disputed (GT-D-*) separately. Also per code major (labelled
+  with the client chapter: 7.xx = ch. 06 gypsum, 8.xx = ch. 07 plaster & paint, 9.xx = ch. 08 misc), per
+  computability class from `s6_lines.json`, and per `origin`.
+- **Checks:** a suggested line is never green; a `needsInput` line should carry a `quickAction`; extra codes.
+- **Target** (brief): exact-or-within ≥ 45 and 77/77 present and no green suggested line.
+
+### Sprint-6 GT (outside git): `gt/noah/s6_lines.json` (`kamutan.s6-lines/1`) + `s6_lines.md`
+- **Rebuild:** `python3 gt/noah/tools/build_s6_lines.py`.
+- **Scope:** 44 lines (chapters 01, 02, 04 text/equipment, 05 remainder, 06/07, 9.03). Each line records:
+  - the BOQ qty;
+  - `computability` (computable / partial / not_on_drawings);
+  - `per_floor`;
+  - `drawing_qty`, the quantity the drawings support (null when not derivable), plus `estimate` / `drawn`
+    (measured lengths/widths) for partial lines;
+  - `evidence[]` with sheet, floor, `bboxMm` (displayed page frame after /Rotate, y down, the same frame as
+    `sheets/*.geojson`), kind (note / callout / symbol / legend / detail / geometry / section / sheet), the text,
+    the `gt_ref` to the sheet/link GT, and a **role**: `primary` counts, `context` supports, and `trap` must NOT
+    count (legend rows repeated on all 4 electrical/lighting sheets, detail boxes, master-sheet copies of
+    construction notes, the same stair on 4 sheets, "פעמון מיני" = luminaire type 16, "מאוורר" = ceiling fan ≠ ונטה);
+  - a `rule_hint` for Worker-Text / Worker-BOQ.
+- **`coverage_reference`** gives computability for all 77 lines; lines GT'd in Sprints 2–4 are listed in `prior_gt`.
+  - Totals: **computable 56, partial 13, not_on_drawings 8**.
+  - Finding: 3.15 is a text item ('משאבה לניקוז מי גשמים' on 24ab0ea0, 'בור מי גשם עם משאבה' on ad257a1c), not
+    "not derivable" as Sprint 4 said.
+- **Method:**
+  - every sheet rendered and inspected (pdftoppm 75–250 dpi crops);
+  - text boxes from the worker's SHX-glyph OCR (`text.json.gz`, v1; the PDFs carry no text layer);
+  - lengths from the vector primitives: red = new work on the construction sheets, dashed red with an X = lowered
+    gypsum box; 1:50.
+- **Cross-checks** (`crosschecks` in the JSON):
+  - None of the Sprint-6 chapter-04 items is an AutoCAD block in the client "חשמל" sheet: they are notes or generic
+    glyphs, so text rules are required. The block report also over-counts (7 speaker blocks on the ground floor vs
+    3 drawn = 4.07), so it is not a count source.
+  - "אינסטלציה" confirms the guest-WC set (H=120 cistern screen = the only 5.07 anchor). It has nothing for
+    02/05.04–5.08/06/07.
+
+### Before / after (`gt/noah/eval_sprint6.md`, per run `gt/noah/eval/sprint6_<tag>{,_nors}.{json,md}`)
+- **Re-run:** `bash gt/noah/tools/run_s6_eval.sh <tag> && python3 gt/noah/tools/report_s6.py`.
+  - This is a fresh `ingest_local.py --force` of the 15 sheets into `kamutan-data/s6qa/<tag>/artifacts`.
+  - Then `boq_local.py --no-corrections` twice: once with an empty room-settings file (`_nors`, no user input at
+    all), once with the built-in demo room settings.
+  - Then `eval-boq --scope all` on both.
+
+| run | present | exact | exact or within | of which from a suggested default | computed from drawings | missing | target |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Stage-10 E2E-01 (30.10, demo room settings) | 42/77 | 34 | 35 | 0 | 35 | 35 | FAIL |
+| before = main 01.11 15:32, workers mid-sprint (demo room settings) | 77/77 | 55 | 56 | 22 | 34 | 0 | PASS |
+| before, no room settings | 77/77 | 53 | 53 | 22 | 31 | 0 | PASS |
+
+- The 45-line target is met only thanks to suggested lines with a default quantity:
+  - lump sums 1.xx / 2.02 / 5.08 / 8.01 / 8.03 / 8.04 at 1;
+  - one-offs 3.08–3.10 / 3.14 / 3.15 / 9.03 at 1;
+  - 7.04 = 3.
+  The lines computed from the drawings went 35 → 34 (31 without room settings).
+- Suggested lines that need input carry `qty: 0`, not `null` as the brief says (`להשלמה ידנית`). Example: 4.28,
+  5.04, 7.0x.
+
+### Known gaps (Sprint 6)
+- The s6 GT is draft from one annotator pass (visual + vector), not a two-pass reconcile like Sprints 2–4.
+  - Partial-line estimates (7.01 3.4 m², 7.06 ≈ 30 m², 2.03 width 0.80 m, 7.03 width 1.20 m) need a human check.
+  - The 7.06 composition (does the 4.4 m AC gypsum lining on the ground floor belong to 7.06?) is an owner question.
+- The "before" build was run while the Sprint-6 workers were already editing `workers/drawing`. It is the state of
+  main at that time, not a clean pre-sprint tree; the Stage-10 E2E-01 build is the clean reference.
+- Room settings: `boq_local.py` writes demo room settings (user input: cladding heights, 5.06/5.07 partial cladding)
+  unless `--room-settings` points at an empty file. "Without touch" numbers are reported both ways.

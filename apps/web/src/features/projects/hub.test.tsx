@@ -61,7 +61,12 @@ describe("Project hub", () => {
   });
 });
 
-describe("Sheet analysis route", () => {
+describe("Sheet analysis route", { timeout: 30_000 }, () => {
+  // Load the lazy review chunk outside the per-test budget (as boq.test.tsx does); it grew with Sprint 6.
+  beforeAll(async () => {
+    await import("@/features/review/ReviewPage");
+    await import("@/features/viewer/SheetViewer");
+  }, 60_000);
   it("locks the workspace to one sheet and opens on the components map", async () => {
     await renderApp("/projects/p-noah/sheets/noah-eb8be8a3-p0", { signedIn: true });
     await screen.findByRole("application", { name: /^שרטוט ת\. חשמל \/ קומת קרקע/ }, LAZY);

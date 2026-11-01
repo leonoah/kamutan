@@ -15,12 +15,19 @@ import {
   type RevertCorrectionResponse,
   type Role,
   type SheetVersion,
+  CreateCorrectionRequestSchema,
+  effectiveQty,
+  ItemCodeSchema,
+  type QuickMeasureRequest,
+  type QuickMeasureResponse,
+  type CreateCorrectionInput,
 } from '@kamutan/contracts';
 import { AccessService } from '../access/access.service';
 import type { AuthContext } from '../auth/auth-context';
 import { ApiException, badRequest, forbidden, notFound, type ApiIssue } from '../common/api-exception';
 import { REPOSITORY, RepoConflictError, type Repository } from '../db/repository';
-import { REVIEW_REPOSITORY, type ReviewRepository } from '../db/review-repository';
+import { REVIEW_REPOSITORY, type CorrectionInput, type ReviewRepository } from '../db/review-repository';
+import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { RebuildService } from './rebuild.service';
 
 const validId = (s: string) => DocIdSchema.safeParse(s).success;
@@ -48,6 +55,7 @@ export class CorrectionsService {
     @Inject(REPOSITORY) private readonly repo: Repository,
     @Inject(REVIEW_REPOSITORY) private readonly review: ReviewRepository,
     private readonly rebuild: RebuildService,
+    @Inject(BOQ_REPOSITORY) private readonly boq: BoqRepository,
   ) {}
 
   private async requireForKinds(user: AuthContext, projectId: string, kinds: Iterable<CorrectionKind>): Promise<string> {
@@ -135,6 +143,54 @@ export class CorrectionsService {
     if (!r) throw notFound('batch');
     const rebuild = await this.rebuild.afterChange(orgId, projectId, 'correction', user.uid, traceparent);
     return { batch: r.batch, reverted: r.reverted, rebuild };
+  }
+
+  /**
+   * Sprint 6: POST …/boq/lines/:lineId/quick-measure — ONE correction bound to the line (`lineId`, `quickAction`,
+   * itemCode = the line's code) on the sheet's version (default: current), audited (`corrections/create` with lineId),
+   * BOQ stale + debounced rebuild. Same role as the correction kind (reviewer+).
+   */
+  async quickMeasure(user: AuthContext, projectId: string, lineId: string, req: QuickMeasureRequest, traceparent: string): Promise<QuickMeasureResponse> {
+    const kind: CorrectionKind = req.kind === 'confirm' ? 'accept' : req.kind === 'count' ? 'count' : 'measure';
+    const orgId = await this.requireForKinds(user, projectId, [kind]);
+    if (!validId(lineId)) throw notFound('line');
+    const line = await this.boq.getLine(orgId, projectId, lineId);
+    if (!line) throw notFound('line');
+    if (!ItemCodeSchema.safeParse(line.code).success) throw new ApiException(HttpStatus.CONFLICT, 'conflict', 'this line has no item code to measure');
+    const sheet = await this.repo.getSheet(orgId, projectId, req.sheetId);
+    if (!sheet) throw notFound('sheet');
+    const versionId = req.versionId ?? sheet.currentVersionId;
+    if (!versionId) throw new ApiException(HttpStatus.CONFLICT, 'not_ready', 'the sheet has no processed version yet');
+    const g = req.geometry ?? null;
+    let quantity: number | null = null;
+    if (req.kind === 'count') quantity = g ? g.mm.length : null;
+    if (req.kind === 'confirm') {
+      if (req.quantity === undefined && line.needsInput) throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', 'quantity is required to confirm a line that needs input', [{ path: 'quantity', message: 'required' }]);
+      quantity = req.quantity ?? effectiveQty(line);
+    }
+    const pts = g?.mm ?? [];
+    const anchorMm = pts.length ? { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length } : { x: 0, y: 0 };
+    const raw: CreateCorrectionInput = {
+      kind,
+      sheetId: req.sheetId,
+      versionId,
+      anchorMm,
+      itemCode: line.code,
+      geometry: kind === 'accept' ? null : g,
+      quantity,
+      unit: req.kind === 'measure_area' ? 'm2' : req.kind === 'measure_length' ? 'm' : req.kind === 'count' ? 'unit' : null,
+      floor: line.floor ?? null,
+      reason: req.reason ?? null,
+    };
+    const parsed = CreateCorrectionRequestSchema.safeParse(raw);
+    // accept needs a target: the line (`lineId`) is it; the request schema itself does not know lineId.
+    const issues = parsed.success ? [] : parsed.error.issues.filter((i) => !(kind === 'accept' && i.path[0] === 'detectionId'));
+    if (issues.length) throw new ApiException(HttpStatus.BAD_REQUEST, 'bad_request', 'invalid quick measure', issues.slice(0, 20).map((i) => ({ path: i.path.join('.'), message: i.message })));
+    const input: CorrectionInput = { ...(parsed.success ? parsed.data : (CreateCorrectionRequestSchema.innerType().parse(raw) as CorrectionInput)), lineId, quickAction: req.kind };
+    await this.validateTargets(orgId, projectId, [input]);
+    const { corrections } = await this.review.createCorrections(orgId, projectId, [input], null, user.uid);
+    const rebuild = await this.rebuild.afterChange(orgId, projectId, 'correction', user.uid, traceparent);
+    return { correction: corrections[0] as Correction, line, rebuild };
   }
 
   /** Newest first (at desc, id desc); cursor = last correction id of the page. */

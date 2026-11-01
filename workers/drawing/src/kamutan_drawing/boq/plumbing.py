@@ -155,7 +155,9 @@ TextCue = tuple[str, float, float]  # (text, x, y) of a sheet text line, paper m
 def text_cue_det(sheet_id: str, version_id: str, discipline: str, index: int, x: float, y: float, floor: str | None) -> Det:
     """Evidence item for a text-triggered suggestion (A-pipeline-10): ``detectionId`` = ``text_{n}`` (the n-th line of
     the version's ``text.json.gz``), placed at the text — a clickable cue on the sheet even without a detection."""
-    return Det(sheet_id, version_id, f"text_{index}", "text", x, y, "yellow", [], floor, "new", None, discipline, 1.0)
+    return Det(
+        sheet_id, version_id, f"text_{index}", "text", x, y, "yellow", [], floor, "new", None, discipline, 1.0, target="text"
+    )
 
 
 def suggestion_units(

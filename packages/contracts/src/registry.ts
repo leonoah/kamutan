@@ -21,6 +21,10 @@ import {
   PatchBoqLineResponseSchema,
   ProjectBoqSummarySchema,
   RequestBoqBuildResponseSchema,
+  BoqCoverageSchema,
+  QuickActionSchema,
+  BatchLineStatusRequestSchema,
+  BatchLineStatusResponseSchema,
 } from './boq.js';
 import {
   BoqRuleListSchema,
@@ -86,7 +90,10 @@ import {
   SimilarCandidateSchema,
   SimilarSearchSchema,
   SimilarSearchViewSchema,
+  QuickMeasureRequestSchema,
+  QuickMeasureResponseSchema,
 } from './corrections.js';
+import { GeometryArtifactSchema, GeometryMeasureSchema, TextItemSchema, TextItemsArtifactSchema } from './takeoff.js';
 import { RoleSchema } from './roles.js';
 import {
   CreateShareLinkRequestSchema,
@@ -358,4 +365,15 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   PatchMemberRequest: PatchMemberRequestSchema,
   MemberResponse: MemberResponseSchema,
   RemoveMemberResponse: RemoveMemberResponseSchema,
+  // Sprint 6 — text / geometry take-off, suggested lines, quick measure
+  TextItem: TextItemSchema,
+  TextItemsArtifact: TextItemsArtifactSchema,
+  GeometryMeasure: GeometryMeasureSchema,
+  GeometryArtifact: GeometryArtifactSchema,
+  BoqCoverage: BoqCoverageSchema,
+  QuickAction: QuickActionSchema,
+  QuickMeasureRequest: QuickMeasureRequestSchema,
+  QuickMeasureResponse: QuickMeasureResponseSchema,
+  BatchLineStatusRequest: BatchLineStatusRequestSchema,
+  BatchLineStatusResponse: BatchLineStatusResponseSchema,
 });

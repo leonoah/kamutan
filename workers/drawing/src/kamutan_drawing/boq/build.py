@@ -39,7 +39,9 @@ from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
 from .aggregate import Line, Result, SheetInput, aggregate
 from .contracts import EVIDENCE_SCHEMA, BoqBuildJob, parse_links
 from .corrections import Correction, OldDetections, parse_corrections
+from .coverage import coverage
 from .rules import FIXTURE_CLASSES, LABEL_RECLASS, R_OBSOLETE, R_QTY_CHANGED, Library, Rule, load_rules, seed_rules
+from .textitems import legend_boxes, parse_text_items
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +68,8 @@ PRESERVED = (
     "locked",
 )
 MAX_ATTEMPTS = 5
+TEXT_ITEMS_FILE = "text_items.json.gz"  # Worker-Text (Sprint 6), under the version prefix
+GEOMETRY_FILE = "geometry.json.gz"  # Worker-Geometry (Sprint 6), under the version prefix
 
 
 @dataclass
@@ -130,6 +134,14 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
             capped[kind] += cap_document(kind, doc, table, raster=raster, green_threshold=threshold)
 
     want_text = any(r.kind == "one_off_suggestion" and r.match.get("textPatterns") for r in rules)
+    # Sprint 6: text items / text-triggered suggestions read every sheet's text (+ legend boxes for the scope);
+    # area / length items read Worker-Geometry's geometry.json.gz
+    want_text_items = any(
+        r.kind == "text_item" or (r.kind == "suggested_item" and (r.match.get("trigger") or {}).get("kind") == "text")
+        for r in rules
+    )
+    want_text = want_text or want_text_items
+    want_geo = any(r.kind in ("area_item", "length_item") for r in rules)
     superseded: dict[str, str | None] = {}
     for sid, s in sorted(_list(docs, f"{proj}/sheets")):
         if s.get("superseded") is True:  # a revised upload replaced it (A-API-05); `supersededBy` may be null
@@ -176,6 +188,18 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
             tp = arts.get("text") or pre + "text.json.gz"
             tobj = _gz_json(blobs, str(tp)) if str(tp).startswith(pre) else None
             texts = [t for t in ((tobj or {}).get("lines") or []) if isinstance(t, dict)]
+        text_items: list[dict[str, Any]] | None = None
+        legends: list[tuple[float, float, float, float]] = []
+        if want_text_items:
+            tip = arts.get("textItems") or arts.get("text_items") or pre + TEXT_ITEMS_FILE
+            text_items = parse_text_items(_gz_json(blobs, str(tip))) if str(tip).startswith(pre) else None
+            if text_items is None:
+                lp = arts.get("legend") or pre + "legend.json.gz"
+                legends = legend_boxes(_gz_json(blobs, str(lp)) if str(lp).startswith(pre) else None)
+        geometry: Any = None
+        if want_geo:
+            gp = arts.get("geometry") or pre + GEOMETRY_FILE
+            geometry = _gz_json(blobs, str(gp)) if str(gp).startswith(pre) else None
         rp = arts.get("rooms") or pre + "rooms.json.gz"
         robj = _gz_json(blobs, str(rp)) if str(rp).startswith(pre) else None
         cap("rooms", robj, raster)
@@ -204,10 +228,14 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
                 texts,
                 rooms,
                 room_docs,
+                text_items,
+                legends,
+                geometry,
             )
         )
     corrections, ccounts = parse_corrections(_list(docs, f"{proj}/corrections"))
     corrections = retarget_superseded(corrections, superseded, {x.sheet_id for x in sheets})
+    corrections = bind_to_lines(corrections, {lid: d for lid, d in _list(docs, f"{proj}/boqLines") if isinstance(d, dict)})
     settings = {k: v for k, v in _list(docs, f"{proj}/roomSettings") if isinstance(v, dict)}
     cache: dict[tuple[str, str], list[dict[str, Any]] | None] = {}
 
@@ -244,6 +272,31 @@ def retarget_superseded(corrections: list[Correction], superseded: dict[str, str
             out.append(replace(c, sheet_id=cur, origin_sheet_id=c.origin_sheet_id or c.sheet_id))
         else:
             out.append(c)
+    return out
+
+
+def bind_to_lines(corrections: list[Correction], lines: dict[str, dict[str, Any]]) -> list[Correction]:
+    """Sprint 6 (contracts "Corrections"): an active correction with ``lineId`` contributes to that line — its
+    ``itemCode`` is the line's code (measure m² / m', count clicks). An ``accept`` bound to a *suggested* line by
+    ``lineId`` alone is the confirmed quantity (``quantity``, else the line's current estimate): a manual quantity, so
+    the suggestion is replaced and the line is no longer ``needsInput``. On computed lines bound measures / counts add
+    to the computed quantity (Sprint 4 semantics). A line that no longer exists leaves the correction as it is."""
+    out: list[Correction] = []
+    for c in corrections:
+        ln = lines.get(c.line_id) if c.line_id else None
+        if ln is None or not isinstance(ln.get("code"), str):
+            out.append(c)
+            continue
+        if c.item_code is None and c.kind in ("measure", "count", "accept"):
+            c = replace(c, item_code=str(ln["code"]))
+        bound_accept = c.kind == "accept" and not (c.detection_id or c.link_group_id or c.room_id)
+        if bound_accept and (ln.get("origin") == "suggested" or ln.get("needsInput")):
+            q = c.quantity
+            if q is None and not ln.get("needsInput") and isinstance(ln.get("qty"), int | float):
+                q = float(ln["qty"])
+            if q is not None:
+                c = replace(c, kind="measure", quantity=q, unit=c.unit or (str(ln.get("unit")) if ln.get("unit") else None))
+        out.append(c)
     return out
 
 
@@ -452,6 +505,10 @@ def build_project(org_id: str, project_id: str, build_id: str, blobs: BlobStore,
         "approvalsInvalidated": counts["approvalsInvalidated"],
         "approvalsInvalidatedList": up.invalidated,
         "library": inp.library.stats(),
+        "coverage": coverage(up.all_lines, inp.library),
+        "textItems": res.stats.get("textItems", {}),
+        "geometry": res.stats.get("geometry", {}),
+        "suggested": res.stats.get("suggested", {}),
         "calibrationCapped": dict(inp.capped),
         "durationMs": int((time.monotonic() - t0) * 1000),
         "calibration": default_table().stats(),

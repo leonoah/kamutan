@@ -487,3 +487,21 @@ def test_chain_survives_any_bend(bend):
 
     (ch,) = extract_chains(extract_pdf(make_pdf(draw))[0])
     assert math.isclose(ch.length, float(np.hypot(*np.diff(poly, axis=0).T).sum()), rel_tol=0.08)
+
+
+def test_plain_new_switch_to_an_existing_point_is_single_whatever_the_ocr_reads():
+    """Sprint 6 (GT b2046277-G06 / 1bbe4113-G13): a new switch feeding an existing point without a "להוסיף …" note and
+    without a fan switch is a plain ``single`` group (4.09), not ``add_to_existing`` — the kind must not flip between a
+    cold and a warm glyph store that does / does not read the "נק' קיימת" label next to the point."""
+    s, lum = (40.0, 150.0), (90.0, 120.0)
+
+    def draw(c, ps):
+        switch_glyph(c, ps, *s)
+        luminaire_glyph(c, ps, *lum)
+        exploded_dashes(c, ps, _bezier(s, lum, 0.2))
+
+    for cls in ("switch_single", "switch_2way"):
+        dets = [sw_det("d_1", *s, cls=cls), det("d_2", "luminaire_ceiling", *lum)]
+        read = run(draw, dets, [span("נק' קיימת", 82, 124, 94, 127)])[0]  # warm store: label read → point existing
+        unread = run(draw, [dict(d) for d in dets], [span("היימת", 82, 124, 94, 127)])[0]  # cold store: misread
+        assert groups_by_switch(read)[("d_1",)]["kind"] == "single" == groups_by_switch(unread)[("d_1",)]["kind"], cls

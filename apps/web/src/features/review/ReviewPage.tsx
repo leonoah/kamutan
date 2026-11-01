@@ -17,7 +17,6 @@ import { Kbd } from "@/components/Kbd";
 import { Ltr } from "@/components/Ltr";
 import { useProject } from "@/features/projects/queries";
 import { useCurrentOrg } from "@/features/org/useCurrentOrg";
-import { useAuthStore } from "@/stores/authStore";
 import { BoqPanel, type PanelTab } from "@/features/boq/BoqPanel";
 import { OverrideDialog } from "@/features/boq/OverrideDialog";
 import { ExportDialog } from "@/features/boq/ExportDialog";
@@ -27,10 +26,15 @@ import { CalibrationBadge, cappedLines, resolveCalibration } from "@/features/ca
 import { LineHistoryDialog } from "@/features/history/LineHistoryDialog";
 import { ShareDialog } from "@/features/share/ShareDialog";
 import {
+  bulkPlan,
   canEditQty,
   evidenceBySheet,
   filterLines,
+  forwardOrReason,
   forwardStatus,
+  roleCanReach,
+  skipCounts,
+  undoGroups,
   groupByChapter,
   detectionsByLine,
   groupNo,
@@ -43,6 +47,8 @@ import {
   type StatusFilter,
 } from "@/features/boq/model";
 import {
+  useBatchStatus,
+  useQuickMeasure,
   useSheetEvidence,
   useBoqBuild,
   useBoqLines,
@@ -102,6 +108,10 @@ import { toolForKey } from "@/features/viewer/tools";
 import { OptionPicker, classOptions, type PickerOption } from "./ClassPicker";
 import { LassoCard, ShortcutsDialog } from "./ReviewDialogs";
 import { LearnPanel } from "./LearnPanel";
+import { BulkBar, BulkConfirmDialog, skipList, type BulkTarget } from "@/features/boq/BulkBar";
+import { QuickConfirmDialog } from "@/features/boq/QuickConfirmDialog";
+import { QUICK_TOOL, QUICK_UNIT, evidenceShapeFeatures, quickActionOf, shapeBoxesOn } from "@/features/boq/sprint6";
+import type { BoqLineStatus, BoqQuickActionKind } from "@/api/types";
 import { bboxCenter, candidateFeatures, manualItemFeatures, nearestWall, padBBox, roomAt, roomFeatures as selectedRoomFeatures } from "./overlay";
 
 /** Picker state: what the chosen class is for. */
@@ -180,7 +190,6 @@ export function ReviewPage() {
   const { org } = useCurrentOrg();
   const role = org?.role ?? null;
   const orgId = project.data?.orgId ?? org?.id ?? null;
-  const session = useAuthStore((s) => s.session);
   // Sheet analysis opens on the components map; the project review on the BOQ.
   const defaultTab: PanelTab = locked ? "counts" : "boq";
   const panelParam = params.get("panel");
@@ -468,16 +477,25 @@ export function ReviewPage() {
           : t("boq.groupDetail", { lum: t("boq.groupLum", { count: g.luminaireIds.length }), sw: t("boq.groupSw", { count: g.switchIds.length }) }),
     }), arcsById);
   }, [linkGroups, links, byId, selectedLine, allLines, sheetEvidence.data, t]);
+  /** Sprint 6: the selected line's text / geometry / stair evidence on this sheet (bbox, polygon / polyline, treads). */
+  const shapeFeatures = useMemo(
+    () =>
+      selectedLine && row
+        ? evidenceShapeFeatures(lineEvidence, row.sheet.id, selectedLine.level, { label: selectedLine.code, unit: selectedLine.unit, tread: t("boq.tread") })
+        : [],
+    [selectedLine, row, lineEvidence, t],
+  );
   const features = useMemo(
     () => [
       ...overlayFeatures({ rooms: roomFeatures, legend: legendFeatures, markers: [] }),
+      ...shapeFeatures,
       ...(selRoom ? selectedRoomFeatures(selRoom, selRoomWalls, roomDraft, pickingWall) : []),
       ...groupFeatures,
       ...manualItemFeatures(manual),
       ...(learnCls ? candidateFeatures(learnSel, sheetIdNow) : []),
       ...markers,
     ],
-    [roomFeatures, legendFeatures, markers, groupFeatures, selRoom, selRoomWalls, roomDraft, pickingWall, manual, learnCls, learnSel, sheetIdNow],
+    [roomFeatures, shapeFeatures, legendFeatures, markers, groupFeatures, selRoom, selRoomWalls, roomDraft, pickingWall, manual, learnCls, learnSel, sheetIdNow],
   );
 
   /* ---------- selection ---------- */
@@ -556,9 +574,10 @@ export function ReviewPage() {
       return;
     }
     const key = `${selectedLineId}@${row.sheet.id}`;
-    if ((lineItems.length || lineRooms.length) && lineView.current.zoomed !== key) {
+    const shapes = shapeBoxesOn(lineEvidence, row.sheet.id);
+    if ((lineItems.length || lineRooms.length || shapes.length) && lineView.current.zoomed !== key) {
       lineView.current.zoomed = key;
-      zoomTo(boundsOf([...lineItems, ...lineRooms.map((r) => ({ bboxMm: polygonBBox(r.polygonMm) }))], 12));
+      zoomTo(boundsOf([...lineItems, ...lineRooms.map((r) => ({ bboxMm: polygonBBox(r.polygonMm) })), ...shapes], 12));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLineId, lineSource, evidence.data, evidenceSheets, row, lineItems, lineRooms]);
@@ -580,22 +599,188 @@ export function ReviewPage() {
   /* ---------- line actions: A (status forward), E (qty override), N (next needing review) ---------- */
   const visibleLines = useMemo(() => filterLines(allLines, filters, statusFilter), [allLines, filters, statusFilter]);
   const ordered = useMemo(() => groupByChapter(visibleLines, chapters).flatMap((g) => g.lines), [visibleLines, chapters]);
+  /**
+   * `A` / "סמן כ…": one step forward. Owner feedback (Sprint 6): no toast per line — the row's status chip changes in
+   * place (pop-in) and the polite live region announces it; toasts stay for errors. An approved line says so (it is
+   * not a permission problem, also for admins); the permission message is only for a role that may not do it.
+   */
   const advance = (l: BoqLine) => {
-    const to = forwardStatus(role, l.status);
-    if (!to) return toast({ title: t("boq.statusNotAllowed"), tone: "error" });
-    const when = new Date().toLocaleString("he-IL", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", "");
+    const r = forwardOrReason(role, l);
+    if ("blocked" in r) {
+      const msg =
+        r.blocked === "already_approved"
+          ? t("boq.alreadyApproved", { code: l.code })
+          : r.blocked === "needs_input"
+            ? t("boq.needsInputFirst", { code: l.code })
+            : r.blocked === "no_role"
+              ? t("boq.roleLoading")
+              : t("boq.statusNotAllowed");
+      say(msg);
+      return toast({ title: msg, tone: r.blocked === "forbidden" ? "error" : "neutral" });
+    }
+    const to = r.to;
     patchLine.mutate(
       { id: l.id, req: { status: to } },
       {
-        onSuccess: () =>
-          toast({
-            title: t("boq.markedStatus", { code: l.code, status: t(`boq.status.${to}`), who: session?.displayName ?? session?.email ?? "", when }),
-            tone: "success",
-          }),
+        onSuccess: () => say(t("boq.statusAnnounce", { code: l.code, status: t(`boq.status.${to}`) })),
         onError: () => toast({ title: t("boq.patchError"), tone: "error" }),
       },
     );
   };
+
+  /* ---------- Sprint 6 (owner feedback): bulk status — checked lines, one request, ONE summary toast with undo ---------- */
+  const [checkedIds, setCheckedIds] = useState<ReadonlySet<string>>(new Set());
+  const [includeRed, setIncludeRed] = useState(false);
+  const [bulkTo, setBulkTo] = useState<BulkTarget | null>(null);
+  const batch = useBatchStatus(projectId);
+  const checkedLines = useMemo(() => allLines.filter((l) => checkedIds.has(l.id)), [allLines, checkedIds]);
+  const onCheck = useCallback((ids: string[], on: boolean) => {
+    setCheckedIds((cur) => {
+      const n = new Set(cur);
+      for (const id of ids) {
+        if (on) n.add(id);
+        else n.delete(id);
+      }
+      return n;
+    });
+  }, []);
+  const clearChecked = () => {
+    setCheckedIds(new Set());
+    setIncludeRed(false);
+  };
+  const runBulk = (to: BulkTarget) => {
+    if (!checkedLines.length) return;
+    if (!roleCanReach(role, to)) return toast({ title: t("boq.statusNotAllowed"), tone: "error" });
+    setBulkTo(to);
+  };
+  // Undo walks each line BACK one step at a time through the single-line PATCH: the batch endpoint only moves forward.
+  const undoBulk = async (before: ReadonlyMap<string, BoqLineStatus>, ids: readonly string[], movedTo: BoqLineStatus) => {
+    const ORDER: BoqLineStatus[] = ["draft", "reviewed", "approved"];
+    let back = 0;
+    let missed = 0;
+    for (const g of undoGroups(before, ids)) {
+      for (const id of g.lineIds) {
+        try {
+          let st: BoqLineStatus = movedTo; // the batch moved every updated line to exactly this status
+          while (ORDER.indexOf(st) > ORDER.indexOf(g.to)) {
+            const prev = ORDER[ORDER.indexOf(st) - 1]!;
+            await patchLine.mutateAsync({ id, req: { status: prev } });
+            st = prev;
+          }
+          back += 1;
+        } catch {
+          missed += 1;
+        }
+      }
+    }
+    toast({ title: missed ? t("boq.bulk.undoPartial", { count: missed }) : t("boq.bulk.undone", { count: back }), tone: missed ? "error" : "neutral" });
+  };
+  const confirmBulk = () => {
+    const to = bulkTo;
+    setBulkTo(null);
+    if (!to) return;
+    const lines = checkedLines;
+    const plan = bulkPlan(lines, to, role, includeRed);
+    const before = new Map(lines.map((l) => [l.id, l.status]));
+    batch.mutate(
+      { req: { lineIds: lines.map((l) => l.id), to, includeRed }, optimisticIds: plan.eligible.map((l) => l.id) },
+      {
+        onSuccess: (res) => {
+          const n = res.updated.length;
+          const skipped = res.skipped.length;
+          const title =
+            t(to === "approved" ? "boq.bulk.doneApproved" : "boq.bulk.doneReviewed", { count: n }) +
+            (skipped ? t("boq.bulk.doneSkipped", { count: skipped, list: skipList(t, skipCounts(res.skipped), to) }) : "");
+          const ids = res.updated.map((l) => l.id);
+          toast({
+            title,
+            tone: "success",
+            ...(n ? { action: { label: t("boq.bulk.undo"), onClick: () => void undoBulk(before, ids, to) } } : {}),
+          });
+          say(title);
+          clearChecked();
+        },
+        onError: () => toast({ title: t("boq.bulk.error"), tone: "error" }),
+      },
+    );
+  };
+
+  /* ---------- Sprint 6: a suggested line's quick action — the measure / count tool bound to the line and its sheet ---------- */
+  const [quick, setQuick] = useState<{ lineId: string; code: string; kind: BoqQuickActionKind } | null>(null);
+  const [confirmLine, setConfirmLine] = useState<BoqLine | null>(null);
+  const quickMeasure = useQuickMeasure(projectId);
+  const startQuick = (l: BoqLine) => {
+    const a = quickActionOf(l);
+    if (!a) return;
+    if (!canEditQty(role)) return toast({ title: t("boq.statusNotAllowed"), tone: "error" });
+    selectLine(l.id);
+    if (a.kind === "confirm") {
+      setQuick(null);
+      setConfirmLine(l);
+      return;
+    }
+    const sheetId = a.sheetId && rowsById.has(a.sheetId) ? a.sheetId : (row?.sheet.id ?? ready[0]?.sheet.id ?? null);
+    if (!sheetId) return toast({ title: t("boq.quickNoSheet"), tone: "error" });
+    if (sheetId !== row?.sheet.id) pick(sheetId);
+    setQuick({ lineId: l.id, code: l.code, kind: a.kind });
+    setTool(QUICK_TOOL[a.kind]!);
+    say(t(`boq.quickBanner.${a.kind}`, { code: l.code }));
+  };
+  const cancelQuick = () => {
+    setQuick(null);
+    setTool("select");
+  };
+  const saveQuick = (kind: BoqQuickActionKind, qty: number, pointsMm: [number, number][], sheetId: string | null, versionId: string | null) => {
+    const q = quick ?? (confirmLine ? { lineId: confirmLine.id, code: confirmLine.code, kind } : null);
+    setQuick(null);
+    setConfirmLine(null);
+    if (kind !== "confirm") setTool("select");
+    const l = q ? allLines.find((x) => x.id === q.lineId) : null;
+    if (!q || !l) return;
+    const label = t(`boq.quickMeasured.${kind}`);
+    quickMeasure.mutate(
+      {
+        lineId: l.id,
+        label,
+        req: {
+          kind,
+          quantity: qty,
+          unit: QUICK_UNIT[kind],
+          sheetId,
+          versionId,
+          geometry: kind === "confirm" ? null : { type: kind === "count" ? "point" : kind === "measure_area" ? "polygon" : "polyline", mm: pointsMm.map(([x, y]) => ({ x, y })) },
+          floor: sheetId ? floorOfSheet(sheetId) : null,
+        },
+      },
+      {
+        onSuccess: (res) => {
+          const msg = t("boq.quickSaved", { code: l.code, qty: res.line.qty, unit: l.unit });
+          say(msg);
+          const corrId = res.correction?.id;
+          toast({ title: msg, tone: "success", ...(corrId ? { action: { label: t("queue.undo"), onClick: () => revertCorrection.mutate(corrId) } } : {}) });
+        },
+        onError: () => toast({ title: t("boq.quickError"), tone: "error" }),
+      },
+    );
+  };
+  // Hub deep link: ?line=<id>[&quick=1] selects the line (and runs its quick action) once lines + sheets are loaded.
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    const lineParam = params.get("line");
+    if (deepLinked.current || !lineParam || !allLines.length || !ready.length) return;
+    const l = allLines.find((x) => x.id === lineParam);
+    if (!l) return;
+    deepLinked.current = true;
+    const runQuick = params.get("quick") === "1";
+    updateParams((p) => {
+      p.delete("line");
+      p.delete("quick");
+      return p;
+    });
+    if (runQuick) startQuick(l);
+    else selectLine(l.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, allLines, ready]);
   const goNext = () => {
     const n = nextNeedingReview(ordered, selectedLineId);
     if (!n) return toast({ title: t("boq.noneToReview") });
@@ -896,16 +1081,19 @@ export function ReviewPage() {
   };
   const onCount = (r: CountResult) => {
     if (!row?.version) return;
+    if (quick?.kind === "count") return saveQuick("count", r.pointsMm.length, r.pointsMm, row.sheet.id, row.version.id);
     setAssign({ kind: "count", qty: r.pointsMm.length, unit: "יחידה", pointsMm: r.pointsMm, sheetId: row.sheet.id, versionId: row.version.id });
   };
   const onArea = (r: AreaResult) => {
     if (!row?.version) return;
     if (r.areaM2 === null) return toast({ title: t("tools.noScale"), tone: "error" });
+    if (quick?.kind === "measure_area") return saveQuick("measure_area", Math.round(r.areaM2 * 100) / 100, r.polygonMm, row.sheet.id, row.version.id);
     setAssign({ kind: "area", qty: Math.round(r.areaM2 * 100) / 100, unit: 'מ"ר', pointsMm: r.polygonMm, sheetId: row.sheet.id, versionId: row.version.id });
   };
   const onLength = (r: LengthResult) => {
     if (!row?.version) return;
     if (r.lengthM === null) return toast({ title: t("tools.noScale"), tone: "error" });
+    if (quick?.kind === "measure_length") return saveQuick("measure_length", Math.round(r.lengthM * 100) / 100, r.pathMm, row.sheet.id, row.version.id);
     setAssign({ kind: "length", qty: Math.round(r.lengthM * 100) / 100, unit: 'מ"א', pointsMm: r.pathMm, sheetId: row.sheet.id, versionId: row.version.id });
   };
   const saveAssign = (code: string) => {
@@ -1124,7 +1312,8 @@ export function ReviewPage() {
   keyHandler.current = (e: KeyboardEvent) => {
     if (e.altKey) return;
     const target = e.target as HTMLElement | null;
-    if (target?.closest?.("input, textarea, select, [role='menu'], [contenteditable='true']")) return;
+    // checkboxes (BOQ multi-select) keep the shortcuts: Shift+A right after ticking lines must work
+    if (target?.closest?.("input:not([type='checkbox']), textarea, select, [role='menu'], [contenteditable='true']")) return;
     if (document.querySelector("[role='dialog'][data-state='open'], [role='alertdialog'][data-state='open']")) return;
     const code = e.code;
     const shift = e.shiftKey;
@@ -1141,6 +1330,7 @@ export function ReviewPage() {
       if (code === "Slash" && shift) return setHelpOpen(true), true;
       if (code === "Escape") {
         if (pickingWall) return setPickingWall(false), true;
+        if (quick) return cancelQuick(), true;
         if (lassoOpen) return setLassoOpen(false), setLassoIds([]), true;
         if (tool !== "select") return setTool("select"), true;
         if (selectedId) return setSelectedId(null), true;
@@ -1168,6 +1358,8 @@ export function ReviewPage() {
       }
       if (code === "BracketRight") return step(1), true;
       if (code === "BracketLeft") return step(-1), true;
+      // Sprint 6 (owner feedback): Shift+A approves the checked lines (confirm dialog states the count).
+      if (code === "KeyA" && shift && checkedIds.size) return runBulk("approved"), true;
       if (code === "KeyA" && !shift) {
         keyAt.current = performance.now();
         if (lasso) return lassoAccept(), true;
@@ -1296,8 +1488,10 @@ export function ReviewPage() {
     onCalibrate,
     onToolChange: (x: ViewerTool) => {
       setTool(x);
+      if (quick && QUICK_TOOL[quick.kind] !== x) setQuick(null);
       if (x === "add" && !addClass) setPicker({ mode: "add", mm: [NaN, NaN] });
     },
+    startQuick: (l: BoqLine) => startQuick(l),
     undo: () => void doUndo(),
     redo: () => void doRedo(),
     activate,
@@ -1358,7 +1552,17 @@ export function ReviewPage() {
 
   const toolNote = useMemo(
     () =>
-      tool === "add" && addClass ? (
+      quick && QUICK_TOOL[quick.kind] === tool ? (
+        <span role="status" data-quick-banner className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-sm border border-primary/40 bg-primary/[0.07] px-2 text-meta text-foreground">
+          <span className="truncate">
+            {t(`boq.quickBannerFor.${quick.kind}`)}
+          </span>
+          <Ltr>{quick.code}</Ltr>
+          <button type="button" onClick={() => cancelQuick()} className="rounded-sm px-1 font-medium text-primary hover:bg-primary/10">
+            {t("boq.quickCancel")}
+          </button>
+        </span>
+      ) : tool === "add" && addClass ? (
         <button
           type="button"
           onClick={() => setPicker({ mode: "add", mm: [NaN, NaN] })}
@@ -1368,7 +1572,22 @@ export function ReviewPage() {
         </button>
       ) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tool, addClass, t],
+    [tool, addClass, quick, t],
+  );
+  const bulkBar = useMemo(
+    () => (
+      <BulkBar
+        lines={checkedLines}
+        role={role}
+        includeRed={includeRed}
+        onIncludeRed={setIncludeRed}
+        onRun={(to) => runBulk(to)}
+        onClear={clearChecked}
+        pending={batch.isPending}
+      />
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [checkedLines, role, includeRed, batch.isPending],
   );
   const overlayExtra = useMemo(
     () => (
@@ -1480,6 +1699,8 @@ export function ReviewPage() {
     });
   const selIndex = selectedId ? stepItems.findIndex((d) => d.id === selectedId) : -1;
   const lineGroupsCount = groupsOf(lineEvidence).length;
+  // markers + rooms + Sprint-6 shapes (text / geometry / stair) of the selected line on this sheet
+  const onSheetCount = row ? lineItems.length + lineRooms.length + shapeBoxesOn(lineEvidence, row.sheet.id).length : 0;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
@@ -1608,6 +1829,12 @@ export function ReviewPage() {
           onHistory={fn.openHistory}
           calibrationBadge={panelBadge}
           libraryNotice={libraryNotice}
+          onQuickAction={canEditQty(role) ? fn.startQuick : undefined}
+          quickLineId={quick?.lineId ?? null}
+          selectable={role !== null && role !== "viewer"}
+          checkedIds={checkedIds}
+          onCheck={onCheck}
+          bulkBar={bulkBar}
         />
         <section id="drawing-panel" tabIndex={-1} aria-label={t("review.drawingPanel")} className="flex min-h-0 flex-col border-x border-border">
           <h2 className="sr-only">{t("review.drawingPanel")}</h2>
@@ -1692,7 +1919,7 @@ export function ReviewPage() {
               {[
                 lineGroupsCount ? t("boq.groups", { count: lineGroupsCount }) : null,
                 t("boq.items", { count: lineEvidence.length || selectedLine.evidenceCount }),
-                row && lineEvidence.length && lineItems.length !== lineEvidence.length ? t("boq.evidenceOnSheet", { n: lineItems.length }) : null,
+                row && lineEvidence.length && onSheetCount !== lineEvidence.length ? t("boq.evidenceOnSheet", { n: onSheetCount }) : null,
               ]
                 .filter(Boolean)
                 .join(" · ")}
@@ -1844,6 +2071,21 @@ export function ReviewPage() {
         onPick={saveAssign}
       />
       <ShortcutsDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      <BulkConfirmDialog
+        open={bulkTo !== null}
+        onOpenChange={(o) => !o && setBulkTo(null)}
+        to={bulkTo ?? "approved"}
+        lines={checkedLines}
+        role={role}
+        includeRed={includeRed}
+        onConfirm={confirmBulk}
+      />
+      <QuickConfirmDialog
+        line={confirmLine}
+        open={confirmLine !== null}
+        onOpenChange={(o) => !o && setConfirmLine(null)}
+        onSave={(qty) => saveQuick("confirm", qty, [], null, null)}
+      />
       <OverrideDialog
         line={editLine}
         open={editLine !== null}

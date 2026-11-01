@@ -233,6 +233,9 @@ function toArtifacts(v: unknown): VersionArtifacts {
     ...(typeof o.rooms === 'string' ? { rooms: o.rooms } : {}),
     ...(typeof o.fixtures === 'string' ? { fixtures: o.fixtures } : {}),
     ...(typeof o.walls === 'string' ? { walls: o.walls } : {}),
+    // Sprint 6: text items (Worker-Text) / geometry (Worker-Geometry).
+    ...(typeof o.textItems === 'string' ? { textItems: o.textItems } : {}),
+    ...(typeof o.geometry === 'string' ? { geometry: o.geometry } : {}),
   };
 }
 

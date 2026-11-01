@@ -223,3 +223,93 @@ members DTOs); library `DEFAULT_ITEM_LIBRARY` (+ version, units, `defaultUnitFor
 `qtyChangedReason`, `applyRebuild` demotes changed approvals (not overridden lines); corrections all reviewer; audit
 `summary` + `auditSummaryHe`; sheets / uploads supersede fields; share `boqBuildId`; `TEXT_ARTIFACT_PATH_RE`;
 `ProjectStats` type. New data file `json-schema/defaults/library-defaults.json`. Tests: `test/stage10.test.ts`.
+
+## Sprint 6 published (API agent) — Worker-Text / Worker-Geometry / Worker-BOQ / Web read this
+
+All additive; `json-schema/` regenerated (**176 schemas, +10**), `defaults/boq-defaults.json` (rules **v6**) and
+`defaults/library-defaults.json` (library **v2**, template **v3**) regenerated. Tests: `test/sprint6.test.ts`.
+
+**Artifacts (`takeoff.ts`)** — the shapes Worker-Text / Worker-Geometry published in workers/drawing/NOTES.md, adopted
+as-is (lenient: `.passthrough()`, nullable-optional fields; ids unique, non-green ⇒ ≥ 1 reason in superRefine):
+- `TextItemsArtifactSchema` **`kamutan.textItems/1`** (`text_items.json.gz`): items `t_{n}`, `kind`
+  note|callout|detail_ref|legend_row|panel_schedule|conduit, `text`, `normalized`, `bboxMm`, `anchorMm`, `lineIdx`,
+  `floor`, `roomId`, `lifecycle` new|existing|replace|add|demolish, `qty`, `unit`, `lengthM`, `matchedPattern`,
+  `itemCode`, `role` item|feed|switch, `pairedWith`, `corroborates`, `suggested`, `confidence`, `scoreRaw`, `level`, `reasons`.
+- `GeometryArtifactSchema` **`kamutan.geometry/1`** (`geometry.json.gz`): `stairs` (`st_`), `regions` (`hr_`),
+  `wallRuns` (`wr_`), `lines` (`ln_`), `ceilings` (`cl_`), `courtyards` (`cy_`), `measures [{key, unit, qty|null,
+  computable, reason, estimate {qty, method}|null, floor, refs, level, reasons}]`, `heights`, `levels`, `stats`.
+  `GEOMETRY_MEASURE_KEYS` = the 16 keys Worker-Geometry listed + `demolished_wall_length`, `valance_length` (follow-up); `GEOMETRY_CATEGORIES` = region categories + wall-run
+  kinds + line kinds (codes stay open `[a-z][a-z0-9_]*`).
+- `storagePaths.textItems / geometry`; `VersionArtifacts.textItems / geometry` (full object paths, set by the
+  orchestrator from `textItemsFile` / `geometryFile`); `UNDERSTANDING_ARTIFACT_PATH_RE` includes both (API server-side
+  reads); `ARTIFACT_PATH_RE` (signable) includes **geometry only** — drawing text is never served raw;
+  `OverlayManifest.geometry {url}|null` (API sets it).
+- `normalizeHebrewText(s)` — the normalisation every text match uses (NFC → strip niqqud → maqaf/dashes "-" → final
+  letters → regular → geresh variants `'` → gershayim variants and `''` → `"` → lower-case → collapse whitespace incl.
+  NBSP/LRM/RLM). Python mirrors it; examples in `test/sprint6.test.ts`. `isPortableRegex` / `TextPatternSchema`: rule
+  patterns must compile in JS (`u`) and mean the same in Python `re` (no `(?<name>`, `\k<`, `\p{}`, inline flags,
+  atomic/possessive; fixed-width look-behind OK; ≤ 200 chars). Both pattern and text are normalised (finals!), the
+  match is case-insensitive.
+
+**Rule kinds (`library.ts`)** — `BOQ_RULE_KINDS` + `text_item`, `area_item`, `length_item`, `suggested_item`
+(itemCode non-null for all four):
+- `text_item` `match: {patterns[1..16], excludePatterns?, scope: legend|note|callout|panel_schedule|any, disciplines?,
+  qty: count|number_in_text|length_in_text_m|one, proximityMm?, nearClasses?, consumeNear?, lifecycle?, floors?,
+  matchCatalogCode? (default true: a text item whose catalog itemCode = the rule's code matches too)}`. Evidence kind
+  `text` per item, line origin `text`. Worker-Text's `textitems.boq.text_units` may implement it.
+- `area_item` / `length_item` `match: {source: hatch|room|wall_run|polyline|stair, keys? (measure keys — preferred),
+  categories?, legendPatterns?, disciplines?, floors?, roomTypes?, lifecycle?, measure?: area|length|wall_area|count|
+  treads, heightM?, sides? 1|2, minQty?}` (keys / categories / legendPatterns required except stairs). With `keys` the
+  quantity is the project-level measure (`geometry_units`); non-computable + estimate → yellow, else `needsInput`.
+  Origin `geometry`, evidence kind `geometry` / `stair` with `geometryMm`.
+- `suggested_item` `match: {trigger: {kind: sheet_discipline, disciplines} | {kind: text, patterns, scope?,
+  disciplines?} | {kind: demolition, categories?} | {kind: always}, estimate?: null | {kind: fixed, quantity} |
+  {kind: geometry, match: <area/length match>} | {kind: room_area, roomTypes?, floors?}, reason, quickAction?,
+  level?: yellow|red}`. ONE line, origin `suggested`, never green; no estimate → `needsInput: true`, qty 0, red;
+  skipped when any other rule produced the code; quick-measure corrections bound to the line REPLACE the estimate.
+
+**Defaults** — `DEFAULT_BOQ_RULES_VERSION` **6** (every `source: 'default'` doc is reseeded) + `SPRINT6_RULES` (38
+rules): text rules 4.08 / 4.19 / 4.25 (near `panel`, consume) / 4.26 / 4.27 / 4.28 (near `panel`, consume) / 7.04 /
+9.03; geometry rules by measure key 2.01, 2.03, 5.04, 5.06, 5.07, 7.01, 7.02, 7.03, 7.05, 7.06, 7.07, 8.02; and a
+`suggested_item` fallback for each of those + 2.02, 5.08 (estimate = `courtyard_waterproofing`), 8.01 (demolition, 1),
+8.03 / 8.04 (building sheets, 1). 5.02 / 5.03 unchanged (GT-D-007 / 008). `DEFAULT_ITEM_LIBRARY_VERSION` **2** (+23
+generic items 2.01–2.03, 4.08, 4.19, 4.25–4.28, 5.04, 5.08, 7.01–7.07, 8.01–8.04, 9.03; each item's
+`defaultsVersion` = the version that introduced it; 7.xx → chapter **06**, 8.xx → **07**, `DEFAULT_ITEM_LIBRARY_ADDITIONS`);
+`planDefaultLibrarySeed({empty, hasDefault, existingIds, takenCodes})` (empty → all; org with the default library →
+missing ids whose code the org does not have; import-only org → none). `DEFAULT_BOQ_TEMPLATE_VERSION` **3**: chapters
+01 / 02 / 03 / 04 / 05 / 06 (codePrefixes 7) / 07 (8) / 09 "תאורה ושונות"; `templateNeedsUpgrade(doc)` = unedited
+generic v2 seed (replaced; `default` flag kept).
+
+**BOQ lines (`boq.ts`)** — `origin?: detected|text|geometry|suggested|manual` (absent = detected, `lineOrigin()`),
+`needsInput?: boolean` (qty is then 0), `quickAction?: {kind: measure_area|measure_length|count|confirm, sheetId|null}
+| null`; `LINE_ORIGIN_HE`, `NEEDS_INPUT_HE` "להשלמה ידנית", `defaultQuickActionFor(unit)`.
+Evidence item + `kind?: detection|text|geometry|stair|sheet|room|manual`, `bboxMm?` (text box), `geometryMm?
+{type polygon|polyline, mm ≤ 2000}`, `stair? {treads, risers?}`; `target.kind` + geometry|stair.
+`BoqBuildStats.coverage? {libraryCodes, produced, suggested, missing[≤500], byChapter?: {chapterKey: {libraryCodes,
+produced, suggested, missing}}}` (`BoqCoverageSchema`).
+
+**Corrections** — `Correction.lineId?`, `quickAction?` (only on corrections made by quick-measure); `accept` may be
+bound to a line by `lineId` alone. **Worker-BOQ semantics**: active corrections with `lineId` contribute to that line
+(`itemCode` = its code) — measure m² / m', count clicks, accept = confirmed `quantity`; on `origin: suggested` /
+`needsInput` lines they REPLACE the estimate (sum of the bound items), on computed lines they ADD (Sprint 4 measure
+semantics); confirm → verified (`needsInput` false).
+
+**Endpoints** — `QuickMeasureRequest {kind, sheetId, versionId?, geometry?, quantity?, reason?}` (per-kind refine) →
+`QuickMeasureResponse {correction, line, rebuild}`. `BatchLineStatusRequest {lineIds (1..500, unique), to:
+reviewed|approved, includeRed = false}` → `BatchLineStatusResponse {batchId, updated [{lineId, from, to}], skipped
+[{lineId, reason: already|forbidden|red|not_found}]}`; `BATCH_ACTION_HE` "פעולה קבוצתית". Semantics: apps/api/NOTES.md
+"Sprint 6".
+
+**Sprint 6 follow-up — rules v7 (Worker-BOQ requests, workers/drawing/NOTES.md "Sprint 6 — rule kinds …")**:
+`DEFAULT_BOQ_RULES_VERSION` **7** (every `source: 'default'` rule doc reseeded; `user` docs kept). (1)
+`r_suggest_slab_stairs` (2.02) also triggers on `גרם\s*מדרגות`. (2) 8.02 (`r_geo_plaster_walls`,
+`r_suggest_plaster_walls`) → "שתי שכבות טיח על קירות חצר אנגלית וקירות בלוק חדשים", 9.03 (`r_text_vent_pipe`) →
+"התקנת צינור אוורור 4" למפוח ונטה" — rules AND default library items (new item ids; orgs already holding the old 8.02 /
+9.03 default items keep them — the top-up skips taken codes, default-library orgs resolve by exact code). (3)
+`CONSUME_NEAR_MAX_MM` = 8: `consumeNear` consumes only a detection within 8 paper mm of the text; `proximityMm` stays
+the `nearClasses` filter. (4) Geometry `keys`: `computable: false` → suggested line, `needsInput`, qty 0, red, reasons
+= the measure's reason + "הערכה: …" hint (never a yellow quantity); a suggested `{kind: geometry}` estimate uses
+computable measures only. **Not changed**: 7.04 (counts explicit service-opening notes: 1 vs BOQ 3) — the proposed
+"one per AC gypsum closure" needs a text-count estimator that no estimate kind expresses yet; open for a v8 contract
+change. Worker conventions (per-floor sheet authority for text / geometry, catalog fill-in, catalog anchor consumes the
+detection, room-settings tiling over geometry) are acknowledged as worker behaviour, not yet contract text.

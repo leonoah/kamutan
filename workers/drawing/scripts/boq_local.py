@@ -214,6 +214,11 @@ def main(argv: list[str] | None = None) -> int:
             "orderQty": (o or {}).get("orderQty"),
             "manual": (o or {}).get("manualCount", 0),
             "evidence": (o or {}).get("evidenceCount", 0),
+            "origin": (o or {}).get("origin"),
+            "needsInput": (o or {}).get("needsInput"),
+            "quickAction": (o or {}).get("quickAction"),
+            "unit": (o or {}).get("unit"),
+            "byRoom": (o or {}).get("byRoom", []),
         }
         rows.append(row)
         rec = f"{row['evidence'] - row['manual']}+{row['manual']}" if o else "—"
@@ -230,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"exact matches {prefix}: {exact}/{len(sel)}")
     b = docs.get(f"{proj}/boqBuilds/{bid}") or {}
     print("unmatched corrections:", json.dumps(b.get("unmatchedCorrections", []), ensure_ascii=False))
+    print("coverage:", json.dumps((b.get("stats") or {}).get("coverage", {}), ensure_ascii=False))
     if a.json:
         Path(a.json).write_text(json.dumps(rows, ensure_ascii=False, indent=1))
     return 0

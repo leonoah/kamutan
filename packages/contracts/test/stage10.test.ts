@@ -47,12 +47,13 @@ describe('Stage 10 — default item library + generic template (A-LIVE-01)', () 
     for (const it of DEFAULT_ITEM_LIBRARY) {
       expect(ItemLibraryItemSchema.safeParse({ ...it, updatedAt: null }).success, it.code).toBe(true);
       expect(it.id).toBe(itemIdFor(it.code, it.description));
-      expect(it).toMatchObject({ source: 'default', active: true, defaultsVersion: 1 });
+      expect(it).toMatchObject({ source: 'default', active: true });
+      expect([1, 2]).toContain(it.defaultsVersion);
       expect(codes.has(it.code)).toBe(false);
       codes.add(it.code);
-      expect(it.description).not.toMatch(/נח|₪|\d+\s*ש"ח|עדה פלאסט|גוויס|תמי 4/);
+      expect(it.description).not.toMatch(/(^|[\s(])נח($|[\s),.])|₪|\d+\s*ש"ח|עדה פלאסט|גוויס|תמי 4|נירוקריל|אורבונד/);
     }
-    expect([...new Set(DEFAULT_ITEM_LIBRARY.map((i) => i.chapter))].sort()).toEqual(['01', '03', '04', '05', '09']);
+    expect([...new Set(DEFAULT_ITEM_LIBRARY.map((i) => i.chapter))].sort()).toEqual(['01', '02', '03', '04', '05', '06', '07', '09']);
     expect(DEFAULT_ITEM_LIBRARY.filter((i) => i.chapter === '01').every((i) => i.unit === DEFAULT_UNITS.lumpSum)).toBe(true);
   });
 
@@ -70,16 +71,16 @@ describe('Stage 10 — default item library + generic template (A-LIVE-01)', () 
     expect(defaultUnitFor(null)).toBe("יח'");
   });
 
-  it('generic template v2: chapters 01/03/04/05/09, one per item chapter, valid', () => {
+  it('generic template v3 (Sprint 6): chapters 01/02/03/04/05/06/07/09, one per item chapter, valid', () => {
     expect(BoqTemplateSchema.safeParse({ ...DEFAULT_BOQ_TEMPLATE, updatedAt: null }).success).toBe(true);
-    expect(DEFAULT_BOQ_TEMPLATE.chapters.map((c) => c.code)).toEqual(['01', '03', '04', '05', '09']);
-    expect(DEFAULT_BOQ_TEMPLATE).toMatchObject({ id: 'tpl_default', defaultsVersion: 2, source: 'default' });
+    expect(DEFAULT_BOQ_TEMPLATE.chapters.map((c) => c.code)).toEqual(['01', '02', '03', '04', '05', '06', '07', '09']);
+    expect(DEFAULT_BOQ_TEMPLATE).toMatchObject({ id: 'tpl_default', defaultsVersion: 3, source: 'default' });
     for (const it of DEFAULT_ITEM_LIBRARY) expect(DEFAULT_BOQ_TEMPLATE.chapters.find((c) => c.code === it.chapter)?.title).toBe(it.chapterTitle);
   });
 
   it('json-schema/defaults/library-defaults.json is up to date', () => {
     const f = JSON.parse(readFileSync(join(__dirname, '..', 'json-schema', 'defaults', 'library-defaults.json'), 'utf8')) as { version: number; items: unknown[]; template: unknown };
-    expect(f.version).toBe(1);
+    expect(f.version).toBe(2);
     expect(f.items).toEqual(JSON.parse(JSON.stringify(DEFAULT_ITEM_LIBRARY)));
     expect(f.template).toEqual(JSON.parse(JSON.stringify(DEFAULT_BOQ_TEMPLATE)));
   });

@@ -3,7 +3,6 @@ import {
   roomSettingsId,
   type Correction,
   type CorrectionBatch,
-  type CreateCorrectionRequest,
   type ProcessingError,
   type RoomSettings,
   type SimilarExemplar,
@@ -18,6 +17,7 @@ import {
   batchAudit,
   batchDoc,
   correctionAudit,
+  type CorrectionInput,
   correctionDoc,
   MAX_CORRECTIONS,
   planAutoBuild,
@@ -46,7 +46,7 @@ export class FirestoreReviewRepository implements ReviewRepository {
   }
 
   // --- corrections ---------------------------------------------------------------
-  async createCorrections(orgId: string, projectId: string, items: readonly CreateCorrectionRequest[], batch: NewCorrectionBatch | null, actorUid: string) {
+  async createCorrections(orgId: string, projectId: string, items: readonly CorrectionInput[], batch: NewCorrectionBatch | null, actorUid: string) {
     const col = this.db.collection(fsPaths.corrections(orgId, projectId));
     return this.db.runTransaction(async (tx) => {
       const head = await this.core.auditHead(tx, orgId);

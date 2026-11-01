@@ -30,7 +30,7 @@ class SheetRef:
 def sheet_det(s: SheetRef) -> Det:
     floor = _first_floor(s.floors)
     return Det(s.sheet_id, s.version_id, SHEET_EVIDENCE_ID, "sheet", s.page_mm[0] / 2, s.page_mm[1] / 2, "yellow", [],
-               floor, "new", None, s.discipline, 1.0)  # fmt: skip
+               floor, "new", None, s.discipline, 1.0, target="sheet")  # fmt: skip
 
 
 def _first_floor(floors: tuple[str, ...] | list[str]) -> str | None:

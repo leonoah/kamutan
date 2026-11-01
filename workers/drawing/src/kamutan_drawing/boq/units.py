@@ -24,6 +24,11 @@ class Unit:
     ev_qty: dict[str, float] = field(default_factory=dict)  # evidence key → contributed qty
     floor: str | None = None  # override (else the members' majority floor)
     ignore_member_levels: bool = False  # suggestions: the cue's level / reasons are not the line's
+    # Sprint 6: where the quantity comes from (detected | text | geometry | suggested | manual; None = from the rule
+    # kind) and, for suggested lines, the one-click action ({kind, sheetId}) and whether a human must supply the qty
+    origin: str | None = None
+    quick_action: dict[str, str | None] | None = None
+    needs_input: bool = False
 
 
 def room_det(room: Room) -> Det:
@@ -44,4 +49,5 @@ def room_det(room: Room) -> Det:
         1.0,
         room=room.name,
         room_id=room.id,
+        target="room",
     )

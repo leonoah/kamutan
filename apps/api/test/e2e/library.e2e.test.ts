@@ -212,7 +212,7 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
   });
 
   describe('templates', () => {
-    it('GET seeds the generic default template v2 (once); editor PATCH 403; admin without MFA 403; admin PATCH audited', async () => {
+    it('GET seeds the generic default template v3 (once); editor PATCH 403; admin without MFA 403; admin PATCH audited', async () => {
       const r = await http.get(`/api/v1/boq-templates?orgId=${orgId}`).set(auth('viewer'));
       expect(r.status).toBe(200);
       const list = BoqTemplateListSchema.parse(r.body);
@@ -220,8 +220,8 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
       const tpl = list.items[0];
       expect(tpl).toMatchObject({ id: 'tpl_default', default: true, source: 'default', vatRate: 0.18 });
       expect(tpl?.chapters.find((c) => c.code === '04')?.title).toBe('פרק 04 – עבודות חשמל');
-      expect(tpl?.chapters.map((c) => c.code)).toEqual(['01', '03', '04', '05', '09']);
-      expect(tpl).toMatchObject({ defaultsVersion: 2 });
+      expect(tpl?.chapters.map((c) => c.code)).toEqual(['01', '02', '03', '04', '05', '06', '07', '09']);
+      expect(tpl).toMatchObject({ defaultsVersion: 3 });
       expect(tpl?.columns.map((c) => c.title)).toEqual(['סעיף', 'תאור העבודה', 'יחידה', 'כמות', "מחיר יח'", 'סה"כ ₪']);
       const noMfa = t.auth.issue('admin');
       expect((await http.patch(`/api/v1/boq-templates/tpl_default?orgId=${orgId}`).set({ authorization: `Bearer ${noMfa}` }).send({ name: 'x' })).body.error.code).toBe('mfa_required');

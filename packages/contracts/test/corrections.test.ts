@@ -185,7 +185,7 @@ describe('rooms artifact (Sprint 4 upgrades)', () => {
 
 describe('rules v3 (plumbing + tiling)', () => {
   it('version 3, every default parses, reseed of v2 defaults', () => {
-    expect(DEFAULT_BOQ_RULES_VERSION).toBe(5);
+    expect(DEFAULT_BOQ_RULES_VERSION).toBe(7);
     expect(ruleNeedsReseed({ source: 'default', defaultsVersion: 3 })).toBe(true);
     for (const r of DEFAULT_BOQ_RULES) expect(BoqRuleSchema.safeParse({ ...defaultRuleDoc(r), updatedAt: null }).success, r.id).toBe(true);
     expect(ruleNeedsReseed({ source: 'default', defaultsVersion: 2 })).toBe(true);
@@ -270,7 +270,7 @@ describe('json-schema export (Sprint 4 names)', () => {
       expect(index.schemas).toContain(`${n}.json`);
     }
     const defaults = JSON.parse(readFileSync(join(dir, 'defaults', 'boq-defaults.json'), 'utf8')) as { rules: Array<{ id: string; defaultsVersion: number }> };
-    expect(defaults.rules.find((r) => r.id === 'r_plumb_ac_drain')?.defaultsVersion).toBe(5);
+    expect(defaults.rules.find((r) => r.id === 'r_plumb_ac_drain')?.defaultsVersion).toBe(7);
   });
 });
 

@@ -1,0 +1,39 @@
+{
+  "$ref": "#/definitions/BatchLineStatusRequest",
+  "definitions": {
+    "BatchLineStatusRequest": {
+      "type": "object",
+      "properties": {
+        "lineIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "minItems": 1,
+          "maxItems": 500
+        },
+        "to": {
+          "type": "string",
+          "enum": [
+            "reviewed",
+            "approved"
+          ]
+        },
+        "includeRed": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "lineIds",
+        "to"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BatchLineStatusRequest.json"
+}

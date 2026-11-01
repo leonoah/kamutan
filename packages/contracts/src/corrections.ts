@@ -18,7 +18,7 @@
  */
 import { z } from 'zod';
 import { TimestampSchema, pageOf } from './common.js';
-import { ItemCodeSchema, LinkGroupIdSchema } from './boq.js';
+import { BoqLineSchema, ItemCodeSchema, LinkGroupIdSchema, QuickActionKindSchema } from './boq.js';
 import { DocIdSchema, UidSchema } from './org.js';
 import { ConfidenceLevelSchema } from './review.js';
 import { FloorSchema, PointMmSchema } from './sheets.js';
@@ -108,7 +108,7 @@ const correctionInputShape = {
 } as const;
 
 /** Per-kind requirements (shared by the request and the stored doc; NOT in JSON Schema — the worker re-checks). */
-function refineCorrection(c: z.infer<z.ZodObject<typeof correctionInputShape>>, ctx: z.RefinementCtx): void {
+function refineCorrection(c: z.infer<z.ZodObject<typeof correctionInputShape>> & { lineId?: string | null | undefined }, ctx: z.RefinementCtx): void {
   const need = (cond: boolean, path: string, message: string) => {
     if (!cond) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
   };
@@ -122,7 +122,11 @@ function refineCorrection(c: z.infer<z.ZodObject<typeof correctionInputShape>>, 
     case 'remove':
     case 'accept':
     case 'reject':
-      need(c.detectionId !== null || c.linkGroupId !== null || (c.kind !== 'remove' && c.roomId !== null), 'detectionId', `${c.kind} needs a detectionId${c.kind === 'remove' ? ' or linkGroupId' : ', linkGroupId or roomId'}`);
+      need(
+        c.detectionId !== null || c.linkGroupId !== null || (c.kind !== 'remove' && (c.roomId !== null || (c.kind === 'accept' && !!c.lineId))),
+        'detectionId',
+        `${c.kind} needs a detectionId${c.kind === 'remove' ? ' or linkGroupId' : c.kind === 'accept' ? ', linkGroupId, roomId or lineId' : ', linkGroupId or roomId'}`,
+      );
       break;
     case 'reclassify':
       need(c.detectionId !== null, 'detectionId', 'reclassify needs a detectionId');
@@ -180,6 +184,11 @@ export const CorrectionSchema = z
     at: TimestampSchema,
     revertedAt: TimestampSchema.nullable(),
     revertedBy: UidSchema.nullable().optional(),
+    // --- Sprint 6: corrections created by POST …/boq/lines/:lineId/quick-measure (absent on every other correction) ---
+    /** The BOQ line the correction is bound to (`boqLines/{lineId}`); its `itemCode` = the line's code. */
+    lineId: DocIdSchema.nullable().optional(),
+    /** The quick action that created it. */
+    quickAction: QuickActionKindSchema.nullable().optional(),
   })
   .superRefine(refineCorrection);
 export type Correction = z.infer<typeof CorrectionSchema>;
@@ -265,6 +274,63 @@ export type ListCorrectionsQuery = z.infer<typeof ListCorrectionsQuerySchema>;
 
 export const CorrectionPageSchema = pageOf(CorrectionSchema);
 export type CorrectionPage = z.infer<typeof CorrectionPageSchema>;
+
+// ---------------------------------------------------------------------------
+// Sprint 6: quick measure / count / confirm of a BOQ line
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /v1/projects/:pid/boq/lines/:lineId/quick-measure (reviewer+). Stores ONE correction bound to the line
+ * (`lineId`, `quickAction`, `itemCode` = the line's code) on `sheetId`'s version (`versionId`, default = the sheet's
+ * current version), marks the BOQ stale and schedules the debounced rebuild:
+ *  - `measure_area`   → kind `measure`, geometry polygon (≥ 3 points), unit m2
+ *  - `measure_length` → kind `measure`, geometry polyline (≥ 2 points), unit m
+ *  - `count`          → kind `count`, geometry points (= clicks, 1..2000), unit unit, quantity = clicks
+ *  - `confirm`        → kind `accept` (bound to the line), `quantity` = the confirmed quantity (required when the line
+ *                       `needsInput`; default = the line's effective qty), optional geometry = one point (anchor)
+ * `quantity` is only accepted for `count` (must equal the clicks) and `confirm`.
+ */
+export const QuickMeasureRequestSchema = z
+  .object({
+    kind: QuickActionKindSchema,
+    sheetId: DocIdSchema,
+    versionId: DocIdSchema.optional(),
+    geometry: CorrectionGeometrySchema.optional(),
+    quantity: z.number().finite().min(0).max(1_000_000).optional(),
+    /** Short free text; never copied into the audit log. */
+    reason: z.string().trim().max(500).optional(),
+  })
+  .strict()
+  .superRefine((r, ctx) => {
+    const need = (cond: boolean, path: string, message: string) => cond || ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+    const g = r.geometry;
+    switch (r.kind) {
+      case 'measure_area':
+        need(g?.type === 'polygon', 'geometry', 'measure_area needs geometry {type: polygon}');
+        need(r.quantity === undefined, 'quantity', 'the area is computed from the polygon');
+        break;
+      case 'measure_length':
+        need(g?.type === 'polyline', 'geometry', 'measure_length needs geometry {type: polyline}');
+        need(r.quantity === undefined, 'quantity', 'the length is computed from the polyline');
+        break;
+      case 'count':
+        need(g?.type === 'point', 'geometry', 'count needs geometry {type: point, mm: [clicks]}');
+        if (g && r.quantity !== undefined) need(r.quantity === g.mm.length, 'quantity', 'quantity must equal the number of clicks');
+        break;
+      case 'confirm':
+        need(g === undefined || (g.type === 'point' && g.mm.length === 1), 'geometry', 'confirm takes at most one point');
+        break;
+    }
+  });
+export type QuickMeasureRequest = z.infer<typeof QuickMeasureRequestSchema>;
+
+export const QuickMeasureResponseSchema = z.object({
+  correction: CorrectionSchema,
+  /** The line as stored now (its quantity changes with the rebuild). */
+  line: BoqLineSchema,
+  rebuild: RebuildOutcomeSchema,
+});
+export type QuickMeasureResponse = z.infer<typeof QuickMeasureResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Room settings (tiling inputs)

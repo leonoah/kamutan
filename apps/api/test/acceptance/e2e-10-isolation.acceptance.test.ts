@@ -129,7 +129,8 @@ describe('Stage 10 API/Sec — E2E-10 org isolation (URL / API)', () => {
       if (real.r.status >= 500) failures.push(`${key(c)}: ${real.r.status} ${text.slice(0, 160)}`);
       // a 2xx is acceptable only for a filter that simply matches nothing (e.g. GET boq/evidence?sheetId=<B's>): then
       // the body must equal the phantom's once the echoed ids are masked
-      const mask = (s: string, ids: string[]) => ids.reduce((acc, id) => acc.split(id).join('<id>'), s);
+      // Sprint 6: batch-status answers 200 with every unknown id `skipped: not_found` and a fresh random batchId.
+      const mask = (s: string, ids: string[]) => ids.reduce((acc, id) => acc.split(id).join('<id>'), s).replace(/bs_[0-9a-f]{32}/g, '<batch>');
       const idsOf = (req: Req): string[] => [...(req.url.match(/[A-Za-z0-9_-]{8,}/g) ?? []), ...(JSON.stringify(req.body ?? {}).match(/[A-Za-z0-9_-]{8,}/g) ?? [])];
       const same =
         real.r.status === fake.r.status &&

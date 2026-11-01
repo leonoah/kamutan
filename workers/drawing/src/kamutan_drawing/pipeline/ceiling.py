@@ -22,7 +22,13 @@ from typing import Any
 from ..calibration import R_HUMAN, ROOM_KEY, CalibrationTable, link_key
 
 # document key → (list key, class key of an item)
-KINDS: dict[str, str] = {"detections": "detections", "rooms": "rooms", "links": "groups", "fixtures": "fixtures"}
+KINDS: dict[str, str] = {
+    "detections": "detections",
+    "rooms": "rooms",
+    "links": "groups",
+    "fixtures": "fixtures",
+    "text_items": "items",  # Sprint 6 (Worker-Text): class key text:{itemCode}
+}
 
 
 def _class_key(kind: str, item: dict[str, Any]) -> str:
@@ -30,6 +36,10 @@ def _class_key(kind: str, item: dict[str, Any]) -> str:
         return ROOM_KEY
     if kind == "links":
         return link_key(item.get("kind"))
+    if kind == "text_items":
+        return f"text:{item.get('itemCode') or 'unmatched'}"
+    if kind.startswith("geometry:"):
+        return kind
     return str(item.get("class") or "unknown")
 
 
@@ -64,9 +74,33 @@ def cap_items(
     return n
 
 
+# Sprint 6 (Worker-Geometry): geometry.json.gz list key → class key geometry:<kind>
+GEOMETRY_LISTS: dict[str, str] = {
+    "stairs": "geometry:stair",
+    "regions": "geometry:region",
+    "wallRuns": "geometry:wall_run",
+    "lines": "geometry:line",
+    "ceilings": "geometry:ceiling",
+    "courtyards": "geometry:courtyard",
+}
+
+
 def cap_document(
     kind: str, doc: dict[str, Any], table: CalibrationTable, *, raster: bool = False, green_threshold: float | None = None
 ) -> int:
+    if kind == "geometry":
+        if not isinstance(doc, dict):
+            return 0
+        n = 0
+        for lk, ck in GEOMETRY_LISTS.items():
+            items = doc.get(lk)
+            if isinstance(items, list):
+                n += cap_items(ck, items, table, raster=raster, green_threshold=green_threshold)
+        # measures carry the level of their items: never greener than the table allows either
+        ms = doc.get("measures")
+        if isinstance(ms, list):
+            n += cap_items("geometry:measure", ms, table, raster=raster, green_threshold=green_threshold)
+        return n
     key = KINDS.get(kind)
     if key is None or not isinstance(doc, dict) or not isinstance(doc.get(key), list):
         return 0

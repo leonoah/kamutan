@@ -112,6 +112,9 @@ class Correction:
     # Stage 10 (A-API-05 / E2E-12): made on a sheet a revised upload superseded; ``sheet_id`` is the replacing sheet,
     # this is the original one (its ``version_id`` is a version of THAT sheet → always re-matched by anchor)
     origin_sheet_id: str | None = None
+    # Sprint 6: made by quick-measure on a BOQ line (contracts Correction.lineId / quickAction)
+    line_id: str | None = None
+    quick_action: str | None = None
 
     @property
     def src_sheet(self) -> str:
@@ -157,6 +160,8 @@ class Correction:
             _s(d.get("floor")),
             _s(d.get("batchId")),
             str(d.get("at") or ""),
+            line_id=_s(d.get("lineId")),
+            quick_action=_s(d.get("quickAction")),
         )
 
 

@@ -16,7 +16,8 @@ dicts), its text spans and legend document, the page vectors (for *ink* attachme
 4. **Kind** per circuit: no switch → ``sensor`` when the fixture's type row / a nearby note says
    motion sensor (גלאי / חיישן), else red ``נקודת מאור ללא מפסק``; every point existing ("נק'
    קיימת" next to it or lifecycle existing) → ``add_to_existing`` (``fan`` when a ceiling fan / fan
-   switch / "מאוורר" note is involved); 1 switch → ``single`` (1 point) / ``shared`` (≥ 2 points);
+   switch / "מאוורר" note is involved) — only when a switch is labelled "להוסיף …" or is a fan switch (else the
+   kinds below, with ``R_MIXED``); 1 switch → ``single`` (1 point) / ``shared`` (≥ 2 points);
    ≥ 2 switches → ``two_way``. A lone switch labelled "להוסיף …" is also ``add_to_existing``; ``fan``
    is set from the switch side (fan-switch class or a "מאוורר" note nearest the switch). Lone
    luminaires without arcs: existing → no group; motion sensor → ``sensor``; else listed in
@@ -553,8 +554,14 @@ def build_links(
             kind = "single"
             reasons.append(R_NO_POINT)
             conf = min(conf, 0.45)
-        elif pids and (len(pts_existing) == len(pids) or (n_sw == 1 and s_ids and s_ids[0] in add_notes)):
-            # every point existing, or the only switch is labelled "להוסיף …" (adding to what exists)
+        elif pids and (
+            (len(pts_existing) == len(pids) and (fan or any(i in add_notes for i in s_ids)))
+            or (n_sw == 1 and s_ids and s_ids[0] in add_notes)
+        ):
+            # a switch ADDED to what exists: labelled "להוסיף …", or a fan switch on existing points (Sprint 6, GT
+            # convention: a plain new switch feeding an existing point is a ``single`` group (4.09, GT b2046277-G06),
+            # an existing + a new 2-way on it is ``two_way`` (1bbe4113-G13) — and the kind no longer flips with
+            # whether the OCR reads the "נק' קיימת" label)
             kind = "add_to_existing"
             if len([i for i in s_ids if i not in existing_sw]) + n_v > 1:  # switches marked "קיים" are not added
                 reasons.append(R_MANY)

@@ -19,6 +19,7 @@ import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
 import { createReviewMock } from "./mockReview";
 import { createSprint5Mock, MOCK_ACTOR } from "./mockSprint5";
+import { baseCorrection } from "@/features/corrections/model";
 import { getAuthService, hasRecentLogin } from "@/features/auth/authService";
 
 export interface MockOptions {
@@ -636,6 +637,43 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         return delay(after);
       },
       getBoqLineEvidence: async (projectId, lineId) => delay(boq.evidence(projectId, lineId)),
+      batchBoqLineStatus: async (projectId, req) => {
+        s5.assertProjectActive(projectId);
+        if ((orgs[0]?.role ?? "viewer") === "viewer") throw new ApiError(403, "forbidden", "viewers cannot change statuses");
+        const before = new Map(boq.listLines(projectId).items.map((l) => [l.id, l]));
+        const res = boq.batchStatus(projectId, req, actor().uid);
+        for (const l of res.updated) {
+          const b = before.get(l.id);
+          if (b) s5.recordLinePatch(projectId, b, l, { status: req.to });
+        }
+        return delay(res);
+      },
+      // Sprint 6 (mirrors the API brief): a measure / count is stored as a correction bound to the line's item code,
+      // a confirm as the confirmed quantity; then the BOQ is re-derived and the line returned.
+      quickMeasureBoqLine: async (projectId, lineId, req) => {
+        s5.assertProjectActive(projectId);
+        if ((orgs[0]?.role ?? "viewer") === "viewer") throw new ApiError(403, "forbidden", "viewers cannot change quantities");
+        const line = boq.listLines(projectId).items.find((l) => l.id === lineId);
+        if (!line) throw new ApiError(404, "not_found", "Line not found");
+        if (!Number.isFinite(req.quantity) || req.quantity <= 0) throw new ApiError(400, "validation_failed", "quantity must be > 0");
+        let correction = null;
+        if (req.kind === "confirm") await boq.confirmLine(projectId, lineId, req.quantity);
+        else {
+          if (!req.sheetId || !req.geometry?.mm.length) throw new ApiError(400, "validation_failed", "sheetId + geometry required");
+          const row = (sheets.get(projectId) ?? []).find((r) => r.sheet.id === req.sheetId);
+          const c = baseCorrection(
+            req.kind === "count" ? "count" : "measure",
+            { sheetId: req.sheetId, versionId: req.versionId ?? row?.version?.id ?? "v1", anchorMm: req.geometry.mm[0]! },
+            { itemCode: line.code, quantity: req.quantity, unit: req.unit, geometry: req.geometry, floor: req.floor, reason: "quick_measure" },
+          );
+          const { id: _id, batchId: _b, ...body } = c;
+          correction = await review.create(projectId, body);
+          s5.recordCorrection(projectId, body);
+        }
+        const after = boq.listLines(projectId).items.find((l) => l.id === lineId) ?? line;
+        if (after.qty !== line.qty) s5.recordLinePatch(projectId, line, after, { note: "quick_measure" });
+        return delay({ line: after, correction });
+      },
       getBoqSheetEvidence: async (projectId, sheetId, versionId) => delay(boq.sheetEvidence(projectId, sheetId, versionId)),
       exportBoq: async (projectId, req) => delay(boq.exportBoq(projectId, req)),
       listLibraryItems: async (_orgId, q = {}) => delay(boq.listItems(q)),

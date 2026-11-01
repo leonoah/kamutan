@@ -21,6 +21,10 @@ import {
   type PatchBoqLineRequest,
   type PatchBoqLineResponse,
   type RequestBoqBuildResponse,
+  BatchLineStatusRequestSchema,
+  BatchLineStatusResponseSchema,
+  type BatchLineStatusRequest,
+  type BatchLineStatusResponse,
 } from '@kamutan/contracts';
 import type { Request } from 'express';
 import type { AuthContext } from '../auth/auth-context';
@@ -74,6 +78,21 @@ export class BoqController {
     @CurrentUser() user: AuthContext,
   ): Promise<PatchBoqLineResponse> {
     return this.svc.patchLine(user, projectId, lineId, body);
+  }
+
+  /**
+   * Sprint 6: review / approve many lines at once (≤ 500). Same role + state machine as the single PATCH (reviewer+);
+   * skipped lines are reported (already / forbidden / red / not_found). One audit event per line, shared batchId.
+   */
+  @Post('lines/batch-status')
+  @HttpCode(200)
+  @StrictRateLimit()
+  @RequireRole('reviewer', project)
+  @ApiZodBody(BatchLineStatusRequestSchema)
+  @ApiZodResponse(200, BatchLineStatusResponseSchema)
+  @ApiErrors(400, 401, 403, 404, 429)
+  batchStatus(@Param('projectId') projectId: string, @Body(zodPipe(BatchLineStatusRequestSchema)) body: BatchLineStatusRequest, @CurrentUser() user: AuthContext): Promise<BatchLineStatusResponse> {
+    return this.svc.batchStatus(user, projectId, body);
   }
 
   /** The detections behind a line (from the build's evidence.json.gz). */

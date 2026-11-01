@@ -18,6 +18,7 @@ from typing import Any
 from .contracts import LinkGroup
 from .corrections import Correction, ManualQty, OldDetections, apply_corrections
 from .dedup import Det, SheetMeta, dedup
+from .geometry import GeoItem, geometry_units, parse_geometry
 from .plumbing import combination_units, consumed_classes, plumbing_units, suggestion_units
 from .rules import (
     CLASS_HE,
@@ -31,12 +32,14 @@ from .rules import (
     R_FLOOR_UNSURE,
     R_LOW,
     R_MEASURED,
+    R_NEEDS_INPUT,
     R_NO_ITEM,
     R_NO_LINKS,
     R_NO_RULE,
     R_RELABELED,
     R_SHARED,
     R_SWITCH_LINK,
+    R_TEMPLATE,
     R_UNKNOWN_FLOOR,
     R_UNKNOWN_SYMBOL,
     SHARED_KINDS,
@@ -49,7 +52,9 @@ from .rules import (
     Rule,
 )
 from .spaces import Room, canonical_rooms, ceiling_heights, match_room, room_from_doc, settings_by_room
+from .suggested import default_quick_action, suggested_units
 from .template import SheetRef, template_units
+from .textitems import TextEntry, catalog_units, entry_det, sheet_entries, text_item_units
 from .tiling import TilingParams, tiling_units
 from .units import Unit
 
@@ -77,6 +82,11 @@ class SheetInput:
     texts: list[dict[str, Any]] = field(default_factory=list)  # kamutan.text/1 lines (only when a label rule may apply)
     rooms: dict[str, str] = field(default_factory=dict)  # roomId -> name
     room_docs: list[dict[str, Any]] = field(default_factory=list)  # kamutan.rooms/1 rooms (Sprint 4 fields optional)
+    # Sprint 6: Worker-Text items (kamutan.text-items/1; None = no artifact → OCR lines of `texts`), legend boxes
+    # (x, y, w, h — OCR lines inside them have scope "legend") and Worker-Geometry's geometry.json.gz object
+    text_items: list[dict[str, Any]] | None = None
+    legends: list[tuple[float, float, float, float]] = field(default_factory=list)
+    geometry: Any = None
 
 
 @dataclass
@@ -95,10 +105,30 @@ class Contribution:
     waste: float | None = None
     ev_qty: dict[str, float] = field(default_factory=dict)
     unit_hint: str | None = None  # unmatched line: the rule's unit (A-LIVE-01: never "יחידה" for an area line)
+    origin: str = "detected"  # Sprint 6: detected | text | geometry | suggested | manual
+    quick_action: dict[str, str | None] | None = None
+    needs_input: bool = False
 
 
 RoomRef = tuple[str | None, str | None, str | None, str | None, str | None]  # (sheetId, roomId, name, type, floor)
 MAX_BY_ROOM = 200
+
+# Sprint 6: line origin. A line's origin = "manual" when every contribution is manual, else the first of ORIGIN_ORDER
+# among its other contributions; needsInput = origin "suggested".
+ORIGINS = ("detected", "text", "geometry", "suggested", "manual")
+ORIGIN_ORDER = ("detected", "geometry", "text", "suggested")
+KIND_ORIGIN = {
+    "text_item": "text",
+    "area_item": "geometry",
+    "length_item": "geometry",
+    "tiling_floor": "geometry",
+    "tiling_cladding": "geometry",
+    "tiling_corner": "geometry",
+    "waterproofing": "geometry",
+    "suggested_item": "suggested",
+    "one_off_suggestion": "suggested",
+    "template_chapter": "suggested",
+}
 
 
 @dataclass
@@ -109,7 +139,7 @@ class Line:
     code: str
     description: str
     unit: str
-    qty: float
+    qty: float  # 0 with needs_input: a suggested line whose quantity a person must enter ("להשלמה ידנית")
     by_floor: dict[str, float]
     level: str
     reasons: list[str]
@@ -120,11 +150,17 @@ class Line:
     order_qty: float | None = None
     waste_factor: float | None = None
     by_room: list[dict[str, Any]] = field(default_factory=list)
+    origin: str = "detected"
+    needs_input: bool = False
+    quick_action: dict[str, str | None] | None = None
 
     def computed_fields(self) -> dict[str, Any]:
         extra: dict[str, Any] = {
             "manualCount": sum(1 for e in self.evidence if e.get("source") == "manual"),
             "byRoom": [dict(r) for r in self.by_room],
+            "origin": self.origin,
+            "needsInput": self.needs_input,
+            "quickAction": dict(self.quick_action) if self.quick_action else None,
         }
         if self.order_qty is not None:
             extra.update({"orderQty": self.order_qty, "wasteFactor": self.waste_factor})
@@ -550,6 +586,48 @@ def aggregate(
     stats["secondaryKept"] = dd.secondary_kept
     stats["alignFailed"] = dd.align_failed
     stats["alignments"] = dd.alignments
+    rooms_by_sheet = {
+        s.sheet_id: [r for d in s.room_docs if (r := room_from_doc(s.sheet_id, s.version_id, s.discipline, d)) is not None]
+        for s in sheets
+    }
+    room_index = {(r.sheet_id, r.id): r for rs in rooms_by_sheet.values() for r in rs}
+
+    # --- Sprint 6: text entries (Worker-Text items, else OCR lines) + geometry features; text_item matching runs here,
+    # before every counting rule, so a `consumeNear` rule can take its detection away from the class rules
+    def placed(s: SheetInput) -> tuple[Any, Any]:
+        regs = effective_regions(s.floors, s.regions) if s.confirmed else s.regions
+        regs = [r for r in regs if r.get("floor") and len(r.get("polygonMm") or []) >= 3]
+        own = rooms_by_sheet.get(s.sheet_id) or []
+        single = s.floors[0] if len(set(s.floors)) == 1 else None
+
+        def floor_of(x: float, y: float) -> str | None:
+            return next((str(r["floor"]) for r in regs if _in_poly(x, y, r["polygonMm"])), single)
+
+        def room_of_pt(x: float, y: float) -> str | None:
+            return next((r.id for r in own if len(r.polygon) >= 3 and r.contains(x, y)), None)
+
+        return floor_of, room_of_pt
+
+    want_text = any(r.kind in ("text_item", "suggested_item") for r in rules)
+    want_geo = any(r.kind in ("area_item", "length_item", "suggested_item") for r in rules)
+    text_entries: list[TextEntry] = []
+    geo_items: list[GeoItem] = []
+    geo_docs: list[dict[str, Any]] = []
+    for s in sorted(sheets, key=lambda s: s.sheet_id):
+        has_text = want_text and (bool(s.texts) or s.text_items is not None)
+        if not has_text and not (want_geo and s.geometry is not None):
+            continue
+        floor_of, room_of_pt = placed(s)
+        if has_text:
+            text_entries.extend(sheet_entries(s.sheet_id, s.version_id, s.discipline, s.texts, s.text_items, s.legends,
+                                         floor_of, room_of_pt))  # fmt: skip
+        if want_geo and s.geometry is not None:
+            geo_items.extend(parse_geometry(s.geometry, s.sheet_id, s.version_id, s.discipline, s.scale, floor_of))
+            if isinstance(s.geometry, dict):
+                geo_docs.append({**s.geometry, "sheetId": s.sheet_id, "versionId": s.version_id, "discipline": s.discipline})
+    live = [d for d in all_dets if d.dropped_by is None]
+    tx_units, tx_stats = text_item_units(rules, text_entries, live)
+    stats["textItems"] = tx_stats
 
     contribs: list[Contribution] = []
     code_rules: dict[str, Rule] = {}
@@ -618,6 +696,12 @@ def aggregate(
             level = min_level(level, "yellow")  # a rule reason is a warning: never green
         key = f"i:{res.item.id}" if res is not None else f"x:{unmatched[0] if unmatched else '?'}"
         floor = unit.floor if unit is not None and unit.floor else _floor_of(dets)
+        if unit is not None and unit.origin:
+            origin = unit.origin
+        elif dets and all(d.source == "manual" for d in dets):
+            origin = "manual"
+        else:
+            origin = KIND_ORIGIN.get(rule.kind, "detected") if rule is not None else "detected"
         contribs.append(
             Contribution(
                 key,
@@ -634,6 +718,9 @@ def aggregate(
                 unit.waste if unit is not None else None,
                 dict(unit.ev_qty) if unit is not None else {},
                 unit_hint,
+                origin,
+                (dict(unit.quick_action) if unit.quick_action else None) if unit is not None else None,
+                bool(unit.needs_input) if unit is not None else False,
             )
         )
 
@@ -734,11 +821,6 @@ def aggregate(
             add(rule, [(d, None)], 1, [])
 
     # --- plumbing points (chapter 03) + template suggestions
-    rooms_by_sheet = {
-        s.sheet_id: [r for d in s.room_docs if (r := room_from_doc(s.sheet_id, s.version_id, s.discipline, d)) is not None]
-        for s in sheets
-    }
-    room_index = {(r.sheet_id, r.id): r for rs in rooms_by_sheet.values() for r in rs}
     scales = {s.sheet_id: s.scale for s in sheets}
     c_units, c_stats = combination_units(all_dets, rules, room_index, scales)
     for u in c_units:
@@ -797,9 +879,94 @@ def aggregate(
     stats["unmapped"] = unmapped
     stats["skipped"] = dict(sorted(skipped.items()))
 
+    # --- Sprint 6: text items (matched above) and geometry items
+    def code_of(c: Contribution) -> str | None:
+        return c.resolution.item.code if c.resolution is not None else (c.unmatched[0] if c.unmatched else None)
+
+    tiling_rule_ids = {r.id for r in rules if r.kind in ("tiling_floor", "tiling_cladding", "tiling_corner", "waterproofing")}
+    for tu in tx_units:  # one unit per merged match: its qty goes to the majority room of its texts (byRoom)
+        add_unit(Unit(tu.rule, [(entry_det(e), None) for e in tu.members], tu.qty, [], "yellow", floor=tu.floor,
+                      origin="text"))  # fmt: skip
+    canon_keys_ = {(r.sheet_id, r.id) for r in canon}
+
+    def geo_room(sheet_id: str, room_id: str) -> str | None:
+        r = room_index.get((sheet_id, room_id))
+        if r is None:
+            return None
+        c = r if (r.sheet_id, r.id) in canon_keys_ else (match_room(r, canon) or r)
+        return c.type
+
+    g_units, g_stats = geometry_units(rules, geo_items, geo_room, geo_docs)
+    # the room panel (tiling from roomSettings: a partial cladding the user entered) wins over the drawing geometry of
+    # the same item, and a geometry *estimate* never adds to an item another rule produced
+    tiled = {code for c in contribs if (code := code_of(c)) and c.rule_id and c.rule_id in tiling_rule_ids}
+    any_code = {code for c in contribs if (code := code_of(c))}
+    g_skipped = 0
+    for gu in g_units:
+        gcode = gu.rule.item_code if gu.rule else None
+        if gcode and (gcode in tiled or (gu.origin == "suggested" and gcode in any_code)):
+            g_skipped += 1
+            continue
+        gdets = [gu.det, *gu.extra]
+        share = round(gu.qty / len(gdets), 4)
+        gunit = Unit(gu.rule, [(d, None) for d in gdets], gu.qty, list(gu.reasons), gu.level, floor=gu.floor,
+                     origin=gu.origin, ev_qty={d.key: share for d in gdets})  # fmt: skip
+        if gu.origin == "suggested":  # not computable: the user measures it (the estimate is a hint in the reasons)
+            gunit.qty, gunit.ev_qty, gunit.level = 0.0, {}, "red"
+            gunit.ignore_member_levels = True
+            gunit.needs_input = True
+            gunit.reasons = [*gunit.reasons, R_NEEDS_INPUT]
+            gunit.quick_action = {"kind": default_quick_action(gu.rule.unit if gu.rule else ""), "sheetId": gu.det.sheet_id}
+        add_unit(gunit)
+    g_stats["skippedProduced"] = g_skipped
+    stats["geometry"] = g_stats
+
+    # --- Worker-Text catalog items of codes no text_item rule targets (worker convention, NOTES "Sprint 6"):
+    # countable items (e.g. the "פרט A" 6-socket boxes) and evidence-only items of a code no symbol produced
+    ruled = {r.item_code for r in rules if r.kind == "text_item" and r.item_code}
+    text_order = ["electrical", "lighting", "plumbing", "construction", "architecture", "architecture_master"]
+
+    def catalog_unit(code: str, members: list[TextEntry], qty: float, floor: str | None, origin: str) -> Unit | None:
+        # the catalog names the org's code itself: the library item of that code (else the rule's resolution)
+        rule = code_rules.get(code)
+        item = next(iter(sorted(library.by_code(code), key=lambda i: i.id)), None)
+        if rule is None and item is None:
+            return None
+        return Unit(rule, [(entry_det(e), None) for e in members], qty, [], "yellow", floor=floor, origin=origin, item=item)
+
+    # an evidence-only (corroborating) item never adds to a code another rule produced, a one-off suggestion included
+    produced_codes = {code for c in contribs if (code := code_of(c))}
+    n_cat = 0
+    for code, cmembers, cqty, cfloor in catalog_units(text_entries, ruled, produced_codes, text_order):
+        if (cu := catalog_unit(code, cmembers, cqty, cfloor, "text")) is not None:
+            add_unit(cu)
+            n_cat += 1
+    stats["textItems"]["catalogUnits"] = n_cat
+
+    # --- suggested lines (every rule-covered item no rule produced), then the template chapters (chapter 01)
+    refs = [SheetRef(s.sheet_id, s.version_id, s.discipline, tuple(s.floors), (s.page[0], s.page[1])) for s in sheets]
+    produced = {c.resolution.item.id for c in contribs if c.resolution is not None}
+    s_units, s_stats = suggested_units(rules, library, refs, text_entries, produced, geo=geo_items, dets=live, canon=canon,
+                                       room_type=geo_room, docs=geo_docs)  # fmt: skip
+    for u in s_units:
+        add_unit(u)
+    # Worker-Text catalog suggestions (the drawings show a trigger, not the item: 4.28 main panel, 9.03 vent duct)
+    produced_codes = {code for c in contribs if (code := code_of(c))}
+    n_sug = 0
+    for code, cmembers, cqty, cfloor in catalog_units(text_entries, set(), produced_codes, text_order, suggested=True):
+        su = catalog_unit(code, cmembers, cqty, cfloor, "suggested")
+        if su is not None:
+            su.ignore_member_levels = True
+            su.reasons = [R_TEMPLATE]
+            unit_s = su.item.unit if su.item else (su.rule.unit if su.rule else "")
+            su.quick_action = {"kind": default_quick_action(unit_s), "sheetId": cmembers[0].sheet_id}
+            add_unit(su)
+            n_sug += 1
+    s_stats["catalogUnits"] = n_sug
+    stats["suggested"] = s_stats
+
     # --- template chapters offered as lump sums (chapter 01 demolition), items no other rule produced
     produced = {c.resolution.item.id for c in contribs if c.resolution is not None}
-    refs = [SheetRef(s.sheet_id, s.version_id, s.discipline, tuple(s.floors), (s.page[0], s.page[1])) for s in sheets]
     t_lines = template_units(rules, library, refs, produced)
     for u in t_lines:
         add_unit(u)
@@ -914,6 +1081,30 @@ def _by_room(cs: list[Contribution], room_of: Any) -> list[dict[str, Any]]:
     return out[:MAX_BY_ROOM]
 
 
+def line_origin(cs: list[Contribution]) -> str:
+    """``manual`` when every contribution is manual, else the first of :data:`ORIGIN_ORDER` among the others."""
+    have = {c.origin for c in cs}
+    if have <= {"manual"}:
+        return "manual"
+    return next((o for o in ORIGIN_ORDER if o in have), "detected")
+
+
+def _evidence_extra(d: Det, e: dict[str, Any]) -> None:
+    """Sprint 6 evidence fields (contracts ``BoqEvidenceItem``): ``kind`` of a non-detection item, the text box
+    (``bboxMm``), the geometry shape (``geometryMm``, ≤ 2000 points) and stair facts."""
+    if d.target is None:
+        return
+    e["kind"] = d.target
+    if d.target == "text" and d.bbox is not None:
+        x, y, w, h = d.bbox
+        e["bboxMm"] = {"x": round(x, 2), "y": round(y, 2), "w": round(max(w, 0.0), 2), "h": round(max(h, 0.0), 2)}
+    if d.shape and len(d.shape) >= (3 if d.closed else 2):
+        e["geometryMm"] = {"type": "polygon" if d.closed else "polyline",
+                           "mm": [{"x": round(px, 2), "y": round(py, 2)} for px, py in d.shape[:2000]]}  # fmt: skip
+    if d.treads is not None:
+        e["stair"] = {"treads": min(200, d.treads[0]), "risers": None if d.treads[1] is None else min(200, d.treads[1])}
+
+
 def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
     by_key: dict[str, list[Contribution]] = defaultdict(list)
     for c in contribs:
@@ -982,6 +1173,7 @@ def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
                     e["quantity"] = round(q, 4)
                 if d.verified:
                     e["verified"] = True
+                _evidence_extra(d, e)
                 seen[(d.key, gid or "")] = e
                 evidence.append(e)
         evidence.sort(key=lambda e: (e["sheetId"], _natural(e["detectionId"]), e["linkGroupId"] or ""))
@@ -990,6 +1182,16 @@ def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
         sv = sorted({(e["sheetId"], e["versionId"]) for e in evidence})
         oq = [c.order_qty for c in cs if c.order_qty is not None]
         wastes = [c.waste for c in cs if c.waste is not None]
+        origin = line_origin(cs)
+        # contracts: needsInput = the quantity must still be entered (a suggestion without an estimate) → qty 0
+        needs = origin == "suggested" and all(c.needs_input for c in cs)
+        qa: dict[str, str | None] | None = None
+        if origin == "suggested":
+            qa = next((c.quick_action for c in cs if c.quick_action), None) or {
+                "kind": default_quick_action(unit),
+                "sheetId": evidence[0]["sheetId"] if evidence else None,
+            }
+            level = min_level(level, "yellow")
         lines.append(
             Line(
                 lid,
@@ -998,8 +1200,8 @@ def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
                 code,
                 desc,
                 unit,
-                round(qty, 4),
-                {k: round(v, 4) for k, v in sorted(by_floor.items())},
+                0.0 if needs else round(qty, 4),
+                {} if needs else {k: round(v, 4) for k, v in sorted(by_floor.items())},
                 level,
                 reasons[:MAX_REASONS],
                 evidence,
@@ -1008,7 +1210,10 @@ def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
                 [{"sheetId": s, "versionId": v} for s, v in sv],
                 round(sum(oq) + sum(c.qty for c in cs if c.order_qty is None), 4) if oq else None,
                 max(wastes) if wastes else None,
-                _by_room(cs, room_of) if room_of is not None else [],
+                _by_room(cs, room_of) if room_of is not None and not needs else [],
+                origin,
+                needs,
+                qa,
             )
         )
     lines.sort(key=lambda ln: (ln.chapter == UNMATCHED_CHAPTER, ln.chapter, code_key(ln.code), ln.id))

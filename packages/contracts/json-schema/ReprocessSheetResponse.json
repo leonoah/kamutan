@@ -481,6 +481,14 @@
                 "walls": {
                   "type": "string",
                   "maxLength": 1024
+                },
+                "textItems": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "geometry": {
+                  "type": "string",
+                  "maxLength": 1024
                 }
               },
               "additionalProperties": false

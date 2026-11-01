@@ -4,6 +4,9 @@ import type {
   BoqBuild,
   BoqLine,
   BoqLinesResponse,
+  BatchStatusRequest,
+  BoqQuickActionKind,
+  QuickMeasureRequest,
   ExportBoqRequest,
   ListLibraryQuery,
   PatchBoqLineRequest,
@@ -11,6 +14,7 @@ import type {
   ProjectBoqState,
 } from "@/api/types";
 import { useSubscription } from "@/lib/useSubscription";
+import { applyQuickMeasure } from "./sprint6";
 
 /* ---------------- BOQ state + builds (Firestore listeners) ---------------- */
 
@@ -80,6 +84,63 @@ export function usePatchBoqLine(projectId: string) {
       qc.setQueriesData<BoqLinesResponse>({ queryKey: boqLinesKey(projectId) }, (cur) =>
         cur ? { ...cur, items: cur.items.map((l) => (l.id === line.id ? line : l)) } : cur,
       ),
+  });
+}
+
+/** Replace / patch lines in every cached lines query; returns a rollback. */
+function patchCachedLines(qc: QueryClient, projectId: string, fn: (l: BoqLine) => BoqLine): () => void {
+  const prev = qc.getQueriesData<BoqLinesResponse>({ queryKey: boqLinesKey(projectId) });
+  void qc.cancelQueries({ queryKey: boqLinesKey(projectId) });
+  qc.setQueriesData<BoqLinesResponse>({ queryKey: boqLinesKey(projectId) }, (cur) => (cur ? { ...cur, items: cur.items.map(fn) } : cur));
+  return () => prev.forEach(([k, v]) => qc.setQueryData(k, v));
+}
+
+/**
+ * Sprint 6 (owner feedback): one status for many lines. The planned lines move at once (optimistic); the answer then
+ * replaces them (skipped ones roll back to their cached state).
+ */
+export function useBatchStatus(projectId: string) {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ req }: { req: BatchStatusRequest; optimisticIds: readonly string[] }) => api.batchBoqLineStatus(projectId, req),
+    onMutate: ({ req, optimisticIds }) => {
+      const ids = new Set(optimisticIds);
+      return { rollback: patchCachedLines(qc, projectId, (l) => (ids.has(l.id) ? { ...l, status: req.to } : l)) };
+    },
+    onError: (_e, _v, ctx) => ctx?.rollback(),
+    onSuccess: (res, { optimisticIds }, ctx) => {
+      const byId = new Map(res.updated.filter((l) => l.status).map((l) => [l.id, l]));
+      const moved = new Set(res.updated.map((l) => l.id));
+      // optimistic lines the server skipped go back
+      if (optimisticIds.some((id) => !moved.has(id))) ctx?.rollback();
+      patchCachedLines(qc, projectId, (l) => byId.get(l.id) ?? l);
+      if (byId.size !== moved.size) void qc.invalidateQueries({ queryKey: boqLinesKey(projectId) });
+      void qc.invalidateQueries({ queryKey: ["line-history", projectId] });
+    },
+  });
+}
+
+/**
+ * Sprint 6: a line's quick action (measure / count / confirm). The line takes the quantity at once (optimistic, no
+ * longer "להשלמה ידנית"); the server's line replaces it, and the drawing's manual items / evidence are refreshed.
+ */
+export function useQuickMeasure(projectId: string) {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lineId, req }: { lineId: string; req: QuickMeasureRequest; label: string }) => api.quickMeasureBoqLine(projectId, lineId, req),
+    onMutate: ({ lineId, req, label }) => ({
+      rollback: patchCachedLines(qc, projectId, (l) => (l.id === lineId ? applyQuickMeasure(l, req.kind as BoqQuickActionKind, req.quantity, label, req.sheetId) : l)),
+    }),
+    onError: (_e, _v, ctx) => ctx?.rollback(),
+    onSuccess: (res) => {
+      patchCachedLines(qc, projectId, (l) => (l.id === res.line.id ? res.line : l));
+      void qc.invalidateQueries({ queryKey: ["corrections", projectId] });
+      void qc.invalidateQueries({ queryKey: ["boq-evidence", projectId] });
+      void qc.invalidateQueries({ queryKey: ["boq-sheet-evidence", projectId] });
+      void qc.invalidateQueries({ queryKey: ["review-queue", projectId] });
+    },
   });
 }
 

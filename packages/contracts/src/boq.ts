@@ -92,6 +92,41 @@ export const BoqLineRoomSchema = z.object({
 });
 export type BoqLineRoom = z.infer<typeof BoqLineRoomSchema>;
 
+// --- Sprint 6: line origin, manual-completion flag and quick action -------------------------------------------
+
+export const LINE_ORIGINS = ['detected', 'text', 'geometry', 'suggested', 'manual'] as const;
+export const LineOriginSchema = z.enum(LINE_ORIGINS);
+export type LineOrigin = z.infer<typeof LineOriginSchema>;
+/** Hebrew origin labels (BOQ panel badge; Excel "ראיות" column "מקור"). */
+export const LINE_ORIGIN_HE: Readonly<Record<LineOrigin, string>> = Object.freeze({
+  detected: 'זוהה בשרטוט',
+  text: 'מטקסט בשרטוט',
+  geometry: 'נמדד מהשרטוט',
+  suggested: 'הצעה',
+  manual: 'הוזן ידנית',
+});
+/** Chip / label of a line whose quantity must still be entered (`needsInput`). */
+export const NEEDS_INPUT_HE = 'להשלמה ידנית';
+
+/** One-click actions of a line (UX: opens the measure / count tool pre-bound to the line and the sheet, or confirms). */
+export const QUICK_ACTION_KINDS = ['measure_area', 'measure_length', 'count', 'confirm'] as const;
+export const QuickActionKindSchema = z.enum(QUICK_ACTION_KINDS);
+export type QuickActionKind = z.infer<typeof QuickActionKindSchema>;
+export const QuickActionSchema = z.object({ kind: QuickActionKindSchema, sheetId: DocIdSchema.nullable() }).strict();
+export type QuickAction = z.infer<typeof QuickActionSchema>;
+
+/** Default quick action for a unit: מ"ר → measure_area, מ"א → measure_length, קומפלט → confirm, everything else → count. */
+export function defaultQuickActionFor(unit: string | null | undefined): QuickActionKind {
+  const u = (unit ?? '').trim();
+  if (['מ"ר', 'מ״ר', "מ''ר", 'm2', 'm²'].includes(u)) return 'measure_area';
+  if (['מ"א', 'מ״א', "מ''א", "מ'", 'm'].includes(u)) return 'measure_length';
+  if (['קומפלט', 'קומפ\'', 'lump'].includes(u)) return 'confirm';
+  return 'count';
+}
+
+/** Effective origin of a line (absent = `detected`, the Sprint 3–5 behaviour). */
+export const lineOrigin = (l: { origin?: LineOrigin | undefined }): LineOrigin => l.origin ?? 'detected';
+
 /**
  * orgs/{orgId}/projects/{projectId}/boqLines/{lineId}.
  * Worker-written (boq.build): chapter, code, description, qty, unit, floor, level, reasons, byFloor, evidenceCount,
@@ -172,6 +207,18 @@ export const BoqLineSchema = z.object({
    * `roomId: null` = items outside every room. Sums to `qty`. Excel sheet "פירוט לפי חדר".
    */
   byRoom: z.array(BoqLineRoomSchema).max(200).optional(),
+  // --- Sprint 6 (Worker-BOQ writes; all optional, absent on older lines) ---
+  /**
+   * Where the quantity comes from: `detected` = symbols / link groups / rooms (Sprints 3–5 rules; the default when
+   * absent), `text` = notes / callouts / legend rows / panel schedules (`text_item`), `geometry` = hatches / wall runs /
+   * polylines / stairs (`area_item` / `length_item`), `suggested` = offered by a `suggested_item` / one-off /
+   * template rule (never green), `manual` = only manual items (corrections) behind it.
+   */
+  origin: LineOriginSchema.optional(),
+  /** True when the quantity still has to be entered / measured by a person ("להשלמה ידנית"); then `qty` is 0. */
+  needsInput: z.boolean().optional(),
+  /** The one-click action the BOQ panel offers (pre-bound to the line and, when known, the sheet). */
+  quickAction: QuickActionSchema.nullable().optional(),
 });
 export type BoqLine = z.infer<typeof BoqLineSchema>;
 
@@ -292,6 +339,23 @@ export const BOQ_BUILD_STATUSES = ['queued', 'running', 'succeeded', 'failed'] a
 export const BoqBuildStatusSchema = z.enum(BOQ_BUILD_STATUSES);
 export type BoqBuildStatus = z.infer<typeof BoqBuildStatusSchema>;
 
+/**
+ * Sprint 6: how much of the org library the build covers. `libraryCodes` = distinct codes of active library items;
+ * `produced` = of those, codes with a computed line (origin detected / text / geometry / manual); `suggested` = codes
+ * with a suggested line (origin suggested, incl. needsInput); `missing` = active library codes with no line at all
+ * (natural order, ≤ 500). `byChapter` (optional, key = `chapterKey`, e.g. "4") feeds "x מתוך y סעיפים חושבו מהשרטוט".
+ */
+const CoverageCountsSchema = z.object({
+  libraryCodes: z.number().int().nonnegative(),
+  produced: z.number().int().nonnegative(),
+  suggested: z.number().int().nonnegative(),
+});
+export const BoqCoverageSchema = CoverageCountsSchema.extend({
+  missing: z.array(ItemCodeSchema).max(500),
+  byChapter: z.record(z.string().max(32), CoverageCountsSchema.extend({ missing: z.number().int().nonnegative() })).optional(),
+}).passthrough();
+export type BoqCoverage = z.infer<typeof BoqCoverageSchema>;
+
 export const BoqBuildStatsSchema = z
   .object({
     lines: z.number().int().nonnegative(),
@@ -306,6 +370,8 @@ export const BoqBuildStatsSchema = z
     unmapped: z.number().int().nonnegative().optional(),
     /** Sprint 5: calibration table the build's levels were capped with. */
     calibration: z.object({ mode: z.enum(["conservative", "full"]), version: z.string().min(1).max(64) }).optional(),
+    /** Sprint 6: library coverage of the build (Worker-BOQ). */
+    coverage: BoqCoverageSchema.optional(),
   })
   .passthrough();
 export type BoqBuildStats = z.infer<typeof BoqBuildStatsSchema>;
@@ -465,6 +531,48 @@ export const PatchBoqLineResponseSchema = z.object({ line: BoqLineSchema });
 export type PatchBoqLineResponse = z.infer<typeof PatchBoqLineResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// Sprint 6: POST /v1/projects/:pid/boq/lines/batch-status (bulk review / approve)
+// ---------------------------------------------------------------------------
+
+export const BOQ_BATCH_STATUS_MAX = 500;
+export const BATCH_STATUS_TARGETS = ['reviewed', 'approved'] as const;
+/** Why a line was not moved: at / past the target, role not allowed, red without `includeRed`, unknown id. */
+export const BATCH_STATUS_SKIP_REASONS = ['already', 'forbidden', 'red', 'not_found'] as const;
+/** History / audit label suffix of a bulk change ("אושר (פעולה קבוצתית)"). */
+export const BATCH_ACTION_HE = 'פעולה קבוצתית';
+
+/**
+ * Reviewer+ (same role as a single status PATCH). Each line moves forward with the single-PATCH state machine:
+ * draft → reviewed; reviewed → approved; `to: 'approved'` on a draft line chains draft → reviewed → approved (both
+ * stamps, ONE audit event). An `approved` line whose qty changed since approval (`needsReapproval`, Stage 10) is
+ * re-approved by `to: 'approved'` (new `approvedQty`, chip dropped). Never moves a line backwards. Applied in chunked
+ * transactions (each line re-read inside its transaction); one audit event `boqLines/update` per moved line, all with
+ * the same `batchId`.
+ */
+export const BatchLineStatusRequestSchema = z
+  .object({
+    lineIds: z
+      .array(DocIdSchema)
+      .min(1)
+      .max(BOQ_BATCH_STATUS_MAX)
+      .refine((ids) => new Set(ids).size === ids.length, { message: 'duplicate line ids' }),
+    to: z.enum(BATCH_STATUS_TARGETS),
+    /** Red lines are skipped (`red`) unless true. */
+    includeRed: z.boolean().default(false),
+  })
+  .strict();
+export type BatchLineStatusRequest = z.infer<typeof BatchLineStatusRequestSchema>;
+export type BatchLineStatusInput = z.input<typeof BatchLineStatusRequestSchema>;
+
+export const BatchLineStatusResponseSchema = z.object({
+  /** Shared by the audit events of this call. */
+  batchId: DocIdSchema,
+  updated: z.array(z.object({ lineId: DocIdSchema, from: BoqLineStatusSchema, to: BoqLineStatusSchema })),
+  skipped: z.array(z.object({ lineId: z.string().max(128), reason: z.enum(BATCH_STATUS_SKIP_REASONS) })),
+});
+export type BatchLineStatusResponse = z.infer<typeof BatchLineStatusResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // Evidence (kamutan.boq-evidence/1) and links (kamutan.links/1) artifacts
 // ---------------------------------------------------------------------------
 
@@ -478,6 +586,19 @@ const idWith = (prefix: string) =>
     .regex(new RegExp(`^${prefix}[A-Za-z0-9_-]+$`), `id must look like "${prefix}…"`);
 /** Link-group id `lk_…`. */
 export const LinkGroupIdSchema = idWith('lk_');
+
+/** Sprint 6: evidence item kinds (additive: `geometry`, `stair`, `manual`; `text` / `sheet` / `room` existed as targets). */
+export const EVIDENCE_KINDS = ['detection', 'text', 'geometry', 'stair', 'sheet', 'room', 'manual'] as const;
+export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
+/** API-derived `target.kind` (Stage 10) + Sprint 6 geometry / stair. */
+export const EVIDENCE_TARGET_KINDS = ['detection', 'sheet', 'text', 'room', 'geometry', 'stair'] as const;
+const EvidenceBBoxSchema = z.object({ x: z.number().finite(), y: z.number().finite(), w: z.number().finite().nonnegative(), h: z.number().finite().nonnegative() }).strict();
+const EvidencePointSchema = z.object({ x: z.number().finite(), y: z.number().finite() }).strict();
+export const EvidenceGeometrySchema = z
+  .object({ type: z.enum(['polygon', 'polyline']), mm: z.array(EvidencePointSchema).min(2).max(2000) })
+  .strict()
+  .refine((g) => g.type !== 'polygon' || g.mm.length >= 3, { message: 'a polygon needs at least 3 points', path: ['mm'] });
+export type EvidenceGeometry = z.infer<typeof EvidenceGeometrySchema>;
 
 export const BoqEvidenceItemSchema = z
   .object({
@@ -504,8 +625,21 @@ export const BoqEvidenceItemSchema = z
      * the sheet and centres on `bboxMm` when present.
      */
     target: z
-      .object({ kind: z.enum(['detection', 'sheet', 'text', 'room']), bboxMm: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).nullable().optional() })
+      .object({ kind: z.enum(EVIDENCE_TARGET_KINDS), bboxMm: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).nullable().optional() })
       .optional(),
+    // --- Sprint 6 (worker-written, optional) ---
+    /**
+     * What the item is (absent = derived from `detectionId` as in Stage 10): `detection` (`d_…` / `m_…`), `text`
+     * (`ti_…` of text_items.json.gz or `text_{n}`), `geometry` (`g_…` of geometry.json.gz: hatch / wall run / polyline),
+     * `stair` (`g_…` of kind stair; `quantity` = treads), `sheet` (whole sheet), `room` (`r_…`), `manual` (a correction).
+     */
+    kind: z.enum(EVIDENCE_KINDS).optional(),
+    /** Text box (paper mm) of a `text` item — the web centres on it; the text itself is never in the evidence. */
+    bboxMm: EvidenceBBoxSchema.nullable().optional(),
+    /** Shape (paper mm) of a `geometry` / `stair` item, simplified to ≤ 2000 points, for the drawing highlight. */
+    geometryMm: EvidenceGeometrySchema.nullable().optional(),
+    /** Stair facts of a `stair` item. */
+    stair: z.object({ treads: z.number().int().min(0).max(200), risers: z.number().int().min(0).max(200).nullable().optional() }).strict().nullable().optional(),
   })
   .strict();
 export type BoqEvidenceItem = z.infer<typeof BoqEvidenceItemSchema>;

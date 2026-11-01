@@ -745,6 +745,8 @@ def _understand(
             "rooms.json.gz": "rooms",
             LINKS_FILE: "links",
             FIXTURES_FILE: "fixtures",
+            TEXT_ITEMS_FILE: "text_items",
+            GEOMETRY_FILE: "geometry",
         }.get(rel)
         if kind_ is None:
             return data
@@ -811,6 +813,24 @@ def _understand(
         blobs.write(pre + WALLS_FILE, data, "application/gzip", cache_control=IMMUTABLE)
         if FIXTURES_IN_ARTIFACTS:
             artifacts["walls"] = pre + WALLS_FILE
+    # Sprint 6 (Worker-Text): text & equipment items (kamutan.textItems/1), capped like the other level producers
+    ti_file = res.get("textItemsFile")
+    if ti_file is not None:
+        if ti_file != TEXT_ITEMS_FILE:
+            raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid text items artifact name")
+        data = cap(TEXT_ITEMS_FILE, Path(safe_output_path(workdir, f"{out_dir}/{TEXT_ITEMS_FILE}")).read_bytes())
+        blobs.write(pre + TEXT_ITEMS_FILE, data, "application/gzip", cache_control=IMMUTABLE)
+        if FIXTURES_IN_ARTIFACTS:
+            artifacts["textItems"] = pre + TEXT_ITEMS_FILE
+    # Sprint 6 (Worker-Geometry): construction geometry of plan sheets (kamutan.geometry/1), capped the same way
+    geo_file = res.get("geometryFile")
+    if geo_file is not None:
+        if geo_file != GEOMETRY_FILE:
+            raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid geometry artifact name")
+        data = cap(GEOMETRY_FILE, Path(safe_output_path(workdir, f"{out_dir}/{GEOMETRY_FILE}")).read_bytes())
+        blobs.write(pre + GEOMETRY_FILE, data, "application/gzip", cache_control=IMMUTABLE)
+        if FIXTURES_IN_ARTIFACTS:
+            artifacts["geometry"] = pre + GEOMETRY_FILE
     if capped:
         log.warning("job %s page %d: calibration ceiling lowered sandbox greens %s (table %s)", job.jobId, index, capped,
                     stats["calibration"]["version"])  # fmt: skip
@@ -905,6 +925,8 @@ def _refine_labels(
 
 LINKS_FILE = "links.json.gz"
 FIXTURES_FILE = "fixtures.json.gz"
+TEXT_ITEMS_FILE = "text_items.json.gz"  # Sprint 6 (Worker-Text), = pipeline.understand.TEXT_ITEMS_FILE
+GEOMETRY_FILE = "geometry.json.gz"  # Sprint 6 (Worker-Geometry), = pipeline.understand.GEOMETRY_FILE
 WALLS_FILE = "walls.json.gz"  # kamutan.walls/1 — SheetVersion.artifacts.walls (readers fall back to the name)
 # contracts SheetVersion.artifacts.fixtures / .walls (optional, Sprint 4 integration)
 FIXTURES_IN_ARTIFACTS = True

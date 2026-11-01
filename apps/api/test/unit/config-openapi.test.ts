@@ -92,6 +92,9 @@ describe('OpenAPI', () => {
           '/api/v1/projects/{projectId}/boq/export',
           '/api/v1/projects/{projectId}/boq/lines/{lineId}',
           '/api/v1/projects/{projectId}/boq/lines/{lineId}/evidence',
+          // Sprint 6
+          '/api/v1/projects/{projectId}/boq/lines/batch-status',
+          '/api/v1/projects/{projectId}/boq/lines/{lineId}/quick-measure',
           // Sprint 4
           '/api/v1/projects/{projectId}/corrections',
           '/api/v1/projects/{projectId}/corrections/batch',

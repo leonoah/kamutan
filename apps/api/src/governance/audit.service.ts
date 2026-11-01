@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  BATCH_ACTION_HE,
   BOQ_EVIDENCE_PATH_RE,
   DocIdSchema,
   storagePaths,
@@ -160,7 +161,8 @@ export class AuditService {
         (c.itemCode !== null && c.itemCode === line.code) ||
         (c.detectionId !== null && evidence.detectionIds.has(c.detectionId)) ||
         evidence.correctionIds.has(c.id) ||
-        evidence.detectionIds.has(`m_${c.id}`);
+        evidence.detectionIds.has(`m_${c.id}`) ||
+        c.lineId === lineId; // Sprint 6: quick-measure corrections are bound to the line
       if (!affects) continue;
       const after = { correctionId: c.id, kind: c.kind, class: c.class, itemCode: c.itemCode, quantity: c.quantity, reverted: c.revertedAt !== null };
       items.push({
@@ -244,7 +246,11 @@ export function historyItemsOf(e: AuditEvent, by: (uid: string | null) => LineHi
   const he = (v: unknown) => (typeof v === 'string' ? ((BOQ_STATUS_HE as Record<string, string>)[v] ?? v) : String(v ?? '—'));
   const src = e.id;
   if (e.action === 'update') {
-    if ('to' in a) out.push({ at: e.at, by: who, action: 'status', before: a.from ?? null, after: a.to ?? null, reason: null, summary: `שינוי סטטוס · ${he(a.from)} → ${he(a.to)}`, sourceId: src });
+    if ('to' in a) {
+      // Sprint 6: a bulk change reads "אושר (פעולה קבוצתית) · טיוטה → אושר".
+      const summary = typeof a.batchId === 'string' ? `${he(a.to)} (${BATCH_ACTION_HE}) · ${he(a.from)} → ${he(a.to)}` : `שינוי סטטוס · ${he(a.from)} → ${he(a.to)}`;
+      out.push({ at: e.at, by: who, action: 'status', before: a.from ?? null, after: a.to ?? null, reason: null, summary, sourceId: src });
+    }
     if ('qtyOverride' in a) {
       const reason = typeof a.reason === 'string' ? a.reason.slice(0, 500) : null;
       // A-API-08: "before" = the quantity the user saw before the change (previous override, else the computed qty).

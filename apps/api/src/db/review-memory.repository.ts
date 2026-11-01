@@ -4,7 +4,6 @@ import {
   roomSettingsId,
   type Correction,
   type CorrectionBatch,
-  type CreateCorrectionRequest,
   type ProcessingError,
   type RoomSettings,
   type SimilarExemplar,
@@ -18,6 +17,7 @@ import {
   batchAudit,
   batchDoc,
   correctionAudit,
+  type CorrectionInput,
   correctionDoc,
   MAX_CORRECTIONS,
   planAutoBuild,
@@ -44,7 +44,7 @@ export class InMemoryReviewRepository implements ReviewRepository {
   }
 
   // --- corrections ---------------------------------------------------------------
-  createCorrections(orgId: string, projectId: string, items: readonly CreateCorrectionRequest[], batch: NewCorrectionBatch | null, actorUid: string) {
+  createCorrections(orgId: string, projectId: string, items: readonly CorrectionInput[], batch: NewCorrectionBatch | null, actorUid: string) {
     return this.core.tx(() => {
       const at = this.core.now();
       const batchId = batch ? autoId() : null;

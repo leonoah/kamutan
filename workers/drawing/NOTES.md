@@ -1728,3 +1728,470 @@ extra luminaire. Page times 7–45 s (max 1bbe4113), set ≈ 300 s on the shared
 * Web: the review header shows BOQ-line stats while "ספירה לפי סוג" shows detection levels — label or align them.
 * DevOps: optional build-time check in `infra/docker/worker-drawing.Dockerfile`:
   `python -c "from kamutan_drawing.calibration import load_table; load_table()"`.
+
+## Sprint 6 — text & equipment items (Worker-Text)
+
+Brief: `docs/agents/SPRINT6_BRIEF.md` (row Worker-Text). Package `kamutan_drawing.textitems` (pure; no I/O except
+`from_version_dir`). The artifact shape was published first and the API mirrored it in
+`packages/contracts/src/takeoff.ts` (`TextItemsArtifactSchema`, kinds without `detail` → detail boxes are not emitted).
+
+### Contract requests (API agent) — artifact `text_items.json.gz` (`kamutan.textItems/1`), per version
+Written by the `understand` task next to `detections.json.gz` (reported as `textItemsFile`, like `wallsFile`; the
+orchestrator uploads it and sets `artifacts.textItems` — additive). Every field below is always present (null when
+unknown):
+```
+{ schema: "kamutan.textItems/1", sheetId, discipline: Discipline|null, catalogVersion: int,
+  items: [{
+    id: "t_{n}",                       // stable per version (reading order)
+    sheetId: DocId,
+    kind: "note"|"callout"|"detail_ref"|"legend_row"|"panel_schedule"|"conduit",
+    text: string (≤ 400),              // as read, lines of a note block joined with " / "
+    normalized: string (≤ 400),        // Hebrew-normalised (finals folded, geresh/gershayim/quotes unified, spaces
+                                       // collapsed); a detail_ref carries "פרט A → <detail box content>"
+    bboxMm: {x,y,w,h},                 // the text block (conduit: the run's bbox)
+    anchorMm: {x,y}|null,              // leader terminal / run end the item names (else null → use bbox centre)
+    lineIdx: int[],                    // indexes into the version's text.json.gz lines (evidence `text_{n}`)
+    floor: string|null, roomId: string|null,   // from the anchor (regions / rooms of the same version)
+    lifecycle: "new"|"existing"|"replace"|"add"|"demolish"|null,   // "קיים/חדש/להחליף/להוסיף/פירוק" qualifiers
+    qty: number|null, unit: "יחידה"|'מ"א'|null,   // the item's own quantity (0 = folded into `pairedWith`)
+    lengthM: number|null,              // conduit: drawn length × scale; text "באורך 1.5 מ'" → 1.5
+    matchedPattern: string|null,       // catalog entry id (textitems/catalog.py), null = unmatched note
+    itemCode: string|null,             // reference code of that entry ("4.19"), null = unmatched
+    role: "item"|"feed"|"switch"|null, pairedWith: "t_{m}"|null,
+    corroborates: bool,                // the line is produced by symbols/links; this item is evidence only
+    suggested: bool,                   // drawings show a trigger, not the item (BOQ: origin 'suggested')
+    dedupe: "floor"|null,              // one unit per floor over ALL sheets (ventilator on 3 plans = 1)
+    leaderMm: [{x,y}]|null,            // callout leader polyline (passthrough field)
+    confidence: number 0..1, scoreRaw: number, level: "yellow"|"red", reasons: string[]   // never green (calibrate)
+  }],
+  stats: {items, matched, byCode: {code: qty}} }
+```
+`textitems.boq.text_units(docs)` (pure) turns the artifacts of a build into `{itemCode, qty, floor, sheetId,
+roomId, itemIds[], level, reasons, suggested}` units with the pairing / cross-sheet de-dup already applied — Worker-BOQ
+can call it from the `text_item` rule kind instead of re-implementing the semantics.
+
+## Sprint 6 — Worker-Geometry (stairs, hatched regions, wall runs, courtyard, ceilings / valances, partial cladding)
+
+Brief: `docs/agents/SPRINT6_BRIEF.md` (row Worker-Geometry). Package `kamutan_drawing.geometry` (pure; no I/O except
+`debug.py` / `scripts/geometry_local.py`). Status: **artifact shape published first (below); implementation, Noah
+before/after and gaps follow in this section.**
+
+### Contract requests (API agent) — artifact `geometry.json.gz` (`kamutan.geometry/1`), per version
+Written by the `understand` task on plan sheets (construction / architecture / master; demolition sheets for the
+`demolished` regions), reported as `geometryFile` (like `wallsFile`); the orchestrator uploads it under the version
+prefix and sets `artifacts.geometry` (additive, optional; readers fall back to the name). Coordinates paper mm,
+origin top-left, y down; polygons are `[{x,y}]` (Firestore: no nested arrays); quantities in real units with the
+region's scale. Every field is always present (null when unknown). Levels go through `calibration.calibrate` with the
+class keys `geometry:<kind>` (not in the table → never green: **yellow at best** until there is GT).
+```
+{ schema: "kamutan.geometry/1", sheetId, discipline: Discipline|null, scaleDenominator: int|null,
+  heights: [{floor, ceilingM, source: "label"|"level_mark"|"room"|"default"}],   // per floor of the sheet
+  levels: [{valueM, atMm{x,y}}],                     // level marks read on the sheet (signs as read)
+  stairs: [{ id: "st_{n}", floor, regionId, lifecycle: "new"|"existing"|"demolish"|"unknown",
+             treads: int, risers: int|null, lines: int, numbered: bool, numbers: [int]|null,
+             descending: bool,                        // numbered below the ±0.00 datum ("-1".."-11")
+             widthM, goingM, runLengthM, polygonMm, bboxMm{x,y,w,h}, roomId|null,
+             key: string,                             // cross-sheet identity (floor/lifecycle/treads/width/going)
+             confidence, scoreRaw, level, reasons }],
+  regions: [{ id: "hr_{n}", category: "gypsum"|"block"|"concrete"|"demolished"|"waterproofing"|"ceiling"
+                 |"valance"|"closure"|"cladding"|"unknown",
+              pattern: "solid"|"lines"|"cross"|"dashed_box", color: "#rrggbb",
+              lifecycle, areaM2, perimeterM, polygonMm, bboxMm, floor, roomId|null, roomName|null,
+              label: string|null, labelBboxMm|null, labelSource: "leader"|"near"|"legend"|null,
+              confidence, scoreRaw, level, reasons }],
+  wallRuns: [{ id: "wr_{n}", kind: "block_new"|"gypsum_single"|"gypsum_double"|"concrete_retaining"|"low_wall",
+               closure: bool,                         // fills an existing opening ("סגירת דלת בבלוק")
+               lifecycle, lengthM (centreline), thicknessM, heightM|null,
+               heightSource: "label"|"level_mark"|"room"|"default"|null,
+               areaM2|null (= lengthM × heightM, one face), polygonMm, bboxMm, floor, roomIds: [string],
+               label|null, regionId|null, confidence, scoreRaw, level, reasons }],
+  lines: [{ id: "ln_{n}", kind: "valance_curtain"|"valance_ventilator"|"valance"|"cistern_screen"|"window_closure",
+            lengthM, heightM|null, polylineMm, bboxMm, floor, roomId|null, label|null,
+            confidence, scoreRaw, level, reasons }],
+  ceilings: [{ id: "cl_{n}", kind: "gypsum_ceiling", areaM2, polygonMm, bboxMm, floor, roomId|null, label|null,
+               confidence, scoreRaw, level, reasons }],
+  courtyards: [{ id: "cy_{n}", floor, floorAreaM2, polygonMm, bboxMm, stairId|null, wallRunIds: [string],
+                 faces: [{kind: "retaining"|"building"|"open", lengthM, aMm{x,y}, bMm{x,y}}],
+                 wallLengthM (retaining + building faces), wallHeightM|null, heightSource, wallAreaM2|null,
+                 levels: {topM, bottomM}|null, label|null, confidence, scoreRaw, level, reasons }],
+  measures: [{ key, unit: 'מ"ר'|'מ"א'|"יחידה"|"קומפלט", qty: number|null, computable: bool,
+               reason: string|null,                   // why not computable (Hebrew, user-facing)
+               estimate: {qty, method}|null,          // a usable estimator when not computable
+               floor|null, refs: [ids of the items above], level, reasons }],
+  stats: {stairs, regions, wallRuns, lines, ceilings, courtyards, seconds} }
+```
+`measures[].key` (semantic, never an item code — Worker-BOQ's `area_item` / `length_item` / `suggested_item`
+`match` can select on `key`): `stair_treads` (new stairs), `retaining_wall_area`, `courtyard_wall_area`,
+`courtyard_floor_area`, `courtyard_waterproofing` (קומפלט 1 when a courtyard with new retaining walls exists),
+`block_wall_area`, `gypsum_partition_area`, `gypsum_double_partition_area`, `gypsum_ceiling_area`,
+`valance_ventilator_length`, `valance_curtain_length`, `window_closure_area`, `plaster_new_walls_area`,
+`kitchen_backsplash_area`, `wc_partial_cladding_area`, `demolished_wall_area`. A sheet's measures cover that sheet only;
+**the same wall is drawn on the construction and the master sheet of a floor** — use
+`geometry.project.geometry_units(docs)` (pure) which picks one authoritative sheet per floor (construction >
+architecture > master; demolition only for `demolished_*`), de-duplicates stairs by `key` across floors (a courtyard
+stair is drawn on the basement and the ground plan) and returns `{key, unit, qty|null, computable, reason, estimate,
+byFloor, refs: [{sheetId, id}], level, reasons}` per key.
+
+### Implementation (`src/kamutan_drawing/geometry/`, pure)
+* `prims.py` — pen colour classes (red / yellow / green / neutral …) and lifecycle from colour + sheet kind (legend
+  colour hints win; demolition sheet: every highlight = demolish; elsewhere yellow = demolish, red = new — the Sprint-2
+  measurement); highlight fills; straight stroked segments; **plan zone** = the wall-network components
+  (`rooms.walls.extract_walls`, openings off) that touch the plan's main rooms (named or ≥ 2 m²), grown 0.2 m — the
+  1:5 / section details beside the plan (1470f005, the stair section of ad257a1c) are outside it.
+* `hatches.py` — line hatch = ≥ 5 strokes of one colour, same direction (± 1.5°), overlapping, regular spacing
+  0.4–3.5 paper mm; region = strokes widened by 0.55 × spacing, opened / closed with round joins (oblique strokes leave
+  a saw-tooth); **area = Σ stroke length × spacing** (exact for a regular hatch; the outline over-estimates ≈ 8 %);
+  crossing families → `cross`; pieces cut by a dimension merged (3.5 mm). Collinear strokes → chains; dashes
+  (0.6–6 mm, gaps 0.3–3 mm) → dashed chains; dashed chains with two diagonals crossing inside → **dashed X box**
+  (convex hull); parallel runs ≤ 0.25 m apart overlapping ≥ 60 % of the longer → one double line. NB the SHX reader
+  "reads" dash strokes as `\ / |` glyphs: only text boxes with ≥ 2 letters / digits and strokes shorter than 0.6 × the
+  line height are treated as text.
+* `stairs.py` — flights = ≥ 4 parallel equal runs (0.6–2.5 m wide, ± 15 %) stepping regularly by 0.18–0.42 m (a
+  double nosing line counts once); flights ≤ 1 m apart = one stair; step numbers ("-11 -10 … -1", one misread token
+  tolerated) attached ≤ 0.3 m; treads = max |n| when ≥ half of 1..max is present, else the gaps between lines.
+  Numbered below ±0.00 on the ground plan → the stair belongs to the basement (`descending`).
+* `labels.py` — note blocks (`fixtures.labels.blocks`) with keyword flags (gypsum / double / block / concrete /
+  demolished / waterproofing / ceiling ("ה.ת", "מזגן עילי", "מעל נגרות") / valance / curtain / ventilator / closure /
+  opening / low / cladding / courtyard / cistern / window / partition) + leader terminals (`fixtures.leaders`); a note
+  names an element by a leader ending on it (≤ 2.5 mm) else when ≤ 8 mm away; heights `H=140`, also "H" + "120" read
+  apart; ceiling heights from level marks incl. the SHX form "2.55" over a bare "220"; level values.
+* `analyze.py` — per region: regions (category from the note, else pattern + lifecycle: a new single-direction hatch
+  = concrete), **wall runs** from new solid fills / new line hatches / closed new outlines (thickness & centreline
+  from A = L·t, P ≈ 2(L + t); line hatch: L = drawn area / t), kind from the note (low / double / block / concrete /
+  gypsum) else thickness (< 0.17 m gypsum single, else block; hatch → concrete), `closure` only with an opening word
+  (דלת / פתח / חלון); height: note `H=` → room ceiling → floor level mark (+ reason **"גובה הקיר הונח כגובה התקרה
+  בקומה"**) → default 2.60 (+ reason); low walls without H → no area. **Courtyard** = (bbox of new retaining runs + new
+  stair) − retaining walls − building walls; faces retaining / building / open (an open stretch on a building face's
+  line = an opening, counted); height = yard levels (highest − lowest level below ±0.00; unsigned levels on a
+  basement sheet read as negative). **Ceilings** = new dashed X boxes. **Lines** = labelled new dashed / plain runs
+  (valance curtain / ventilator, cistern screen ≤ 2.5 m, window closure ≤ 3 m; the first compatible note wins).
+  Measures per floor (keys above; `window_closure_area` / `wc_partial_cladding_area` / `plaster_new_walls_area` are
+  `computable: false` + estimate: window height 1.1 m (tiling convention sill 1.0 / head 2.1), screen height H or
+  1.2 m, courtyard faces + both faces of new block walls). Levels: `calibrate("geometry:<kind>")` → yellow.
+* `project.py` — `geometry_units(docs)`: one sheet per floor and key (construction > architecture > master;
+  demolition only for `demolished_*`), stairs de-duplicated by key and an unnumbered view of a numbered stair (same
+  width / going / lifecycle, treads ± 1, same or adjacent floor) dropped; every key returned (missing →
+  `computable: false`, "לא נמצא בשרטוטים — להשלמה ידנית", red).
+* Hooks (additive, small): `pipeline/understand.py` runs `_geometry` on construction / architecture / master /
+  demolition sheets (`geometry=False` / args `geometry: false` switches it off) → `geometry.json.gz`, result keys
+  `geometryFile` + `geometryStats`; `service/pipeline.py` uploads it (name checked, capped, `artifacts.geometry`);
+  `pipeline/ceiling.py` caps every list of the document (class keys `geometry:<kind>`, measures `geometry:measure`).
+* `scripts/geometry_local.py --root DIR` writes the artifact for every plan sheet of a local root (no re-ingest) and
+  prints `geometry_units`. Scratch root with the Noah artifacts: `/home/claude/kamutan-data/acceptance/s6-geometry/`
+  (`geometry_units.json` = the project-level output Worker-BOQ can read).
+
+### Noah — before / after (gt-v0.6-draft `s6_lines.md`; before = `acceptance/fix-accuracy/after`, these lines not produced)
+| line | BOQ | drawings give (GT) | before | after (`geometry_units`) | method |
+| --- | --- | --- | --- | --- | --- |
+| 5.04 stair treads | 11 | 11 | — | **11** (basement; drawn on 4 sheets, counted once) | 12 red tread lines + "-1..-11" on ad257a1c |
+| 2.01 retaining walls | 11 m² | 10.6 | — | **9.04** (4.37 m × 2.07 m) | red 45° hatch L, 0.21 m; yard levels -0.50 / -2.57 |
+| 2.03 kitchen door in block | 2 m² | 1.7–2.0 | — | **2.12** (0.80 m × 2.65 m, assumed = ceiling) | red fill 0.80 × 0.20 + "סגירת דלת בבלוק" |
+| 5.08 courtyard waterproofing | 1 קומפלט | 1 | — | **1** (+ faces / height in the courtyard) | courtyard of the retaining walls |
+| 7.01 gypsum ceiling | 4 m² | ≈3.4 | — | **3.32** (ground 2.02 + first 1.30) | dashed red X boxes |
+| 7.02 ventilator valance | 4.3 m' | 4.27 | — | **4.27** | red dashed line + "סינר לונטה" |
+| 7.03 window closure | 1.5 m² | width 1.20 | — | width **1.20**, `computable: false`, estimate 1.32 | red double line + note |
+| 7.05 curtain valance | 7 m' | 6.41 | — | **6.41** | red dashed double line + "סינר גבס לוילון" |
+| 7.06 gypsum partitions | 35.2 m² | ≈30 | — | **27.80** (basement 4.44 m × 2.20, ground lining 4.40 × 2.65, first 1.90 + 2 × 0.25 × 2.65) | red fills < 0.17 m |
+| 7.07 double partition | 7.5 m² | 3.4 m, no height | — | **7.11** (3.23 m × 2.20) | red fill + "מחיצת גבס דו כרומי" |
+| 5.07 guest-WC cladding | 1.2 m² | ≈1.0 | (2.0/1.2 only from demo room settings) | `computable: false`, estimate **0.98** (0.82 m × H 1.20) | red screen line + "מסתור ניאגרה H 120" in the WC |
+| 8.02 plaster | 22 m² | estimate | — | `computable: false`, estimate **21.53** (courtyard faces 8.35 m × 2.07 + 2 × 2.12) | |
+| 5.06 kitchen backsplash | 2 m² | not drawn | (2.0 only from demo room settings) | `computable: false`, "לא נמצא בשרטוטים" | — |
+All items yellow (geometry classes are not in the calibration table). Heights assumed = ceiling say so in the reasons.
+Rooms / fixtures / detections / tiling: no code change in `rooms/`, `fixtures/`, `boq/` — identical. Runtime 0.1–1.2 s
+per plan sheet.
+
+### Tests / commands
+`tests/test_geometry.py` (20): colour / lifecycle, note flags & heights (incl. "2.55" over "220"), numbered descending
+stair → basement, unnumbered stair, double nosing, solid runs by label / thickness + default-height reasons, level-mark
+height flagged as assumed, details beside the plan ignored, demolished regions, courtyard (hatch, outline, yard
+levels, faces), dashed X ceiling, valance / cistern screen ("H" + "120") / window closure, unlabelled lines dropped,
+ids + JSON-schema validation (`packages/contracts/json-schema/GeometryArtifact.json`), `geometry_units` authority +
+missing keys, stair de-dup (numbered + unnumbered view), orchestrator cap, garbage input, understand hook
+(construction writes `geometry.json.gz`, electrical does not), Noah targets (skips without local artifacts).
+```bash
+uv run python scripts/geometry_local.py --root /home/claude/kamutan-data/acceptance/s6-geometry/artifacts
+uv run pytest -q tests/test_geometry.py
+```
+
+### Contract requests (API agent)
+* `GEOMETRY_MEASURE_KEYS`: I emit `demolished_wall_length` (m', centreline of demolished wall fills) instead of the
+  listed `demolished_wall_area`, plus `valance_length` (a valance note without curtain / ventilator) — please list both
+  (the key regex is open, so nothing fails today).
+* Additive fields already written (passthrough): `regions[].roomType`, `lines[].roomType`, `courtyards[].waterproofing`,
+  `courtyards[].faces[].opening`, `measures[].estimate.widthM` / `courtyardM2` / `blockM2` (extra estimate inputs).
+
+### Gaps
+* 2.01: centreline 4.37 m × 2.07 m (yard levels) vs the GT's outer lengths 4.7 m × 2.1–2.4 m → −18 % vs the BOQ. The
+  height above the top level / footing is not drawn.
+* 7.06: the BOQ's 35.2 m² is ≈ 1.27 × what the plans draw (27.8 m² at ceiling height); maybe full storey heights or
+  both faces — owner convention. The basement low wall (H=140, outline) is not read: its "H=140" is not OCR'd.
+* Heights: the SHX reader rarely reads "H=…"; partitions take the floor ceiling (ground / first 2.65 from the level
+  marks, basement 2.20) — always with the "הונח" reason.
+* Rooms (not changed here): on ad257a1c the kitchen polygon leaks ≈ 1.1 m² into the courtyard landing (courtyard door
+  closed on the courtyard side) — the courtyard tolerates it.
+* Ceiling plans proper (reflected ceiling sheets) and legend-defined hatch semantics are supported only through notes /
+  legend colour hints; Noah has neither. Demolition-sheet regions are produced (`demolished_wall_length`) but not
+  checked against GT.
+* Shared-file note: a parallel edit of `pipeline/understand.py` dropped `_geometry` / `GEOMETRY_DISCIPLINES` once
+  (NameError in `understand` → every sheet's understanding failed as `file_unreadable`). They now live at the end of
+  the module ("Sprint 6 (Worker-Geometry) — keep this block here"); `tests/test_geometry.py::test_understand_writes_and_reports_the_geometry_artifact`
+  catches it.
+* Checks (2026-11-01): ruff / ruff format clean on my files, mypy 2.4.0 (`uv run --with mypy==2.4.0 mypy src`) no
+  issues, bandit 1.9.4 `-ll` clean, `pytest tests/test_geometry.py` 20 passed; full suite (`--ignore=tests/fuzz`)
+  622 passed / 3 failed before the hook fix — after it, the integration / understand sample tests pass except the
+  < 60 s timing budgets on the loaded shared box (load 6–8), `test_rooms_v4::test_sample_mep_basement_split_with_reference`
+  (stale shared artifacts, pre-existing) and the sandbox fork-bomb process cap (shared box).
+
+### Flow (`textitems/extract.py`, hook `pipeline/understand.py::_text_items`, after rooms / fixtures)
+1. text.json lines (index = `lineIdx`); title-block lines dropped (project / client names never leave it); lines in a
+   legend table → `legend_row` (never counted).
+2. Detail boxes: title "פרט A קנ"מ 1:20" + the description stacked under it (first gap ≤ 20 mm: the detail's drawing
+   sits between) — not an item; its content is folded into every reference "פרט A" (`detail_ref`, `normalized =
+   "פרט a → שישה שקעימ / נקודת רשת …"`). The SHX reader's slips in this word are tolerated (פ→ס, ר→ך/ד, A→א/ץ:
+   "א.קוברה סךט א" on c054fd3a is a reference).
+3. Note blocks: stacked + aligned lines (box clipped to 1.4 × `heightMm` — a stray symbol glyph had made "שקע בתקרה)"
+   3 × font height); cut at an underline only when the lines are ≥ ½ line apart (a tight underline is the leader's
+   shoulder: "משאבה לניקוז / מי גשמים"). Leader → `callout` + `anchorMm` (`fixtures.leaders.LeaderIndex`).
+4. Conduit runs (`textitems/conduits.py`) when a legend row names "קוברה/צינור": one open dark smooth polyline
+   (≥ 12 pieces, ≥ 8 mm, no turn > 35°, not a glyph path) with a small circle (r 0.2–1.1 mm) on ≥ 1 end; the notes
+   ≤ 8 mm from its ends are its text; a run whose notes say "מקרן" is 4.27, the others 4.20. `lengthM` = drawn × scale.
+5. Catalog (`textitems/catalog.py`, `CATALOG_VERSION` 2) per block, one item per (entry, spanned lines); context =
+   spanned lines + next line (excludes, lifecycle, role, qty). Patterns are normalised like the text (a space also
+   spans the " / " line join). Lifecycle: demolish > replace > add > existing > new.
+6. Folding on the sheet: switch → nearest feed of the same entry/floor (qty 0 + `pairedWith`), `group_mm` (bell +
+   push-button, by anchor or note-box gap), `per_floor`.
+7. Level: `calibrate("text:{itemCode}", …, level ≤ yellow)`; red when the OCR confidence < 0.5; never green (no GT
+   statistics for text classes yet). The orchestrator re-caps the artifact (`pipeline/ceiling.KINDS["text_items"]`).
+
+`textitems/boq.py::text_units(docs)` folds a build's artifacts into units (skips qty 0 / corroborating, `dedupe` per
+floor across sheets). Worker-BOQ implemented its own `boq/textitems.py` on the same fields (catalog items by code,
+`corroborates`, `pairedWith`, per-floor) — both agree on Noah.
+
+### Lines (Noah; GT `gt/noah/s6_lines.json` gt-v0.6-draft; before = Stage-10 root `acceptance/fix-accuracy/after`,
+after = full `ingest_local.py --force` of the current tree into `acceptance/s6-text/after` + `boq_local.py`)
+| line | before | after (GT) | how |
+| --- | --- | --- | --- |
+| 4.06 | 0 | **4** (4) | `detail_ref` "פרט A" ×4 resolved through the detail box (שישה שקעים …); box itself not counted |
+| 4.08 | 0 | **1** (1) | note "צינורות חופשיים / מהריצפה:" (bullet list = content; plumbing "צינור גז … חופשי" excluded) |
+| 4.12 | 3 | 3 (3) | links; "להוסיף מחלף" ×3 = corroborating evidence |
+| 4.17 | 3 | 3 (3) | heater symbols; "מפסק לתנור" ×3 corroborating; legend row excluded |
+| 4.18 | 1 | 1 (1) | symbol; "אינטרקום / יש להעביר צינור…" corroborating |
+| 4.19 | 0 | **1** (1) | "הזנה / לונטה" (feed) + "מפסק לונטה" (switch, folded) |
+| 4.20 | 0 | **5** (5) | conduit runs (ground 3, first 2) minus the projector run |
+| 4.21 | 3 | 3 (3) | symbols re-classed by "שקע תלת פאזי"; notes corroborating |
+| 4.22 | 1 | 1 (1) | symbol; "פעמון" + "פעמון / מעל הדלת" grouped = 1; "פעמון מיני" (luminaire) excluded |
+| 4.23 | 1 | 1 (1) | symbol; "הזנה לדוד חשמל" + "מפסק טיימר / לדוד חשמל" paired |
+| 4.24 | 1 | 1 (1) | panel detection; "לוח חשמל+מונה" corroborating (module count not on the drawings) |
+| 4.25 | 0 | **1** (1) | "לוח תקשורת" as a note subject; "הכנה לשקע / בתוך לוח תקשורת" (ground) excluded |
+| 4.26 | 0 | **1** (1) | "מפסק דוד קיים / להחליף לטיימר / גוויס" (lifecycle replace) |
+| 4.27 | 0 | **1** (1) | conduit run ending at "קוברה+ / שקע בתקרה / למקרן" (drawn 4.2 m, BOQ 3.5 m convention) |
+| 4.28 | 0 | **1 suggested** | not on the drawings: only "…עד הגעה ללוח חשמל" (existing panel, master + demolition) |
+| 9.03 | 0 | **1 suggested** | pipe not drawn; ventilator ("ונטה") on electrical + master + construction = 1 per floor |
+| 3.15 | 1 | 1 (1) | one-off rule; "משאבה לניקוז / מי גשמים" corroborating |
+| 5.08 | 0 | **1** (1) | "+פרט איטום" on the basement construction plan (קומפלט) |
+
+kbench eval-boq scope 3./4./5./9.01/9.03, gated (fresh root = cold org glyph store, like the before root): exact
+**26/42 → 37/42** (0.619 → 0.881), ΣAE 34.1 → 6.1; coverage
+present **52 → 75/77** (missing 2.02 / 8.02 = other workers). Ch04 + 9.01 + 9.03 only: 12/23 → 21/23 (left: 4.05,
+4.10 — Worker-Accuracy gaps). Symbols micro-F1 glyph 0.781 → 0.781, semantic 0.876 → 0.871 and fixtures 0.941 →
+0.922: one `ac_unit` on c054fd3a moved (fixtures/rooms path, `rooms/segment.py` changed in HEAD after the before root
+was ingested; this round emits no detection). Links identical (28/30, 28/29, kind 1.0).
+Re-run into the same root (warm glyph store, after Worker-Geometry's `_geometry` fix; 15/15 succeeded, 0 understanding
+failures): the 18 lines above unchanged and exact, gated 35/42 — **4.12 3 → 4 and 4.09 16 → 15**, not from text items:
+the warm store now reads "נק' קיימת" next to ground luminaire d_11 on b2046277 (cold read "היימת"), lifecycle → existing,
+and its new 2-way switch's group becomes `add_to_existing` (links kind accuracy 29/30 → 28/30). Owner: links / BOQ
+(the GT keeps that ground group `single`) — flagged to Worker-Accuracy / Worker-BOQ.
+Incident: one of my edits to `pipeline/understand.py` (removing the conduit-detection helper by slicing between two
+anchors) also removed Worker-Geometry's `_geometry` helper written between them; they restored it at the end of the
+module (marker + guard test). None of my measurements ran in that window (ingest logs: 0 NameError / unreadable).
+Tried and dropped: `conduit_cobra` detections for the runs — kbench scores no linear truth (truth n = 0), so the 6
+runs were 6 FPs (semantic F1 0.876 → 0.866); 4.20 is counted from the text items instead. `socket_box_6` detections
+for "פרט A": the leader terminals are 6–60 mm from the GT points (3 mm tolerance) → FPs; 4.06 stays text.
+
+### Tests / commands
+`tests/test_textitems.py` (25): normalisation + SHX-tolerant detail refs, counts / lengths / lifecycle, synthetic
+electrical sheet (pairing, grouping, traps: legend rows, "פעמון מיני", "בתוך לוח תקשורת", detail box), disciplines,
+title block, contract JSON schema (`TextItemsArtifact.json`), per-floor folding, catalog patterns portable + rule
+mirror, conduit runs (circles, smoothness, grey, exclusion, projector), `text_units` across sheets, ceiling cap,
+Noah sample (skipped without the local artifacts).
+`uv run python scripts/text_items_local.py --root <artifacts> [--write] [--merge-lines OUT] [-v]` recomputes the
+artifact from stored artifacts. Timing: text items 0.07–0.5 s per sheet.
+
+### Edits outside `textitems/` (additive)
+* `pipeline/understand.py`: `_text_items` hook (option `text_items` / task arg `textItems`), `TEXT_ITEMS_FILE`,
+  result keys `textItemsFile`, `textItemStats`, timing `textItems`.
+* `service/pipeline.py` (Worker-BOQ's): uploads `textItemsFile` like `wallsFile` (name checked), capped by the ceiling,
+  `artifacts.textItems`. `pipeline/ceiling.py`: kind `text_items` (class key `text:{itemCode}`).
+
+### Requests
+* API: `boq.ts` evidence docs say `ti_…` — the artifact ids are `t_{n}` (contract `idWith('t_')`). No `text_item`
+  rule targets 4.06 / 4.20 / 5.08: they come through Worker-BOQ's catalog fallback (fine; a rule would also do).
+  `r_text_comms_panel` has `nearClasses: panel` + `consumeNear` — on Noah the panel detection (4.24) is not consumed
+  (4.24 stays 1); keep `proximityMm` small or it would steal the 4.24 panel.
+* Worker-BOQ: `stage_timings_ms` ignores the new `textItems` timing (fold it into `links` or `artifacts` if wanted).
+  `aggregate.py` `produced_codes` (origin detected/text/geometry) — a corroborating item of a code produced only by a
+  one-off rule became a 2nd unit in one intermediate run (3.15 = 2); it is 1 in the final run, re-check if it returns.
+* Data/QA / kbench: the linear `conduit_cobra` truth is not scored by `kbench eval` — once it is, the runs can also be
+  written as detections (code removed this round; `textitems.conduits.find_runs` gives the geometry).
+
+### Gaps
+* No panel schedules on Noah (scope `panel_schedule` accepted, no extractor yet).
+* Text items need the SHX reader: notes it garbles (ground "הכנה לשקע / בתוך לוח תקשורת" read "|בהך לחתקשורת")
+  are simply unmatched; rotated labels ("צ.קוברה" along the runs) are not needed (runs are geometric).
+* Rasters: same code over Tesseract lines; no conduit runs (no vectors). Levels never green until text GT stats exist.
+* 4.28 size / 4.24 module count / 4.20 & 4.27 nominal lengths are BOQ wording, not drawing facts.
+
+## Sprint 6 — rule kinds text_item / area_item / length_item / suggested_item, origin, coverage (Worker-BOQ)
+
+Brief: `docs/agents/SPRINT6_BRIEF.md` (row Worker-BOQ). Contracts (API agent, published during the sprint):
+`library.ts` `TextItemMatchSchema` / `GeometryItemMatchSchema` (incl. `keys`) / `SuggestedItemMatchSchema` +
+`SPRINT6_RULES` (`DEFAULT_BOQ_RULES_VERSION` 6), `takeoff.ts` (`normalizeHebrewText`, `kamutan.text-items/1`,
+`kamutan.geometry/1`), `boq.ts` (line `origin` / `needsInput` / `quickAction`, evidence `kind` / `bboxMm` /
+`geometryMm` / `stair`, build `stats.coverage`). `boq/rules.py` `DEFAULT_RULES` mirrors v6 exactly (the Sprint-6 block
+is generated from `json-schema/defaults/boq-defaults.json`; the mirror test is strict and green).
+
+### Modules (`boq/`, pure)
+* `textitems.py` — `text_item`. `norm_he` = exact port of `normalizeHebrewText` (the contract's examples are tests);
+  patterns are normalised the same way and searched case-insensitive. Sources per version: `text_items.json.gz` —
+  the contract shape (`kamutan.text-items/1`, `ti_…`) **and** Worker-Text's published shape (`kamutan.textItems/1`,
+  `t_…`, catalog fields `itemCode` / `qty` / `pairedWith` / `corroborates` / `suggested`) — else the OCR lines of
+  `text.json.gz` (a line inside a `legend.json.gz` box has scope `legend`, any other line an unknown scope that
+  satisfies `note` / `callout` / `any`). Scope `any` = everything but `title` (legend rows included, per contract).
+  `consumeNear` consumes only a detection within `CONSUME_NEAR_MAX_MM` = 8 paper mm of the text (the rule's
+  `proximityMm` stays the `nearClasses` filter): Noah's "לוח תקשורת" is 17 mm from the unit panel, which stays 4.24.
+  `matchCatalogCode: false` turns the catalog-code match off.
+  Qty modes per contract (`count` with capture group 1, `number_in_text`, `length_in_text_m` = `lengthsM[0]`, `one`);
+  `proximityMm` merges repeated matches; `lifecycle` filter (a text without a qualifier passes); `nearClasses` = a live
+  detection of the classes within `proximityMm` of the anchor / box, `consumeNear` drops it from every other rule.
+  Text rules run right after the cross-sheet de-dup, before any counting rule, so consumption is effective.
+  **Worker conventions** (not in the contract text — API please confirm or move into the contract):
+  (1) per floor only one sheet counts (first of the rule's `disciplines`, then most matches) — a note drawn on the
+  electrical and lighting plan of a floor is counted once; (2) a Worker-Text catalog item belongs to its own
+  `itemCode`: a rule of that code counts it whatever its patterns (with the item's own qty: pairs already folded),
+  rules of other codes never match it (the "‑צ.קוברה" bullet inside the 4.08 note is not a 4.20); evidence-only
+  (`corroborates`), suggested and folded (`pairedWith`, qty 0) items are never counted by a text rule; (3) a catalog
+  item counted by a text rule whose `anchorMm` is ≤ 1 mm from a detection's centre is that detection (consumed: the
+  projector cobra run is 4.27, not also 4.20); (4) **catalog fill-in**: catalog items of a code no `text_item` rule
+  targets are counted (origin `text`) when countable, or — evidence-only items — only when no other rule produced the
+  code (the symbol was not detected); catalog *suggestions* of a code nothing produced become suggested lines with the
+  item's qty as the estimate (9.03 vent duct, 4.28 main panel). Evidence `detectionId` = `text_{lineIdx[0]}` (the
+  API resolves it), `kind: "text"`, `bboxMm`.
+* `geometry.py` — `area_item` / `length_item`. `keys` (the default rules' selector) → Worker-Geometry's
+  `geometry.project.geometry_units(docs, keys)` (one authoritative sheet per floor, stairs de-duplicated): computable →
+  one unit per floor (origin `geometry`, evidence = the measure's shapes: `kind` geometry | stair, `geometryMm`,
+  `stair {treads, risers}`, `quantity`; a measure without shapes → the sheet). **`computable: false`** (coordinator
+  decision, replaces the contract's "estimate → yellow") → a suggested line, `needsInput`, qty 0, red, reasons = the
+  measure's reason (e.g. the assumed / missing height) + the estimate as a hint ("הערכה: 1.32 מ"ר (…)"); a key no sheet
+  carries → nothing (the code's `suggested_item` takes over). A suggested `estimate {kind: geometry, keys}` uses
+  computable measures only. Without `keys`: feature selection on the artifact's collections (`stairs` / `regions` / `wallRuns` /
+  `lines` / `ceilings` / `courtyards`, ids kept; categories = the producer's codes) by `source`, `categories`,
+  `legendPatterns` (on the label), disciplines / floors / room types (canonical) / lifecycle, `measure` (`wall_area` =
+  `areaM2` × sides, else length × (rule height, else feature height) × sides; no height → skipped), `minQty`; per-floor
+  sheet authority; stairs de-duplicated by `key` (else same treads on adjacent floors). The room panel wins: a code
+  produced by a tiling rule from `roomSettings` (5.06 / 5.07 partial cladding) gets no geometry units, and a geometry
+  estimate never adds to a code another rule produced.
+* `suggested.py` — `suggested_item`: triggers `sheet_discipline` / `text` (scope default `any`, legend rows ignored,
+  per-floor authority) / `demolition` (a demolition sheet, else demolished geometry, else demolish detections) /
+  `always`; estimates `fixed` / `geometry` (incl. `keys`) / `room_area`; `level` (yellow default; red without an
+  estimate); `quickAction` (rule's, else contracts `defaultQuickActionFor`) with the trigger's sheet. Offered only when
+  no other contribution of the item exists (any origin, manual measures included — so a quick-measure correction bound
+  to the line replaces it) and only for items of the org's library (no "לא משויך" noise from default codes).
+* `aggregate.py` — every contribution has an origin (rule kind → `text` / `geometry` / `suggested`; one-off and
+  template lines are `suggested`; all-manual → `manual`; else `detected`); line origin = `manual` when all manual,
+  else the first of detected > geometry > text > suggested. `needsInput` = a suggested line without a usable quantity →
+  `qty: 0` (contracts; the eval / UI / Excel treat it as "no quantity": empty cell + "להשלמה ידנית"), `byFloor {}`,
+  `byRoom []`, level red, chip `להשלמה ידנית`.
+  `quickAction {kind, sheetId}` on every suggested line, null otherwise. Evidence of non-detection items carries `kind`
+  (text / geometry / stair / sheet / room).
+* `coverage.py` + `build.py` — build `stats.coverage {libraryCodes, produced, suggested, missing[], byChapter{chapterKey:
+  {…, missing: count}}}` over every line after the build (obsolete lines don't count); also `stats.textItems`,
+  `stats.geometry`, `stats.suggested`. The build reads `text_items.json.gz` (`artifacts.textItems` / `text_items`, else by
+  name) and `legend.json.gz` (scopes), `geometry.json.gz` (`artifacts.geometry`, else by name), and the OCR text of every
+  sheet when a text rule / text trigger exists.
+* `scripts/boq_local.py` — JSON rows carry origin / needsInput / quickAction / unit / byRoom; prints the coverage.
+
+Per-floor / per-room and the Stage-10 approval rules are unchanged: text / geometry units carry the floor of their
+evidence (regions) and the room (sheet rooms → canonical), suggested lines the trigger's floor; an approved suggested
+line keeps its approval while its estimate is unchanged and drops to `reviewed` when it moves (tested).
+
+### Quick-measure / lineId (contracts "Corrections")
+`build.bind_to_lines`: an active correction with `lineId` takes the line's code as `itemCode` (measure m² / m', count
+clicks) → a manual contribution of that item: on a suggested / needsInput line it REPLACES the suggestion (suggested
+lines are skipped once anything produced the item), on a computed line it ADDS. An `accept` bound by `lineId` alone to a
+suggested line is the confirmed quantity (`quantity`, else the current estimate) → manual, verified (green), not
+`needsInput`. Tested (`test_quick_measure_bound_by_line_id_…`). The orchestrator already sets `artifacts.textItems` /
+`artifacts.geometry` from `textItemsFile` / `geometryFile` (service/pipeline.py).
+
+### Results (Noah) — `gt/noah/tools/run_s6_eval.sh after` (clean fresh CLI ingest of the 15 sheets after Worker-Text /
+Worker-Geometry finished, 0 understanding failures; BOQ with the demo room settings and with none) + `report_s6.py` → `gt/noah/eval_sprint6.md`
+| run | present | exact | exact or within tol | computed from drawings, exact/within | suggested default qty, right | missing |
+| --- | --- | --- | --- | --- | --- | --- |
+| Stage 10 reference (E2E-01) | 42/77 | 34 | 35 | 35 | 0 | 35 |
+| sprint start (HEAD code, fix-accuracy root, demo settings) | 52/77 | 43 | — | — | — | 25 |
+| **after** (demo room settings) | **75/77** | **57** | **59** | **39** | 20 | 2 |
+| **after, no user input** | **75/77** | 55 | 56 | **36** | 20 | 2 |
+("before" / "before_nors" in `eval_sprint6.md` ran an early draft of this work at 15:32, not the sprint-start code.)
+By computability (after): computable 46/56, partial 5/13, not on drawings 8/8. Newly computed from the drawings:
+4.06 4 (ground 1 / first 3), 4.08 1, 4.19 1, 4.20 5 (ground 3 / first 2), 4.25 1, 4.26 1, 4.27 1, 5.04 11, 5.08 1,
+7.02 4.27 m'. Computed but off: 2.01 9.04 (BOQ 11, incl. stair cheek), 2.03 2.12 (2), 7.01 3.32 (4), 7.04 1 (3),
+7.05 6.41 (7, BOQ convention), 7.06 27.8 (35.2), 7.07 7.11 (7.5). Suggested: 1.01–1.10, 3.08–3.10, 3.14, 3.15, 4.28,
+8.01, 8.03, 8.04, 9.03 at 1; 7.03 needsInput (hint 1.32 m²); with no room settings 5.06 / 5.07 needsInput (hint 0.98
+m²). **No regression**: every line exact at sprint start is still exact. Missing: 2.02, 8.02 — default-rule issues (requests 1, 2); with those two rules edited as proposed (user rule docs
+in a scratch root) the build is 77/77 and 8.02 gets the 21.5 m² hint.
+
+### Contract / default-rule requests (API agent)
+1. `r_suggest_slab_stairs` (2.02): add a pattern for the stair the drawings name — `גרם\s*מדרגות` (Noah: "קונטור גרם
+   מדרגות", "מדרגה במישור הריצוף"); no current pattern matches, so 2.02 is missing.
+2. Wording too far from the client items for library resolution (code match needs description similarity ≥ 0.45 for
+   imported libraries): `r_geo_plaster_walls` / `r_suggest_plaster_walls` (8.02 — missing on Noah) and `r_text_vent_pipe`
+   (9.03 — rescued only by Worker-Text's catalog suggestion). Proposal: "שתי שכבות טיח על קירות חצר אנגלית וקירות בלוק
+   חדשים", "התקנת צינור אוורור 4\" למפוח ונטה". (Default-library orgs resolve by exact code and are not affected.)
+3. `r_text_comms_panel` `consumeNear` with `proximityMm: 40` would take the unit's panel symbol away from 4.24 (the
+   electric and the comms panel share one symbol with two labels, both 17 mm away). The worker now consumes only within
+   8 mm (above); please document that cap in the contract, or give `consumeNear` its own radius.
+4. Document the coordinator decision: `computable: false` → `needsInput` with the estimate as a hint (the library.ts
+   comment still says "non-computable + estimate → yellow"), and a suggested `geometry` estimate uses computable
+   measures only.
+5. Worker conventions to adopt (or reject) in the contract text: per-floor sheet authority for text / geometry rules;
+   catalog fill-in (Worker-Text items of codes no text rule targets: countable items count, evidence-only items only
+   when nothing produced the code, catalog suggestions → suggested lines); a catalog item anchored on a detection
+   consumes it; room-settings tiling wins over geometry of the same code.
+6. 7.04 (`r_text_access_panel`) counts the explicit "פתח שירות" only (1 vs 3): GT = one access panel per concealed AC
+   evaporator ("סגירת גבס למיזוג") — a `suggested_item` with an estimate per closure would match.
+
+### Links: add_to_existing only for an *added* switch (`links/graph.py`, coordinator request)
+Worker-Text's warm re-ingest gave 4.12 3 → 4 and 4.09 16 → 15: the warm glyph store reads "נק' קיימת" next to the
+dining point d_11 (b2046277; cold store "היימת"), so every point of its group was existing → `add_to_existing`, and the
+switch d_29 (GT `switch_single-10`, detected `switch_2way`) made it 4.12. GT check: the point **is** existing
+(`b2046277-luminaire_ceiling-2`, "existing point (dining)") but the GT group `b2046277-G06` is `single` — a plain new
+switch feeding an existing point, counted by the client as 4.09; GT `add_to_existing` groups are exactly the ones whose
+switch carries "להוסיף מחלף" (1bbe4113-G08/09/10), and an existing + new 2-way pair is `two_way` (G13). So the GT is
+right and the link rule was too broad: `add_to_existing` now requires a "להוסיף …" note on a switch or a fan switch
+(the lone-switch "להוסיף" path is unchanged); otherwise the usual single / shared / two_way kinds with the
+`R_MIXED` chip. Result (fresh root = cold store, then a second `ingest_local.py --force` into the same root = warm
+store, `boq_local.py --no-corrections`): **4.09 16 / 16, 4.12 3 / 3**, every chapter-04 line identical cold vs warm;
+`kbench eval-links` kind accuracy 29/30 both (the miss is the known master-suite G13, 4.10). Test:
+`tests/test_links.py::test_plain_new_switch_to_an_existing_point_is_single_whatever_the_ocr_reads`.
+
+### Tests / commands
+`tests/test_boq_s6.py` (29): normalisation (contract examples), text_item scope / proximity / qty modes / per-floor /
+nearClasses + consumeNear, Worker-Text catalog (code match, fill-in, evidence-only, suggestions, anchor consumption),
+geometry keys (computed per floor with shapes, stairs, non-computable → needsInput + hint, missing → fallback),
+feature selection (wall_area × sides, minQty, legendPatterns), suggested triggers / estimates / levels / skip rules /
+library-only, quick-measure by lineId (replace / add / confirm), coverage, build end to end (line + evidence + build
+docs validate against the JSON schemas), approval kept on an unchanged estimate, default-rule codes ⊂ default library
+v2, consumeNear cap (4.24 kept). `tests/test_boq_contracts.py` mirror (rules v6) green.
+Checks (2026-11-01): ruff check + format clean on my files (repo-wide `--check` flags only Worker-Geometry's
+`geometry/*`, `scripts/geometry_local.py`, `tests/test_geometry.py`); mypy 2.4.0 the CI way: 0 errors in `boq/`
+(15 remaining are all in Worker-Geometry's `geometry/`); bandit 1.9.4 `-ll` clean; `pytest -q`: 627 passed, 3 failed =
+the A3 timing budgets (`test_understand_sample[b2046277]` 82.6 s, `test_integration_sample[1bbe4113]`, box loaded by
+the concurrent ingest) and `test_rooms_v4::test_sample_mep_basement_split_with_reference` (stale shared artifacts,
+known since Stage 10). No BOQ test fails.
+
+### Gaps
+* 2.02 / 8.02 missing until requests 1–2; 7.04 1 vs 3 (request 6).
+* Geometry quantities that differ from the BOQ are Worker-Geometry measures (2.01 height, 7.01 / 7.06 / 7.07 extents,
+  7.05 BOQ rounding) — passed through unchanged.
+* Chapter 04 symbol lines (4.00 / 4.02 / 4.03 / 4.05 / 4.10, GT-D-001) and 9.01 (GT-D-002) unchanged (detection).
+* Text / geometry de-dup across sheets is per floor and per discipline order; two sheets of the same discipline and
+  floor (a revision that is not marked superseded) would both count.

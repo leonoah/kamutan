@@ -561,6 +561,67 @@ export interface BoqLine {
   /** Computed qty at approval; a rebuild with another qty drops the line to "נבדק" (`qtyChangedReason`). */
   approvedQty?: number | null;
   approvedQtyAt?: string | null;
+  /* Sprint 6 (SPRINT6_BRIEF "Shared interfaces", additive; mirrored until the API agent publishes the contracts) */
+  /** Where the quantity came from. Missing on older docs → inferred by `originOf()` (features/boq/sprint6.ts). */
+  origin?: BoqLineOrigin;
+  /**
+   * The drawings do not carry the quantity: a person must measure / count / confirm it ("להשלמה ידנית"). The contract's
+   * `qty: null` is mapped to `qty: 0` + `needsInput: true` by the HTTP adapter (`normalizeLineDto`).
+   */
+  needsInput?: boolean;
+  /** One-click action that completes the line (opens the measure / count tool bound to the line and its sheet). */
+  quickAction?: BoqQuickAction | null;
+}
+/** Sprint 6: origin of a line's quantity. */
+export const BOQ_LINE_ORIGINS = ["detected", "text", "geometry", "suggested", "manual"] as const;
+export type BoqLineOrigin = (typeof BOQ_LINE_ORIGINS)[number];
+export type BoqQuickActionKind = "measure_area" | "measure_length" | "count" | "confirm";
+export interface BoqQuickAction {
+  kind: BoqQuickActionKind;
+  /** The sheet to measure on (null: any sheet / no drawing needed, e.g. confirm a קומפלט). */
+  sheetId: string | null;
+}
+/**
+ * POST /v1/projects/:pid/boq/lines/:lineId/quick-measure — stores a `measure` / `count` correction bound to the line
+ * (confirm: the confirmed quantity) and recomputes the line. Shape mirrored from the brief until "Sprint 6 published".
+ */
+export interface QuickMeasureRequest {
+  kind: BoqQuickActionKind;
+  /** m² / m' / units; for `confirm` the confirmed quantity. */
+  quantity: number;
+  unit: CorrectionUnit;
+  sheetId: string | null;
+  versionId: string | null;
+  /** Polygon (area), polyline (length) or points (count), paper mm; null for `confirm`. */
+  geometry: CorrectionGeometry | null;
+  floor: string | null;
+}
+export interface QuickMeasureResponse {
+  line: BoqLine;
+  /** The stored correction (undo = revert it); null when the server stored none (confirm). */
+  correction: Correction | null;
+}
+/**
+ * Sprint 6 (owner feedback, "approve everything at once"): POST /v1/projects/:pid/boq/lines/batch-status. Red lines
+ * are skipped unless `includeRed`. Mirrored until the API agent publishes it.
+ */
+export interface BatchStatusRequest {
+  lineIds: string[];
+  to: BoqLineStatus;
+  includeRed: boolean;
+}
+export type BatchSkipReason = "red" | "already" | "forbidden" | "invalid_transition" | "needs_input" | "not_found" | (string & {});
+export interface BatchStatusResponse {
+  /** Lines that moved (after the change). */
+  updated: BoqLine[];
+  skipped: { lineId: string; reason: BatchSkipReason }[];
+}
+/** Sprint 6: chapter coverage of a build (`build.stats.coverage`, Worker-BOQ). */
+export interface BoqCoverage {
+  libraryCodes: number;
+  produced: number;
+  suggested: number;
+  missing: string[];
 }
 export interface BoqBreakdownRow {
   label: string;
@@ -587,7 +648,7 @@ export interface BoqBuild {
   finishedAt: string | null;
   /** Optional progress 0..100 (worker may report it). */
   progress?: number;
-  stats?: { lines?: number; evidence?: number; sheets?: number; groups?: number; calibration?: CalibrationStats } | null;
+  stats?: { lines?: number; evidence?: number; sheets?: number; groups?: number; calibration?: CalibrationStats; coverage?: BoqCoverage } | null;
   error?: { code: string; message: string } | null;
 }
 
@@ -628,7 +689,20 @@ export interface BoqEvidenceItem {
   roomId?: string | null;
   quantity?: number;
   source?: "auto" | "manual";
+  /* Sprint 6 (additive evidence kinds) */
+  /** Missing = a detection (or a room when `roomId` is set). */
+  kind?: BoqEvidenceKind;
+  /** `text`: the matched text (note / callout / legend row / panel schedule). */
+  text?: string | null;
+  /** `text`: bbox of the matched text, paper mm. */
+  bboxMm?: BBoxMm | null;
+  /** `geometry`: the measured polygon (area) or polyline (length), paper mm. */
+  geometry?: { type: "polygon" | "polyline"; mm: PointMm[] } | null;
+  /** `stair`: one closed outline per tread, paper mm. */
+  treads?: PointMm[][] | null;
 }
+export const BOQ_EVIDENCE_KINDS = ["detection", "room", "text", "geometry", "stair"] as const;
+export type BoqEvidenceKind = (typeof BOQ_EVIDENCE_KINDS)[number];
 /** GET /v1/projects/:pid/boq/lines/:lineId/evidence */
 export interface BoqLineEvidence {
   lineId: string;
@@ -1347,6 +1421,10 @@ export interface ApiClient {
   listBoqLines(projectId: string): Promise<BoqLinesResponse>;
   patchBoqLine(projectId: string, lineId: string, req: PatchBoqLineRequest): Promise<BoqLine>;
   getBoqLineEvidence(projectId: string, lineId: string): Promise<BoqLineEvidence>;
+  /** Sprint 6: one status for many lines (bulk "סמן כנבדק" / "אשר"). */
+  batchBoqLineStatus(projectId: string, req: BatchStatusRequest): Promise<BatchStatusResponse>;
+  /** Sprint 6: measure / count / confirm a line from its quick action (stores a correction bound to the line). */
+  quickMeasureBoqLine(projectId: string, lineId: string, req: QuickMeasureRequest): Promise<QuickMeasureResponse>;
   getBoqSheetEvidence(projectId: string, sheetId: string, versionId: string): Promise<BoqSheetEvidence>;
   exportBoq(projectId: string, req: ExportBoqRequest): Promise<ExportBoqResponse>;
   /* Sprint 3 — org library, templates, rules */

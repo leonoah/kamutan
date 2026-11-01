@@ -19,6 +19,9 @@ import {
   type ProcessingError,
   OVERRIDE_REASON,
   isQtyChangedReason,
+  LINE_ORIGINS,
+  needsReapproval,
+  QuickActionSchema,
 } from '@kamutan/contracts';
 import { anyIso, type Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -96,7 +99,19 @@ export function toBoqLine(id: string, d: Doc): BoqLine {
     ...(d.approvalInvalidated !== undefined ? { approvalInvalidated: approvalInvalidatedOf(d.approvalInvalidated) } : {}),
     // Stage 10 (A-pipeline-12): per-room split (worker).
     ...(Array.isArray(d.byRoom) ? { byRoom: byRoomOf(d.byRoom) } : {}),
+    // Sprint 6 (worker): origin, manual-completion flag (qty null → 0 + needsInput), quick action.
+    ...(oneOfOrNull(d.origin, LINE_ORIGINS) ? { origin: d.origin as BoqLine['origin'] } : {}),
+    ...(typeof d.needsInput === 'boolean' ? { needsInput: d.needsInput } : d.qty === null ? { needsInput: true } : {}),
+    ...(d.quickAction !== undefined ? { quickAction: quickActionOf(d.quickAction) } : {}),
   };
+}
+
+const oneOfOrNull = (v: unknown, allowed: readonly string[]): boolean => typeof v === 'string' && allowed.includes(v);
+
+/** Worker-written quick action (tolerant: malformed → null = no action offered). */
+export function quickActionOf(v: unknown): BoqLine['quickAction'] {
+  const r = QuickActionSchema.safeParse(v);
+  return r.success ? r.data : null;
 }
 
 function approvalInvalidatedOf(v: unknown): BoqLine['approvalInvalidated'] {
@@ -270,6 +285,49 @@ export function planLinePatch(projectId: string, cur: BoqLine, req0: PatchBoqLin
   }
   patch.updatedAt = now;
   return { patch, audit };
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 6: bulk status (POST …/boq/lines/batch-status) — per-line plan, validated inside each line's transaction
+// ---------------------------------------------------------------------------
+
+export type BatchSkipReason = 'already' | 'forbidden' | 'red' | 'not_found';
+export type BatchLinePlan = { skip: BatchSkipReason } | { patch: Doc; audit: Record<string, unknown>; from: BoqLine['status']; to: BoqLine['status'] };
+
+/**
+ * One line of a bulk status change, with exactly the single-PATCH rules (`planLinePatch`, reviewer role): forward only
+ * (draft → reviewed; → approved chains draft → reviewed → approved in one plan and one audit event); an approved line
+ * that needs re-approval (Stage 10: qty changed since the approval) is re-approved by `to: 'approved'` (new
+ * approvedQty baseline, qty-changed chip dropped); red lines are skipped unless `includeRed`. The audit payload carries
+ * `batchId` (history: "אושר (פעולה קבוצתית)").
+ */
+export function planBatchStatus(projectId: string, cur: BoqLine | null, to: 'reviewed' | 'approved', opts: { includeRed: boolean; allowed: boolean; batchId: string }, actorUid: string, now: unknown): BatchLinePlan {
+  if (!cur) return { skip: 'not_found' };
+  const reapprove = to === 'approved' && needsReapproval(cur);
+  const rank = { draft: 0, reviewed: 1, approved: 2 } as const;
+  if (!reapprove && rank[cur.status] >= rank[to]) return { skip: 'already' };
+  if (!opts.allowed) return { skip: 'forbidden' };
+  if (cur.level === 'red' && !opts.includeRed) return { skip: 'red' };
+  let patch: Doc;
+  let audit: Record<string, unknown>;
+  if (reapprove) {
+    patch = { approvedBy: actorUid, approvedAt: now, approvedQty: cur.qty, approvedQtyAt: now, approvalInvalidated: null, reasons: (cur.reasons ?? []).filter((r) => !isQtyChangedReason(r)), updatedAt: now };
+    audit = { projectId, lineId: cur.id, code: cur.code, from: 'reviewed', to: 'approved', qty: cur.qty, reapproval: true };
+  } else {
+    const steps: Array<'reviewed' | 'approved'> = cur.status === 'draft' && to === 'approved' ? ['reviewed', 'approved'] : [to];
+    let line = cur;
+    patch = {};
+    audit = {};
+    for (const st of steps) {
+      const p = planLinePatch(projectId, line, { status: st }, actorUid, now);
+      Object.assign(patch, p.patch);
+      audit = { ...audit, ...p.audit };
+      line = { ...line, ...(p.patch as Partial<BoqLine>), status: st };
+    }
+    audit.from = cur.status;
+    audit.to = to;
+  }
+  return { patch, audit: { ...audit, batchId: opts.batchId }, from: reapprove ? 'reviewed' : cur.status, to };
 }
 
 /** Line counts (summary + export). */

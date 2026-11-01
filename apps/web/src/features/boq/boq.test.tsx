@@ -156,7 +156,9 @@ describe("BOQ panel (Sprint 3)", { timeout: 40_000 }, () => {
     await user.click(within(row(code)).getByRole("button", { name: /^בחר שורה 4\.00/ }));
     await user.keyboard("a");
     await waitFor(() => expect(within(row(code)).getByText("נבדק")).toBeInTheDocument());
-    await waitFor(() => expect(toasts().some((t) => /^השורה 4\.00 סומנה 'נבדק' · dana@studio\.co\.il, /.test(t))).toBe(true));
+    // Sprint 6 (owner feedback): no toast per status change — the chip changes in place, the live region announces it
+    await waitFor(() => expect(screen.getByTestId("live-msg")).toHaveTextContent("השורה 4.00 סומנה 'נבדק'."));
+    expect(toasts().some((t) => /סומנה/.test(t))).toBe(false);
     await user.keyboard("a");
     await waitFor(() => expect(within(row(code)).getByText("אושר")).toBeInTheDocument());
 
@@ -179,15 +181,14 @@ describe("BOQ panel (Sprint 3)", { timeout: 40_000 }, () => {
     expect(sel.querySelector("[data-level]")!.getAttribute("data-level")).not.toBe("high");
   });
 
-  it("editors can mark 'נבדק' but not approve", async () => {
+  it("editors review and approve (SEC-07); viewers cannot change the status", async () => {
     const user = userEvent.setup({ delay: null });
     await openBuilt({ orgs: [{ id: "org-demo", name: "סטודיו", role: "editor" }] });
     await user.click(within(row("4.00")).getByRole("button", { name: /^בחר שורה 4\.00/ }));
     await user.click(screen.getByRole("button", { name: "A סמן כ'נבדק'" }));
     await waitFor(() => expect(within(row("4.00")).getByText("נבדק")).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: /^A / })).toBeDisabled();
-    await user.keyboard("a");
-    expect(toasts()).toContain("אין לך הרשאה לשנות את הסטטוס הזה.");
+    await user.click(screen.getByRole("button", { name: "A סמן כ'אושר'" }));
+    await waitFor(() => expect(within(row("4.00")).getByText("אושר")).toBeInTheDocument());
   });
 
   it("stale banner after a mapping changes, rebuild keeps the override", async () => {

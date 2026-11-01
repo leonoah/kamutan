@@ -90,7 +90,8 @@ test.describe("IA v2 navigation", () => {
     const cell = boq.locator("tbody td[title]").first();
     await expect(cell.locator(".line-clamp-2")).toHaveCount(1);
     const desc = await cell.getAttribute("title");
-    await expect(cell).toHaveText(desc!);
+    // Sprint 6: a waiting line adds its "להשלמה ידנית" chip + action under the description, so compare the description
+    await expect(cell.locator(".line-clamp-2")).toHaveText(desc!);
   });
 
   test("sheet analysis: header stats describe the locked sheet (A-UI-14); no Sprint-2 placeholder copy (A-UI-15)", async ({ page }) => {

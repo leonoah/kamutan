@@ -11,7 +11,9 @@ import { ReasonChip } from "@/components/ReasonChip";
 import { Ltr } from "@/components/Ltr";
 import { cn } from "@/lib/utils";
 import { StatusPill } from "./StatusPill";
-import { chapterLabel, fmtQty, floorsOf, groupByChapter, isCompositeLine, isOverridden, receiptOf, effectiveQty, type StatusFilter } from "./model";
+import { chapterLabel, fmtQty, floorsOf, groupByChapter, isCompositeLine, isOverridden, rangeIds, receiptOf, effectiveQty, type StatusFilter } from "./model";
+import { coverageOf, lineNeedsInput, originOf, quickActionOf } from "./sprint6";
+import { CoverageText, MissingQty, NeedsInputChip, OriginBadge, QuickActionButton } from "./Sprint6Parts";
 import { isBuildActive } from "./queries";
 
 export type PanelTab = "boq" | "counts";
@@ -58,8 +60,39 @@ export interface BoqPanelProps {
   allLines?: readonly BoqLine[];
   /** Stage 10 (A-LIVE-01): default library in use / no library — explained above the table, with an import link. */
   libraryNotice?: ReactNode;
+  /** Sprint 6: run a line's quick action (measure / count / confirm, bound to the line and its sheet). */
+  onQuickAction?: (line: BoqLine) => void;
+  /** Sprint 6: the line whose quick action is running (its button shows pressed). */
+  quickLineId?: string | null;
+  /** Sprint 6 (owner feedback): multi-select for bulk status — checkbox per row, shift-click range, select all / chapter. */
+  selectable?: boolean;
+  checkedIds?: ReadonlySet<string>;
+  onCheck?: (ids: string[], on: boolean) => void;
+  /** The bulk action bar (shown above the table while lines are checked). */
+  bulkBar?: ReactNode;
 }
 
+/** Native checkbox with an indeterminate state (chapter / select-all when only some lines are checked). */
+function Check({ checked, mixed, label, onToggle, className }: { checked: boolean; mixed?: boolean; label: string; onToggle: (shift: boolean) => void; className?: string }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={checked}
+      ref={(el) => {
+        if (el) el.indeterminate = Boolean(mixed) && !checked;
+      }}
+      onChange={() => undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle(e.shiftKey);
+      }}
+      className={cn("size-3.5 cursor-pointer accent-[rgb(var(--primary))]", className)}
+    />
+  );
+}
+
+const EMPTY_SET: ReadonlySet<string> = new Set();
 const stripe = { green: "bg-transparent", yellow: "bg-conf-mid", red: "bg-conf-low" } as const;
 
 /**
@@ -210,11 +243,24 @@ function BoqTable(p: BoqPanelProps) {
     if (p.selectedLineId) rowRefs.current.get(p.selectedLineId)?.scrollIntoView?.({ block: "nearest" });
   }, [p.selectedLineId]);
 
-  const statuses: StatusFilter[] = ["all", "draft", "reviewed", "approved", "qtyChanged"];
+  const statuses: StatusFilter[] = ["all", "draft", "reviewed", "approved", "qtyChanged", "needsInput"];
   const qtyChangedCount = useMemo(() => p.allLines?.filter(qtyChangedSinceApproval).length ?? 0, [p.allLines]);
+  const needsInputCount = useMemo(() => (p.allLines ?? p.lines).filter(lineNeedsInput).length, [p.allLines, p.lines]);
   const hasOrder = useMemo(() => p.lines.some((l) => l.orderQty != null), [p.lines]);
   const order = Boolean(p.showOrder) && hasOrder;
-  const cols = 6 + floors.length + (order ? 1 : 0);
+  const sel = Boolean(p.selectable && p.onCheck);
+  const checked = p.checkedIds ?? EMPTY_SET;
+  const cols = 6 + floors.length + (order ? 1 : 0) + (sel ? 1 : 0);
+  const orderedIds = useMemo(() => groups.flatMap((g) => g.lines.map((l) => l.id)), [groups]);
+  const anchor = useRef<string | null>(null);
+  const toggleOne = (id: string, shift: boolean) => {
+    const on = !checked.has(id);
+    const ids = shift ? rangeIds(orderedIds, anchor.current, id) : [id];
+    anchor.current = id;
+    p.onCheck?.(ids, shift ? true : on);
+  };
+  const allOn = sel && orderedIds.length > 0 && orderedIds.every((id) => checked.has(id));
+  const someOn = sel && orderedIds.some((id) => checked.has(id));
 
   return (
     <TooltipProvider delayDuration={250}>
@@ -242,11 +288,30 @@ function BoqTable(p: BoqPanelProps) {
           >
             {statuses.map((s) => (
               <option key={s} value={s}>
-                {s === "qtyChanged" ? t("boq.status.qtyChangedCount", { count: qtyChangedCount }) : t(`boq.status.${s}`)}
+                {s === "qtyChanged"
+                  ? t("boq.status.qtyChangedCount", { count: qtyChangedCount })
+                  : s === "needsInput"
+                    ? t("boq.needsInputCount", { count: needsInputCount })
+                    : t(`boq.status.${s}`)}
               </option>
             ))}
           </select>
         </label>
+        {needsInputCount ? (
+          <button
+            type="button"
+            aria-pressed={p.statusFilter === "needsInput"}
+            title={t("boq.needsInputFilter")}
+            data-filter-needs-input
+            onClick={() => p.onStatusFilter(p.statusFilter === "needsInput" ? "all" : "needsInput")}
+            className={cn(
+              "inline-flex h-6 items-center gap-1 rounded-sm border border-dashed border-conf-low/60 px-1.5 text-foreground hover:bg-conf-low/10",
+              p.statusFilter === "needsInput" && "border-solid bg-conf-low/[0.12] font-medium",
+            )}
+          >
+            {t("boq.needsInputCount", { count: needsInputCount })}
+          </button>
+        ) : null}
         {hasOrder && p.onShowOrder ? (
           <label className="inline-flex items-center gap-1 text-foreground" title={t("boq.orderQtyToggle")}>
             <input
@@ -258,10 +323,22 @@ function BoqTable(p: BoqPanelProps) {
             {t("boq.orderQty")}
           </label>
         ) : null}
+        {sel && orderedIds.length ? (
+          <label className="inline-flex items-center gap-1 text-foreground" data-select-all>
+            <Check
+              checked={allOn}
+              mixed={someOn}
+              label={t("boq.bulk.selectAllLabel", { count: orderedIds.length })}
+              onToggle={() => p.onCheck?.(orderedIds, !allOn)}
+            />
+            <span aria-hidden>{t("boq.bulk.selectAll")}</span>
+          </label>
+        ) : null}
         <span className="ms-auto text-muted-foreground">
           {p.lines.length === p.totalLines ? t("boq.lines", { count: p.totalLines }) : `${p.lines.length} / ${t("boq.lines", { count: p.totalLines })}`}
         </span>
       </div>
+      {p.bulkBar}
       <div className="min-h-0 flex-1 overflow-auto">
         {p.error ? (
           <p role="alert" className="p-4 text-dense text-destructive">{t("boq.loadError")}</p>
@@ -280,6 +357,7 @@ function BoqTable(p: BoqPanelProps) {
           <table className="w-full table-fixed border-separate border-spacing-0 text-dense">
             <caption className="sr-only">{t("boq.caption")}</caption>
             <colgroup>
+              {sel ? <col className="w-6" /> : null}
               <col className="w-8" />
               <col className="w-12" />
               <col />
@@ -289,10 +367,15 @@ function BoqTable(p: BoqPanelProps) {
               ))}
               <col className="w-[4.25rem]" />
               {order ? <col className="w-[4.25rem]" /> : null}
-              <col className={floors.length ? "w-10" : "w-[4.5rem]"} />
+              <col className={floors.length ? "w-10" : "w-[5.75rem]"} />
             </colgroup>
             <thead>
               <tr className="text-meta text-muted-foreground">
+                {sel ? (
+                  <th scope="col" className="sticky top-0 z-20 h-8 border-b border-border bg-surface ps-2">
+                    <span className="sr-only">{t("boq.bulk.column")}</span>
+                  </th>
+                ) : null}
                 {[
                   { k: "conf", sr: true },
                   { k: "code" },
@@ -323,6 +406,10 @@ function BoqTable(p: BoqPanelProps) {
             </thead>
             {groups.map((g) => {
               const notesOpen = openNotes.has(g.code);
+              const cov = coverageOf(g.lines);
+              const chIds = g.lines.map((l) => l.id);
+              const chAll = sel && chIds.every((id) => checked.has(id));
+              const chSome = sel && chIds.some((id) => checked.has(id));
               return (
                 <tbody key={g.code}>
                   <tr>
@@ -332,9 +419,19 @@ function BoqTable(p: BoqPanelProps) {
                       className="sticky top-8 z-10 border-b border-border bg-surface-sunken px-3 py-2 text-start font-normal"
                     >
                       <div className="flex items-center gap-2">
+                        {sel ? (
+                          <Check
+                            checked={chAll}
+                            mixed={chSome}
+                            label={t("boq.bulk.selectChapter", { chapter: chapterLabel(g.code, g.title) })}
+                            onToggle={() => p.onCheck?.(chIds, !chAll)}
+                            className="shrink-0"
+                          />
+                        ) : null}
                         <span className="min-w-0 flex-1 truncate font-bold text-foreground">{chapterLabel(g.code, g.title)}</span>
                         <span className="shrink-0 text-meta text-muted-foreground">{t("boq.chapterVerified", { pct: g.stats.pct })}</span>
                       </div>
+                      <CoverageText c={cov} className="mt-0.5 block" />
                       <SectionProgress high={g.stats.green} mid={g.stats.yellow} low={g.stats.red} className="mt-1.5" />
                       {g.notes.length ? (
                         <button
@@ -379,6 +476,9 @@ function BoqTable(p: BoqPanelProps) {
                       onHover={(h) => p.onHoverLine?.(h ? l.id : null)}
                       receiptExtra={p.renderReceiptExtra}
                       onHistory={p.onHistory}
+                      onQuickAction={p.onQuickAction}
+                      quickActive={p.quickLineId === l.id}
+                      check={sel ? { on: checked.has(l.id), toggle: (shift) => toggleOne(l.id, shift) } : null}
                       rowRef={(el) => {
                         if (el) rowRefs.current.set(l.id, el);
                         else rowRefs.current.delete(l.id);
@@ -405,8 +505,14 @@ function LineRow({
   onHover,
   receiptExtra,
   onHistory,
+  onQuickAction,
+  quickActive,
+  check,
   rowRef,
 }: {
+  check?: { on: boolean; toggle: (shift: boolean) => void } | null;
+  onQuickAction?: ((line: BoqLine) => void) | undefined;
+  quickActive?: boolean;
   receiptExtra?: ((line: BoqLine) => ReactNode) | undefined;
   onHistory?: ((line: BoqLine) => void) | undefined;
   line: BoqLine;
@@ -421,21 +527,33 @@ function LineRow({
   const { t } = useTranslation();
   const reasons = l.reasons ?? [];
   const cell = "border-b border-border px-1 py-1.5 align-top";
+  const origin = originOf(l);
+  const waiting = lineNeedsInput(l);
+  const quick = quickActionOf(l);
   return (
     <tr
       ref={rowRef}
       data-line={l.id}
       data-code={l.code}
       data-selected={selected || undefined}
+      data-origin={origin}
+      data-needs-input={waiting || undefined}
+      data-checked={check?.on || undefined}
       onClick={onSelect}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       className={cn(
         "group cursor-pointer transition-colors hover:bg-surface-sunken/70",
+        check?.on && "bg-primary/[0.05]",
         selected && "bg-highlight/60 outline outline-1 -outline-offset-1 outline-primary",
         flash && "bg-highlight",
       )}
     >
+      {check ? (
+        <td className={cn(cell, "ps-2 pt-2")}>
+          <Check checked={check.on} label={t("boq.bulk.selectLine", { code: l.code })} onToggle={check.toggle} />
+        </td>
+      ) : null}
       <td className={cn(cell, "relative ps-2")}>
         <span aria-hidden className={cn("absolute inset-y-0 start-0 w-[3px]", stripe[l.level])} />
         <ConfidenceBadge level={levelFromDb(l.level)} variant="indicator" />
@@ -456,16 +574,21 @@ function LineRow({
         >
           <span className="line-clamp-2 text-foreground">{l.description}</span>
         </button>
-        {reasons.length ? (
-          <span className="mt-1 flex min-w-0 items-center gap-1">
-            <ReasonChip code={reasons[0]!} className="h-[18px] min-w-0 truncate" />
-            {reasons.length > 1 ? (
-              <span className="shrink-0 text-meta text-muted-foreground" title={reasons.slice(1).join(" · ")}>
-                +{reasons.length - 1}
-              </span>
-            ) : null}
-          </span>
-        ) : null}
+        <span className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+          <OriginBadge origin={origin} />
+          {waiting ? <NeedsInputChip /> : null}
+          {reasons.length ? (
+            <span className="flex min-w-0 items-center gap-1">
+              <ReasonChip code={reasons[0]!} className={cn("h-[18px] min-w-0", waiting ? "h-auto min-h-[18px] whitespace-normal py-px" : "truncate")} />
+              {reasons.length > 1 ? (
+                <span className="shrink-0 text-meta text-muted-foreground" title={reasons.slice(1).join(" · ")}>
+                  +{reasons.length - 1}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+          {quick && onQuickAction && waiting ? <QuickActionButton line={l} action={quick} active={quickActive} onRun={() => onQuickAction(l)} /> : null}
+        </span>
       </td>
       <td className={cn(cell, "pt-2 text-meta text-muted-foreground")}>
         <span className="line-clamp-1">{l.unit}</span>
@@ -485,7 +608,8 @@ function LineRow({
       ) : null}
       <td className={cn(cell, "pe-3 pt-1.5")}>
         <span className="flex items-center gap-0.5">
-          <StatusPill status={l.status} compact={floors.length > 0} />
+          {/* keyed by status: a change replays the pop-in (the inline confirmation instead of a toast per line) */}
+          <StatusPill key={l.status} status={l.status} compact={floors.length > 0} className="duration-300 animate-in fade-in-0 zoom-in-75" />
           {onHistory ? (
             <button
               type="button"
@@ -528,9 +652,13 @@ function QtyWithReceipt({ line: l, onShow, extra }: { line: BoqLine; onShow: () 
           // label-content-name-mismatch), also when an override adds the original qty + "✎ ידני".
           className="inline-flex flex-col items-end rounded-sm px-1 leading-tight hover:bg-primary/10"
         >
-          <span className="font-bold tabular text-foreground underline decoration-dotted decoration-muted-foreground/60 underline-offset-4">
-            {fmtQty(effectiveQty(l))}
-          </span>{" "}
+          {lineNeedsInput(l) ? (
+            <MissingQty line={l} />
+          ) : (
+            <span className="font-bold tabular text-foreground underline decoration-dotted decoration-muted-foreground/60 underline-offset-4">
+              {fmtQty(effectiveQty(l))}
+            </span>
+          )}{" "}
           {over ? (
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <s className="tabular">{fmtQty(l.qty)}</s>{" "}
@@ -555,10 +683,18 @@ export function Receipt({ line: l, receipt: r, extra }: { line: BoqLine; receipt
       <p className="text-meta text-muted-foreground">
         {t("boq.receiptTitle")} · <Ltr>{l.code}</Ltr>
       </p>
+      {lineNeedsInput(l) ? (
+        <p className="font-bold text-foreground">{t("boq.needsInput")}</p>
+      ) : (
       <p className="font-bold text-foreground">
         {/* "16 = 14 שזוהו + 2 ידני" */}
         {t(composite ? "boq.receiptGroups" : "boq.receiptDetected", { total: fmtQty(r.total), detected: fmtQty(r.detected) })}
         {r.manual > 0 ? t("boq.receiptManualPlus", { n: fmtQty(r.manual) }) : r.manual < 0 ? t("boq.receiptManualMinus", { n: fmtQty(-r.manual) }) : null}
+      </p>
+      )}
+      <p className="text-meta text-foreground" data-receipt-origin>
+        {t("boq.originOf", { origin: t(`boq.origin.${originOf(l)}`) })}
+        <span className="text-muted-foreground"> · {t(`boq.originHint.${originOf(l)}`)}</span>
       </p>
       <p className="text-meta text-muted-foreground">
         {r.evidenceCount

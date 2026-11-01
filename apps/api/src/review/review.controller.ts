@@ -31,6 +31,10 @@ import {
   type RevertCorrectionResponse,
   type RoomSettingsResponse,
   type SimilarSearchView,
+  QuickMeasureRequestSchema,
+  QuickMeasureResponseSchema,
+  type QuickMeasureRequest,
+  type QuickMeasureResponse,
 } from '@kamutan/contracts';
 import type { Request } from 'express';
 import type { AuthContext } from '../auth/auth-context';
@@ -61,6 +65,26 @@ export class ReviewController {
     private readonly rooms: RoomSettingsService,
     private readonly similar: SimilarService,
   ) {}
+
+  /**
+   * Sprint 6: quick measure / count / confirm of a BOQ line → one correction bound to the line. Audited; BOQ stale +
+   * debounced rebuild. reviewer+ (same as corrections).
+   */
+  @Post('boq/lines/:lineId/quick-measure')
+  @HttpCode(201)
+  @RequireRole('reviewer', project)
+  @ApiZodBody(QuickMeasureRequestSchema)
+  @ApiZodResponse(201, QuickMeasureResponseSchema)
+  @ApiErrors(400, 401, 403, 404, 409, 429)
+  quickMeasure(
+    @Param('projectId') projectId: string,
+    @Param('lineId') lineId: string,
+    @Body(zodPipe(QuickMeasureRequestSchema)) body: QuickMeasureRequest,
+    @CurrentUser() user: AuthContext,
+    @Req() req: Request,
+  ): Promise<QuickMeasureResponse> {
+    return this.corrections.quickMeasure(user, projectId, lineId, body, traceparentFrom(req.headers.traceparent));
+  }
 
   /** One correction. Audited; marks the BOQ stale and schedules a debounced rebuild. */
   @Post('corrections')

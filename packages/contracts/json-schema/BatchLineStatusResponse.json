@@ -1,0 +1,86 @@
+{
+  "$ref": "#/definitions/BatchLineStatusResponse",
+  "definitions": {
+    "BatchLineStatusResponse": {
+      "type": "object",
+      "properties": {
+        "batchId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "updated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "from": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "reviewed",
+                  "approved"
+                ]
+              },
+              "to": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "reviewed",
+                  "approved"
+                ]
+              }
+            },
+            "required": [
+              "lineId",
+              "from",
+              "to"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lineId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "already",
+                  "forbidden",
+                  "red",
+                  "not_found"
+                ]
+              }
+            },
+            "required": [
+              "lineId",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "batchId",
+        "updated",
+        "skipped"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BatchLineStatusResponse.json"
+}

@@ -1,7 +1,9 @@
 import {
   DEFAULT_BOQ_RULES,
   DEFAULT_BOQ_TEMPLATE,
-  DEFAULT_ITEM_LIBRARY,
+  DEFAULT_ITEM_LIBRARY_ADDITIONS,
+  planDefaultLibrarySeed,
+  templateNeedsUpgrade,
   defaultRuleDoc,
   fsPaths,
   ruleNeedsReseed,
@@ -20,9 +22,9 @@ import {
   type StaleReason,
 } from '@kamutan/contracts';
 import { FieldPath, FieldValue, Timestamp, type DocumentData, type DocumentReference, type Firestore, type Query } from 'firebase-admin/firestore';
-import { approvalInvalidatedAudit, approvalsInvalidatedOf, planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
+import { approvalInvalidatedAudit, approvalsInvalidatedOf, planBatchStatus, planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
 import { isActive, ruleAudit } from './boq-memory.repository';
-import { MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BoqRepository } from './boq-repository';
+import { BATCH_STATUS_CHUNK, MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BatchStatusResult, type BoqRepository } from './boq-repository';
 import type { FirestoreRepository } from './firestore.repository';
 import type { Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -151,14 +153,37 @@ export class FirestoreBoqRepository implements BoqRepository {
     return this.db.runTransaction(async (tx) => {
       const tplRef = this.db.doc(fsPaths.boqTemplate(orgId, DEFAULT_BOQ_TEMPLATE.id));
       const ruleRefs = DEFAULT_BOQ_RULES.map((r) => this.db.doc(fsPaths.boqRule(orgId, r.id)));
-      const [tpl, ...rules] = await tx.getAll(tplRef, ...ruleRefs);
+      const addRefs = DEFAULT_ITEM_LIBRARY_ADDITIONS.map((it) => this.db.doc(fsPaths.libraryItem(orgId, it.id)));
+      const [tpl, ...rest] = await tx.getAll(tplRef, ...ruleRefs, ...addRefs);
+      const rules = rest.slice(0, ruleRefs.length);
+      const additions = rest.slice(ruleRefs.length);
       const defaults = await tx.get(this.db.collection(fsPaths.boqTemplates(orgId)).where('default', '==', true).limit(1));
       const anyItem = await tx.get(this.db.collection(fsPaths.itemLibrary(orgId)).limit(1));
+      // Sprint 6 (library v2): only when some newer default item is missing, check whether the org has the default
+      // library and which of the missing codes it already has (cheap queries; the common case is one getAll).
+      const missing = DEFAULT_ITEM_LIBRARY_ADDITIONS.filter((_, i) => !additions[i]?.exists);
+      let hasDefault = false;
+      const takenCodes = new Set<string>();
+      if (!anyItem.empty && missing.length) {
+        hasDefault = !(await tx.get(this.db.collection(fsPaths.itemLibrary(orgId)).where('source', '==', 'default').limit(1))).empty;
+        if (hasDefault) {
+          const codes = [...new Set(missing.map((m) => m.code))];
+          for (let i = 0; i < codes.length; i += 30) {
+            const snap = await tx.get(this.db.collection(fsPaths.itemLibrary(orgId)).where('code', 'in', codes.slice(i, i + 30)));
+            for (const d of snap.docs) takenCodes.add(String(d.get('code')));
+          }
+        }
+      }
+      const existingIds = new Set(DEFAULT_ITEM_LIBRARY_ADDITIONS.filter((_, i) => additions[i]?.exists).map((it) => it.id));
       const now = Timestamp.now();
       let templates = 0;
       let created = 0;
       if (!tpl?.exists) {
         tx.create(tplRef, { ...strip(structuredClone(DEFAULT_BOQ_TEMPLATE) as BoqTemplate), default: defaults.empty, updatedAt: now, updatedBy: null });
+        templates++;
+      } else if (templateNeedsUpgrade(tpl.data())) {
+        // Sprint 6: an unedited generic v2 seed becomes v3 (chapters 02 / 06 / 07); its `default` flag is kept.
+        tx.set(tplRef, { ...strip(structuredClone(DEFAULT_BOQ_TEMPLATE) as BoqTemplate), default: tpl.get('default') === true, updatedAt: now, updatedBy: null });
         templates++;
       }
       rules.forEach((snap, i) => {
@@ -168,11 +193,11 @@ export class FirestoreBoqRepository implements BoqRepository {
       });
       // Stage 10 (A-LIVE-01): empty library → the shipped defaults (deterministic ids; never re-seeded once non-empty).
       let items = 0;
-      if (anyItem.empty) {
-        for (const it of DEFAULT_ITEM_LIBRARY) {
-          tx.set(this.db.doc(fsPaths.libraryItem(orgId, it.id)), { ...strip(structuredClone(it) as ItemLibraryItem), updatedAt: now, updatedBy: null });
-          items++;
-        }
+      // v1 ids are not read here: an org that has the default library has them, and the plan only adds v2 ids.
+      const plan = planDefaultLibrarySeed({ empty: anyItem.empty, hasDefault, existingIds, takenCodes }).filter((it) => anyItem.empty || (it.defaultsVersion ?? 1) > 1);
+      for (const it of plan) {
+        tx.set(this.db.doc(fsPaths.libraryItem(orgId, it.id)), { ...strip(structuredClone(it) as ItemLibraryItem), updatedAt: now, updatedBy: null });
+        items++;
       }
       return { templates, rules: created, items };
     });
@@ -348,6 +373,36 @@ export class FirestoreBoqRepository implements BoqRepository {
       this.core.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'boqLines', entityId: lineId, action: 'update', after: audit });
       return toBoqLine(lineId, { ...snap.data(), ...patch });
     });
+  }
+
+  async batchLineStatus(orgId: string, projectId: string, lineIds: readonly string[], to: 'reviewed' | 'approved', opts: { includeRed: boolean; allowed: boolean; batchId: string }, actorUid: string): Promise<BatchStatusResult> {
+    const out: BatchStatusResult = { updated: [], skipped: [] };
+    for (let i = 0; i < lineIds.length; i += BATCH_STATUS_CHUNK) {
+      const chunk = lineIds.slice(i, i + BATCH_STATUS_CHUNK);
+      const refs = chunk.map((id) => this.db.doc(fsPaths.boqLine(orgId, projectId, id)));
+      // Retries re-run the closure: collect the chunk's result locally and append it only after the commit.
+      const part = await this.db.runTransaction(async (tx) => {
+        const res: BatchStatusResult = { updated: [], skipped: [] };
+        const snaps = await tx.getAll(...refs);
+        const head = await this.core.auditHead(tx, orgId);
+        const now = Timestamp.now();
+        snaps.forEach((snap, j) => {
+          const lineId = chunk[j] as string;
+          const plan = planBatchStatus(projectId, snap.exists ? toBoqLine(lineId, snap.data() as Doc) : null, to, opts, actorUid, now);
+          if ('skip' in plan) {
+            res.skipped.push({ lineId, reason: plan.skip });
+            return;
+          }
+          tx.update(refs[j] as DocumentReference, plan.patch);
+          this.core.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'boqLines', entityId: lineId, action: 'update', after: plan.audit });
+          res.updated.push({ lineId, from: plan.from, to: plan.to });
+        });
+        return res;
+      });
+      out.updated.push(...part.updated);
+      out.skipped.push(...part.skipped);
+    }
+    return out;
   }
 
   // --- exports ---------------------------------------------------------------------

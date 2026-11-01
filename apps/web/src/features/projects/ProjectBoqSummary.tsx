@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, Hammer, Loader2, RefreshCw, X } from "lucide-react";
@@ -9,7 +9,9 @@ import { SectionProgress } from "@/components/SectionProgress";
 import { Ltr } from "@/components/Ltr";
 import { formatQuantity } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { chapterLabel, effectiveQty, groupByChapter, statsOf } from "@/features/boq/model";
+import { canEditQty, chapterLabel, effectiveQty, groupByChapter, statsOf } from "@/features/boq/model";
+import { coverageOf, lineNeedsInput, quickActionOf } from "@/features/boq/sprint6";
+import { CoverageText, NeedsInputChip } from "@/features/boq/Sprint6Parts";
 import { isBuildActive, useBoqBuild, useBoqLines, useBoqState, useBuildBoq } from "@/features/boq/queries";
 import { sheetName } from "@/features/sheets/model";
 import { LibraryNotice } from "@/features/boq/LibraryNotice";
@@ -44,10 +46,15 @@ export function ProjectBoqSummary({
   const building = buildBoq.isPending || isBuildActive(build.data);
 
   const all = linesQ.data?.items ?? [];
-  const lines = useMemo<BoqLine[]>(
+  // Sprint 6: "להשלמה ידנית" filter (suggested lines waiting for a measure / count / confirm)
+  const [onlyNeeds, setOnlyNeeds] = useState(false);
+  const bySheet = useMemo<BoqLine[]>(
     () => (filterSheet ? all.filter((l) => l.sourceVersions.some((s) => s.sheetId === filterSheet.sheet.id)) : all),
     [all, filterSheet],
   );
+  const needsCount = useMemo(() => bySheet.filter(lineNeedsInput).length, [bySheet]);
+  const lines = useMemo(() => (onlyNeeds && needsCount ? bySheet.filter(lineNeedsInput) : bySheet), [bySheet, onlyNeeds, needsCount]);
+  const canQuick = canEditQty(role);
   const chapters = useMemo(() => groupByChapter(lines, linesQ.data?.chapters ?? []), [lines, linesQ.data?.chapters]);
   const total = statsOf(lines);
   const reviewHref = `/projects/${projectId}/review${filterSheet ? `?sheet=${encodeURIComponent(filterSheet.sheet.id)}` : ""}`;
@@ -66,6 +73,21 @@ export function ProjectBoqSummary({
             </p>
           ) : null}
         </div>
+        {buildId && needsCount ? (
+          <button
+            type="button"
+            aria-pressed={onlyNeeds}
+            data-filter-needs-input
+            title={t("boq.needsInputFilter")}
+            onClick={() => setOnlyNeeds((v) => !v)}
+            className={cn(
+              "inline-flex h-7 shrink-0 items-center rounded-sm border border-dashed border-conf-low/60 px-2 text-meta text-foreground hover:bg-conf-low/10",
+              onlyNeeds && "border-solid bg-conf-low/[0.12] font-medium",
+            )}
+          >
+            {t("hub.needsInputOnly", { count: needsCount })}
+          </button>
+        ) : null}
         {buildId ? (
           <Button size="sm" variant="secondary" asChild>
             <Link to={reviewHref}>
@@ -121,7 +143,16 @@ export function ProjectBoqSummary({
                     <Ltr>{`${c.stats.pct}%`}</Ltr> · {t("hub.linesCount", { count: c.lines.length })}
                   </span>
                 </summary>
+                <CoverageText c={coverageOf(c.lines)} className="block px-4 pb-1.5" />
                 <table className="w-full table-fixed text-dense">
+                  {/* explicit widths: table-fixed takes them from the first row, which is the sr-only header */}
+                  <colgroup>
+                    <col className="w-8" />
+                    <col className="w-14" />
+                    <col />
+                    <col className="w-14" />
+                    <col className="w-16" />
+                  </colgroup>
                   <thead className="sr-only">
                     <tr>
                       <th>{t("boq.columns.conf")}</th>
@@ -132,8 +163,11 @@ export function ProjectBoqSummary({
                     </tr>
                   </thead>
                   <tbody>
-                    {c.lines.map((l) => (
-                      <tr key={l.id} className="h-8 border-t border-border/60 align-top hover:bg-surface-sunken/50">
+                    {c.lines.map((l) => {
+                      const waiting = lineNeedsInput(l);
+                      const qa = waiting && canQuick ? quickActionOf(l) : null;
+                      return (
+                      <tr key={l.id} data-code={l.code} data-needs-input={waiting || undefined} className="h-8 border-t border-border/60 align-top hover:bg-surface-sunken/50">
                         <td className="w-6 ps-4 pt-2.5">
                           <ConfidenceShape level={levelFromDb(l.level)} className="size-2.5" />
                         </td>
@@ -143,13 +177,38 @@ export function ProjectBoqSummary({
                         {/* Two lines, not one: lines like 3.02 / 3.03 / 3.11 differ only after the shared prefix (A-UI-17). */}
                         <td className="py-1.5 pe-2 text-foreground" title={l.description}>
                           <span className="line-clamp-2 break-words">{l.description}</span>
+                          {waiting ? (
+                            <span className="mt-1 flex flex-wrap items-center gap-1">
+                              <NeedsInputChip />
+                              {l.reasons?.[0] ? <span className="text-[11px] leading-tight text-muted-foreground">{l.reasons[0]}</span> : null}
+                              {qa ? (
+                                <Link
+                                  to={`/projects/${projectId}/review?line=${encodeURIComponent(l.id)}&quick=1`}
+                                  data-quick-action={qa.kind}
+                                  data-quick-for={l.id}
+                                  className="inline-flex h-6 items-center whitespace-nowrap rounded-sm border border-primary/40 px-1.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+                                >
+                                  {t(`boq.quick.${qa.kind}`)}{" "}
+                                  <span className="sr-only">{t("boq.quickFor", { code: l.code })}</span>
+                                </Link>
+                              ) : null}
+                            </span>
+                          ) : null}
                         </td>
                         <td className="w-12 py-1.5 text-muted-foreground">{l.unit}</td>
                         <td className={cn("w-16 py-1.5 pe-4 text-end font-medium tabular-nums text-foreground", l.qtyOverride != null && "text-manual")}>
-                          <Ltr>{formatQuantity(effectiveQty(l), l.unit)}</Ltr>
+                          {waiting && !l.qty ? (
+                            <span className="text-muted-foreground">
+                              <span aria-hidden>—</span>
+                              <span className="sr-only">{t("boq.noQty")}</span>
+                            </span>
+                          ) : (
+                            <Ltr>{formatQuantity(effectiveQty(l), l.unit)}</Ltr>
+                          )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </details>

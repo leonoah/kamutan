@@ -17,6 +17,7 @@ import {
   type SimilarExemplar,
   type SimilarSearch,
   type StaleReason,
+  type QuickActionKind,
 } from '@kamutan/contracts';
 import { isoDeep } from './boq-docs';
 import type { Doc } from './mappers';
@@ -25,6 +26,9 @@ export const REVIEW_REPOSITORY = Symbol('REVIEW_REPOSITORY');
 
 /** Hard cap of corrections read per project (list, queue overlay). */
 export const MAX_CORRECTIONS = 10_000;
+
+/** A correction to store: the request + (Sprint 6, quick-measure only) the BOQ line it is bound to. */
+export type CorrectionInput = CreateCorrectionRequest & { lineId?: string | null; quickAction?: QuickActionKind | null };
 
 export interface NewCorrectionBatch {
   source: CorrectionBatch['source'];
@@ -59,7 +63,7 @@ export interface ReviewRepository {
   createCorrections(
     orgId: string,
     projectId: string,
-    items: readonly CreateCorrectionRequest[],
+    items: readonly CorrectionInput[],
     batch: NewCorrectionBatch | null,
     actorUid: string,
   ): Promise<{ corrections: Correction[]; batch: CorrectionBatch | null }>;
@@ -136,7 +140,7 @@ export function planAutoBuild(autoRebuild: boolean, candidates: ReadonlyArray<Ac
 const dropUndefined = <T extends Record<string, unknown>>(o: T): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 
 /** Stored correction doc (without id); timestamps are added by the implementation. */
-export function correctionDoc(c: CreateCorrectionRequest, batchId: string | null, actorUid: string): Doc {
+export function correctionDoc(c: CorrectionInput, batchId: string | null, actorUid: string): Doc {
   return dropUndefined({ ...c, batchId, by: actorUid, revertedAt: null, revertedBy: null });
 }
 
@@ -185,6 +189,8 @@ export function correctionAudit(projectId: string, c: Correction): Record<string
     itemCode: c.itemCode,
     quantity: c.quantity,
     hasReason: c.reason !== null,
+    // Sprint 6: quick-measure corrections name their line (keys only when present: older events hash unchanged).
+    ...(c.lineId ? { lineId: c.lineId, quickAction: c.quickAction ?? null } : {}),
   };
 }
 

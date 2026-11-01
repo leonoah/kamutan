@@ -7,7 +7,8 @@
     kbench parse-boq-xls XLS --project ID --out boq_truth.json
     kbench manifest DATA_DIR --project ID --out manifest.json
     kbench eval-links --truth GT_DIR --pred-links ARTIFACTS_DIR --out links.json [--report links.md] [--center-tol-mm 3]
-    kbench eval-boq --truth GT_DIR --pred-lines boq-lines.json --out boq.json [--report boq.md] [--scope 4. --scope 9.01]
+    kbench eval-boq --truth GT_DIR --pred-lines boq-lines.json --out boq.json [--report boq.md] [--scope 4. --scope 9.01 | --scope all]
+                    [--computability s6_lines.json] [--target-ok 45]   (coverage over every chapter is always reported)
     kbench excel-check --sample boq_sample.xls --export export.xlsx [--lines boq-lines.json] [--report r.md]
     kbench links-implied --truth GT_DIR [--out implied.json] [--skip-existing-points] [--skip-existing-switches] [--alt]
     kbench plumbing-implied --truth GT_DIR [--out implied.json] [--report r.md]
@@ -206,15 +207,29 @@ def cmd_eval_boq(a: argparse.Namespace) -> int:
         ex = json.loads(Path(a.expected).read_text(encoding="utf-8"))
         expected = ex.get("lines") or ex.get("recommended_defaults", {}).get("expected") or ex
         expected = {k: float(v) for k, v in expected.items() if isinstance(v, (int, float))}
-    m = _meta(a) | evaluate_boq_lines(truth, load_pred_lines(a.pred_lines), tuple(a.scope or DEFAULT_SCOPE), expected)
+    from .coverage import evaluate_boq_coverage, load_computability, render_coverage_markdown
+
+    pred_lines = load_pred_lines(a.pred_lines)
+    scope = tuple(a.scope or DEFAULT_SCOPE)
+    if "all" in scope:
+        scope = tuple(sorted({ln["code"].split(".")[0] + "." for ln in truth.boq_lines()}, key=lambda c: (len(c), c)))
+    m = _meta(a) | evaluate_boq_lines(truth, pred_lines, scope, expected)
+    comp_path = a.computability or (Path(a.truth) / "s6_lines.json")
+    m |= evaluate_boq_coverage(truth, pred_lines, load_computability(comp_path), a.target_ok)
     m["source"] = {"pred_lines": str(a.pred_lines), "sha256": hashlib.sha256(Path(a.pred_lines).read_bytes()).hexdigest()}
     _write_json(a.out, m)
     if a.report:
-        Path(a.report).write_text(render_boq_markdown(m), encoding="utf-8")
+        Path(a.report).write_text(render_boq_markdown(m) + "\n" + render_coverage_markdown(m), encoding="utf-8")
     g = m["boq_lines"]["gated"]
+    c = m["coverage"]["all"]
     print(
         f"gated lines={g['n_lines']} EM={g['exact_match']['p']} sumAE={g['sum_ae']} medPE={g['median_pe']} "
         f"green_P={m['boq_lines']['green_line_precision']['p']} extra={len(m['boq_lines']['extra_lines'])}"
+    )
+    print(
+        f"coverage: present={c['present']['k']}/{c['n_lines']} exact={c['exact']['k']} "
+        f"exact_or_within={c['exact_or_within_tol']['k']} suggested_right_unit={c['suggested_right_unit']} "
+        f"missing={c['missing']['k']} target={'PASS' if m['coverage']['target']['pass'] else 'FAIL'}"
     )
     return 0
 
@@ -563,8 +578,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("eval-boq", help="score the worker's boq-lines.json against boq_truth.json")
     s.add_argument("--truth", required=True)
     s.add_argument("--pred-lines", required=True)
-    s.add_argument("--scope", action="append", help="code prefix ('4.') or exact code ('9.01'); default 4. + 9.01")
+    s.add_argument("--scope", action="append", help="code prefix ('4.') or exact code ('9.01') or 'all'; default 4. + 9.01")
     s.add_argument("--expected", help="JSON {code: qty} (or tiling-expected output) shown as a second reference column")
+    s.add_argument(
+        "--computability", help="s6_lines.json (computable/partial/not_on_drawings per code); default TRUTH/s6_lines.json"
+    )
+    s.add_argument("--target-ok", type=int, default=45, help="coverage target: lines exact or within tolerance")
     s.add_argument("--out", required=True)
     s.add_argument("--report")
     meta_args(s)

@@ -89,8 +89,27 @@ export interface BoqRepository {
    * `boqLines/update`. null when the line does not exist.
    */
   patchLine(orgId: string, projectId: string, lineId: string, req: PatchBoqLineRequest, actorUid: string): Promise<BoqLine | null>;
+  /**
+   * Sprint 6: bulk status. Chunks of `BATCH_STATUS_CHUNK` lines, one transaction each: every line is re-read and planned
+   * with `planBatchStatus` (single-PATCH rules) inside it; one `boqLines/update` audit event per moved line (+ batchId).
+   */
+  batchLineStatus(
+    orgId: string,
+    projectId: string,
+    lineIds: readonly string[],
+    to: 'reviewed' | 'approved',
+    opts: { includeRed: boolean; allowed: boolean; batchId: string },
+    actorUid: string,
+  ): Promise<BatchStatusResult>;
 
   // --- exports ----------------------------------------------------------------
   /** exports/{id} record + audit `exports/create` (one transaction). */
   createExport(orgId: string, projectId: string, doc: BoqExport): Promise<BoqExport>;
+}
+
+/** Lines per transaction of a bulk status change (each moved line = 1 update + 1 audit event + the audit head). */
+export const BATCH_STATUS_CHUNK = 100;
+export interface BatchStatusResult {
+  updated: Array<{ lineId: string; from: BoqLine['status']; to: BoqLine['status'] }>;
+  skipped: Array<{ lineId: string; reason: 'already' | 'forbidden' | 'red' | 'not_found' }>;
 }

@@ -10,12 +10,13 @@
  */
 import { z } from 'zod';
 import { pageOf, TimestampSchema } from './common.js';
-import { ChapterCodeSchema, ItemCodeSchema, LIFECYCLES, LinkGroupKindSchema, SUPPLY_KINDS } from './boq.js';
+import { ChapterCodeSchema, ItemCodeSchema, LIFECYCLES, LinkGroupKindSchema, QuickActionKindSchema, SUPPLY_KINDS } from './boq.js';
 import { DocIdSchema, UidSchema } from './org.js';
 import { JobProgressSchema, JobStatusSchema, LIBRARY_IMPORT_KINDS } from './jobs.js';
 import { sha256Hex } from './sha256.js';
 import { DisciplineSchema, ProcessingErrorSchema } from './sheets.js';
 import { SymbolClassSchema, type SymbolClass } from './taxonomy.js';
+import { GeometryCategorySchema, GeometryMeasureKeySchema, GeometrySourceSchema, TextPatternSchema } from './takeoff.js';
 import { RoomTypeSchema, type RoomType } from './understanding.js';
 
 // ---------------------------------------------------------------------------
@@ -208,6 +209,11 @@ export const BOQ_RULE_KINDS = [
   // Stage 10 (Worker-BOQ, A-pipeline-07 / A-pipeline-12)
   'template_chapter',
   'fixture_combination',
+  // Sprint 6 (Worker-BOQ; text_items.json.gz / geometry.json.gz)
+  'text_item',
+  'area_item',
+  'length_item',
+  'suggested_item',
 ] as const;
 export const BoqRuleKindSchema = z.enum(BOQ_RULE_KINDS);
 export type BoqRuleKind = z.infer<typeof BoqRuleKindSchema>;
@@ -380,6 +386,134 @@ export const FixtureCombinationMatchSchema = z
   })
   .strict();
 
+// --- Sprint 6: text / geometry / suggested items ----------------------------------------------------------------
+
+/** Text scopes a `text_item` rule searches (`any` = every TextItemScope except `title`). */
+export const TEXT_RULE_SCOPES = ['legend', 'note', 'callout', 'panel_schedule', 'any'] as const;
+export const TextRuleScopeSchema = z.enum(TEXT_RULE_SCOPES);
+/**
+ * How a matched text becomes a quantity: `count` = 1 per matched text item (de-duplicated within `proximityMm`), or the
+ * count written in it ("3 שקעים" → 3) when the pattern has a capture group 1 with a number; `number_in_text` = the
+ * first number of capture group 1 (else the text item's first number); `length_in_text_m` = the first length in metres
+ * (`lengthsM[0]`, else capture group 1); `one` = 1 for the whole project when any text matches (קומפלט / single items).
+ */
+export const TEXT_QTY_MODES = ['count', 'number_in_text', 'length_in_text_m', 'one'] as const;
+
+const PatternsSchema = z.array(TextPatternSchema).min(1).max(16);
+
+/**
+ * Sprint 6: one evidence per matched text item of text_items.json.gz (evidence kind `text`, `detectionId` = the
+ * `ti_…` id, `bboxMm` = its box). Matching is on `normalizeHebrewText` of BOTH pattern and text (final letters,
+ * geresh / gershayim, quotes, spacing), case-insensitive; ANY pattern matches and NO `excludePatterns` may match.
+ * Optional filters: sheet disciplines, floors, the text's lifecycle qualifier ("קיים" / "חדש"), and `nearClasses` (a
+ * live detection of one of the classes within `proximityMm` paper mm of the text's anchor / box — then the text is
+ * attached to it and that detection is NOT also counted by a class rule when `consumeNear`). `proximityMm` also merges
+ * repeated texts (same rule) closer than it into one. Origin of the line: `text`.
+ * v7: `consumeNear` consumes only a detection within `CONSUME_NEAR_MAX_MM` (8 paper mm) of the text — `proximityMm`
+ * stays the `nearClasses` filter (an electric and a comms label 17 mm from one panel symbol: the symbol stays 4.24).
+ */
+export const CONSUME_NEAR_MAX_MM = 8;
+export const TextItemMatchSchema = z
+  .object({
+    patterns: PatternsSchema,
+    excludePatterns: z.array(TextPatternSchema).max(16).optional(),
+    scope: TextRuleScopeSchema,
+    disciplines: z.array(DisciplineSchema).max(8).optional(),
+    qty: z.enum(TEXT_QTY_MODES),
+    proximityMm: z.number().finite().min(0).max(5000).optional(),
+    nearClasses: z.array(SymbolClassSchema).max(16).optional(),
+    consumeNear: z.boolean().optional(),
+    lifecycle: z.array(z.enum(LIFECYCLES)).max(3).optional(),
+    floors: FloorsFilterSchema.optional(),
+    /**
+     * Also match text items whose Worker-Text catalog `itemCode` equals the rule's itemCode (default true): the rule's
+     * patterns then only ADD matches (e.g. an org's own wording). Items with `corroborates: true` are evidence only.
+     */
+    matchCatalogCode: z.boolean().optional(),
+  })
+  .strict();
+export type TextItemMatch = z.infer<typeof TextItemMatchSchema>;
+
+/** What a geometry rule measures. Defaults: hatch / room / polyline → area (area_item) or length (length_item); wall_run → wall_area / length; stair → treads. */
+export const GEOMETRY_MEASURES = ['area', 'length', 'wall_area', 'count', 'treads'] as const;
+
+/**
+ * Sprint 6 (`area_item` m² / `length_item` m' / count): features of geometry.json.gz of `source` (shape kind), of one of
+ * `categories` (when given) AND whose legend label matches one of `legendPatterns` (when given), filtered by sheet disciplines, floors, room types
+ * (any of the feature's rooms), lifecycle; quantity per feature by `measure` (`wall_area` = wallAreaM2, else lengthM ×
+ * (`heightM` of the rule, else the feature's) × `sides`; `count` = feature.count ?? 1; `treads` = stair.treads);
+ * features below `minQty` are ignored. One evidence per feature (kind `geometry`, or `stair`, with `geometryMm`).
+ * Origin of the line: `geometry`.
+ */
+export const GeometryItemMatchSchema = z
+  .object({
+    source: GeometrySourceSchema,
+    /**
+     * Worker-Geometry `measures[].key`s (GEOMETRY_MEASURE_KEYS): when given, the quantity is the project-level measure of
+     * those keys (`geometry_units`: one authoritative sheet per floor, stairs de-duplicated) — the preferred selector.
+     * v7 (coordinator decision): a `computable: false` measure → a suggested line, `needsInput`, qty 0, red, reasons =
+     * the measure's reason + its estimate as a hint ("הערכה: …"), never a yellow quantity; a key no sheet carries →
+     * nothing (the code's `suggested_item` fallback takes over).
+     */
+    keys: z.array(GeometryMeasureKeySchema).max(8).optional(),
+    categories: z.array(GeometryCategorySchema).max(16).optional(),
+    legendPatterns: z.array(TextPatternSchema).max(8).optional(),
+    disciplines: z.array(DisciplineSchema).max(8).optional(),
+    floors: FloorsFilterSchema.optional(),
+    roomTypes: RoomTypesSchema.optional(),
+    lifecycle: z.array(z.enum(LIFECYCLES)).max(3).optional(),
+    measure: z.enum(GEOMETRY_MEASURES).optional(),
+    heightM: z.number().finite().positive().max(30).optional(),
+    sides: z.union([z.literal(1), z.literal(2)]).optional(),
+    minQty: z.number().finite().min(0).max(100_000).optional(),
+  })
+  .strict()
+  .refine((m) => (m.keys?.length ?? 0) > 0 || (m.categories?.length ?? 0) > 0 || (m.legendPatterns?.length ?? 0) > 0 || m.source === 'stair', {
+    message: 'keys, categories or legendPatterns are required (except for stairs)',
+    path: ['categories'],
+  });
+export type GeometryItemMatch = z.infer<typeof GeometryItemMatchSchema>;
+
+/** What makes a suggested line appear. */
+export const SuggestedTriggerSchema = z.discriminatedUnion('kind', [
+  /** The project has a current ready sheet of one of the disciplines. */
+  z.object({ kind: z.literal('sheet_discipline'), disciplines: z.array(DisciplineSchema).min(1).max(8) }).strict(),
+  /** A text item matches (same matching as `text_item`). */
+  z.object({ kind: z.literal('text'), patterns: PatternsSchema, scope: TextRuleScopeSchema.optional(), disciplines: z.array(DisciplineSchema).max(8).optional() }).strict(),
+  /** The project has demolition: a `demolition` sheet, or geometry of one of `categories` (default wall_demolished) / detections with lifecycle demolish. */
+  z.object({ kind: z.literal('demolition'), categories: z.array(GeometryCategorySchema).max(16).optional() }).strict(),
+  z.object({ kind: z.literal('always') }).strict(),
+]);
+export type SuggestedTrigger = z.infer<typeof SuggestedTriggerSchema>;
+
+/** Simple estimator of a suggested line (null / absent = no estimate → `needsInput`, qty 0, red). */
+export const SuggestedEstimateSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('fixed'), quantity: z.number().finite().positive().max(100_000) }).strict(),
+  /** Same selection as an area_item / length_item rule, COMPUTABLE measures only (v7); the line stays a suggestion (yellow) when it yields > 0. */
+  z.object({ kind: z.literal('geometry'), match: GeometryItemMatchSchema }).strict(),
+  /** Σ floor area (m²) of rooms of `roomTypes` (all rooms when absent) on `floors`. */
+  z.object({ kind: z.literal('room_area'), roomTypes: RoomTypesSchema.optional(), floors: FloorsFilterSchema.optional() }).strict(),
+]);
+export type SuggestedEstimate = z.infer<typeof SuggestedEstimateSchema>;
+
+/**
+ * Sprint 6: an item the drawings imply but do not quantify. When the trigger fires, ONE line of `itemCode` with
+ * `origin: 'suggested'`, the rule's `reason` (+ rule reasons), `quickAction` (default by unit, `defaultQuickActionFor`)
+ * and evidence = what fired (text item / sheet / geometry). Quantity = the estimate (level yellow, max) or, without an
+ * estimate, `needsInput: true` + qty 0 (level red, "להשלמה ידנית"). Never green until a person confirms / measures it
+ * (quick-measure corrections bound to the line replace the estimate). Not produced when another rule produced the code.
+ */
+export const SuggestedItemMatchSchema = z
+  .object({
+    trigger: SuggestedTriggerSchema,
+    estimate: SuggestedEstimateSchema.nullable().optional(),
+    reason: z.string().trim().min(1).max(200),
+    quickAction: QuickActionKindSchema.optional(),
+    level: z.enum(['yellow', 'red']).optional(),
+  })
+  .strict();
+export type SuggestedItemMatch = z.infer<typeof SuggestedItemMatchSchema>;
+
 const ruleBase = {
   id: DocIdSchema,
   /** Target item (TEXT). null for authority rules. */
@@ -416,6 +550,10 @@ export const BoqRuleSchema = z.discriminatedUnion('kind', [
   z.object({ ...ruleBase, kind: z.literal('one_off_suggestion'), match: OneOffSuggestionMatchSchema }),
   z.object({ ...ruleBase, kind: z.literal('template_chapter'), match: TemplateChapterMatchSchema }),
   z.object({ ...ruleBase, kind: z.literal('fixture_combination'), match: FixtureCombinationMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('text_item'), match: TextItemMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('area_item'), match: GeometryItemMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('length_item'), match: GeometryItemMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('suggested_item'), match: SuggestedItemMatchSchema }),
 ]);
 export type BoqRule = z.infer<typeof BoqRuleSchema>;
 
@@ -531,8 +669,10 @@ export const DEFAULT_BOQ_TEMPLATE_NAME = 'תבנית ברירת מחדל';
  * 2 = Stage 10 (A-LIVE-01): generic trade chapters 01 / 03 / 04 / 05 / 09 matching the default rules and
  * `DEFAULT_ITEM_LIBRARY`, generic notes, no client wording. Seeding is create-if-missing: orgs that already have
  * `tpl_default` keep it (an admin edit or an import is never overwritten).
+ * 3 = Sprint 6: + chapters 02 (construction), 06 (gypsum, item codes 7.xx) and 07 (plaster & paint, item codes 8.xx);
+ * chapter 09 becomes "תאורה ושונות" (9.01 + 9.03). An UNEDITED v2 seed (`templateNeedsUpgrade`) is replaced.
  */
-export const DEFAULT_BOQ_TEMPLATE_VERSION = 2;
+export const DEFAULT_BOQ_TEMPLATE_VERSION = 3;
 
 /** Stage 10 generic default template (A-LIVE-01): chapters of the default rules, no client / project / price data. */
 const defaultTemplate: Omit<BoqTemplate, 'updatedAt' | 'updatedBy'> = {
@@ -560,6 +700,12 @@ const defaultTemplate: Omit<BoqTemplate, 'updatedAt' | 'updatedBy'> = {
       codePrefixes: ['1'],
     },
     {
+      code: '02',
+      title: 'פרק 02 – עבודות בנייה ובטון',
+      notes: ['1. העבודות יבוצעו לפי הנחיות הקונסטרוקטור ותכניות הבנייה המצורפות.', '2. הכמויות לפי מידות התכנית.'],
+      codePrefixes: ['2'],
+    },
+    {
       code: '03',
       title: 'פרק 03 – עבודות אינסטלציה',
       notes: ['1. העבודות כוללות חיבור לצנרת הקיימת ובדיקת לחץ.', '2. הכמויות לפי תכניות האינסטלציה המצורפות.'],
@@ -578,14 +724,40 @@ const defaultTemplate: Omit<BoqTemplate, 'updatedAt' | 'updatedBy'> = {
       codePrefixes: ['5'],
     },
     {
+      code: '06',
+      title: 'פרק 06 – עבודות גבס',
+      notes: ['1. העבודות כוללות פרופילים, ברגים, סרט שריון ושפכטל עד לגמר מוכן לצבע.', '2. הכמויות לפי תכנית התקרה ותכנית הבנייה.'],
+      codePrefixes: ['7'],
+    },
+    {
+      code: '07',
+      title: 'פרק 07 – עבודות טיח, שפכטל וצבע',
+      notes: ['1. גוונים לבחירת המזמין.', '2. העבודות כוללות הגנה על האלמנטים הקיימים וניקיון בסיום.'],
+      codePrefixes: ['8'],
+    },
+    {
       code: '09',
-      title: 'פרק 09 – תאורה',
+      title: 'פרק 09 – תאורה ושונות',
       notes: ['1. התקנת גופי תאורה לפי תכנית התאורה המצורפת.'],
       codePrefixes: ['9'],
     },
   ],
 };
 export const DEFAULT_BOQ_TEMPLATE: Readonly<Omit<BoqTemplate, 'updatedAt' | 'updatedBy'>> = Object.freeze(defaultTemplate);
+
+/**
+ * Sprint 6: a stored `tpl_default` is REPLACED by the shipped one only when it is an unedited generic seed of an older
+ * version (`source: 'default'`, `defaultsVersion` ≥ 2 and < DEFAULT_BOQ_TEMPLATE_VERSION, never PATCHed — `updatedBy`
+ * null). Sprint-3 sample-format seeds (no `defaultsVersion`), imports and edited templates are never touched; the
+ * stored `default` flag is kept.
+ */
+export const templateNeedsUpgrade = (stored: { source?: unknown; defaultsVersion?: unknown; updatedBy?: unknown } | null | undefined): boolean =>
+  !!stored &&
+  stored.source === 'default' &&
+  typeof stored.defaultsVersion === 'number' &&
+  stored.defaultsVersion >= 2 &&
+  stored.defaultsVersion < DEFAULT_BOQ_TEMPLATE_VERSION &&
+  (stored.updatedBy === null || stored.updatedBy === undefined);
 
 const DEFAULT_RULE_REASON = 'שיוך לפריט לפי כלל ברירת מחדל';
 /** Sprint 4: reason of one-off suggestion lines (never green). */
@@ -612,6 +784,71 @@ const PLUMBING_FIXTURES: SymbolClass[] = [
 ];
 /** Waste factor of tiling materials (brief: default 7%). */
 const TILING_WASTE = 0.07;
+
+// --- Sprint 6 default rules (generic wording; patterns are matched on `normalizeHebrewText` of pattern and text) ---
+const ELEC = ['electrical', 'lighting'];
+const BUILD = ['architecture', 'architecture_master', 'construction', 'demolition', 'ceiling'];
+const NEEDS_MEASURE = 'לא נמצאה כמות בשרטוט – להשלמה ידנית';
+const textItem = (id: string, match: Omit<TextItemMatch, 'scope' | 'qty'> & Partial<Pick<TextItemMatch, 'scope' | 'qty'>>, itemCode: string, itemDescription: string, priority = 120): RuleSeed =>
+  ({ id, kind: 'text_item', match: { scope: 'any', qty: 'count', ...match }, itemCode, itemDescription, unit: 'יחידה', priority }) as RuleSeed;
+const geoItem = (id: string, kind: 'area_item' | 'length_item', match: GeometryItemMatch, itemCode: string, itemDescription: string, unit: string, priority = 100): RuleSeed =>
+  ({ id, kind, match, itemCode, itemDescription, unit, priority }) as RuleSeed;
+const suggested = (id: string, match: SuggestedItemMatch, itemCode: string, itemDescription: string, unit: string): RuleSeed =>
+  ({ id, kind: 'suggested_item', match, itemCode, itemDescription, unit, priority: 5, reasons: [ONE_OFF_SUGGESTION_REASON] }) as RuleSeed;
+const textTrigger = (...patterns: string[]): SuggestedTrigger => ({ kind: 'text', patterns });
+const BUILD_SHEETS: SuggestedTrigger = { kind: 'sheet_discipline', disciplines: BUILD };
+
+/**
+ * Sprint 6: rules for the items the symbol / room rules cannot produce. Pattern: a computing rule (`text_item` /
+ * `area_item` / `length_item`, origin text / geometry) + a `suggested_item` fallback of the same code (a suggested rule
+ * is skipped when another rule produced its code), so every implied item is present — computed, estimated, or
+ * "להשלמה ידנית" with the right unit and quick action.
+ */
+const SPRINT6_RULES: readonly RuleSeed[] = [
+  // 04 — electrical text / equipment items (no symbol class of their own)
+  textItem('r_text_island_conduit', { patterns: ['צינור\\s*(ריק|חופשי)', 'הכנה\\s*ל?שקעי\\s*שירות'], disciplines: ELEC, proximityMm: 300 }, '4.08', 'צינור ריק מהרצפה כהכנה לשקעי שירות באי המטבח'),
+  textItem('r_text_ventilator_feed', { patterns: ['(הזנה|נקודה|נק\'?)\\s*ל?(ונטה|מפוח|מאוורר\\s*יניקה)'], disciplines: ELEC, proximityMm: 300 }, '4.19', 'הזנה למפוח אוורור (ונטה) כולל מפסק'),
+  textItem('r_text_comms_panel', { patterns: ['לוח\\s*תקשורת', 'ארון\\s*תקשורת'], disciplines: ELEC, nearClasses: ['panel'], consumeNear: true, proximityMm: 40 }, '4.25', 'אספקה והתקנת לוח תקשורת', 130),
+  textItem('r_text_boiler_timer', { patterns: ['החלפת\\s*מפסק\\s*(ה)?דוד', 'מפסק\\s*טיימר[^.]{0,30}קיים'], disciplines: ELEC, proximityMm: 300 }, '4.26', 'החלפת מפסק דוד קיים במפסק טיימר'),
+  textItem('r_text_projector_conduit', { patterns: ['קוברה[^.]{0,40}מקרן', 'הכנה\\s*ל?מקרן'], disciplines: ELEC, proximityMm: 300 }, '4.27', 'צינור קוברה 50 מ"מ לנקודת מקרן בתקרה'),
+  textItem('r_text_panel_36', { patterns: ['לוח[^.]{0,20}36\\s*(מקום|מקומות|מודול)'], disciplines: ELEC, nearClasses: ['panel'], consumeNear: true, proximityMm: 40 }, '4.28', 'אספקה והתקנת לוח חשמל 36 מודולים', 130),
+  textItem('r_text_vent_pipe', { patterns: ['צינור\\s*(אוורור|איוורור)', '4"[^.]{0,20}(ונטה|מפוח|אוורור)'], proximityMm: 300 }, '9.03', 'התקנת צינור אוורור 4" למפוח ונטה', 110),
+  // 02 — construction
+  geoItem('r_geo_retaining_walls', 'area_item', { source: 'wall_run', keys: ['retaining_wall_area'], measure: 'wall_area' }, '2.01', 'יציקת קירות תומכים מבטון מזוין לפי הנחיות הקונסטרוקטור', 'מ"ר'),
+  suggested('r_suggest_retaining_walls', { trigger: textTrigger('קיר(ות)?\\s*תומכ', 'חצר\\s*אנגלית'), estimate: null, reason: NEEDS_MEASURE }, '2.01', 'יציקת קירות תומכים מבטון מזוין לפי הנחיות הקונסטרוקטור', 'מ"ר'),
+  suggested('r_suggest_slab_stairs', { trigger: textTrigger('יציקת?\\s*(רצפה|ריצפה)', 'מדרגות\\s*(ירידה|ל?מרתף)', 'גרם\\s*מדרגות'), estimate: { kind: 'fixed', quantity: 1 }, reason: 'קומפלט לפי תכנית הקונסטרוקציה – לאשר' }, '2.02', 'יציקת רצפה ומדרגות בטון לפי הנחיות הקונסטרוקטור', 'קומפלט'),
+  geoItem('r_geo_opening_closure_block', 'area_item', { source: 'wall_run', keys: ['block_wall_area'], measure: 'wall_area' }, '2.03', 'סגירת פתח קיים בבנייה בבלוקים', 'מ"ר'),
+  suggested('r_suggest_opening_closure_block', { trigger: textTrigger('סגירת\\s*פתח', 'סגירה\\s*ב?בלוק'), estimate: null, reason: NEEDS_MEASURE }, '2.03', 'סגירת פתח קיים בבנייה בבלוקים', 'מ"ר'),
+  // 05 — tiling / waterproofing additions (5.02 / 5.03 unchanged: GT-D-007 / 008)
+  geoItem('r_geo_stair_treads', 'area_item', { source: 'stair', keys: ['stair_treads'], measure: 'treads' }, '5.04', 'ריצוף מדרגות במדרכי אבן (שלח ורום)', 'יחידה'),
+  suggested('r_suggest_stair_treads', { trigger: textTrigger('מדרגות'), estimate: null, reason: 'לספור את המדרכים בתכנית – להשלמה ידנית', quickAction: 'count' }, '5.04', 'ריצוף מדרגות במדרכי אבן (שלח ורום)', 'יחידה'),
+  geoItem('r_geo_backsplash', 'area_item', { source: 'hatch', keys: ['kitchen_backsplash_area'], measure: 'area' }, '5.06', 'חיפוי קיר מטבח באריחי גרניט פורצלן', 'מ"ר', 110),
+  suggested('r_suggest_backsplash', { trigger: { kind: 'sheet_discipline', disciplines: ['architecture', 'architecture_master'] }, estimate: null, reason: NEEDS_MEASURE }, '5.06', 'חיפוי קיר מטבח באריחי גרניט פורצלן', 'מ"ר'),
+  geoItem('r_geo_cladding_partial', 'area_item', { source: 'hatch', keys: ['wc_partial_cladding_area'], measure: 'area' }, '5.07', 'חיפוי קיר חלקי באריחי קרמיקה', 'מ"ר', 110),
+  suggested('r_suggest_cladding_partial', { trigger: textTrigger('חיפוי\\s*חלקי', 'דמוי\\s*(בריק|לבנים)'), estimate: null, reason: NEEDS_MEASURE }, '5.07', 'חיפוי קיר חלקי באריחי קרמיקה', 'מ"ר'),
+  suggested('r_suggest_courtyard_waterproofing', { trigger: textTrigger('חצר\\s*אנגלית'), estimate: { kind: 'geometry', match: { source: 'room', keys: ['courtyard_waterproofing'] } }, reason: 'קומפלט לפי הנחיות יועץ האיטום – לאשר' }, '5.08', 'איטום קירות חצר אנגלית לפי הנחיות יועץ האיטום', 'קומפלט'),
+  // 06 — gypsum (codes 7.xx)
+  geoItem('r_geo_gypsum_ceiling', 'area_item', { source: 'hatch', keys: ['gypsum_ceiling_area'], measure: 'area' }, '7.01', 'תקרת גבס לפי תכנית התקרה', 'מ"ר'),
+  suggested('r_suggest_gypsum_ceiling', { trigger: textTrigger('תקרת?\\s*גבס', 'תקרה\\s*מונמכת'), estimate: null, reason: NEEDS_MEASURE }, '7.01', 'תקרת גבס לפי תכנית התקרה', 'מ"ר'),
+  geoItem('r_geo_valance_equipment', 'length_item', { source: 'polyline', keys: ['valance_ventilator_length'], measure: 'length' }, '7.02', 'סינר גבס כמסתור לציוד (מפוח / מזגן)', 'מ"א', 110),
+  suggested('r_suggest_valance_equipment', { trigger: textTrigger('סינר[^.]{0,30}(ונטה|מפוח|מזגן|מאייד|מסתור)'), estimate: null, reason: NEEDS_MEASURE }, '7.02', 'סינר גבס כמסתור לציוד (מפוח / מזגן)', 'מ"א'),
+  geoItem('r_geo_gypsum_closure', 'area_item', { source: 'polyline', keys: ['window_closure_area'], measure: 'area' }, '7.03', 'סגירה פנימית בגבס של פתח או חלון קיים', 'מ"ר'),
+  suggested('r_suggest_gypsum_closure', { trigger: textTrigger('סגירה\\s*(פנימית\\s*)?ב?גבס'), estimate: null, reason: NEEDS_MEASURE }, '7.03', 'סגירה פנימית בגבס של פתח או חלון קיים', 'מ"ר'),
+  textItem('r_text_access_panel', { patterns: ['פתח\\s*(שירות|ביקורת|גישה)', 'אורבונד'], proximityMm: 300 }, '7.04', 'אספקה והתקנה של פתח שירות בתקרת גבס', 110),
+  suggested('r_suggest_access_panel', { trigger: textTrigger('תקרת?\\s*גבס'), estimate: null, reason: 'לספור פתחי שירות בתקרה – להשלמה ידנית', quickAction: 'count' }, '7.04', 'אספקה והתקנה של פתח שירות בתקרת גבס', 'יחידה'),
+  geoItem('r_geo_valance_curtain', 'length_item', { source: 'polyline', keys: ['valance_curtain_length'], measure: 'length' }, '7.05', 'סינר גבס מסתור לווילון', 'מ"א', 110),
+  suggested('r_suggest_valance_curtain', { trigger: textTrigger('סינר[^.]{0,30}וילון', 'מסתור\\s*ל?וילון'), estimate: null, reason: NEEDS_MEASURE }, '7.05', 'סינר גבס מסתור לווילון', 'מ"א'),
+  geoItem('r_geo_gypsum_partition', 'area_item', { source: 'wall_run', keys: ['gypsum_partition_area'], measure: 'wall_area', sides: 1 }, '7.06', 'מחיצות גבס עם בידוד צמר סלעים', 'מ"ר'),
+  suggested('r_suggest_gypsum_partition', { trigger: textTrigger('מחיצ(ה|ות)\\s*(ה)?גבס'), estimate: null, reason: NEEDS_MEASURE }, '7.06', 'מחיצות גבס עם בידוד צמר סלעים', 'מ"ר'),
+  geoItem('r_geo_gypsum_partition_double', 'area_item', { source: 'wall_run', keys: ['gypsum_double_partition_area'], measure: 'wall_area', sides: 1 }, '7.07', 'מחיצות גבס כפולות (דו קרומיות) עם בידוד צמר סלעים', 'מ"ר'),
+  suggested('r_suggest_gypsum_partition_double', { trigger: textTrigger('דו[- ]?קרומי', 'מחיצ(ה|ות)\\s*גבס\\s*כפול'), estimate: null, reason: NEEDS_MEASURE }, '7.07', 'מחיצות גבס כפולות (דו קרומיות) עם בידוד צמר סלעים', 'מ"ר'),
+  // 07 — plaster, putty & paint (codes 8.xx)
+  suggested('r_suggest_repairs_after_demolition', { trigger: { kind: 'demolition' }, estimate: { kind: 'fixed', quantity: 1 }, reason: 'קומפלט – נדרש לאחר הריסות – לאשר' }, '8.01', 'תיקוני טיח ושפכטל לאחר עבודות הריסה ופירוק', 'קומפלט'),
+  geoItem('r_geo_plaster_walls', 'area_item', { source: 'wall_run', keys: ['plaster_new_walls_area'], measure: 'wall_area' }, '8.02', 'שתי שכבות טיח על קירות חצר אנגלית וקירות בלוק חדשים', 'מ"ר'),
+  suggested('r_suggest_plaster_walls', { trigger: textTrigger('טיח', 'חצר\\s*אנגלית'), estimate: null, reason: NEEDS_MEASURE }, '8.02', 'שתי שכבות טיח על קירות חצר אנגלית וקירות בלוק חדשים', 'מ"ר'),
+  suggested('r_suggest_paint_interior', { trigger: BUILD_SHEETS, estimate: { kind: 'fixed', quantity: 1 }, reason: 'קומפלט – צביעת פנים לאחר השיפוץ – לאשר' }, '8.03', 'צביעת פנים הבית בצבע אקרילי', 'קומפלט'),
+  suggested('r_suggest_putty', { trigger: BUILD_SHEETS, estimate: { kind: 'fixed', quantity: 1 }, reason: 'קומפלט – לאשר את היקף ההחלקה', level: 'red' }, '8.04', 'החלקת קירות ותקרות בשפכטל בשלוש שכבות', 'קומפלט'),
+];
 
 /**
  * Default rule set (Sprint 3 brief "Domain rules"). Item codes follow the sample BOQ (chapter 04 + 9.01); when an
@@ -742,6 +979,8 @@ export const DEFAULT_BOQ_RULES: readonly RuleSeed[] = Object.freeze([
     unit: null,
     priority: 0,
   } as RuleSeed,
+  // --- Sprint 6: text / equipment items (chapter 04 + 9.03) from notes, callouts, legend rows, panel schedules ---
+  ...SPRINT6_RULES,
   // Stage 10 (A-pipeline-07): chapter 01 (demolition) items of the library offered as 1 קומפלט each when the project has
   // a demolition plan. New id → created by the create-if-missing seeding (no DEFAULT_BOQ_RULES_VERSION bump).
   {
@@ -768,8 +1007,13 @@ export const DEFAULT_BOQ_RULES: readonly RuleSeed[] = Object.freeze([
  *     (`r_auth_ac` authorityOrder / matchRooms / roomMatchRadiusMm). Floor tiling stays bathrooms + WCs: the English
  *     courtyard is OUT by default (the sample 5.02 text names it, but its quantity matches without it — GT-D-007 open;
  *     a user adds it with a measure correction or a courtyard roomSettings doc + a rule edit).
+ * 6 = Sprint 6: text_item / area_item / length_item / suggested_item rules for 2.01–2.03, 4.08, 4.19, 4.25–4.28,
+ *     5.04, 5.06–5.08 (geometry + suggested fallbacks), 7.01–7.07, 8.01–8.04, 9.03 (`SPRINT6_RULES`).
+ * 7 = Sprint 6 Worker-BOQ requests: 2.02 trigger + `גרם מדרגות`; 8.02 / 9.03 wording closer to trade wording (library
+ *     resolution of imported items needs similarity ≥ 0.45); documented `CONSUME_NEAR_MAX_MM` and non-computable →
+ *     needsInput. 7.04 unchanged (counts explicit service-opening notes only; open).
  */
-export const DEFAULT_BOQ_RULES_VERSION = 5;
+export const DEFAULT_BOQ_RULES_VERSION = 7;
 
 /** A seeded rule doc. */
 export const defaultRuleDoc = (r: RuleSeed): Omit<BoqRule, 'updatedAt' | 'updatedBy'> =>
@@ -786,14 +1030,17 @@ export const ruleNeedsReseed = (stored: { source?: string; defaultsVersion?: num
 /**
  * Version of the shipped default item library. Seeded per org when its library is EMPTY (org bootstrap, and lazily
  * before a BOQ build / export / library or template read for orgs created before Stage 10); never re-seeded once the
- * org has any item. 1 = Stage 10.
+ * org has any item. 1 = Stage 10. 2 = Sprint 6: items of chapters 02, 06 (gypsum, 7.xx), 07 (plaster & paint, 8.xx) and
+ * the new 04 / 05 / 09 codes; each item carries the version that introduced it (`defaultsVersion`). Orgs that HAVE the
+ * default library (any `source: 'default'` item) get the newer items added (`planDefaultLibrarySeed`): create-if-missing
+ * by id, skipping codes the org already has (an import or a manual item of that code wins).
  */
-export const DEFAULT_ITEM_LIBRARY_VERSION = 1;
+export const DEFAULT_ITEM_LIBRARY_VERSION = 2;
 
 /** Units used by the defaults (Hebrew trade abbreviations). */
 export const DEFAULT_UNITS = Object.freeze({ count: "יח'", area: 'מ"ר', length: 'מ"א', lumpSum: 'קומפלט' });
 
-type DefaultItemSeed = { code: string; description: string; unit: string };
+type DefaultItemSeed = { code: string; description: string; unit: string; since?: number };
 const U = DEFAULT_UNITS;
 
 /**
@@ -861,9 +1108,43 @@ const DEFAULT_ITEM_SEEDS: readonly DefaultItemSeed[] = [
   { code: '5.07', description: 'חיפוי קיר חלקי באריחי קרמיקה', unit: U.area },
   // 09 — lighting installation (rule r_install_luminaires)
   { code: '9.01', description: 'התקנת גופי התאורה בבית', unit: U.count },
+  // --- Sprint 6 (library v2) ---
+  // 02 — construction
+  { code: '2.01', description: 'יציקת קירות תומכים מבטון מזוין לפי הנחיות הקונסטרוקטור', unit: U.area, since: 2 },
+  { code: '2.02', description: 'יציקת רצפה ומדרגות בטון לפי הנחיות הקונסטרוקטור', unit: U.lumpSum, since: 2 },
+  { code: '2.03', description: 'סגירת פתח קיים בבנייה בבלוקים', unit: U.area, since: 2 },
+  // 04 — electrical text / equipment items
+  { code: '4.08', description: 'צינור ריק מהרצפה כהכנה לשקעי שירות באי המטבח', unit: U.count, since: 2 },
+  { code: '4.19', description: 'הזנה למפוח אוורור (ונטה) כולל מפסק', unit: U.count, since: 2 },
+  { code: '4.25', description: 'אספקה והתקנת לוח תקשורת', unit: U.count, since: 2 },
+  { code: '4.26', description: 'החלפת מפסק דוד קיים במפסק טיימר', unit: U.count, since: 2 },
+  { code: '4.27', description: 'צינור קוברה 50 מ"מ לנקודת מקרן בתקרה', unit: U.count, since: 2 },
+  { code: '4.28', description: 'אספקה והתקנת לוח חשמל 36 מודולים', unit: U.count, since: 2 },
+  // 05 — tiling / waterproofing
+  { code: '5.04', description: 'ריצוף מדרגות במדרכי אבן (שלח ורום)', unit: U.count, since: 2 },
+  { code: '5.08', description: 'איטום קירות חצר אנגלית לפי הנחיות יועץ האיטום', unit: U.lumpSum, since: 2 },
+  // 06 — gypsum (codes 7.xx, template chapter 06)
+  { code: '7.01', description: 'תקרת גבס לפי תכנית התקרה', unit: U.area, since: 2 },
+  { code: '7.02', description: 'סינר גבס כמסתור לציוד (מפוח / מזגן)', unit: U.length, since: 2 },
+  { code: '7.03', description: 'סגירה פנימית בגבס של פתח או חלון קיים', unit: U.area, since: 2 },
+  { code: '7.04', description: 'אספקה והתקנה של פתח שירות בתקרת גבס', unit: U.count, since: 2 },
+  { code: '7.05', description: 'סינר גבס מסתור לווילון', unit: U.length, since: 2 },
+  { code: '7.06', description: 'מחיצות גבס עם בידוד צמר סלעים', unit: U.area, since: 2 },
+  { code: '7.07', description: 'מחיצות גבס כפולות (דו קרומיות) עם בידוד צמר סלעים', unit: U.area, since: 2 },
+  // 07 — plaster, putty & paint (codes 8.xx, template chapter 07)
+  { code: '8.01', description: 'תיקוני טיח ושפכטל לאחר עבודות הריסה ופירוק', unit: U.lumpSum, since: 2 },
+  { code: '8.02', description: 'שתי שכבות טיח על קירות חצר אנגלית וקירות בלוק חדשים', unit: U.area, since: 2 },
+  { code: '8.03', description: 'צביעת פנים הבית בצבע אקרילי', unit: U.lumpSum, since: 2 },
+  { code: '8.04', description: 'החלקת קירות ותקרות בשפכטל בשלוש שכבות', unit: U.lumpSum, since: 2 },
+  // 09 — misc
+  { code: '9.03', description: 'התקנת צינור אוורור 4" למפוח ונטה', unit: U.count, since: 2 },
 ];
 
-const chapterOfCode = (code: string): string => (code.split('.')[0] ?? code).padStart(2, '0');
+/** Chapter of a default item: the template chapter whose `codePrefixes` contain the code's major (7.01 → 06), else the major padded. */
+const chapterOfCode = (code: string): string => {
+  const major = code.split('.')[0] ?? code;
+  return defaultTemplate.chapters.find((c) => c.codePrefixes?.includes(major))?.code ?? major.padStart(2, '0');
+};
 const titleOfChapter = (ch: string): string => defaultTemplate.chapters.find((c) => c.code === ch)?.title ?? `פרק ${ch}`;
 
 /** The shipped default item library (doc ids = `itemIdFor(code, description)`; `source: 'default'`). */
@@ -878,11 +1159,30 @@ export const DEFAULT_ITEM_LIBRARY: readonly Omit<ItemLibraryItem, 'updatedAt' | 
       unit: s.unit,
       tags: ['ברירת מחדל'],
       source: 'default' as const,
-      sourceRef: `kamutan-defaults/library-v${DEFAULT_ITEM_LIBRARY_VERSION}`,
+      sourceRef: `kamutan-defaults/library-v${s.since ?? 1}`,
       active: true,
-      defaultsVersion: DEFAULT_ITEM_LIBRARY_VERSION,
+      defaultsVersion: s.since ?? 1,
     }),
   ),
+);
+
+/**
+ * Sprint 6: which default items to create for an org (pure; both repository drivers use it).
+ *  - empty library → every item;
+ *  - the org has the default library (`hasDefault`: ≥ 1 item with `source: 'default'`) → items not stored yet (by id)
+ *    whose code the org does not have yet (`takenCodes`: codes of ANY stored item — an import / manual item wins);
+ *  - otherwise (library built only from imports / manual items) → nothing.
+ * Idempotent: a second call creates nothing; deactivated items stay deactivated (they exist).
+ */
+export function planDefaultLibrarySeed(state: { empty: boolean; hasDefault: boolean; existingIds: ReadonlySet<string>; takenCodes: ReadonlySet<string> }): Array<Omit<ItemLibraryItem, 'updatedAt' | 'updatedBy'>> {
+  if (state.empty) return [...DEFAULT_ITEM_LIBRARY];
+  if (!state.hasDefault) return [];
+  return DEFAULT_ITEM_LIBRARY.filter((it) => !state.existingIds.has(it.id) && !state.takenCodes.has(it.code));
+}
+
+/** Items introduced after library v1 (the ones an org with the v1 default library is topped up with). */
+export const DEFAULT_ITEM_LIBRARY_ADDITIONS: readonly Omit<ItemLibraryItem, 'updatedAt' | 'updatedBy'>[] = Object.freeze(
+  DEFAULT_ITEM_LIBRARY.filter((it) => (it.defaultsVersion ?? 1) > 1),
 );
 
 /** Unit of the default library item / rule for a unit kind (worker fallback when a line has no library item). */

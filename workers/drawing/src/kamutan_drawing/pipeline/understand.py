@@ -61,6 +61,8 @@ DETECT_DISCIPLINES = {"electrical", "lighting", "plumbing"}
 ROOM_DISCIPLINES = {"architecture", "architecture_master", "construction", "demolition"}
 STAGE_PCT = {"legend": 88, "detect": 91, "rooms": 96}
 LINKS_FILE = "links.json.gz"
+TEXT_ITEMS_FILE = "text_items.json.gz"  # Sprint 6 (Worker-Text): kamutan.textItems/1
+GEOMETRY_FILE = "geometry.json.gz"  # Sprint 6 (Worker-Geometry): kamutan.geometry/1, plan sheets only
 FIXTURES_FILE = "fixtures.json.gz"
 WALLS_FILE = "walls.json.gz"
 # sheets whose walls other sheets of the same floor borrow (kamutan.walls/1, Worker-B's rooms.reference)
@@ -264,8 +266,10 @@ def understand(
     green_threshold: float | None = None,
     scale_conflict: bool = False,
     inserts: list[dict[str, Any]] | None = None,
+    text_items: bool = True,
+    geometry: bool = True,
 ) -> dict[str, Any]:
-    """Run legend → detect → rooms → links on one sheet. Writes the artifacts into ``out_dir`` when given.
+    """Run legend → detect → rooms → links → text items on one sheet. Writes the artifacts into ``out_dir`` when given.
 
     ``floors_confirmed``: the user confirmed the sheet's floors / regions — they are used as is and
     no "קומה לא ודאית" reason is added. ``reference_walls``: Worker-B's ``ReferenceWalls`` of the project's
@@ -419,6 +423,15 @@ def understand(
     elif room_objs:
         _apply_room_types(room_objs, [])
     lap("fixtures")
+    # ---------------------------------------------------------------- text & equipment items (Sprint 6, Worker-Text)
+    ti_doc: dict[str, Any] | None = None
+    if text_items:
+        ti_doc = _text_items(
+            vs, spans, sheet_id=sheet_id, discipline=discipline, text_paths=text_paths, scale_den=scale_den,
+            regions=regions, rooms=[_room_json(r) for r in room_objs], legend=legend, title_block=title_block, raster=raster,
+            green_threshold=green_threshold,
+        )  # fmt: skip
+    lap("textItems")
     all_dets = det.detections + fx_dets
     if not floors_confirmed:
         _flag_uncertain_floors(all_dets, room_objs, regions, spans, title_block)
@@ -460,7 +473,8 @@ def understand(
             dj["legendEntryId"] = link[dj["legendEntryId"]]
     clusters_json = [c.to_json() for c in det.clusters]
     # Sprint 4: the contracts' Room carries type / wet / walls / openings / externalCorners (tiling inputs)
-    rooms_json = {"schema": ROOMS_SCHEMA, "rooms": [_room_json(r) for r in room_objs]}
+    room_docs: list[dict[str, Any]] = [_room_json(r) for r in room_objs]
+    rooms_json = {"schema": ROOMS_SCHEMA, "rooms": room_docs}
     files: list[dict[str, str]] = []
     thumbs: dict[str, str | None] = {}
     if out_dir is not None:
@@ -513,6 +527,12 @@ def understand(
             log.warning("links failed", exc_info=True)
             links_doc = link_stats = None
     lap("links")
+    # ---------------------------------------------------------------- construction geometry (Sprint 6, Worker-Geometry)
+    geo_doc: dict[str, Any] | None = None
+    if geometry and not raster and discipline in GEOMETRY_DISCIPLINES:
+        geo_doc = _geometry(vs, spans, sheet_id=sheet_id, discipline=discipline, regions=regions, scale_den=scale_den,
+                            rooms=room_objs, text_paths=text_paths, green_threshold=green_threshold)  # fmt: skip
+    lap("geometry")
     if out_dir is not None:
         outs: list[tuple[str, Any]] = [
             ("legend.json.gz", leg_json),
@@ -531,6 +551,12 @@ def understand(
             (out_dir / FIXTURES_FILE).write_bytes(gz_json(_fixtures_doc(fx_objs, fx_dets)))
         if walls_doc is not None:
             (out_dir / WALLS_FILE).write_bytes(gz_json(walls_doc))
+        if ti_doc is not None:
+            # reported under its own key (``textItemsFile``), like ``wallsFile``: the orchestrator uploads it
+            (out_dir / TEXT_ITEMS_FILE).write_bytes(gz_json(ti_doc))
+        if geo_doc is not None:
+            # reported under its own key (``geometryFile``), like ``wallsFile``: the orchestrator uploads it
+            (out_dir / GEOMETRY_FILE).write_bytes(gz_json(geo_doc))
     lap("write")
     return {
         "legend": leg_json,
@@ -547,10 +573,64 @@ def understand(
         **({"fixturesFile": FIXTURES_FILE} if fx_objs and out_dir is not None else {}),
         **({"fixtureStats": _fixture_stats(fx_dets)} if fx_objs else {}),
         **({"wallsFile": WALLS_FILE} if walls_doc is not None and out_dir is not None else {}),
+        **({"textItemsFile": TEXT_ITEMS_FILE} if ti_doc is not None and out_dir is not None else {}),
+        **({"textItemStats": ti_doc["stats"]} if ti_doc is not None else {}),
+        **({"geometryFile": GEOMETRY_FILE} if geo_doc is not None and out_dir is not None else {}),
+        **({"geometryStats": geo_doc["stats"]} if geo_doc is not None else {}),
         **({"referenceWalls": len(reference_walls)} if reference_walls else {}),
         **({"regionFloors": region_floors} if region_floors else {}),
         "calibration": default_table().stats(),
     }
+
+
+def _text_items(
+    vs: VectorSheet,
+    spans: list[TextSpan],
+    *,
+    sheet_id: str,
+    discipline: str | None,
+    text_paths: set[int],
+    scale_den: int | None,
+    regions: list[dict[str, Any]],
+    rooms: list[dict[str, Any]],
+    legend: LegendResult,
+    title_block: BBox | None,
+    raster: bool,
+    green_threshold: float | None,
+) -> dict[str, Any] | None:
+    """``text_items.json.gz`` of the sheet (:mod:`kamutan_drawing.textitems`); best effort (None on failure). The
+    spans are the page's ``text.json.gz`` lines in order, so ``lineIdx`` indexes that artifact."""
+    try:
+        from ..textitems import extract as extract_text_items
+
+        lines = [
+            {
+                "text": s.text,
+                "bboxMm": list(s.bbox),
+                "angle": float(s.rotation % 360),
+                "confidence": s.conf,
+                "heightMm": s.height,
+            }
+            for s in spans
+        ]
+        return extract_text_items(
+            lines,
+            sheet_id=sheet_id,
+            discipline=discipline,
+            vs=vs,
+            text_paths=text_paths,
+            scale_den=scale_den,
+            regions=regions,
+            rooms=rooms,
+            legend_boxes=[lg.bbox for lg in legend.legends],
+            legend_labels=[e.label for e in legend.entries],
+            title_block=title_block,
+            raster=raster,
+            green_threshold=green_threshold,
+        )
+    except Exception:  # text items are best effort; the other artifacts must still be written
+        log.warning("text items failed", exc_info=True)
+        return None
 
 
 def _room_ceilings(rooms: list[Any], spans: list[TextSpan]) -> None:
@@ -857,6 +937,8 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             green_threshold=clean_green_threshold(args.get("greenThreshold")),
             scale_conflict=bool(args.get("scaleConflict", False)),
             inserts=[i for i in (prim.get("inserts") or []) if isinstance(i, dict)][:20000],
+            text_items=bool(args.get("textItems", True)),
+            geometry=bool(args.get("geometry", True)),
         )
     finally:
         close()
@@ -864,9 +946,40 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     return res
 
 
+# ---------------------------------------------------------------- Sprint 6 (Worker-Geometry) — keep this block here
+# plan sheets whose construction geometry is read (demolition: the demolished regions only)
+GEOMETRY_DISCIPLINES = {"construction", "architecture", "architecture_master", "master", "demolition"}
+
+
+def _geometry(
+    vs: VectorSheet,
+    spans: list[TextSpan],
+    *,
+    sheet_id: str,
+    discipline: str | None,
+    regions: list[dict[str, Any]],
+    scale_den: int | None,
+    rooms: list[Any],
+    text_paths: set[int],
+    green_threshold: float | None,
+) -> dict[str, Any] | None:
+    """``geometry.json.gz`` of a plan sheet (:mod:`kamutan_drawing.geometry`); best effort (None on failure)."""
+    try:
+        from ..geometry import analyze as geometry_analyze
+
+        return geometry_analyze(
+            vs, spans, sheet_id=sheet_id, discipline=discipline, regions=regions, scale_den=scale_den, rooms=rooms,
+            text_paths=text_paths, green_threshold=green_threshold,
+        )  # fmt: skip
+    except Exception:  # geometry is best effort; the other artifacts must still be written
+        log.warning("geometry failed", exc_info=True)
+        return None
+
+
 __all__ = [
     "DETECT_DISCIPLINES",
     "LINKS_FILE",
+    "TEXT_ITEMS_FILE",
     "WALLS_FILE",
     "Detection",
     "apply_confirmed_floors",

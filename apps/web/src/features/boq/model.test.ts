@@ -76,12 +76,12 @@ describe("BOQ model", () => {
     expect(g[1]!.title).toBe("פרק 08");
   });
 
-  it("status transitions per role: editors review, reviewers/admins approve, viewers nothing", () => {
+  it("status transitions per role (SEC-07): admin / editor / reviewer review and approve, viewers nothing", () => {
     expect(allowedTransitions("viewer", "draft")).toEqual([]);
     expect(allowedTransitions("editor", "draft")).toEqual(["reviewed"]);
-    expect(allowedTransitions("editor", "reviewed")).toEqual(["draft"]);
+    expect(allowedTransitions("editor", "reviewed")).toEqual(["approved", "draft"]);
     expect(allowedTransitions("reviewer", "reviewed")).toEqual(["approved", "draft"]);
-    expect(forwardStatus("editor", "reviewed")).toBeNull();
+    expect(forwardStatus("editor", "reviewed")).toBe("approved");
     expect(forwardStatus("reviewer", "reviewed")).toBe("approved");
     expect(forwardStatus("admin", "approved")).toBeNull();
   });

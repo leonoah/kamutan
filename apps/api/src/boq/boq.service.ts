@@ -24,6 +24,9 @@ import {
   type PatchBoqLineResponse,
   type Project,
   type RequestBoqBuildResponse,
+  roleSatisfies,
+  type BatchLineStatusRequest,
+  type BatchLineStatusResponse,
 } from '@kamutan/contracts';
 import { z } from 'zod';
 import { AccessService } from '../access/access.service';
@@ -193,6 +196,22 @@ export class BoqService {
     }
   }
 
+  // ------------------------------------------------------------------ bulk status (Sprint 6)
+  /**
+   * POST …/boq/lines/batch-status: every line moves with the single-PATCH status rules (reviewer+, state machine,
+   * Stage 10 re-approval), red lines only with `includeRed`; chunked transactions, one audit event per moved line with
+   * a shared `batchId`. Unknown / malformed ids → skipped `not_found`; the response keeps the request order per list.
+   */
+  async batchStatus(user: AuthContext, projectId: string, req: BatchLineStatusRequest): Promise<BatchLineStatusResponse> {
+    const { orgId, role } = await this.access.requireProjectRole(user, projectId, 'reviewer');
+    const batchId = `bs_${randomUUID().replace(/-/g, '')}`;
+    const r = await this.boq.batchLineStatus(orgId, projectId, req.lineIds, req.to, { includeRed: req.includeRed, allowed: roleSatisfies(role, 'reviewer'), batchId }, user.uid);
+    const order = new Map(req.lineIds.map((id, i) => [id, i]));
+    const byOrder = (a: { lineId: string }, b: { lineId: string }) => (order.get(a.lineId) ?? 0) - (order.get(b.lineId) ?? 0);
+    this.logger.log({ orgId, projectId, batchId, to: req.to, updated: r.updated.length, skipped: r.skipped.length }, 'boq batch status');
+    return { batchId, updated: r.updated.sort(byOrder), skipped: r.skipped.sort(byOrder) };
+  }
+
   // ------------------------------------------------------------------ evidence
   async evidence(user: AuthContext, projectId: string, lineId: string): Promise<BoqLineEvidenceResponse> {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'viewer');
@@ -225,6 +244,15 @@ export class BoqService {
     for (const it of items) {
       const id = it.detectionId;
       const tm = /^text_(\d{1,6})$/.exec(id);
+      // Sprint 6: worker-typed items carry their own box / shape (text items, geometry, stairs).
+      if ((it.kind === 'geometry' || it.kind === 'stair') && !tm) {
+        out.push({ ...it, target: { kind: it.kind, bboxMm: bboxOf(it.geometryMm?.mm) ?? it.bboxMm ?? null } });
+        continue;
+      }
+      if ((it.kind === 'text' || /^t_[A-Za-z0-9_-]+$/.test(id)) && !tm) {
+        out.push({ ...it, target: { kind: 'text', bboxMm: it.bboxMm ?? null } });
+        continue;
+      }
       if (id === 'sheet') out.push({ ...it, target: { kind: 'sheet', bboxMm: null } });
       else if (tm) {
         const key = `${it.sheetId}/${it.versionId}`;
@@ -492,4 +520,17 @@ export type LinkGroupInfo = { kind: string | null; switchIds: string[]; pointIds
 export function exportFileName(projectName: string, d: Date): string {
   const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
   return sanitizeFilename(`כתב כמויות - ${projectName} - ${date}.xlsx`, 'xlsx');
+}
+
+/** Bounding box (paper mm) of a shape; null for an empty / missing one. */
+export function bboxOf(pts: ReadonlyArray<{ x: number; y: number }> | undefined | null): { x: number; y: number; w: number; h: number } | null {
+  if (!pts || pts.length === 0) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p.x);
+    y0 = Math.min(y0, p.y);
+    x1 = Math.max(x1, p.x);
+    y1 = Math.max(y1, p.y);
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }

@@ -159,7 +159,18 @@ interface BoqViewDto {
 
 /** Contracts lines may omit the Sprint-3 worker fields on old docs. */
 export function normalizeLineDto(l: BoqLine): BoqLine {
-  return { ...l, byFloor: l.byFloor ?? {}, evidenceCount: l.evidenceCount ?? 0, ruleId: l.ruleId ?? null, sourceVersions: l.sourceVersions ?? [], computedAt: l.computedAt ?? null };
+  // Sprint 6: a suggested line may come with `qty: null` ("להשלמה ידנית") → 0 + needsInput (the UI shows "—").
+  const qtyMissing = (l as { qty: number | null }).qty === null || (l as { qty?: unknown }).qty === undefined;
+  return {
+    ...l,
+    qty: qtyMissing ? 0 : l.qty,
+    ...(qtyMissing ? { needsInput: true } : {}),
+    byFloor: l.byFloor ?? {},
+    evidenceCount: l.evidenceCount ?? 0,
+    ruleId: l.ruleId ?? null,
+    sourceVersions: l.sourceVersions ?? [],
+    computedAt: l.computedAt ?? null,
+  };
 }
 
 /** contracts LibraryImportView → app LibraryImport (stats → result summary). */
@@ -574,6 +585,19 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
       return normalizeLineDto(r.line);
     },
     getBoqLineEvidence: (projectId, lineId) => request(`/projects/${enc(projectId)}/boq/lines/${enc(lineId)}/evidence`),
+    // Sprint 6 (owner feedback): bulk status. `updated` may be lines or ids (then the caller refetches).
+    batchBoqLineStatus: async (projectId, req) => {
+      const r = await post<{ updated: (BoqLine | string)[]; skipped?: { lineId: string; reason: string }[] }>(`/projects/${enc(projectId)}/boq/lines/batch-status`, req);
+      return {
+        updated: r.updated.map((u) => (typeof u === "string" ? ({ id: u } as BoqLine) : normalizeLineDto(u))),
+        skipped: r.skipped ?? [],
+      };
+    },
+    // Sprint 6 (brief: POST …/boq/lines/:id/quick-measure; body mirrored until the API agent publishes it).
+    quickMeasureBoqLine: async (projectId, lineId, req) => {
+      const r = await post<{ line: BoqLine; correction?: Correction | null }>(`/projects/${enc(projectId)}/boq/lines/${enc(lineId)}/quick-measure`, req);
+      return { line: normalizeLineDto(r.line), correction: r.correction ?? null };
+    },
     getBoqSheetEvidence: (projectId, sheetId, versionId) =>
       request(`/projects/${enc(projectId)}/boq/evidence?sheetId=${enc(sheetId)}&versionId=${enc(versionId)}`),
     exportBoq: async (projectId, req) => {

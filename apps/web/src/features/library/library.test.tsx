@@ -29,7 +29,8 @@ describe("Library screen (/library)", { timeout: 30_000 }, () => {
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(1 + 1));
     await user.clear(screen.getByLabelText("חיפוש לפי קוד או תיאור"));
     await user.selectOptions(screen.getByLabelText("פרק"), "08");
-    await waitFor(() => expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2));
+    // chapter 08: 9.01 + the Sprint-6 default item 9.03
+    await waitFor(() => expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(3));
     expect(screen.getByRole("table")).toHaveTextContent("התקנת גופי התאורה בבית");
     await user.type(screen.getByLabelText("חיפוש לפי קוד או תיאור"), "zzz");
     expect(await screen.findByText("אין סעיפים שמתאימים לחיפוש.")).toBeInTheDocument();

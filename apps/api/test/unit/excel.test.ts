@@ -160,12 +160,35 @@ describe('buildBoqWorkbook — client format (sample BOQ chapter 04 + 9.01)', ()
     const ev = wb.getWorksheet(EVIDENCE_SHEET) as ExcelJS.Worksheet;
     const evRows = rowsOf(ev).filter((r) => r?.[0] === '4.10');
     expect(evRows).toEqual([
-      ['4.10', "נק' מאור בעלת שני מפסקים מחליפים", 'תאורה קומת קרקע', 'קומת קרקע', 3, 'שיוך לפריט לפי כלל ברירת מחדל', null, null],
-      ['4.10', "נק' מאור בעלת שני מפסקים מחליפים", "תאורה קומה א'", "קומה א'", 2, null, null, null],
+      ['4.10', "נק' מאור בעלת שני מפסקים מחליפים", 'תאורה קומת קרקע', 'קומת קרקע', 3, 'שיוך לפריט לפי כלל ברירת מחדל', null, null, 'זוהה בשרטוט'],
+      ['4.10', "נק' מאור בעלת שני מפסקים מחליפים", "תאורה קומה א'", "קומה א'", 2, null, null, null, null],
     ]);
     const r411 = rowsOf(ev).find((r) => r?.[0] === '4.11') as unknown[];
     expect(r411.slice(3, 5)).toEqual(['קומת קרקע', 2]);
     expect(r411[7]).toBe('lk_1: מפסקים d_1 → נקודות pt_1, pt_2\nlk_2: מפסקים — → נקודות —');
+  });
+
+  it('Sprint 6: origin in "ראיות" (+ להשלמה ידנית); a needsInput line keeps its row with an EMPTY qty + note; main sheet format unchanged', async () => {
+    const base = lines();
+    const ls = [
+      ...base,
+      { ...(base[0] as BoqLine), id: 'ln_7_01', chapter: '06', code: '7.01', description: 'תקרת גבס', unit: 'מ"ר', qty: 0, level: 'red' as const, origin: 'suggested' as const, needsInput: true, quickAction: { kind: 'measure_area' as const, sheetId: null } },
+      { ...(base[0] as BoqLine), id: 'ln_4_95', code: '4.95', description: 'לוח תקשורת', qty: 1, origin: 'text' as const },
+    ];
+    const plain = await read(await buildBoqWorkbook({ projectName: 'P', date: new Date(0), template, lines: base, split: 'summed', markDraft: false, evidence: new Map() }));
+    const wb = await read(await buildBoqWorkbook({ projectName: 'P', date: new Date(0), template, lines: ls, split: 'summed', markDraft: false, evidence: new Map() }));
+    expect(wb.worksheets.map((x) => x.name)).toEqual([MAIN_SHEET, FLOOR_SHEET, ROOM_SHEET, EVIDENCE_SHEET]);
+    const main = wb.getWorksheet(MAIN_SHEET) as ExcelJS.Worksheet;
+    expect(main.columnCount).toBe((plain.getWorksheet(MAIN_SHEET) as ExcelJS.Worksheet).columnCount);
+    const r701 = rowWithCode(main, '7.01') as ExcelJS.Row;
+    const qtyCol = template.columns.findIndex((c) => c.key === 'qty') + 1;
+    expect(r701.getCell(qtyCol).value).toBeNull();
+    expect(String(r701.getCell(qtyCol).note)).toContain('להשלמה ידנית');
+    expect((rowWithCode(main, '4.95') as ExcelJS.Row).getCell(qtyCol).value).toBe(1);
+    const ev = wb.getWorksheet(EVIDENCE_SHEET) as ExcelJS.Worksheet;
+    expect((rowsOf(ev)[0] as unknown[])[8]).toBe('מקור');
+    expect((rowsOf(ev).find((r) => r?.[0] === '7.01') as unknown[])[8]).toBe('הצעה – להשלמה ידנית');
+    expect((rowsOf(ev).find((r) => r?.[0] === '4.95') as unknown[])[8]).toBe('מטקסט בשרטוט');
   });
 
   it('VAT from the org setting; worker floor codes shown with Hebrew names (project names win)', async () => {

@@ -464,6 +464,35 @@
                     "type": "null"
                   }
                 ]
+              },
+              "lineId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quickAction": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "measure_area",
+                      "measure_length",
+                      "count",
+                      "confirm"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [

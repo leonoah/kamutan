@@ -105,6 +105,9 @@ export const storagePaths = Object.freeze({
   /** Sprint 4: fixtures (`kamutan.fixtures/1`) and reference walls (`kamutan.walls/1`) of a sheet version (worker). */
   fixtures: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/fixtures.json.gz`,
   walls: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/walls.json.gz`,
+  /** Sprint 6: text items (`kamutan.text-items/1`, Worker-Text) and geometry take-off (`kamutan.geometry/1`, Worker-Geometry). */
+  textItems: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/text_items.json.gz`,
+  geometry: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/geometry.json.gz`,
   /** Sprint 3: evidence of one BOQ build (`kamutan.boq-evidence/1`, worker; API reads server-side). */
   boqEvidence: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/evidence.json.gz`,
   /** Sprint 3: Excel export (API writes; signed URL only, 2 min). */
@@ -136,7 +139,7 @@ export const PROJECT_UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})
 /** Any object under a sheet version's artifact directory (what the API may sign for reading). */
 export const ARTIFACT_PATH_RE = new RegExp(
   `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(?:tiles/\\d{1,2}/\\d{1,5}_\\d{1,5}\\.webp|thumbnail\\.webp|primitives\\.msgpack\\.gz|text\\.json\\.gz` +
-    `|legend\\.json\\.gz|detections\\.json\\.gz|rooms\\.json\\.gz|links\\.json\\.gz|fixtures\\.json\\.gz|walls\\.json\\.gz|legend/le_${ID}\\.webp|unknown/u_${ID}\\.webp)$`,
+    `|legend\\.json\\.gz|detections\\.json\\.gz|rooms\\.json\\.gz|links\\.json\\.gz|fixtures\\.json\\.gz|walls\\.json\\.gz|geometry\\.json\\.gz|legend/le_${ID}\\.webp|unknown/u_${ID}\\.webp)$`,
 );
 /** Sprint 3: evidence file of a build. */
 export const BOQ_EVIDENCE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/boq/(${ID})/evidence\\.json\\.gz$`);
@@ -154,9 +157,13 @@ export const TILE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/sheets/($
 export const SIMILAR_THUMB_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/similar/(${ID})/(c_[A-Za-z0-9_-]{1,64})\\.webp$`);
 /** Sprint 3: past-BOQ upload slot. */
 export const LIBRARY_IMPORT_PATH_RE = new RegExp(`^orgs/(${ID})/imports/(${UUID})\\.(xls|xlsx)$`);
-/** The three Sprint-2 understanding artifacts (what the API may read server-side). */
+/**
+ * The understanding artifacts the API may read server-side (Sprint 2 three + links / fixtures / walls + Sprint 6
+ * geometry / text_items). `ARTIFACT_PATH_RE` (signable for the web) includes geometry but NOT text_items (drawing text
+ * is never served raw; text evidence carries only boxes).
+ */
 export const UNDERSTANDING_ARTIFACT_PATH_RE = new RegExp(
-  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(legend|detections|rooms|links|fixtures|walls)\\.json\\.gz$`,
+  `^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/(legend|detections|rooms|links|fixtures|walls|geometry|text_items)\\.json\\.gz$`,
 );
 /** Stage 10: the OCR text artifact, read server-side ONLY for text-line boxes of `text_{n}` evidence (never served). */
 export const TEXT_ARTIFACT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/sheets/(${ID})/versions/(${ID})/text\\.json\\.gz$`);

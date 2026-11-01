@@ -136,6 +136,74 @@
                     "version"
                   ],
                   "additionalProperties": false
+                },
+                "coverage": {
+                  "type": "object",
+                  "properties": {
+                    "libraryCodes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "produced": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "suggested": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32,
+                        "pattern": "^[0-9A-Za-z.\\-/]+$"
+                      },
+                      "maxItems": 500
+                    },
+                    "byChapter": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "libraryCodes": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "produced": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "suggested": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "missing": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "libraryCodes",
+                          "produced",
+                          "suggested",
+                          "missing"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "propertyNames": {
+                        "maxLength": 32
+                      }
+                    }
+                  },
+                  "required": [
+                    "libraryCodes",
+                    "produced",
+                    "suggested",
+                    "missing"
+                  ],
+                  "additionalProperties": true
                 }
               },
               "required": [

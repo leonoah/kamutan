@@ -143,20 +143,104 @@ export const fmtQty = (n: number): string => (Number.isInteger(n) ? String(n) : 
 /* ---------------- statuses per role ---------------- */
 
 /**
- * contracts BOQ_LINE_TRANSITIONS apply to reviewer/admin. Editors may mark a line "נבדק" (and back to טיוטה),
- * but only a reviewer/admin approves or un-approves. Viewers change nothing.
+ * contracts BOQ_LINE_TRANSITIONS apply to every role from reviewer up — SEC-07: "תיקון פריטים ושינוי סטטוס" and
+ * "אישור שורה סופי" are admin / editor / reviewer (the API enforces reviewer+ for status). Viewers change nothing.
  */
 export function allowedTransitions(role: Role | null | undefined, from: BoqLineStatus): BoqLineStatus[] {
   if (!role || role === "viewer") return [];
-  const all = BOQ_LINE_TRANSITIONS[from];
-  if (role === "admin" || role === "reviewer") return [...all];
-  return all.filter((to) => (from === "draft" && to === "reviewed") || (from === "reviewed" && to === "draft"));
+  return [...BOQ_LINE_TRANSITIONS[from]];
 }
 /** Key `A`: one step forward (draft → reviewed → approved) when the role allows it. */
 export function forwardStatus(role: Role | null | undefined, from: BoqLineStatus): BoqLineStatus | null {
   const next: BoqLineStatus | null = from === "draft" ? "reviewed" : from === "reviewed" ? "approved" : null;
   return next && allowedTransitions(role, from).includes(next) ? next : null;
 }
+/**
+ * Key `A` on a line (owner feedback): the next status, or WHY not — an approved line is "כבר מאושרת" (not a permission
+ * problem, also for admins), a line still "להשלמה ידנית" needs its quantity first, no role yet = still loading.
+ */
+export type ForwardResult = { to: BoqLineStatus } | { blocked: "already_approved" | "forbidden" | "needs_input" | "no_role" };
+export function forwardOrReason(role: Role | null | undefined, l: Pick<BoqLine, "status" | "needsInput" | "qtyOverride" | "qty">): ForwardResult {
+  if (l.status === "approved") return { blocked: "already_approved" };
+  if (!role) return { blocked: "no_role" };
+  if (l.needsInput && !isOverridden(l)) return { blocked: "needs_input" };
+  const to = forwardStatus(role, l.status);
+  return to ? { to } : { blocked: "forbidden" };
+}
+
+/* ---------------- bulk status (Sprint 6, owner feedback) ---------------- */
+
+const ORDER: BoqLineStatus[] = ["draft", "reviewed", "approved"];
+export type BulkSkip = "red" | "already" | "forbidden" | "needs_input";
+/**
+ * What a bulk "סמן כנבדק" / "אשר" would do (the action bar's counts; the server decides for real): the walk along the
+ * state machine must be allowed for the role at every step, red lines are left out unless `includeRed`, and lines
+ * still waiting for a quantity are never marked.
+ */
+export function bulkPlan(lines: readonly BoqLine[], to: BoqLineStatus, role: Role | null | undefined, includeRed: boolean) {
+  const eligible: BoqLine[] = [];
+  const skipped: { line: BoqLine; reason: BulkSkip }[] = [];
+  for (const l of lines) {
+    if (l.status === to) {
+      skipped.push({ line: l, reason: "already" });
+      continue;
+    }
+    const forward = ORDER.indexOf(to) > ORDER.indexOf(l.status);
+    // Like the API's batch-status: a bulk action only moves lines forward ("סמן כנבדק" never un-approves).
+    if (!forward) {
+      skipped.push({ line: l, reason: "already" });
+      continue;
+    }
+    if (forward && l.needsInput && !isOverridden(l)) {
+      skipped.push({ line: l, reason: "needs_input" });
+      continue;
+    }
+    if (forward && l.level === "red" && !includeRed) {
+      skipped.push({ line: l, reason: "red" });
+      continue;
+    }
+    let from = l.status;
+    let ok = Boolean(role);
+    for (let i = ORDER.indexOf(from); ok && i !== ORDER.indexOf(to); ) {
+      i += forward ? 1 : -1;
+      const step = ORDER[i]!;
+      ok = allowedTransitions(role, from).includes(step);
+      from = step;
+    }
+    if (ok) eligible.push(l);
+    else skipped.push({ line: l, reason: "forbidden" });
+  }
+  return { eligible, skipped };
+}
+/** Whether the role may reach `to` from any status at all (shows / hides the action bar's buttons). */
+export const roleCanReach = (role: Role | null | undefined, to: BoqLineStatus): boolean =>
+  ORDER.some((from) => from !== to && bulkPlan([{ status: from, level: "green", qty: 1 } as BoqLine], to, role, true).eligible.length > 0);
+
+/** Skip reasons → counts (for "4 דולגו (2 אדומות, 2 כבר אושרו)"). */
+export function skipCounts(skipped: readonly { reason: string }[]): Record<string, number> {
+  const m: Record<string, number> = {};
+  for (const s of skipped) m[s.reason] = (m[s.reason] ?? 0) + 1;
+  return m;
+}
+
+/** Undo of a bulk change: the updated lines grouped by the status they had before (one request per group). */
+export function undoGroups(before: ReadonlyMap<string, BoqLineStatus>, updatedIds: readonly string[]): { to: BoqLineStatus; lineIds: string[] }[] {
+  const g = new Map<BoqLineStatus, string[]>();
+  for (const id of updatedIds) {
+    const st = before.get(id);
+    if (st) g.set(st, [...(g.get(st) ?? []), id]);
+  }
+  return [...g.entries()].map(([to, lineIds]) => ({ to, lineIds }));
+}
+
+/** Range selection (shift-click): the ids between the anchor and the clicked id in display order, inclusive. */
+export function rangeIds(ordered: readonly string[], anchor: string | null, id: string): string[] {
+  const a = anchor ? ordered.indexOf(anchor) : -1;
+  const b = ordered.indexOf(id);
+  if (a < 0 || b < 0) return [id];
+  return ordered.slice(Math.min(a, b), Math.max(a, b) + 1);
+}
+
 export const canEditQty = (role: Role | null | undefined) => role === "admin" || role === "editor" || role === "reviewer";
 
 /** Lines that still need a look: not approved and not green, or still a draft. */
@@ -186,7 +270,8 @@ export function lineDomain(l: Pick<BoqLine, "ruleId" | "chapter" | "code">): str
 }
 
 /** `qtyChanged` (Stage 10): approved lines that dropped to "נבדק" because their quantity changed since the approval. */
-export type StatusFilter = BoqLineStatus | "all" | "qtyChanged";
+/** `needsInput` (Sprint 6): suggested lines waiting for a manual measure / count / confirm ("להשלמה ידנית"). */
+export type StatusFilter = BoqLineStatus | "all" | "qtyChanged" | "needsInput";
 /** The drawing's filters applied to lines: תחום → line domain, קומה → line has qty on that floor, ביטחון → level. */
 export function filterLines(lines: readonly BoqLine[], f: OverlayFilters, status: StatusFilter = "all"): BoqLine[] {
   const dom = new Set(f.domains);
@@ -196,7 +281,8 @@ export function filterLines(lines: readonly BoqLine[], f: OverlayFilters, status
       lv.has(l.level) &&
       (dom.size === 0 || dom.has(lineDomain(l))) &&
       (f.floor === null || (l.byFloor?.[f.floor] ?? 0) > 0) &&
-      (status === "all" || (status === "qtyChanged" ? qtyChangedSinceApproval(l) : l.status === status)),
+      (status === "all" ||
+        (status === "qtyChanged" ? qtyChangedSinceApproval(l) : status === "needsInput" ? Boolean(l.needsInput) && !isOverridden(l) : l.status === status)),
   );
 }
 

@@ -630,3 +630,101 @@ The API agent published `packages/contracts/src/members.ts`, `uploads.ts` (`repl
 - A-UI-07 is optimistic for counted lines (one item = ±1). Composite (switch-group) and area / length lines still wait for the server.
 - Real MFA / Google reauth popups are not testable here (unit-tested through the mocked Firebase SDK, as before).
 - The share viewer on a phone is a scroll-to-drawing, not tabs; good enough for E2E-09, tabs would be nicer.
+
+# Sprint 6 (web + viewer): every BOQ line present, suggested lines + quick actions; owner feedback (bulk approve, toast flood)
+
+Brief: `docs/agents/SPRINT6_BRIEF.md` (row "Web", "Shared interfaces") + the owner's feedback relayed by the coordinator.
+`packages/viewer` needed no change (polygon / path features + labels already cover the new evidence kinds).
+
+## Contracts (mirrored in `src/api/types.ts` until the API agent publishes "Sprint 6 published")
+- `BoqLine` additive: `origin?: detected|text|geometry|suggested|manual`, `needsInput?: boolean`,
+  `quickAction?: {kind: measure_area|measure_length|count|confirm, sheetId|null} | null`. The contract's `qty: null`
+  ("להשלמה ידנית") is mapped by `normalizeLineDto` to `qty: 0` + `needsInput: true`. Older lines carry no origin →
+  `originOf()` infers it (`r_manual` → manual, room breakdown → geometry, else detected). The suggested line's reason is
+  read from `reasons[0]` (assumption: Worker-BOQ writes `suggested_item.reason` there).
+- `BoqEvidenceItem` additive: `kind?: detection|room|text|geometry|stair`, `text`, `bboxMm` (text), `geometry`
+  `{type: polygon|polyline, mm}`, `treads: PointMm[][]` (stair).
+- `POST /projects/:pid/boq/lines/:lineId/quick-measure` `{kind, quantity, unit, sheetId, versionId, geometry, floor}`
+  → `{line, correction|null}` (`quickMeasureBoqLine`).
+- `POST /projects/:pid/boq/lines/batch-status` `{lineIds, to, includeRed}` → `{updated[], skipped[{lineId, reason}]}`
+  (`batchBoqLineStatus`; `updated` may be lines or ids — ids trigger a refetch). **Requested semantics for the API:**
+  walk the legal path of `BOQ_LINE_TRANSITIONS` (draft → reviewed → approved, and back for undo), role-check every
+  step; skip reasons `red` (forward moves, unless `includeRed`), `already`, `needs_input` (a line still waiting for a
+  quantity is never marked), `forbidden`, `not_found`.
+- `BoqBuild.stats.coverage?` `{libraryCodes, produced, suggested, missing[]}` is typed; the UI computes the per-chapter
+  coverage from the lines themselves (no dependency on the build stats).
+
+## Screens
+- **BOQ panel** (`BoqPanel.tsx`, `Sprint6Parts.tsx`, `sprint6.ts`):
+  - every row shows an origin badge (icon + word, never colour alone; text always `--foreground`): סמלים / כיתוב / מדידה /
+    מוצע / ידני, hover tooltip with the full sentence; the receipt repeats it ("מקור: …") for keyboard users.
+  - a line that needs input: "להשלמה ידנית" chip (hand icon, dashed), the reason (wrapping), the unit, "—" + "חסרה כמות"
+    in the qty cell (the estimate when there is one) and the quick-action button: מדידת שטח / מדידת אורך / ספירה / אישור
+    כמות (name = visible text + "לסעיף X").
+  - chapter header: "x מתוך y סעיפים חושבו מהשרטוט · z להשלמה" (origins detected / text / geometry, not waiting).
+  - filter: chip "להשלמה ידנית (n)" in the toolbar + the same option in the status select (`StatusFilter` `needsInput`).
+- **Quick action** (`ReviewPage`): measure / count → selects the line, switches to its sheet (`quickAction.sheetId`, else
+  the current / first ready sheet), arms the area / length / count tool and shows a banner "מדידת שטח לסעיף 7.01 · ביטול
+  המדידה" (Esc or switching tool cancels). The tool's result goes straight to `quick-measure` (no item picker); the line
+  updates optimistically (`applyQuickMeasure`: waiting line takes the measure, `needsInput: false`, origin manual) and is
+  replaced by the server's line; one toast "נשמרה כמות X לסעיף Y." with undo (reverts the stored correction). `confirm`
+  opens `QuickConfirmDialog` (estimate or 1 prefilled). Hub deep link: `/review?line=<id>&quick=1`.
+- **Evidence on the drawing**: `evidenceShapeFeatures` — `text` → the bbox outlined + soft fill + the matched text as a
+  chip; `geometry` → the polygon (with code + qty chip) or a 4 px polyline; `stair` → each tread outlined, alternating
+  fill, numbered when zoomed in. All passive (markers stay clickable). Row → drawing zooms to them (`shapeBoxesOn`), the
+  sheet switch counts them, the footer's "N על הגיליון הזה" includes them.
+- **Hub card** (`ProjectBoqSummary.tsx`): coverage line per chapter, the "להשלמה ידנית" chip + reason + quick-action link
+  per waiting line, "—" quantity, and a "להשלמה ידנית (n)" filter toggle. The table got an explicit `<colgroup>`
+  (table-fixed took widths from the sr-only header row → equal columns, the description squeezed on a phone).
+
+## Owner feedback (high priority)
+- **Bulk approve:** checkbox per row (editors / reviewers / admins; none for viewers), shift-click range
+  (`rangeIds`), "בחר הכל" (= the lines in the current filter) and a tri-state chapter checkbox. `BulkBar`: "N שורות
+  נבחרו · סמן כנבדק (n) · אשר (n) · כולל N שורות אדומות · נקה בחירה"; buttons are role-aware (`roleCanReach`: editors
+  never see "אשר"), counts from `bulkPlan` (red out unless opted in, waiting lines never, state machine walked per role).
+  The red opt-in shows a warning; `BulkConfirmDialog` states the count, what is left out, and the red lines included
+  (Enter confirms). One request, optimistic; ONE summary toast "אושרו 23 שורות · 4 דולגו (2 אדומות, 2 כבר אושרו)" with
+  "בטל" → the same endpoint per previous status (`undoGroups`), then "השינוי בוטל (n שורות)". **Shift+A** approves the
+  selection (also with focus on a checkbox: checkboxes no longer swallow the shortcuts).
+- **Toast flood:** `A` / "סמן כ…" no longer toast on success: the status pill re-mounts with a pop-in and the polite live
+  region (`data-testid=live-msg`) announces "השורה 4.01 סומנה 'אושר'.". Toaster: at most 3 visible, newest on top, older
+  ones collapse into "+N הודעות" (expand / "הסתר הודעות קודמות"), identical messages merge ("×2"), errors 5 s, summaries
+  with undo 8 s, the rest 6 s; collapsed toasts expire without being mounted; the store keeps ≤ 20.
+- **Wrong message:** `forwardOrReason()` — approved → "השורה X כבר מאושרת." (neutral), waiting line → "קודם צריך להשלים
+  את הכמות של X.", no role yet (org loading) → "טוען את ההרשאות שלך…", only a real role limit → "אין לך הרשאה…". Admin
+  role logic checked: admins get every transition; the message the owner saw was the approved-line case.
+  **Open:** the API lets `editor` change status (contracts: "status (reviewer+)" by `ROLE_RANK`, editor 30 > reviewer
+  20); the web keeps editors to draft ↔ reviewed (Sprint-3 policy). One of the two should change — decision for the
+  owner / API agent.
+
+## Mock (`src/api/mockSprint6.ts`, wired in `mockBoq.derive` + `mock.ts`)
+- Stand-in for Worker-Text / Worker-Geometry / Worker-BOQ, both data modes: for catalogued codes the base lacks, adds text
+  lines (4.17, 4.18, 4.23, 4.24, 9.03: text bboxes anchored next to the electrical sheet's own detections), geometry lines
+  (5.04 stair: 11 treads in the stairs room / smallest room; 7.05 valance m'; 7.06 partition m²: a wall-run polyline) and
+  suggested lines (2.01–2.03, 5.06–5.08, 7.01–7.04, 7.07, 8.01–8.04) with reason + quick action (red without an estimate,
+  yellow קומפלט estimate 1). Codes the Worker-BOQ lines already carry are never touched (Noah: 4.17–4.24, 5.04, 5.06,
+  5.07 stay theirs). `finalizeSprint6`: a measured / confirmed waiting line → manual, yellow, "הושלם ידנית".
+- `quickMeasureBoqLine`: measure / count → a `measure` / `count` correction with the line's item code (re-derived,
+  undo = revert), confirm → `confirmLine`; audit via `recordLinePatch`. `batchBoqLineStatus`: `boq.batchStatus` as above.
+- Library fixture: generic default items for 2.xx, 5.04, 5.08, 7.01–7.07, 8.01–8.04, 9.03 (4.25 left out: the import demo
+  adds it).
+
+## Tests
+- Unit (web 311, was 284; viewer 62 unchanged): `features/boq/sprint6.test.ts` (origin / needs input / quick action /
+  coverage / filter / adapter null qty / optimistic measure / evidence features + zoom boxes / `forwardOrReason` /
+  `bulkPlan` / range / undo groups / mock layer + finalize), `features/boq/sprint6.ui.test.tsx` (suggested row + axe,
+  filter, measure via the bound area tool, confirm dialog, text + stair highlight, A inline + "כבר מאושרת" merged toast,
+  bulk range → dialog → one summary → undo, red opt-in + Shift+A, editor / viewer gating, Toaster cap / collapse / merge
+  / durations), `api/http.test.ts` (+1: both routes, null qty, ids in `updated`). Updated: `boq.test.tsx` (status change
+  announced instead of toasted), `library.test.tsx` (chapter 08 has 9.03), `hub.test.tsx` (preloads the lazy chunks).
+- Playwright `e2e/sprint6.e2e.ts` (both modes, no `needsNoah`): suggested lines / badges / tooltip / coverage / filter +
+  axe; measure quick action on the canvas (polygon + Enter → line completes); confirm dialog + axe; text / stair /
+  geometry highlight (screenshots); hub card + filter + axe + deep link into the bound tool; hub on a phone (390) with no
+  horizontal scroll; A over lines (no per-line toast, ≤ 3 toasts, "כבר מאושרת"); bulk range + Shift+A → confirm + axe →
+  one summary → undo; red opt-in warning + dialog count.
+- Screenshots (checked by hand): `/home/claude/kamutan-data/acceptance/ui/screens/{desktop,mobile}/s6-*.png`.
+
+## Known gaps
+- Quick measure on a line with a server `quickAction.sheetId` the user has not got ready falls back to the current sheet.
+- Only the selected line's shape evidence is drawn (hovering a row previews markers only, as before).
+- The hub card shows no origin badges (kept compact: only the "להשלמה ידנית" state and its action).

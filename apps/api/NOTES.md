@@ -1,4 +1,4 @@
-# @kamutan/api — notes (Sprint 0 + 1 + 2 + 3 + 4 + 5, Firebase, ADR 0008)
+# @kamutan/api — notes (Sprint 0 + 1 + 2 + 3 + 4 + 5 + 6, Firebase, ADR 0008)
 
 NestJS 11 (TypeScript strict) Core API. Sprint 0: **login → create project → upload & store a file**. Sprint 1:
 **quarantine upload → ingest via Pub/Sub → sheets list / confirm / regions / tiles (signed URLs) / reprocess / job status**.
@@ -9,6 +9,58 @@ risk-ranked review queue, room settings (tiling inputs), learn-from-correction (
 Runs as Cloud Functions 2nd gen `api` (europe-west1) behind the Firebase Hosting rewrite `/api/**`
 (same origin → no CORS needed), and locally via `src/main.ts`. Contracts (Zod, source of truth for DTOs,
 Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
+
+## Sprint 6 (API agent) — read this first, Web + Worker-BOQ / Text / Geometry
+
+Contracts: packages/contracts/NOTES.md **"Sprint 6 published"** (rule kinds, artifacts adopted from Worker-Text /
+Worker-Geometry, line fields, evidence kinds, coverage, library v2 / template v3 / rules v6, quick-measure, batch-status).
+
+### Endpoints (new)
+
+| Method | Path | Min role | Notes |
+| --- | --- | --- | --- |
+| POST | `/projects/:pid/boq/lines/:lineId/quick-measure` | reviewer | `QuickMeasureRequest {kind: measure_area\|measure_length\|count\|confirm, sheetId, versionId? (default: the sheet's current version), geometry?, quantity?, reason?}` → 201 `{correction, line, rebuild}`. Stores ONE correction bound to the line (`lineId`, `quickAction`, `itemCode` = line code): measure_area → `measure` polygon m2; measure_length → `measure` polyline m; count → `count` points (quantity = clicks); confirm → `accept` with `quantity` (required when the line `needsInput`, else the line's effective qty). Anchor = mean of the geometry points (confirm without a point: 0,0). Same checks as POST corrections (version exists + ready, points inside the page ± 10 mm). Audit `corrections/create` (+ `lineId`, `quickAction`); BOQ stale (`correction`) + debounced auto rebuild (`RebuildService`). Line history lists it (`c.lineId === lineId`). 404 unknown line / sheet / version, 409 line without a valid item code / sheet without a version. |
+| POST | `/projects/:pid/boq/lines/batch-status` | reviewer (strict rate limit) | `{lineIds (1..500, unique), to: reviewed\|approved, includeRed = false}` → 200 `{batchId (bs_…), updated [{lineId, from, to}], skipped [{lineId, reason: already\|forbidden\|red\|not_found}]}` (request order). Per line `planBatchStatus` (boq-docs.ts) = the single-PATCH rules (`planLinePatch`): forward only; `approved` on a draft chains draft → reviewed → approved (both stamps, `approvedQty = qty`, ONE event); an approved line that `needsReapproval` (Stage 10) is re-approved (new baseline, chip and `approvalInvalidated` cleared; reported `from: reviewed`); never un-approves (`already`); red only with `includeRed`. Chunks of 100 lines per transaction (each line re-read inside it; Firestore: getAll + one audit event per moved line, chained). Audit `boqLines/update {projectId, lineId, code, from, to, batchId, …}`; history summary "אושר (פעולה קבוצתית) · טיוטה → אושר", `auditSummaryHe` adds "(פעולה קבוצתית)". `forbidden` is reserved (every status change is reviewer+ today, so it never fires). |
+
+### Changed read paths
+- `toBoqLine` maps `origin` (unknown values dropped), `needsInput` (also `true` when the worker wrote `qty: null` →
+  qty 0), `quickAction` (malformed → null). GET boq, PATCH line, quick-measure response (the public share snapshot keeps its reduced line shape).
+- `GET …/lines/:id/evidence` targets: items with `kind: geometry|stair` → `target {kind, bboxMm = bbox of geometryMm}`;
+  `kind: text` or a `t_…` id → `target {kind: text, bboxMm}` (the worker inlines the box; text_items.json.gz is never read
+  or served by the API). `text_{n}` / `sheet` / `r_…` as in Stage 10.
+- Overlay manifest: `geometry {url}|null` (version `artifacts.geometry`, signed like the other artifacts). Version mapper
+  keeps `artifacts.textItems` / `geometry`.
+- **Excel**: format unchanged (same sheets, columns, rows). "ראיות" gets a 9th column "מקור" on the line's first row
+  (`LINE_ORIGIN_HE`, "+ – להשלמה ידנית" for `needsInput`). A `needsInput` line without an override keeps its row with an
+  EMPTY quantity cell (note "להשלמה ידנית") — the total formula yields 0.
+
+### Seeding (`seedDefaults`, both drivers; runs on org bootstrap, build, export, GET templates / rules / library)
+- Library: empty → all 81 default items; an org that HAS the default library (any `source: 'default'` item) → the 23
+  Sprint 6 items it lacks, skipping codes the org already has (import / manual wins); import-only org → nothing.
+  Firestore: one `getAll` of the 23 ids on every call; the `source == 'default' limit 1` + `code in [...]` queries only
+  when some are missing. Idempotent; deactivated items stay deactivated.
+- Template: `tpl_default` that is an unedited generic v2 seed (`templateNeedsUpgrade`) is replaced by v3 (`default` flag
+  kept); Sprint-3 sample-format seeds, imports and admin-edited templates are untouched.
+- Rules: `DEFAULT_BOQ_RULES_VERSION` 7 (v6 Sprint 6 rules, v7 Worker-BOQ follow-up: 2.02 trigger, 8.02 / 9.03 wording,
+  documented `CONSUME_NEAR_MAX_MM` / non-computable → needsInput) → every `source: 'default'` rule doc is reseeded
+  (admin-edited `user` docs kept). 7.04 unchanged (open).
+
+### Tests
+`test/e2e/sprint6.e2e.test.ts` (read path, quick-measure kinds / stale + debounce / audit / history / roles / 400 / 404,
+batch-status transitions / red / re-approval / audit batchId / history label / chunking / roles / validation, evidence
+targets, overlay geometry, seeding top-up / template upgrade / import-only org); `test/unit/excel.test.ts` (origin column,
+needsInput row); roles matrix + `openapi.json` (+2 routes); contracts `test/sprint6.test.ts`.
+
+### Open / for other agents
+- **Worker-BOQ**: implement the four rule kinds, `origin` / `needsInput` / `quickAction`, evidence kinds, `coverage`, and
+  the bound-correction semantics (contracts NOTES); mirror rules v6 / library v2 (`tests/test_boq_contracts.py`
+  `test_default_rules_mirror_contracts_defaults` fails until `R.DEFAULT_RULES` mirrors the new rules). Write
+  `needsInput: true` with `qty: 0` (the API also accepts `qty: null`).
+- **Worker-Text / Worker-Geometry**: artifact schemas = your published shapes (lenient); `kamutan.textItems/1` and
+  `kamutan.geometry/1` validate in `json-schema/TextItemsArtifact.json` / `GeometryArtifact.json`. Report `textItemsFile` /
+  `geometryFile`; the orchestrator sets `artifacts.textItems` / `artifacts.geometry`.
+- **Web**: batch-status + quick-measure shapes above; overlay `geometry`; evidence `target.kind` geometry / stair.
+- Quick-measure on a superseded sheet is allowed (the worker re-matches it like any correction).
 
 ## Stage 10 fix round (API agent) — read this first, Web + Worker-BOQ
 

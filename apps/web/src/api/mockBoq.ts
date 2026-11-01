@@ -7,6 +7,9 @@ import {
   type BoqEvidenceItem,
   type BoqLine,
   type BoqLineEvidence,
+  type BoqLineStatus,
+  type BatchStatusRequest,
+  type BatchStatusResponse,
   type BoqLinesResponse,
   type BoqRule,
   type BoqSheetEvidence,
@@ -35,6 +38,7 @@ import {
 } from "./types";
 import { computeBoq, synthesizeLinks, type EngineSheet } from "./mockBoqEngine";
 import { applyCorrectionDeltas, applyRoomSettingsDeltas, computePlumbing, computeTiling, type S4Sheet } from "./mockSprint4Engine";
+import { applySprint6, finalizeSprint6 } from "./mockSprint6";
 import { applyCorrections, applyLinkCorrections } from "@/features/corrections/model";
 import { fetchArtifact } from "@/features/understanding/artifacts";
 import { allowedTransitions } from "@/features/boq/model";
@@ -82,6 +86,8 @@ export interface BoqMockDeps {
   libraryMode?: "imported" | "default" | "none";
   /** Stage 10: a rebuild dropped an approved line to "נבדק" (the API/worker audit `boqLines/approval_invalidated`). */
   onApprovalInvalidated?(projectId: string, line: BoqLine, from: number, to: number): void;
+  /** Sprint 6: add the text / geometry / suggested lines (default on; off reproduces the Sprint-5 BOQ). */
+  sprint6?: boolean;
 }
 
 const COMPOSITE = new Set(["4.09", "4.10", "4.11", "4.12", "4.14", "4.15", "4.16"]);
@@ -94,6 +100,8 @@ interface ProjectBoq {
   links: Map<string, LinksArtifact>;
   /** Sprint 4: automatic lines before plumbing/tiling + human corrections are layered on (see `derive`). */
   base: { lines: BoqLine[]; evidence: Record<string, BoqEvidenceItem[]> } | null;
+  /** Sprint 6: quantities confirmed through a line's `confirm` quick action (lineId → qty). */
+  confirmed: Map<string, number>;
 }
 
 type DevBoq = { lines: BoqLine[]; evidence: Record<string, BoqEvidenceItem[]>; sig: string };
@@ -157,7 +165,7 @@ export function createBoqMock(deps: BoqMockDeps) {
   const proj = (projectId: string): ProjectBoq => {
     let p = projects.get(projectId);
     if (!p) {
-      p = { state: null, builds: new Map(), lines: new Map(), evidence: {}, links: new Map(), base: null };
+      p = { state: null, builds: new Map(), lines: new Map(), evidence: {}, links: new Map(), base: null, confirmed: new Map() };
       projects.set(projectId, p);
     }
     return p;
@@ -213,8 +221,9 @@ export function createBoqMock(deps: BoqMockDeps) {
         });
       }
     } else lines = applyRoomSettingsDeltas(lines, sheets, settings, lib, at);
+    if (deps.sprint6 !== false) ({ lines, evidence } = applySprint6({ lines, evidence }, { sheets, library: lib, at }));
     const out = applyCorrectionDeltas({ lines, evidence }, perSheet, corrections, lib, at);
-    installDerived(p, out.lines, out.evidence, projectId);
+    installDerived(p, deps.sprint6 !== false ? finalizeSprint6(out.lines, p.confirmed) : out.lines, out.evidence, projectId);
   }
 
   /** Re-derive after a correction / room-settings change (built BOQs only) — "the BOQ updates immediately". */
@@ -437,6 +446,13 @@ export function createBoqMock(deps: BoqMockDeps) {
       deps.emit();
     },
     recompute,
+    /** Sprint 6: a `confirm` quick action (the quantity of a suggested קומפלט / unit line), then re-derive. */
+    async confirmLine(projectId: string, lineId: string, qty: number) {
+      const p = projects.get(projectId);
+      if (!p?.lines.has(lineId)) throw new ApiError(404, "not_found", "Line not found");
+      p.confirmed.set(lineId, qty);
+      await recompute(projectId);
+    },
     /** Link graph of a sheet (real, synthesized or none) with the hand-made link edits applied. */
     links(projectId: string, sheetId: string): LinksArtifact | null {
       const raw = projects.get(projectId)?.links.get(sheetId) ?? devLinks.get(sheetId) ?? null;
@@ -505,6 +521,51 @@ export function createBoqMock(deps: BoqMockDeps) {
       if (req.note !== undefined) l.note = req.note;
       deps.emit();
       return { ...l };
+    },
+    /**
+     * Sprint 6 (owner feedback): one status for many lines. Walks the legal path of the state machine (draft → reviewed
+     * → approved and back), each step role-checked like a PATCH; red lines are skipped unless `includeRed` (moving back
+     * to draft never needs it); a line still "להשלמה ידנית" is never marked checked / approved.
+     */
+    batchStatus(projectId: string, req: BatchStatusRequest, uid: string): BatchStatusResponse {
+      const p = proj(projectId);
+      const order: BoqLineStatus[] = ["draft", "reviewed", "approved"];
+      const role = deps.role();
+      const updated: BoqLine[] = [];
+      const skipped: BatchStatusResponse["skipped"] = [];
+      for (const id of new Set(req.lineIds)) {
+        const l = p.lines.get(id);
+        if (!l) {
+          skipped.push({ lineId: id, reason: "not_found" });
+          continue;
+        }
+        if (l.status === req.to) {
+          skipped.push({ lineId: id, reason: "already" });
+          continue;
+        }
+        const forward = order.indexOf(req.to) > order.indexOf(l.status);
+        if (forward && l.needsInput && l.qtyOverride == null) {
+          skipped.push({ lineId: id, reason: "needs_input" });
+          continue;
+        }
+        if (forward && l.level === "red" && !req.includeRed) {
+          skipped.push({ lineId: id, reason: "red" });
+          continue;
+        }
+        const path: BoqLineStatus[] = [];
+        for (let i = order.indexOf(l.status); i !== order.indexOf(req.to); ) {
+          i += forward ? 1 : -1;
+          path.push(order[i]!);
+        }
+        let from = l.status;
+        if (!path.every((to) => allowedTransitions(role, from).includes(to) && ((from = to), true))) {
+          skipped.push({ lineId: id, reason: "forbidden" });
+          continue;
+        }
+        for (const to of path) this.patchLine(projectId, id, { status: to }, uid);
+        updated.push({ ...p.lines.get(id)! });
+      }
+      return { updated, skipped };
     },
     evidence(projectId: string, lineId: string): BoqLineEvidence {
       const p = proj(projectId);

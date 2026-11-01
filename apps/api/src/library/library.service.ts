@@ -27,6 +27,8 @@ import {
   type PatchBoqRuleRequest,
   type PatchBoqTemplateRequest,
   type PatchLibraryItemRequest,
+  DEFAULT_BOQ_TEMPLATE_ID,
+  templateNeedsUpgrade,
 } from '@kamutan/contracts';
 import { z } from 'zod';
 import { AccessService } from '../access/access.service';
@@ -223,7 +225,8 @@ export class LibraryService {
   async listTemplates(user: AuthContext, orgId: string): Promise<BoqTemplateList> {
     await this.access.requireRole(user, orgId, 'viewer');
     let items = await this.boq.listTemplates(orgId);
-    if (!items.some((t) => t.default)) {
+    // Sprint 6: also when the stored generic default is an older unedited seed (template v3 upgrade + library top-up).
+    if (!items.some((t) => t.default) || items.some((t) => t.id === DEFAULT_BOQ_TEMPLATE_ID && templateNeedsUpgrade(t))) {
       await this.boq.seedDefaults(orgId);
       items = await this.boq.listTemplates(orgId);
     }

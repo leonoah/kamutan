@@ -2,7 +2,8 @@ import {
   BOQ_BUILD_STUCK_MS,
   DEFAULT_BOQ_RULES,
   DEFAULT_BOQ_TEMPLATE,
-  DEFAULT_ITEM_LIBRARY,
+  planDefaultLibrarySeed,
+  templateNeedsUpgrade,
   defaultRuleDoc,
   fsPaths,
   ruleNeedsReseed,
@@ -21,8 +22,8 @@ import {
   type ProcessingError,
   type StaleReason,
 } from '@kamutan/contracts';
-import { approvalInvalidatedAudit, approvalsInvalidatedOf, planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
-import { MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BoqRepository } from './boq-repository';
+import { approvalInvalidatedAudit, approvalsInvalidatedOf, planBatchStatus, planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
+import { BATCH_STATUS_CHUNK, MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BatchStatusResult, type BoqRepository } from './boq-repository';
 import { autoId, type InMemoryRepository } from './in-memory.repository';
 import type { Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -143,9 +144,14 @@ export class InMemoryBoqRepository implements BoqRepository {
       let templates = 0;
       let rules = 0;
       const tplPath = fsPaths.boqTemplate(orgId, DEFAULT_BOQ_TEMPLATE.id);
-      if (!this.docs.has(tplPath)) {
+      const tplDoc = this.docs.get(tplPath);
+      if (!tplDoc) {
         const hasDefault = this.core.children(fsPaths.boqTemplates(orgId)).some(([, d]) => d.default === true);
         this.docs.set(tplPath, { ...strip(structuredClone(DEFAULT_BOQ_TEMPLATE) as BoqTemplate), default: !hasDefault, updatedAt: this.core.now(), updatedBy: null });
+        templates++;
+      } else if (templateNeedsUpgrade(tplDoc)) {
+        // Sprint 6: an unedited generic v2 seed becomes v3 (chapters 02 / 06 / 07); its `default` flag is kept.
+        this.docs.set(tplPath, { ...strip(structuredClone(DEFAULT_BOQ_TEMPLATE) as BoqTemplate), default: tplDoc.default === true, updatedAt: this.core.now(), updatedBy: null });
         templates++;
       }
       for (const r of DEFAULT_BOQ_RULES) {
@@ -156,12 +162,19 @@ export class InMemoryBoqRepository implements BoqRepository {
       }
       // Stage 10 (A-LIVE-01): an org whose library is EMPTY gets the shipped default library (never re-seeded later,
       // so deleting / deactivating / importing items is kept). Deterministic ids → idempotent.
+      // Sprint 6: an org that HAS the default library gets the newer default items (create-if-missing by id, codes the
+      // org already has are skipped — an import / manual item wins).
       let items = 0;
-      if (this.core.children(fsPaths.itemLibrary(orgId)).length === 0) {
-        for (const it of DEFAULT_ITEM_LIBRARY) {
-          this.docs.set(fsPaths.libraryItem(orgId, it.id), { ...strip(structuredClone(it) as ItemLibraryItem), updatedAt: this.core.now(), updatedBy: null });
-          items++;
-        }
+      const lib = this.core.children(fsPaths.itemLibrary(orgId));
+      const plan = planDefaultLibrarySeed({
+        empty: lib.length === 0,
+        hasDefault: lib.some(([, d]) => d.source === 'default'),
+        existingIds: new Set(lib.map(([k]) => idOf(k))),
+        takenCodes: new Set(lib.map(([, d]) => String(d.code ?? ''))),
+      });
+      for (const it of plan) {
+        this.docs.set(fsPaths.libraryItem(orgId, it.id), { ...strip(structuredClone(it) as ItemLibraryItem), updatedAt: this.core.now(), updatedBy: null });
+        items++;
       }
       return { templates, rules, items };
     });
@@ -330,6 +343,28 @@ export class InMemoryBoqRepository implements BoqRepository {
       this.core.appendAuditSync(orgId, { actorId: actorUid, entity: 'boqLines', entityId: lineId, action: 'update', after: audit });
       return toBoqLine(lineId, next);
     });
+  }
+
+  async batchLineStatus(orgId: string, projectId: string, lineIds: readonly string[], to: 'reviewed' | 'approved', opts: { includeRed: boolean; allowed: boolean; batchId: string }, actorUid: string): Promise<BatchStatusResult> {
+    const out: BatchStatusResult = { updated: [], skipped: [] };
+    for (let i = 0; i < lineIds.length; i += BATCH_STATUS_CHUNK) {
+      const chunk = lineIds.slice(i, i + BATCH_STATUS_CHUNK);
+      await this.core.tx(() => {
+        for (const lineId of chunk) {
+          const path = fsPaths.boqLine(orgId, projectId, lineId);
+          const d = this.docs.get(path);
+          const plan = planBatchStatus(projectId, d ? toBoqLine(lineId, d) : null, to, opts, actorUid, this.core.now());
+          if ('skip' in plan) {
+            out.skipped.push({ lineId, reason: plan.skip });
+            continue;
+          }
+          this.docs.set(path, { ...d, ...plan.patch });
+          this.core.appendAuditSync(orgId, { actorId: actorUid, entity: 'boqLines', entityId: lineId, action: 'update', after: plan.audit });
+          out.updated.push({ lineId, from: plan.from, to: plan.to });
+        }
+      });
+    }
+    return out;
   }
 
   /** Test helper: a line as the worker writes it. */
