@@ -280,9 +280,14 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
     });
 
     it('seedDefaults is create-if-missing and keeps admin edits', async () => {
-      expect(await boq.seedDefaults(orgA)).toEqual({ templates: 1, rules: DEFAULT_BOQ_RULES.length });
+      // Stage 10 (A-LIVE-01): seeding also fills an empty item library with the default items.
+      const first = await boq.seedDefaults(orgA);
+      expect(first).toMatchObject({ templates: 1, rules: DEFAULT_BOQ_RULES.length });
+      expect(first.items).toBeGreaterThan(0);
       await boq.patchRule(orgA, 'r_socket_single', { enabled: false }, uid('aAdmin'));
-      expect(await boq.seedDefaults(orgA)).toEqual({ templates: 0, rules: 0 });
+      const again = await boq.seedDefaults(orgA);
+      expect(again).toMatchObject({ templates: 0, rules: 0 });
+      expect(again.items).toBe(0);
       expect((await boq.listRules(orgA)).find((r) => r.id === 'r_socket_single')?.enabled).toBe(false);
       expect((await boq.listTemplates(orgA)).find((t) => t.id === 'tpl_default')?.default).toBe(true);
     });
