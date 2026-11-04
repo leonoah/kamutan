@@ -32,7 +32,7 @@ dev = [
     "scipy-stubs>=1.18.1.1",
     "types-jsonschema>=4.26.0.20261006",
     "types-openpyxl>=3.1.5.20261017",
-    "types-shapely>=2.1.0.20260728",
+    "types-shapely>=2.1.0.20261030",
 ]
 
 [tool.pytest.ini_options]
