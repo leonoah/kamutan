@@ -36,15 +36,15 @@ export default defineConfig(({ mode }) => {
       sourcemap: true,
       rollupOptions: {
         output: {
-          manualChunks: {
-            react: ["react", "react-dom", "react-router-dom"],
-            firebase: ["firebase/app", "firebase/auth", "firebase/firestore", "firebase/storage"],
-            radix: [
-              "@radix-ui/react-dialog",
-              "@radix-ui/react-dropdown-menu",
-              "@radix-ui/react-toast",
-              "@radix-ui/react-progress",
-            ],
+          // Vite 8 (Rolldown) takes a function only; same three vendor chunks as before.
+          manualChunks(id: string) {
+            const m = /node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?((?:@[^/]+\/)?[^/]+)/.exec(id);
+            if (!m) return undefined;
+            const pkg = m[1]!;
+            if (pkg === "react" || pkg === "react-dom" || pkg === "react-router-dom" || pkg === "react-router" || pkg === "scheduler") return "react";
+            if (pkg === "firebase" || pkg.startsWith("@firebase/")) return "firebase";
+            if (["@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-toast", "@radix-ui/react-progress"].includes(pkg)) return "radix";
+            return undefined;
           },
         },
       },
