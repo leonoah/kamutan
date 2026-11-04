@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, Ban, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { Link, useInRouterContext } from "react-router-dom";
+import { AlertTriangle, Ban, Download, Eye, FileSpreadsheet, FileText } from "lucide-react";
 import { ApiError, EXPORT_ERROR_MESSAGES_HE, EXPORT_SHEETS_OMITTED_HE, type BoqLine, type BoqTemplate, type SheetRow, needsReapproval } from "@/api/types";
 import { Progress } from "@/components/ui/progress";
 import { sheetName } from "@/features/sheets/model";
@@ -28,7 +29,16 @@ export function ExportDialog({
   sheets = [],
   canMarkedPdf = false,
   pollMs,
+  initialSplit = "summed",
+  showPreviewLink = true,
+  previewOptions,
 }: {
+  /** Sprint 7: the preview's other options, sent with the Excel export (contracts ExportBoqRequest). */
+  previewOptions?: { includeConfidence: boolean; chapters: string[] | null };
+  /** Sprint 7: the split chosen on the preview screen. */
+  initialSplit?: "summed" | "byFloor";
+  /** Sprint 7: "תצוגה מקדימה" link (off when the dialog is opened from the preview itself). */
+  showPreviewLink?: boolean;
   /** Sprint 5: ready sheets (marked-PDF subset picker). */
   sheets?: readonly SheetRow[];
   /** Sprint 5: editor+ may export the marked PDF. */
@@ -45,6 +55,7 @@ export function ExportDialog({
 }) {
   const { t } = useTranslation();
   const exp = useExportBoq(projectId);
+  const inRouter = useInRouterContext();
   const tplId = useId();
   const draftId = useId();
   const [templateId, setTemplateId] = useState<string>("");
@@ -56,8 +67,9 @@ export function ExportDialog({
   useEffect(() => {
     if (!open) return;
     setServerBlocked(null);
+    setSplit(initialSplit);
     setTemplateId((cur) => cur || (templates.find((x) => x.default)?.id ?? templates[0]?.id ?? ""));
-  }, [open, templates]);
+  }, [open, templates, initialSplit]);
 
   // Stage 10 (contracts exportBlockingLines): an approved line whose qty changed since approval blocks like a red one.
   const red = lines.filter((l) => needsReapproval(l) || (l.level === "red" && l.status !== "approved")).length;
@@ -67,7 +79,13 @@ export function ExportDialog({
 
   const run = async () => {
     try {
-      const res = await exp.mutateAsync({ templateId: templateId || null, split, draftNote: warn && draftNote });
+      const res = await exp.mutateAsync({
+        templateId: templateId || null,
+        split,
+        draftNote: warn && draftNote,
+        ...(previewOptions ? { includeConfidence: previewOptions.includeConfidence } : {}),
+        ...(previewOptions?.chapters?.length ? { chapters: previewOptions.chapters } : {}),
+      });
       onOpenChange(false);
       if (env.useMocks || res.url.startsWith("mock:")) {
         toast({ title: t("boq.export.mockDone", { name: res.filename }) });
@@ -179,6 +197,20 @@ export function ExportDialog({
                 ))}
               </div>
             </div>
+            {showPreviewLink && inRouter ? (
+              <p className="flex flex-wrap items-center gap-x-2 text-dense">
+                <Link
+                  to={`/projects/${projectId}/boq/preview${split === "byFloor" ? "?split=floor" : ""}`}
+                  onClick={() => onOpenChange(false)}
+                  data-preview-link
+                  className="inline-flex items-center gap-1 rounded-sm font-medium text-primary hover:underline"
+                >
+                  <Eye className="size-4" aria-hidden />
+                  {t("boq.export.preview")}
+                </Link>
+                <span className="text-muted-foreground">{t("boq.export.previewHint")}</span>
+              </p>
+            ) : null}
             {warn ? (
               <div role="alert" className="flex gap-3 rounded-md border border-conf-mid/40 bg-conf-mid/[0.08] p-4">
                 <AlertTriangle className="mt-0.5 size-5 shrink-0 text-conf-mid" aria-hidden />

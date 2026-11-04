@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ApiErrorSchema, CreateLibraryImportResponseSchema, CreateUploadResponseSchema, FinalizeUploadResponseSchema, MAX_UPLOAD_BYTES, storagePaths } from '@kamutan/contracts';
+import { ApiErrorSchema, CreateLibraryImportResponseSchema, CreateUploadResponseSchema, FinalizeUploadResponseSchema, fsPaths, MAX_UPLOAD_BYTES, SheetSetStatusResponseSchema, storagePaths } from '@kamutan/contracts';
 import { UploadTokenSigner } from '../../src/uploads/upload-token';
 import { SAMPLE, UPLOAD_SECRET } from '../support/helpers';
 import { xlsxBytes } from '../support/spreadsheets';
@@ -167,8 +167,33 @@ describe('Stage 10 API/Sec — uploads: size, type, magic bytes, filename, token
     expect(good.r.status).toBe(202);
   });
 
-  it.todo('A-API-12: SEC-15 — malware scan (ClamAV) before a file leaves quarantine: not implemented anywhere (open since Sprint 1 gate G3)');
-  it.todo('A-API-13: SEC-14 — per-project limits (≤ 100 sheets, ≤ 2 GB per project) are not enforced by the API (only 100 MB per file)');
+  it('A-API-12 (Sprint 7): SEC-15 — the worker scans every upload (ClamAV) before parsing; `file_infected` is surfaced by the upload status in Hebrew and the bytes leave the quota', async () => {
+    const { r } = await upload('נגוע.pdf', Buffer.concat([SAMPLE.pdf, Buffer.from('%infected\n')]));
+    expect(r.status).toBe(201);
+    const fin = FinalizeUploadResponseSchema.parse(r.body);
+    const proj = () => (w.t.repo.docs.get(fsPaths.project(w.A.orgId, w.A.projectId)) as Record<string, unknown>).storageBytes as number;
+    const before = proj();
+    // what Worker-BOQ writes on a ClamAV hit (workers/drawing NOTES "Sprint 7 … ClamAV")
+    const sp = fsPaths.sheetSet(w.A.orgId, w.A.projectId, fin.sheetSet.id);
+    w.t.repo.docs.set(sp, { ...(w.t.repo.docs.get(sp) as Record<string, unknown>), status: 'failed', error: { code: 'file_infected', message: 'Win.Test.EICAR_HDB-1' } });
+    const st = SheetSetStatusResponseSchema.parse((await w.http.get(`${P()}/sheet-sets/${fin.sheetSet.id}`).set(ed())).body);
+    ev.infected = st;
+    expect(st).toMatchObject({ infected: true, error: { code: 'file_infected', message: 'Win.Test.EICAR_HDB-1' } });
+    expect(st.error?.messageHe).toMatch(/נוזקה/);
+    expect(proj()).toBe(before - (fin.sheetSet.sizeBytes ?? 0));
+  });
+  it('A-API-13 (Sprint 7): SEC-14 — per-project storage quota (default 2 GB, org `projectQuotaBytes`) → 413 quota_exceeded with a Hebrew message', async () => {
+    const op = fsPaths.org(w.A.orgId);
+    const org = w.t.repo.docs.get(op) as { settings: Record<string, unknown> };
+    w.t.repo.docs.set(op, { ...org, settings: { ...org.settings, projectQuotaBytes: 1 } });
+    const r = await w.http.post(`${P()}/uploads`).set(ed()).send({ filename: 'a.pdf', sizeBytes: 1000 });
+    ev.quota = r.body;
+    expect(r.status).toBe(413);
+    expect(ApiErrorSchema.parse(r.body).error).toMatchObject({ code: 'quota_exceeded' });
+    expect(r.body.error.message).toMatch(/אין מספיק מקום בפרויקט/);
+    w.t.repo.docs.set(op, org);
+  });
+  it.todo('A-API-13b: SEC-14 — ≤ 100 sheets per project is not enforced (the page count is known only after the worker splits the file)');
 
   describe('rate limits (SEC-42) with small production-like limits', () => {
     let w2: World;

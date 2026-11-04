@@ -124,6 +124,27 @@ export function defaultQuickActionFor(unit: string | null | undefined): QuickAct
   return 'count';
 }
 
+// --- Sprint 7: line rename (descriptionOverride) -----------------------------------------------------------------
+
+/** Max length of a renamed line description (owner request 2). */
+export const DESCRIPTION_OVERRIDE_MAX = 500;
+/** Marker next to a renamed description (BOQ panel, hub, preview). */
+export const DESCRIPTION_OVERRIDE_HE = '✎ ידני';
+/** Popover action that clears the rename (PATCH `description: null`). */
+export const DESCRIPTION_RESTORE_HE = 'שחזר לנוסח המקורי';
+/** Popover checkbox (PATCH `alsoUpdateLibrary: true`). */
+export const DESCRIPTION_ALSO_LIBRARY_HE = 'עדכן גם בספריית הסעיפים';
+
+/**
+ * Normalisation of a user-typed description (API PATCH, before storing): NFC, control characters (incl. TAB / CR / LF,
+ * bidi isolates stay) → space, whitespace runs → one space, trimmed. Formula-injection is neutralised ON EXPORT
+ * (Excel `sanitizeCell`: a leading `= + - @` gets an apostrophe) — the stored text keeps what the user typed.
+ */
+export function normalizeDescriptionInput(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.normalize('NFC').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /** Effective origin of a line (absent = `detected`, the Sprint 3–5 behaviour). */
 export const lineOrigin = (l: { origin?: LineOrigin | undefined }): LineOrigin => l.origin ?? 'detected';
 
@@ -219,8 +240,25 @@ export const BoqLineSchema = z.object({
   needsInput: z.boolean().optional(),
   /** The one-click action the BOQ panel offers (pre-bound to the line and, when known, the sheet). */
   quickAction: QuickActionSchema.nullable().optional(),
+  // --- Sprint 7 (API-written, PATCH `description`, editor+; preserved by every rebuild like qtyOverride) ---
+  /**
+   * The project's own wording of the line ("לעדכן שם של שורה"). Shown everywhere instead of `description` (BOQ panel,
+   * hub, preview, Excel, share snapshot — use `displayDescription`); `description` stays the computed / library text
+   * so "שחזר לנוסח המקורי" (PATCH `description: null`) can restore it. ≤ 500 chars, no control characters.
+   */
+  descriptionOverride: z.string().max(DESCRIPTION_OVERRIDE_MAX).nullable().optional(),
+  descriptionOverrideBy: UidSchema.nullable().optional(),
+  descriptionOverrideAt: TimestampSchema.nullable().optional(),
+  descriptionOverrideReason: z.string().max(500).nullable().optional(),
 });
 export type BoqLine = z.infer<typeof BoqLineSchema>;
+
+/** Sprint 7: the description every surface shows (the project's rename wins). */
+export const displayDescription = (l: Pick<BoqLine, 'description'> & { descriptionOverride?: string | null | undefined }): string =>
+  typeof l.descriptionOverride === 'string' && l.descriptionOverride.length > 0 ? l.descriptionOverride : l.description;
+/** True when the line carries a rename ("✎ ידני" marker). */
+export const isDescriptionOverridden = (l: { descriptionOverride?: string | null | undefined }): boolean =>
+  typeof l.descriptionOverride === 'string' && l.descriptionOverride.length > 0;
 
 /** Stage 10: chip of a line whose computed quantity changed after a human approved it (prefix of the full reason). */
 export const QTY_CHANGED_REASON = 'הכמות השתנתה מאז האישור';
@@ -275,6 +313,10 @@ export const BOQ_LINE_API_FIELDS = [
   'qtyOverrideReason',
   'qtyOverrideBy',
   'qtyOverrideAt',
+  'descriptionOverride',
+  'descriptionOverrideBy',
+  'descriptionOverrideAt',
+  'descriptionOverrideReason',
   'updatedAt',
 ] as const;
 
@@ -290,6 +332,11 @@ export const BOQ_LINE_PRESERVED_FIELDS = [
   'qtyOverrideReason',
   'qtyOverrideBy',
   'qtyOverrideAt',
+  // Sprint 7: the project's rename of the line (worker mirrors it in workers/drawing boq/build.py PRESERVED).
+  'descriptionOverride',
+  'descriptionOverrideBy',
+  'descriptionOverrideAt',
+  'descriptionOverrideReason',
   'locked',
 ] as const;
 
@@ -504,7 +551,15 @@ export type BoqView = z.infer<typeof BoqViewSchema>;
  *   approvedBy/At (→approved), clears them when moving back.
  * - `qtyOverride` (editor+): number ≥ 0 sets the override and REQUIRES `reason`; null clears it.
  * - `note` (reviewer+): string ≤ 2000 or null.
- * An approved line only accepts `status: 'reviewed'` (un-approve) — anything else → 409.
+ * - Sprint 7 `description` (editor+): the line's new wording (normalised by `normalizeDescriptionInput`, 1..500 chars)
+ *   → `descriptionOverride` (+ By / At / Reason); `null` restores the original (clears all four). A text identical to
+ *   the original description also clears the override. `reason` (optional) is stored as `descriptionOverrideReason`.
+ *   Allowed on approved lines too (wording only; the approval and the quantity are untouched).
+ * - Sprint 7 `alsoUpdateLibrary` (only with a string `description`): also rewrites the org library item of the line's
+ *   code (editor+, same rules as library item edits): a new item `itemIdFor(code, text)` with `source: 'manual'`
+ *   (chapter / unit / tags copied), the code's previous active items are deactivated — future builds use the new text.
+ * `reason` belongs to `qtyOverride` and/or `description` (when both are set it is stored for both).
+ * An approved line only accepts `status: 'reviewed'` (un-approve) / `description` — anything else → 409.
  */
 export const PatchBoqLineRequestSchema = z
   .object({
@@ -512,22 +567,40 @@ export const PatchBoqLineRequestSchema = z
     qtyOverride: z.number().finite().min(0).max(1_000_000).nullable().optional(),
     reason: z.string().trim().min(1).max(500).optional(),
     note: z.string().max(2000).nullable().optional(),
+    description: z
+      .string()
+      .max(DESCRIPTION_OVERRIDE_MAX * 2)
+      .transform(normalizeDescriptionInput)
+      .pipe(z.string().min(1, 'the description is empty').max(DESCRIPTION_OVERRIDE_MAX))
+      .nullable()
+      .optional(),
+    alsoUpdateLibrary: z.boolean().optional(),
   })
   .strict()
   .superRefine((v, ctx) => {
-    if (v.status === undefined && v.qtyOverride === undefined && v.note === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message: 'one of status, qtyOverride, note is required' });
+    if (v.status === undefined && v.qtyOverride === undefined && v.note === undefined && v.description === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message: 'one of status, qtyOverride, note, description is required' });
     }
     if (typeof v.qtyOverride === 'number' && !v.reason) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'a reason is required to override a quantity' });
     }
-    if (v.reason !== undefined && v.qtyOverride === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'reason is only allowed with qtyOverride' });
+    if (v.reason !== undefined && v.qtyOverride === undefined && typeof v.description !== 'string') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'reason is only allowed with qtyOverride or description' });
+    }
+    if (v.alsoUpdateLibrary === true && typeof v.description !== 'string') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['alsoUpdateLibrary'], message: 'alsoUpdateLibrary needs a new description' });
     }
   });
 export type PatchBoqLineRequest = z.infer<typeof PatchBoqLineRequestSchema>;
 
-export const PatchBoqLineResponseSchema = z.object({ line: BoqLineSchema });
+export const PatchBoqLineResponseSchema = z.object({
+  line: BoqLineSchema,
+  /**
+   * Sprint 7: outcome of `alsoUpdateLibrary` (absent when not requested). `itemId` = the library item now holding the
+   * new wording; `deactivatedItemIds` = the code's previous active items; `created` false when that item existed.
+   */
+  library: z.object({ itemId: DocIdSchema, created: z.boolean(), deactivatedItemIds: z.array(DocIdSchema) }).optional(),
+});
 export type PatchBoqLineResponse = z.infer<typeof PatchBoqLineResponseSchema>;
 
 // ---------------------------------------------------------------------------
@@ -814,9 +887,15 @@ export const ExportBoqRequestSchema = z
     split: ExportSplitSchema.default('summed'),
     /** UX checkbox: add "טיוטה – כולל פריטים שלא אומתו" to the title rows. */
     markDraft: z.boolean().default(false),
+    /** Sprint 7 (export dialog = preview options): include the "רמת ביטחון" + "סטטוס" columns (default true = Sprint 3–6 layout). */
+    includeConfidence: z.boolean().default(true),
+    /** Sprint 7: only these chapters (codes compared with `chapterKey`: "04" ≡ "4"); absent = every chapter with lines. */
+    chapters: z.array(ChapterCodeSchema).min(1).max(64).optional(),
   })
   .strict();
 export type ExportBoqRequest = z.infer<typeof ExportBoqRequestSchema>;
+/** Sprint 7: the request as a caller may write it (defaults not applied yet). */
+export type ExportBoqRequestInput = z.input<typeof ExportBoqRequestSchema>;
 
 /** Signed download URL lifetime for exports (SEC-20: 2 minutes). */
 export const EXPORT_URL_TTL_SECONDS = 120;

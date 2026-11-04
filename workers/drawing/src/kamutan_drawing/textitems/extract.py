@@ -39,6 +39,8 @@ from ..ingest.pdf_vector import SEG_LINE, VectorSheet
 from .catalog import (
     CATALOG,
     CATALOG_VERSION,
+    R_ACCESS_FLOOR,
+    R_ACCESS_SAME,
     R_CORROBORATES,
     R_GROUPED,
     R_NO_FLOOR,
@@ -576,6 +578,9 @@ def _fold(items: list[Item]) -> None:
     for idxs in by_entry.values():
         e = items[idxs[0]].entry
         assert e is not None
+        if e.access_panels:
+            _fold_access_panels(items, idxs)
+            continue
         if e.per_floor:
             first: dict[str | None, int] = {}
             for i in idxs:
@@ -605,6 +610,45 @@ def _fold(items: list[Item]) -> None:
                     near = min(_d(items[i].anchor, items[j].anchor), _box_gap(items[i].box, items[j].box))
                     if items[j].qty and items[j].floor == items[i].floor and near <= e.group_mm:
                         _fold_into(items, j, i, R_GROUPED)
+
+
+ACCESS_SAME_MM = 40.0
+_EXPLICIT_ACCESS = compile_pattern(r"פתח ?(?:שירות|ביקורת|גישה)|אורבונד")
+_REFERS_TO_SECTION = compile_pattern(r"ראה ?(?:חתכ|פרט)|(?:^|[^א-ת])חתכ(?![א-ת])")
+
+
+def _fold_access_panels(items: list[Item], idxs: list[int]) -> None:
+    """7.04 (``access_panels`` entries): per floor of the sheet one unit per AC closure note; an explicit access note
+    ("פתח שירות") is the panel of a closure ≤ ``ACCESS_SAME_MM`` away, else of a closure that refers to a section
+    (the access note sits on that section; one each), else a unit of its own. The floor's first note carries the
+    unit count (``qty``), the others are folded into it — one item per floor whatever the BOQ's text clustering."""
+    by_floor: dict[str | None, list[int]] = {}
+    for i in idxs:
+        by_floor.setdefault(items[i].floor, []).append(i)
+    for members in by_floor.values():
+        explicit = [i for i in members if _EXPLICIT_ACCESS.search(normalize(items[i].match))]
+        closures = [i for i in members if i not in explicit]
+        units = len(closures)
+        taken: set[int] = set()
+        same: dict[int, int] = {}
+        for i in explicit:
+            near = [(min(_d(items[c].anchor, items[i].anchor), _box_gap(items[c].box, items[i].box)), c) for c in closures]
+            near = [t for t in near if t[0] <= ACCESS_SAME_MM and t[1] not in taken]
+            if not near:
+                near = [
+                    (0.0, c) for c in closures if c not in taken and _REFERS_TO_SECTION.search(normalize(items[c].block.text))
+                ]
+            if near:
+                c = min(near)[1]
+                taken.add(c)
+                same[i] = c
+            else:
+                units += 1
+        order = sorted(members, key=lambda j: (j in same, round(items[j].box[1], 1), round(items[j].box[0], 1)))
+        head = order[0]
+        items[head].qty = float(units)
+        for j in order[1:]:
+            _fold_into(items, j, head, R_ACCESS_SAME if j in same else R_ACCESS_FLOOR)
 
 
 def _fold_into(items: list[Item], i: int, into: int, reason: str) -> None:

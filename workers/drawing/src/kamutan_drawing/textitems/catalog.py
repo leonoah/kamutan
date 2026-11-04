@@ -14,6 +14,9 @@ like a cobra conduit run). It mirrors the brief's ``text_item`` rule kind (``pat
   :mod:`textitems.boq` units skip it).
 * ``suggested`` — the drawings show a trigger, not the item itself (BOQ origin ``suggested``, never above yellow).
 * ``lifecycle_any`` / ``lifecycle_none`` — required / forbidden "קיים/להחליף/להוסיף…" qualifiers.
+* ``access_panels`` — one unit per gypsum AC closure / AC ceiling box note; an explicit access note ("פתח שירות")
+  is the same unit as a closure ≤ ``ACCESS_SAME_MM`` away or one that refers to a section ("ראה חתך"); the units of a
+  floor are carried by its first note (``qty`` = units), the other notes are folded into it (Sprint 7, 7.04).
 
 Patterns are regexes over :func:`textitems.normalize.normalize`-d text (finals folded, quotes unified, Latin
 lower-cased — so never use upper-case escapes such as ``\S`` / ``\D`` in a pattern).
@@ -24,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-CATALOG_VERSION = 2
+CATALOG_VERSION = 3
 
 ELECTRICAL = ("electrical",)
 ELEC_LIGHT = ("electrical", "lighting")
@@ -51,6 +54,7 @@ class Entry:
     lifecycle_any: tuple[str, ...] = ()
     lifecycle_none: tuple[str, ...] = ()
     reasons: tuple[str, ...] = field(default_factory=tuple)
+    access_panels: bool = False
 
 
 # reason chips (Hebrew, ≤ 64 chars)
@@ -66,6 +70,9 @@ R_DETAIL = "לפי תוכן הפרט"
 R_OCR_UNSURE = "כיתוב לא ודאי"
 R_NO_FLOOR = "קומה לא ידועה"
 R_LENGTH_DRAWN = "אורך משורטט שונה מאורך הסעיף"
+R_ACCESS_PER_CLOSURE = "פתח שירות אחד לכל סגירת גבס למיזוג / תיבת תקרה למזגן"
+R_ACCESS_SAME = "כיתוב פתח השירות שייך לסגירה שכבר נספרה"
+R_ACCESS_FLOOR = "פתחי השירות של הקומה נספרו בפריט אחד"
 
 CATALOG: tuple[Entry, ...] = (
     # 4.06 — a detail reference whose detail box is the 6-socket + comms box ("פרט A" → "שישה שקעים / נקודת רשת…")
@@ -158,6 +165,27 @@ CATALOG: tuple[Entry, ...] = (
         exclude=(r"רצפ|ריצפ|חדר(?:י)? ?(?:ה)?רחצה|מקלחת",),
         unit="קומפלט",
         per_floor=True,
+    ),
+    # 7.04 — AC access panel: one per concealed evaporator = per gypsum AC closure ("סגירת גבס למיזוג") or AC ceiling
+    # box ("ה.ת 40 … מזגן עילי", "חיזוקים עבור מזגן עילי"); an explicit "פתח שירות" note is the same panel as its
+    # closure. Plans only (the master copies the construction notes; a bare "מזגן עילי" is a wall unit on MEP sheets).
+    Entry(
+        "tx_ac_access_panel",
+        "7.04",
+        (
+            r"גבס ?ל?(?:מיזוג|מזגנ)",
+            r"(?:^|[^א-ת])[הת] ?[.\"'] ?ת(?![א-ת]).{0,60}מזגנ",
+            r"תקר(?:ה|ת) ?(?:גבס|מונמכת|תותבת).{0,60}(?:מיזוג|מזגנ)",
+            # "יש לבצע חיזוקים עבור מזגן עילי": the structure is reinforced to hang the unit in the ceiling box (the
+            # box's own "ה.ת 40" may be read into another note block when the glyph reader takes its "H" for "ה")
+            r"חיזוק.{0,30}מזגנ",
+            r"פתח ?(?:שירות|ביקורת|גישה)",
+            r"אורבונד",
+        ),
+        disciplines=("construction", "architecture"),
+        exclude=(r"פירוק|להריסה|לפרק",),
+        access_panels=True,
+        reasons=(R_ACCESS_PER_CLOSURE,),
     ),
     # 9.03 — vent duct for the ventilator: not drawn, the ventilator is → one suggestion per ventilator floor
     Entry(

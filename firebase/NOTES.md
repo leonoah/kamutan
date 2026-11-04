@@ -195,3 +195,6 @@ storage write surface, index coverage.
 - Cannot be expressed in rules (left to API/worker): audit hash chain, share-link 14/90-day expiry, version lock,
   "keep at least one admin", BOQ content edits / `level = min(evidence)`.
 - CI: the `db` job runs all three emulator suites via `emulators:exec` and fails if any test is skipped or not passed.
+
+## Sprint 7 (API agent)
+- `storage.rules`: explicit deny for `orgs/{o}/projects/{p}/infected/**` and `orgs/{o}/infected/**` (worker-moved ClamAV hits; the catch-all already denied them). No Firestore rule / index change: `sheetSets` `error.code` equality query uses the automatic single-field index.

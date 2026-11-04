@@ -10,11 +10,12 @@ it), ``legendEntries`` (confirmed classes / item codes win, ignored entries drop
 Outputs:
 * ``orgs/{o}/projects/{p}/boq/{buildId}/evidence.json.gz`` (``kamutan.boq-evidence/1``);
 * ``boqLines/{lineId}`` upserted. Fields in :data:`PRESERVED` (status + review / approval stamps, qtyOverride +
-  reason/by/at, note, locked) are never overwritten. A line whose computed qty differs from the qty it had when
+  reason/by/at, descriptionOverride + by/at/reason, note, locked) are never overwritten, and re-read right before
+  each line is written (a PATCH landing during the build survives). A line whose computed qty differs from the qty it had when
   it was approved keeps its status but gets the chip ``הכמות השתנתה מאז האישור`` and level red (worker
   bookkeeping ``approvedQty`` / ``approvedQtyAt``; cleared on re-approval or when the qty returns).
-  Obsolete worker lines (not produced by this build) are deleted only when ``draft`` without override and
-  without note; otherwise they are kept with qty 0, red, ``הסעיף לא נמצא בבנייה האחרונה``. Lines the worker
+  Obsolete worker lines (not produced by this build) are deleted only when ``draft`` without qty / description
+  override, note or lock; otherwise they are kept with qty 0, red, ``הסעיף לא נמצא בבנייה האחרונה``. Lines the worker
   did not create (no ``computedAt``: manual lines) are never touched.
 * ``boqBuilds/{buildId}`` ``queued → running → succeeded | failed`` (+ ``stats``, ``evidenceRef``) and the
   project doc ``boq {latestBuildId, builtAt, stale: false, pendingBuildId: null}``; ``jobs/{jobId}`` status.
@@ -65,6 +66,12 @@ PRESERVED = (
     "qtyOverrideReason",
     "qtyOverrideBy",
     "qtyOverrideAt",
+    # Sprint 7: a line renamed by a user ("לעדכן שם של שורה"). The worker never writes or clears these: it keeps
+    # writing the computed `description` (from the library item / rule) and the API shows the override on top.
+    "descriptionOverride",
+    "descriptionOverrideBy",
+    "descriptionOverrideAt",
+    "descriptionOverrideReason",
     "locked",
 )
 MAX_ATTEMPTS = 5
@@ -341,6 +348,7 @@ def upsert_lines(docs: DocStore, proj: str, lines: list[Line], build_id: str, ev
             doc = {**computed, "status": "draft", "qtyOverride": None, "note": None, "updatedAt": SERVER_TIMESTAMP}
             counts["created"] += 1
         else:
+            cur = _fresh(docs, f"{coll}/{ln.id}", cur)
             doc = {**cur, **computed, **{k: cur[k] for k in PRESERVED if k in cur}, "updatedAt": SERVER_TIMESTAMP}
             check(ln.id, cur, doc)
             counts["updated"] += 1
@@ -352,12 +360,8 @@ def upsert_lines(docs: DocStore, proj: str, lines: list[Line], build_id: str, ev
         cur = existing[lid]
         if not cur.get("computedAt"):
             continue  # manual line: not ours
-        if (
-            cur.get("status", "draft") == "draft"
-            and cur.get("qtyOverride") is None
-            and not cur.get("note")
-            and not cur.get("locked")
-        ):
+        cur = _fresh(docs, f"{coll}/{lid}", cur)
+        if cur.get("status", "draft") == "draft" and not has_human_marks(cur):
             deleter = getattr(docs, "delete", None)
             if deleter is not None:
                 deleter(f"{coll}/{lid}")
@@ -383,6 +387,25 @@ def upsert_lines(docs: DocStore, proj: str, lines: list[Line], build_id: str, ev
     all_lines = {lid: d for lid, d in existing.items() if lid not in written and not d.get("computedAt")}  # manual
     all_lines.update(written)
     return Upserted(written, counts, invalidated[:500], all_lines)
+
+
+def has_human_marks(line: dict[str, Any]) -> bool:
+    """Human work on a line (an obsolete line with any of it is kept at qty 0, red — never deleted): a qty override
+    (0 is a valid override), a renamed description, a note or a lock."""
+    return (
+        line.get("qtyOverride") is not None
+        or line.get("descriptionOverride") is not None
+        or bool(line.get("note"))
+        or bool(line.get("locked"))
+    )
+
+
+def _fresh(docs: DocStore, path: str, cur: dict[str, Any]) -> dict[str, Any]:
+    """The line as it is now, for the human fields: the listing was read before aggregation, and the API may have
+    PATCHed the line since (rename, override, approval). Narrows the read-modify-write window to one line (TODO: a
+    transaction in the GCP store would close it). A line deleted meanwhile keeps the listed copy."""
+    now = docs.get(path)
+    return now if isinstance(now, dict) else cur
 
 
 def _fmt_qty(q: Any) -> str:

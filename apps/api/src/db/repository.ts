@@ -29,6 +29,17 @@ export class RepoConflictError extends Error {
   }
 }
 
+/** Sprint 7: finalize would push the project's storage usage over its quota (checked inside the create transaction). */
+export class QuotaExceededError extends Error {
+  constructor(
+    readonly usedBytes: number,
+    readonly quotaBytes: number,
+    readonly requestedBytes: number,
+  ) {
+    super('quota_exceeded');
+  }
+}
+
 /**
  * Data access over Firestore (ADR 0008 layout). firebase-admin bypasses
  * Security Rules, so this layer does NOT authorize: every tenant method takes
@@ -69,6 +80,14 @@ export interface Repository {
   /** The sheet set created from quarantine object `fileId` (makes finalize idempotent per upload token). */
   findSheetSetByUploadFileId(orgId: string, projectId: string, fileId: string): Promise<SheetSet | null>;
   setSheetSetStatus(orgId: string, projectId: string, sheetSetId: string, status: SheetSetStatus): Promise<void>;
+  /**
+   * Sprint 7: releases the storage of sets whose file is gone (worker `error.code == 'file_infected'`: quarantined):
+   * transaction per set — `storageBytes -= sizeBytes` (≥ 0) + `storageReleasedAt` (idempotent). `sheetSetId` limits
+   * it to one set. Returns the number of sets released.
+   */
+  releaseInfectedStorage(orgId: string, projectId: string, sheetSetId?: string): Promise<number>;
+  /** Sprint 7: legacy projects without `storageBytes` get it recounted from their sheet sets (transaction). Returns the usage. */
+  ensureStorageCounted(orgId: string, projectId: string): Promise<number | null>;
 
   // --- sheets & versions --------------------------------------------------
   /** Ordered by document id (= `${sheetSetId}-p${i}`); cursor = last sheet id. */
@@ -151,6 +170,12 @@ export interface NewSheetSet {
   uploadFileId: string;
   sizeBytes: number;
   jobType: string;
+  /**
+   * Sprint 7: per-project quota (bytes). Inside the transaction: usage = project `storageBytes` (absent → recounted
+   * from the project's sheet sets not released); usage + sizeBytes > quota → QuotaExceededError (nothing written);
+   * else the new set is counted (`storageBytes += sizeBytes`). A deduplicated (existing) set adds nothing.
+   */
+  quotaBytes?: number;
 }
 
 export interface ConfirmInput {

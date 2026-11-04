@@ -1,6 +1,7 @@
 import {
   ApiError,
   GREEN_THRESHOLD_DEFAULT,
+  DEFAULT_PROJECT_QUOTA_BYTES,
   GREEN_THRESHOLD_MAX,
   GREEN_THRESHOLD_MIN,
   SHARE_LINK_MAX_DAYS,
@@ -179,7 +180,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
   const settingsOf = (orgId: string): OrgSettings => {
     let s = settings.get(orgId);
     if (!s) {
-      s = { llmEnabled: false, blockExportOnRed: false, greenThreshold: GREEN_THRESHOLD_DEFAULT, trainingOptIn: false, llmMonthlyBudgetUsd: 30, vatRate: 0.18, autoRebuild: true };
+      s = { llmEnabled: false, blockExportOnRed: false, greenThreshold: GREEN_THRESHOLD_DEFAULT, trainingOptIn: false, llmMonthlyBudgetUsd: 30, vatRate: 0.18, autoRebuild: true, projectQuotaBytes: DEFAULT_PROJECT_QUOTA_BYTES };
       settings.set(orgId, s);
     }
     return s;
@@ -296,7 +297,9 @@ export function createSprint5Mock(deps: Sprint5Deps) {
         chapter: x.chapter,
         chapterTitle: x.chapterTitle ?? null,
         code: x.code,
-        description: x.description,
+        // Sprint 7: the snapshot carries the project's wording of a renamed line (+ marker, no author / reason).
+        description: x.descriptionOverride?.trim() ? x.descriptionOverride : x.description,
+        ...(x.descriptionOverride?.trim() ? { descriptionManual: true } : {}),
         unit: x.unit,
         qty: x.qtyOverride ?? x.qty,
         level: x.level,
@@ -410,6 +413,11 @@ export function createSprint5Mock(deps: Sprint5Deps) {
     setBlockExportOnRed(orgId: string, v: boolean) {
       settingsOf(orgId).blockExportOnRed = v;
     },
+    /** Sprint 7: per-project storage quota of the org (admin setting; `?mockQuotaMb=` in dev). */
+    projectQuota: (orgId = "org-demo") => settingsOf(orgId).projectQuotaBytes ?? DEFAULT_PROJECT_QUOTA_BYTES,
+    setProjectQuota(orgId: string, bytes: number) {
+      settingsOf(orgId).projectQuotaBytes = bytes;
+    },
     assertProjectActive(projectId: string) {
       assertActive(projectOrg(projectId));
     },
@@ -422,6 +430,18 @@ export function createSprint5Mock(deps: Sprint5Deps) {
         append({ ...base, action: "qtyOverride", before: { qty: before.qtyOverride ?? before.qty, override: before.qtyOverride ?? null }, after: { qty: after.qtyOverride ?? after.qty, override: after.qtyOverride ?? null }, meta: { kind: "qtyOverride", reason: req.reason?.trim() || null } }, org);
       if (before.status !== after.status)
         append({ ...base, action: "status", before: { status: before.status }, after: { status: after.status }, meta: { kind: "status", reason: req.qtyOverride !== undefined && !req.status ? "override_reopened" : null } }, org);
+      // Sprint 7: rename / restore — before → after wording (+ optional reason, "also in the library").
+      if (req.description !== undefined && (before.descriptionOverride ?? null) !== (after.descriptionOverride ?? null))
+        append(
+          {
+            ...base,
+            action: "description",
+            before: { description: before.descriptionOverride ?? before.description, override: before.descriptionOverride ?? null },
+            after: { description: after.descriptionOverride ?? after.description, override: after.descriptionOverride ?? null, ...(req.alsoUpdateLibrary ? { library: true } : {}) },
+            meta: { kind: "description", reason: req.reason?.trim() || null },
+          },
+          org,
+        );
       if (req.note !== undefined && (before.note ?? null) !== (after.note ?? null))
         append({ ...base, action: "note", before: { note: before.note ?? null }, after: { note: after.note ?? null }, meta: { kind: "note" } }, org);
     },

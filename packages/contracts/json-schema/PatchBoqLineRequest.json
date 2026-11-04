@@ -39,6 +39,29 @@
               "type": "null"
             }
           ]
+        },
+        "description": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "alsoUpdateLibrary": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false

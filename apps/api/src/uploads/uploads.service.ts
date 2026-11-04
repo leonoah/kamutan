@@ -7,6 +7,12 @@ import {
   MAX_UPLOAD_BYTES,
   storagePaths,
   UPLOAD_TTL_SECONDS,
+  DocIdSchema,
+  FILE_INFECTED_ERROR,
+  projectQuotaOf,
+  quotaExceededMessageHe,
+  UPLOAD_ERROR_MESSAGES_HE,
+  type SheetSetStatusResponse,
   type CreateUploadRequest,
   type CreateUploadResponse,
   type FinalizeUploadRequest,
@@ -15,9 +21,9 @@ import {
 } from '@kamutan/contracts';
 import { AccessService } from '../access/access.service';
 import type { AuthContext } from '../auth/auth-context';
-import { ApiException } from '../common/api-exception';
+import { ApiException, notFound } from '../common/api-exception';
 import { PROJECT_STATE_REPOSITORY, type ProjectStateRepository } from '../db/project-state-repository';
-import { RepoConflictError, REPOSITORY, type Repository } from '../db/repository';
+import { QuotaExceededError, RepoConflictError, REPOSITORY, type Repository } from '../db/repository';
 import { INGEST_QUEUE, type IngestQueue } from '../queue/ingest-queue';
 import { kindFromFilename, sanitizeFilename } from './filename';
 import { inspectStream, TooLargeError } from './inspect';
@@ -50,6 +56,11 @@ export class UploadsService {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
     const kind = kindFromFilename(req.filename);
     if (!kind) throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, 'unsupported_file_type', 'unsupported file extension');
+    // Sprint 7: refuse early when the declared size cannot fit the project's quota (finalize re-checks atomically).
+    const [project, org] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId)]);
+    const quota = projectQuotaOf(org?.settings);
+    const used = project?.storageBytes ?? 0;
+    if (used + req.sizeBytes > quota) throw quotaExceeded(used, quota, req.sizeBytes);
 
     const fileId = randomUUID();
     const storagePath = storagePaths.quarantine(orgId, fileId);
@@ -134,18 +145,31 @@ export class UploadsService {
     }
     const destPath = storagePaths.projectUpload(orgId, projectId, sha256, detected);
     const existing = await this.repo.getSheetSet(orgId, projectId, sha256);
-    const { sheetSet, deduplicated } = existing
-      ? { sheetSet: existing, deduplicated: true }
-      : await this.repo.createSheetSetIngest(orgId, projectId, {
-          name: req.name ? sanitizeFilename(req.name, detected) : claims.name,
-          sha256,
-          fileKind: detected,
-          storagePath: destPath,
-          uploadedBy: user.uid,
-          uploadFileId: claims.fid,
-          sizeBytes: inspected.size,
-          jobType: JOB_TYPES.ingestSheetVersion,
-        });
+    let created: { sheetSet: SheetSet; deduplicated: boolean };
+    try {
+      created = existing
+        ? { sheetSet: existing, deduplicated: true }
+        : await this.repo.createSheetSetIngest(orgId, projectId, {
+            name: req.name ? sanitizeFilename(req.name, detected) : claims.name,
+            sha256,
+            fileKind: detected,
+            storagePath: destPath,
+            uploadedBy: user.uid,
+            uploadFileId: claims.fid,
+            sizeBytes: inspected.size,
+            jobType: JOB_TYPES.ingestSheetVersion,
+            // Sprint 7: counted + checked against the org's per-project quota inside the create transaction.
+            quotaBytes: projectQuotaOf((await this.repo.getOrg(orgId))?.settings),
+          });
+    } catch (err) {
+      if (err instanceof QuotaExceededError) {
+        await this.discard(claims.path);
+        this.logger.warn({ orgId, projectId, used: err.usedBytes, quota: err.quotaBytes, size: err.requestedBytes }, 'project storage quota exceeded');
+        throw quotaExceeded(err.usedBytes, err.quotaBytes, err.requestedBytes);
+      }
+      throw err;
+    }
+    const { sheetSet, deduplicated } = created;
 
     // Checks passed → leave quarantine. Identical bytes already stored → just drop the duplicate.
     if (await this.storage.exists(sheetSet.storagePath)) {
@@ -218,6 +242,32 @@ export class UploadsService {
     return { sheetSet: current, deduplicated, jobId, versionId };
   }
 
+  /**
+   * Sprint 7: GET …/sheet-sets/:setId (viewer+) — the upload's status: set + ingest job + the effective error with its
+   * Hebrew text. An infected set (worker `file_infected`: quarantined, never processed) releases its bytes from the
+   * project's storage usage (idempotent).
+   */
+  async sheetSetStatus(user: AuthContext, projectId: string, setId: string): Promise<SheetSetStatusResponse> {
+    const { orgId } = await this.access.requireProjectRole(user, projectId, 'viewer');
+    if (!DocIdSchema.safeParse(setId).success) throw notFound('sheet set');
+    let set = await this.repo.getSheetSet(orgId, projectId, setId);
+    if (!set) throw notFound('sheet set');
+    const job = set.ingestJobId ? await this.repo.getJob(set.ingestJobId) : null;
+    const ownJob = job && job.orgId === orgId && job.projectId === projectId ? job : null;
+    const e = set.error ?? ownJob?.error ?? null;
+    const infected = e?.code === FILE_INFECTED_ERROR;
+    if (infected && set.error?.code === FILE_INFECTED_ERROR) {
+      await this.repo.releaseInfectedStorage(orgId, projectId, setId).catch((err: unknown) => this.logger.warn({ err: (err as Error).message, orgId, setId }, 'storage release failed'));
+      set = (await this.repo.getSheetSet(orgId, projectId, setId)) ?? set;
+    }
+    return {
+      sheetSet: set,
+      job: ownJob ? { id: ownJob.id, status: ownJob.status, progress: ownJob.progress } : null,
+      error: e ? { code: e.code, message: e.message, messageHe: UPLOAD_ERROR_MESSAGES_HE[e.code] ?? null } : null,
+      infected,
+    };
+  }
+
   private verifyToken(token: string): UploadTokenClaims {
     try {
       return this.signer.verify(token);
@@ -234,4 +284,13 @@ export class UploadsService {
       this.logger.warn({ err: (err as Error).message }, 'failed to remove upload object');
     });
   }
+}
+
+/** 413 `quota_exceeded` with the Hebrew message (contracts `quotaExceededMessageHe`) and the numbers as issues. */
+export function quotaExceeded(used: number, quota: number, requested: number): ApiException {
+  return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, 'quota_exceeded', quotaExceededMessageHe(used, quota, requested), [
+    { path: 'usedBytes', message: String(used) },
+    { path: 'quotaBytes', message: String(quota) },
+    { path: 'requestedBytes', message: String(requested) },
+  ]);
 }

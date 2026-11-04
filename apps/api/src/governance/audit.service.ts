@@ -224,7 +224,7 @@ export function correctionSummaryHe(kind: string, cls: string | null, itemCode: 
 }
 
 /** Later step of ONE change first (an override that re-opened an approved line is listed above that status change). */
-const ACTION_RANK: Readonly<Record<string, number>> = { qtyOverride: 4, note: 3, status: 2, rebuild: 1, correction: 0 };
+const ACTION_RANK: Readonly<Record<string, number>> = { description: 5, qtyOverride: 4, note: 3, status: 2, rebuild: 1, correction: 0 };
 
 /**
  * Stage 10 (A-UI-06): total, stable order — newest first; equal timestamps: the later step of one change first
@@ -259,6 +259,18 @@ export function historyItemsOf(e: AuditEvent, by: (uid: string | null) => LineHi
       out.push({ at: e.at, by: who, action: 'qtyOverride', before, after: a.qtyOverride ?? null, reason, summary, sourceId: src });
     }
     if (a.noteChanged === true) out.push({ at: e.at, by: who, action: 'note', before: null, after: null, reason: null, summary: 'הערה עודכנה', sourceId: src });
+    // Sprint 7: line rename — before / after = the displayed wording; `to: null` = restored to the original.
+    if (a.description && typeof a.description === 'object') {
+      const d = a.description as { from?: unknown; to?: unknown; original?: unknown };
+      const s = (v: unknown) => (typeof v === 'string' ? v.slice(0, 500) : null);
+      const before = s(d.from);
+      const after = d.to === null ? s(d.original) : s(d.to);
+      const q = (v: string | null) => `«${(v ?? '').slice(0, 120)}»`;
+      const lib = a.alsoUpdateLibrary === true ? ' · עודכן גם בספריית הסעיפים' : '';
+      const summary = d.to === null ? `שחזור לנוסח המקורי · ${q(before)} → ${q(after)}${lib}` : `שינוי שם השורה · ${q(before)} → ${q(after)}${lib}`;
+      const reason = !('qtyOverride' in a) && typeof a.reason === 'string' ? a.reason.slice(0, 500) : null;
+      out.push({ at: e.at, by: who, action: 'description', before, after, reason, summary: summary.slice(0, 500), sourceId: src });
+    }
   } else if (e.action === APPROVAL_INVALIDATED_ACTION) {
     // Stage 10 (A-API-06): the rebuild dropped an approved line to "נבדק" because its quantity changed.
     const from = a.fromQty ?? a.prevQty ?? null;

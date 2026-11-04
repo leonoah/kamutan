@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Hammer, Loader2, RefreshCw, X } from "lucide-react";
+import { ChevronLeft, Eye, Hammer, Loader2, RefreshCw, X } from "lucide-react";
 import type { BoqLine, SheetRow } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { ConfidenceShape, levelFromDb } from "@/components/ConfidenceBadge";
@@ -16,6 +16,8 @@ import { isBuildActive, useBoqBuild, useBoqLines, useBoqState, useBuildBoq } fro
 import { sheetName } from "@/features/sheets/model";
 import { LibraryNotice } from "@/features/boq/LibraryNotice";
 import { useCurrentOrg } from "@/features/org/useCurrentOrg";
+import { LineDescription } from "@/features/boq/LineDescription";
+import { canRenameLine, lineDescription } from "@/features/boq/sprint7";
 
 /**
  * Project hub — the BOQ column. One bill of quantities per project (that is how builds work), optionally
@@ -55,14 +57,15 @@ export function ProjectBoqSummary({
   const needsCount = useMemo(() => bySheet.filter(lineNeedsInput).length, [bySheet]);
   const lines = useMemo(() => (onlyNeeds && needsCount ? bySheet.filter(lineNeedsInput) : bySheet), [bySheet, onlyNeeds, needsCount]);
   const canQuick = canEditQty(role);
+  const canRename = canRenameLine(role);
   const chapters = useMemo(() => groupByChapter(lines, linesQ.data?.chapters ?? []), [lines, linesQ.data?.chapters]);
   const total = statsOf(lines);
   const reviewHref = `/projects/${projectId}/review${filterSheet ? `?sheet=${encodeURIComponent(filterSheet.sheet.id)}` : ""}`;
 
   return (
     <section aria-labelledby="hub-boq-title" className="flex min-h-0 flex-col rounded-lg border border-border bg-surface">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-3">
-        <div className="min-w-0 flex-1">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
+        <div className="min-w-[9rem] flex-1">
           <h2 id="hub-boq-title" className="text-panel text-foreground">
             {t("hub.boq")}
           </h2>
@@ -87,6 +90,14 @@ export function ProjectBoqSummary({
           >
             {t("hub.needsInputOnly", { count: needsCount })}
           </button>
+        ) : null}
+        {buildId ? (
+          <Button size="sm" variant="ghost" asChild>
+            <Link to={`/projects/${projectId}/boq/preview`} data-preview-link aria-label={t("hub.previewFull")} title={t("hub.previewFull")}>
+              <Eye aria-hidden />
+              <span className="max-sm:sr-only">{t("hub.preview")}</span>
+            </Link>
+          </Button>
         ) : null}
         {buildId ? (
           <Button size="sm" variant="secondary" asChild>
@@ -167,7 +178,7 @@ export function ProjectBoqSummary({
                       const waiting = lineNeedsInput(l);
                       const qa = waiting && canQuick ? quickActionOf(l) : null;
                       return (
-                      <tr key={l.id} data-code={l.code} data-needs-input={waiting || undefined} className="h-8 border-t border-border/60 align-top hover:bg-surface-sunken/50">
+                      <tr key={l.id} data-code={l.code} data-line={l.id} data-needs-input={waiting || undefined} className="group/line h-8 border-t border-border/60 align-top hover:bg-surface-sunken/50">
                         <td className="w-6 ps-4 pt-2.5">
                           <ConfidenceShape level={levelFromDb(l.level)} className="size-2.5" />
                         </td>
@@ -175,8 +186,8 @@ export function ProjectBoqSummary({
                           <Ltr>{l.code}</Ltr>
                         </td>
                         {/* Two lines, not one: lines like 3.02 / 3.03 / 3.11 differ only after the shared prefix (A-UI-17). */}
-                        <td className="py-1.5 pe-2 text-foreground" title={l.description}>
-                          <span className="line-clamp-2 break-words">{l.description}</span>
+                        <td className="py-1.5 pe-2 text-foreground" title={lineDescription(l)}>
+                          <LineDescription projectId={projectId} line={l} canEdit={canRename} variant="hub" />
                           {waiting ? (
                             <span className="mt-1 flex flex-wrap items-center gap-1">
                               <NeedsInputChip />

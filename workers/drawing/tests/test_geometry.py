@@ -498,7 +498,12 @@ def test_noah_targets(noah_units: dict[str, dict[str, Any]]) -> None:
     assert u["gypsum_partition_area"]["qty"] == pytest.approx(30.0, rel=0.15)  # 7.06 (BOQ 35.2)
     assert u["gypsum_double_partition_area"]["qty"] == pytest.approx(7.5, rel=0.1)  # 7.07
     assert u["courtyard_waterproofing"]["qty"] == 1.0  # 5.08
-    assert u["window_closure_area"]["estimate"]["qty"] == pytest.approx(1.5, rel=0.2)  # 7.03 (width 1.2 m drawn)
+    # 7.03: width 1.20 m on the construction plan × "U.K=75 / O.K=210" (1.35 m) beside the window on the ground master
+    # plan (Sprint 7, rotated marks read by OCR, shared across the floor's sheets)
+    if u["window_closure_area"]["computable"]:
+        assert u["window_closure_area"]["qty"] == pytest.approx(1.62, abs=0.01)
+    else:  # Tesseract missing on this box: the estimate as before
+        assert u["window_closure_area"]["estimate"]["qty"] == pytest.approx(1.5, rel=0.2)
     assert u["wc_partial_cladding_area"]["estimate"]["qty"] == pytest.approx(1.0, rel=0.1)  # 5.07 (BOQ 1.2)
     assert u["plaster_new_walls_area"]["estimate"]["qty"] == pytest.approx(22.0, rel=0.1)  # 8.02
     assert not u["kitchen_backsplash_area"]["computable"]  # 5.06 not on the drawings

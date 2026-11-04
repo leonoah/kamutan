@@ -70,3 +70,27 @@
   --destructive: 248 113 113;
   color-scheme: dark;
 }
+
+/*
+ * Sprint 7: printing (BOQ preview) always uses the light palette, whatever the screen theme. `:not(#kamutan-print)`
+ * lifts the specificity above the dark-theme selectors (`:root[data-theme="dark"]`, `:root:not([data-theme="light"])`).
+ */
+@media print {
+  :root:not(#kamutan-print) {
+    --background: 255 255 255;
+    --surface: 255 255 255;
+    --surface-sunken: 229 231 235;
+    --foreground: 0 0 0;
+    --muted: 245 245 244;
+    --muted-foreground: 64 64 64;
+    --border: 156 163 175;
+    --border-strong: 156 163 175;
+    --primary: 15 76 129;
+    --primary-foreground: 255 255 255;
+    --conf-high: 27 127 90;
+    --conf-mid: 178 107 0;
+    --conf-low: 194 65 12;
+    --manual: 29 78 216;
+    color-scheme: light;
+  }
+}

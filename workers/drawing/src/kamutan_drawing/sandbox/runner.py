@@ -50,7 +50,17 @@ from .protocol import FrameDecoder, pack
 log = logging.getLogger(__name__)
 
 UID_POOL = (1_200_000, 1_260_000)  # no passwd entries; never used by anything else on the host
-ENV_ALLOW = ("PATH", "LANG", "LC_ALL", "TESSDATA_PREFIX", "TESSERACT_CMD", "KAMUTAN_DWG2DXF")
+ENV_ALLOW = (
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TESSDATA_PREFIX",
+    "TESSERACT_CMD",
+    "KAMUTAN_DWG2DXF",
+    # Sprint 7 raster spike feature flags (plain switches, no secrets)
+    "KAMUTAN_RASTER_SYMBOLS",
+    "KAMUTAN_RASTER_SYMBOLS_METHOD",
+)
 NetMode = Literal["auto", "require", "off"]
 
 

@@ -96,6 +96,13 @@ FIXTURE_DISCIPLINES = {"architecture", "architecture_master", "master", "constru
 TEXT_ANCHOR_SUPERSEDED = {"fixture_wc_concealed", "fixture_wc_monoblock", "faucet_wall", "faucet_basin", "fixture_basin"}
 
 
+def _raster_symbols_on() -> bool:
+    """``KAMUTAN_RASTER_SYMBOLS=1``: the Sprint 7 raster symbol prototype replaces the old NCC fallback."""
+    from ..raster_symbols import enabled
+
+    return enabled()
+
+
 def gz_json(obj: Any) -> bytes:
     return gzip.compress(json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode(), mtime=0)
 
@@ -353,6 +360,14 @@ def understand(
             inserts=inserts,
         )
         det.detections = [d for d in det.detections if not (d.entry is not None and d.entry.signature in ignored)]
+    elif run_detect and raster and raster_image is not None and _raster_symbols_on():
+        # Sprint 7 raster spike (default off, NOTES.md "Sprint 7 — raster symbol spike"); capped yellow like the old path
+        from ..raster_symbols import detect_raster_symbols
+
+        det = detect_raster_symbols(
+            raster_image, width_mm=vs.width_mm, regions=regions, scale_den=scale_den, title_block=title_block
+        )
+        legend = det.legend or legend
     elif run_detect and raster and raster_image is not None:
         from ..symbols.raster import detect_raster
 

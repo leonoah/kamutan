@@ -17,6 +17,11 @@
         },
         "trainingOptIn": {
           "type": "boolean"
+        },
+        "projectQuotaBytes": {
+          "type": "integer",
+          "minimum": 104857600,
+          "maximum": 1099511627776
         }
       },
       "additionalProperties": false

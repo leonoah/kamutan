@@ -49,6 +49,8 @@ export function createBackend(): Backend {
       ...(q.get("mockBoq") === "engine" ? { boqEngineOnly: true } : {}),
       // Stage 10 (A-LIVE-01): ?mockLibrary=default|none (org library state shown by the BOQ panel and the hub).
       ...(q.get("mockLibrary") === "default" || q.get("mockLibrary") === "none" ? { libraryMode: q.get("mockLibrary") as "default" | "none" } : {}),
+      // Sprint 7: ?mockQuotaMb=50 (per-project storage quota of the demo org; p-noah already stores ~46 MB).
+      ...(Number(q.get("mockQuotaMb")) > 0 ? { projectQuotaBytes: Number(q.get("mockQuotaMb")) * 1024 * 1024 } : {}),
       ...(role === "editor" || role === "reviewer" || role === "viewer" || role === "admin"
         ? { orgs: [{ id: "org-demo", name: "סטודיו נח לעיצוב פנים", role }] }
         : {}),

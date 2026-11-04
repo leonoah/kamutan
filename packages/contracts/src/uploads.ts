@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Sha256HexSchema, TimestampSchema } from './common.js';
 import { DocIdSchema } from './org.js';
+import { JobProgressSchema, JobStatusSchema } from './jobs.js';
 import { FileKindSchema, SheetSetSchema } from './sheets.js';
 
 /** Per-file size limit (SEC-14). */
@@ -85,3 +86,46 @@ export const FinalizeUploadResponseSchema = z.object({
   versionId: DocIdSchema,
 });
 export type FinalizeUploadResponse = z.infer<typeof FinalizeUploadResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Sprint 7: upload hardening (antivirus, per-project quota)
+// ---------------------------------------------------------------------------
+
+/** Worker error code (sheet set / version / job `error.code`) when the antivirus scan finds malware. */
+export const FILE_INFECTED_ERROR = 'file_infected' as const;
+/** Worker error code (job `error.code`, retryable): no antivirus verdict yet (engine unavailable) — Pub/Sub redelivers. */
+export const SCAN_UNAVAILABLE_ERROR = 'scan_unavailable' as const;
+/** API error code (413) when an upload would exceed the project's storage quota. */
+export const QUOTA_EXCEEDED_ERROR = 'quota_exceeded' as const;
+
+const gb = (n: number): string => {
+  const v = n / 1024 ** 3;
+  return v >= 10 || Number.isInteger(v) ? String(Math.round(v)) : v.toFixed(1);
+};
+/** Hebrew 413 message: "אין מספיק מקום בפרויקט: …". Used as the ApiError `message` of `quota_exceeded`. */
+export const quotaExceededMessageHe = (usedBytes: number, quotaBytes: number, requestedBytes: number): string =>
+  `אין מספיק מקום בפרויקט: נוצלו ${gb(usedBytes)} GB מתוך ${gb(quotaBytes)} GB, והקובץ דורש ${Math.max(1, Math.ceil(requestedBytes / 1024 ** 2))} MB נוספים. פנו למנהל הארגון כדי להגדיל את מכסת האחסון של הפרויקט.`;
+
+/** Hebrew text per upload / processing error code (upload status, sheet-set card, toasts). */
+export const UPLOAD_ERROR_MESSAGES_HE: Readonly<Record<string, string>> = Object.freeze({
+  file_infected: 'נמצאה נוזקה בקובץ. הקובץ הועבר להסגר ולא עובד. בדקו את המקור והעלו קובץ נקי.',
+  scan_unavailable: 'בדיקת האנטי-וירוס אינה זמינה כרגע. הקובץ ייבדק שוב אוטומטית; אין צורך להעלות אותו מחדש.',
+  quota_exceeded: 'אין מספיק מקום בפרויקט. פנו למנהל הארגון כדי להגדיל את מכסת האחסון של הפרויקט.',
+  payload_too_large: 'הקובץ גדול מדי (עד 100MB).',
+  unsupported_file_type: 'סוג הקובץ אינו נתמך (PDF, DWG, DXF או PNG).',
+  upload_expired: 'פג תוקף ההעלאה. נסו להעלות שוב.',
+  upload_missing: 'הקובץ לא הגיע לשרת. נסו להעלות שוב.',
+});
+
+/**
+ * Sprint 7: GET /v1/projects/:pid/sheet-sets/:setId (viewer+) — the upload's status after finalize: the set, its
+ * ingest job and the effective error (set `error`, else the job's) with the Hebrew text of `UPLOAD_ERROR_MESSAGES_HE`
+ * (`file_infected` → "נמצאה נוזקה בקובץ…"). `infected` is true for `file_infected`.
+ */
+export const SheetSetStatusResponseSchema = z.object({
+  sheetSet: SheetSetSchema,
+  job: z.object({ id: DocIdSchema, status: JobStatusSchema, progress: JobProgressSchema }).nullable(),
+  error: z.object({ code: z.string().max(64), message: z.string().max(2000), messageHe: z.string().max(500).nullable() }).nullable(),
+  infected: z.boolean(),
+});
+export type SheetSetStatusResponse = z.infer<typeof SheetSetStatusResponseSchema>;

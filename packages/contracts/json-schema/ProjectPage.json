@@ -193,6 +193,14 @@
               "createdAt": {
                 "type": "string",
                 "format": "date-time"
+              },
+              "storageBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "storageQuotaBytes": {
+                "type": "integer",
+                "exclusiveMinimum": 0
               }
             },
             "required": [

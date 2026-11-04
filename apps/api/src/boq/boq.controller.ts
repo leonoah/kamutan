@@ -23,6 +23,10 @@ import {
   type RequestBoqBuildResponse,
   BatchLineStatusRequestSchema,
   BatchLineStatusResponseSchema,
+  BoqDocumentModelSchema,
+  BoqDocumentQuerySchema,
+  type BoqDocumentModel,
+  type BoqDocumentQuery,
   type BatchLineStatusRequest,
   type BatchLineStatusResponse,
 } from '@kamutan/contracts';
@@ -116,6 +120,19 @@ export class BoqController {
     @CurrentUser() user: AuthContext,
   ): Promise<BoqSheetEvidenceResponse> {
     return this.svc.sheetEvidence(user, projectId, q.sheetId, q.versionId);
+  }
+
+  /**
+   * Sprint 7: the BOQ preview — the export's layout (`BoqDocumentModel`, the same model the xlsx main sheet is written
+   * from) for the export dialog's options, with the export-gate warnings (never 409).
+   */
+  @Get('document')
+  @RequireRole('viewer', project)
+  @ApiZodQuery(BoqDocumentQuerySchema)
+  @ApiZodResponse(200, BoqDocumentModelSchema)
+  @ApiErrors(400, 401, 404, 429)
+  document(@Param('projectId') projectId: string, @Query(zodPipe(BoqDocumentQuerySchema)) q: BoqDocumentQuery, @CurrentUser() user: AuthContext): Promise<BoqDocumentModel> {
+    return this.svc.document(user, projectId, q);
   }
 
   /** xlsx in the template's format → 2-minute signed URL. 409 export_blocked under blockExportOnRed. Audited. */

@@ -21,6 +21,20 @@
         "markDraft": {
           "type": "boolean",
           "default": false
+        },
+        "includeConfidence": {
+          "type": "boolean",
+          "default": true
+        },
+        "chapters": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "minItems": 1,
+          "maxItems": 64
         }
       },
       "additionalProperties": false

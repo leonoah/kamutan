@@ -84,7 +84,7 @@ export function TopBar({ children, className }: { children?: ReactNode; classNam
   const { t } = useTranslation();
   const { org } = useCurrentOrg();
   return (
-    <header className={cn("sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur", className)}>
+    <header data-app-chrome className={cn("sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur print:hidden", className)}>
       {/* 390 px: icon-only logo, tighter gaps and nav padding so nav + user menu fit without sideways scroll (A-UI-02). */}
       <div className="flex h-14 min-w-0 items-center gap-2 px-3 sm:gap-4 sm:px-6">
         <Link to="/projects" className="shrink-0 rounded" aria-label={t("app.name")}>

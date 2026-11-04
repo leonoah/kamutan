@@ -335,6 +335,7 @@ def test_noah_sample_lines():
         "4.27": 1.0,
         "4.28": 1.0,
         "5.08": 1.0,
+        "7.04": 3.0,  # Sprint 7: one access panel per gypsum AC closure (ground 2, the "פתח שירות" folded) + AC box (first 1)
         "9.03": 1.0,
     }
     ev = qty_by_code(text_units(docs, include_corroborating=True))

@@ -22,6 +22,10 @@ import {
   LINE_ORIGINS,
   needsReapproval,
   QuickActionSchema,
+  DESCRIPTION_OVERRIDE_MAX,
+  displayDescription,
+  normalizeDescriptionInput,
+  itemIdFor,
 } from '@kamutan/contracts';
 import { anyIso, type Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -103,6 +107,19 @@ export function toBoqLine(id: string, d: Doc): BoqLine {
     ...(oneOfOrNull(d.origin, LINE_ORIGINS) ? { origin: d.origin as BoqLine['origin'] } : {}),
     ...(typeof d.needsInput === 'boolean' ? { needsInput: d.needsInput } : d.qty === null ? { needsInput: true } : {}),
     ...(d.quickAction !== undefined ? { quickAction: quickActionOf(d.quickAction) } : {}),
+    // Sprint 7 (API-written): the project's rename of the line; malformed / empty → not renamed.
+    ...descriptionOverrideOf(d),
+  };
+}
+
+function descriptionOverrideOf(d: Doc): Partial<BoqLine> {
+  const v = typeof d.descriptionOverride === 'string' ? d.descriptionOverride.slice(0, DESCRIPTION_OVERRIDE_MAX) : null;
+  if (!v && d.descriptionOverride === undefined) return {};
+  return {
+    descriptionOverride: v || null,
+    descriptionOverrideBy: v ? str(d.descriptionOverrideBy) : null,
+    descriptionOverrideAt: v ? anyIso(d.descriptionOverrideAt) : null,
+    descriptionOverrideReason: v ? (str(d.descriptionOverrideReason)?.slice(0, 500) ?? null) : null,
   };
 }
 
@@ -244,7 +261,9 @@ export function planLinePatch(projectId: string, cur: BoqLine, req0: PatchBoqLin
   // Decision (Sprint 3 integration): an override on an APPROVED line is allowed and sends it back to `reviewed`
   // (re-approval required); on draft/reviewed lines the status is kept. Notes alone stay locked on approved lines.
   const overrideOnApproved = cur.status === 'approved' && req.qtyOverride !== undefined;
-  if (cur.status === 'approved' && !overrideOnApproved) {
+  // Sprint 7: renaming an approved line is allowed (wording only — the approval and the quantity stay).
+  const renameOnly = req.description !== undefined && req.status === undefined && req.qtyOverride === undefined && req.note === undefined;
+  if (cur.status === 'approved' && !overrideOnApproved && !renameOnly) {
     if (nextStatus !== 'reviewed') throw new RepoConflictError('approved_locked');
   }
   if (overrideOnApproved && req.status !== undefined && req.status !== 'reviewed') throw new RepoConflictError('approved_locked');
@@ -282,6 +301,23 @@ export function planLinePatch(projectId: string, cur: BoqLine, req0: PatchBoqLin
   if (req.note !== undefined) {
     patch.note = req.note;
     audit.noteChanged = true; // the text itself stays out of the audit log
+  }
+  if (req.description !== undefined) {
+    // Sprint 7 (owner request 2): `null` — or the original text itself — restores the original wording.
+    const text = req.description === null ? null : normalizeDescriptionInput(req.description).slice(0, DESCRIPTION_OVERRIDE_MAX);
+    const next = !text || text === normalizeDescriptionInput(cur.description) ? null : text;
+    if (next === null) {
+      Object.assign(patch, { descriptionOverride: null, descriptionOverrideBy: null, descriptionOverrideAt: null, descriptionOverrideReason: null });
+    } else {
+      Object.assign(patch, { descriptionOverride: next, descriptionOverrideBy: actorUid, descriptionOverrideAt: now, descriptionOverrideReason: req.reason ?? null });
+    }
+    // History "before → after" = the DISPLAYED wording (BOQ wording is not personal data; the note text never is logged).
+    audit.description = { from: displayDescription(cur), to: next, original: cur.description };
+    if (req.qtyOverride === undefined) audit.reason = next !== null ? (req.reason ?? null) : null;
+    if (req.alsoUpdateLibrary === true && text) {
+      audit.alsoUpdateLibrary = true;
+      audit.libraryItemId = itemIdFor(cur.code, text);
+    }
   }
   patch.updatedAt = now;
   return { patch, audit };

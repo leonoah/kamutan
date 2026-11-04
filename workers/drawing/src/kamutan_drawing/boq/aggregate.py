@@ -929,7 +929,7 @@ def aggregate(
     def catalog_unit(code: str, members: list[TextEntry], qty: float, floor: str | None, origin: str) -> Unit | None:
         # the catalog names the org's code itself: the library item of that code (else the rule's resolution)
         rule = code_rules.get(code)
-        item = next(iter(sorted(library.by_code(code), key=lambda i: i.id)), None)
+        item = library.preferred(code)  # a manual (renamed) item of the code first, then by id
         if rule is None and item is None:
             return None
         return Unit(rule, [(entry_det(e), None) for e in members], qty, [], "yellow", floor=floor, origin=origin, item=item)

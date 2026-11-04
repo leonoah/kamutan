@@ -17,7 +17,9 @@ import {
   type BoqSheetEvidenceResponse,
   type BoqTemplate,
   type BoqView,
-  type ExportBoqRequest,
+  type BoqDocumentModel,
+  type BoqDocumentQuery,
+  type ExportBoqRequestInput,
   type ExportBoqResponse,
   type GetBoqQuery,
   type PatchBoqLineRequest,
@@ -25,6 +27,8 @@ import {
   type Project,
   type RequestBoqBuildResponse,
   roleSatisfies,
+  itemIdFor,
+  normalizeDescriptionInput,
   type BatchLineStatusRequest,
   type BatchLineStatusResponse,
 } from '@kamutan/contracts';
@@ -41,9 +45,12 @@ import { sanitizeFilename } from '../uploads/filename';
 import { BOQ_STORAGE, type BoqStorage } from './boq-storage';
 import { assertExportAllowed } from './export-gate';
 import { ProjectStateService } from '../project-state/project-state.service';
+import { buildBoqDocument } from './boq-document';
 import { buildBoqWorkbook, floorsOf, type EvidenceGroup } from './excel';
 
 const validId = (s: string) => DocIdSchema.safeParse(s).success;
+/** Sprint 7: role of a line rename / library rewrite = the role of a library item edit (LibraryService.patchItem). */
+export const LIBRARY_EDIT_ROLE = 'editor' as const;
 /** Lenient view of the evidence file: only `lines` is needed; items are validated per line on use. */
 const EvidenceView = z.object({ lines: z.record(z.unknown()) });
 const LenientItems = z.array(BoqEvidenceItemSchema.strip());
@@ -182,11 +189,15 @@ export class BoqService {
       const role = await this.access.roleIn(user, orgId);
       if (!role || !['admin', 'editor'].includes(role)) throw forbidden('overriding a quantity requires the editor role');
     }
+    if (req.description !== undefined || req.alsoUpdateLibrary !== undefined) {
+      // Sprint 7: renaming a line (and the library item, "עדכן גם בספריית הסעיפים") is editor+ — the same role and MFA
+      // rules as a library item edit (LibraryService.patchItem: editor, no MFA).
+      await this.access.requireRole(user, orgId, LIBRARY_EDIT_ROLE);
+    }
     if (!validId(lineId)) throw notFound('line');
+    let line: BoqLine | null;
     try {
-      const line = await this.boq.patchLine(orgId, projectId, lineId, req, user.uid);
-      if (!line) throw notFound('line');
-      return { line };
+      line = await this.boq.patchLine(orgId, projectId, lineId, req, user.uid);
     } catch (err) {
       if (err instanceof RepoConflictError) {
         const msg = err.reason === 'approved_locked' ? 'the line is approved; un-approve it (status "reviewed") before changing it' : 'status transition not allowed';
@@ -194,6 +205,61 @@ export class BoqService {
       }
       throw err;
     }
+    if (!line) throw notFound('line');
+    if (req.alsoUpdateLibrary === true && typeof req.description === 'string') {
+      const library = await this.renameLibraryItem(orgId, line, req.description, user.uid);
+      return { line, library };
+    }
+    return { line };
+  }
+
+  /**
+   * Sprint 7 "עדכן גם בספריית הסעיפים": the org library item of the line's code gets the new wording, so future builds
+   * (and projects) use it. Item ids are `itemIdFor(code, description)` (the description is part of the identity), so
+   * this creates (or re-activates) the item `itemIdFor(code, text)` with `source: 'manual'` — chapter / chapterTitle /
+   * unit / tags copied from the code's current active item (else from the line) — and deactivates the code's other
+   * active items. Each write is audited (`itemLibrary/create|update`). Runs after the line PATCH committed.
+   */
+  private async renameLibraryItem(orgId: string, line: BoqLine, description: string, actorUid: string): Promise<NonNullable<PatchBoqLineResponse['library']>> {
+    const text = normalizeDescriptionInput(description);
+    const itemId = itemIdFor(line.code, text);
+    const ofCode = (await this.boq.listLibraryItems(orgId, {})).filter((i) => i.code === line.code);
+    const base = ofCode.find((i) => i.active && i.id !== itemId) ?? ofCode.find((i) => i.active) ?? ofCode[0] ?? null;
+    let created = false;
+    const existing = ofCode.find((i) => i.id === itemId) ?? null;
+    if (!existing) {
+      try {
+        await this.boq.createLibraryItem(
+          orgId,
+          {
+            id: itemId,
+            code: line.code,
+            chapter: base?.chapter ?? line.chapter,
+            chapterTitle: base?.chapterTitle ?? '',
+            description: text,
+            unit: (base?.unit || line.unit || 'יח\'').slice(0, 32),
+            tags: base?.tags ?? [],
+            source: 'manual',
+            sourceRef: null,
+            active: true,
+          },
+          actorUid,
+        );
+        created = true;
+      } catch (err) {
+        if (!(err instanceof RepoConflictError)) throw err; // created concurrently → re-activate below
+        await this.boq.patchLibraryItem(orgId, itemId, { active: true }, actorUid);
+      }
+    } else if (!existing.active) {
+      await this.boq.patchLibraryItem(orgId, itemId, { active: true }, actorUid);
+    }
+    const deactivated: string[] = [];
+    for (const i of ofCode) {
+      if (i.id === itemId || !i.active) continue;
+      await this.boq.patchLibraryItem(orgId, i.id, { active: false }, actorUid);
+      deactivated.push(i.id);
+    }
+    return { itemId, created, deactivatedItemIds: deactivated };
   }
 
   // ------------------------------------------------------------------ bulk status (Sprint 6)
@@ -356,36 +422,78 @@ export class BoqService {
     return parsed.data;
   }
 
-  // ------------------------------------------------------------------ export
-  async export(user: AuthContext, projectId: string, req: ExportBoqRequest): Promise<ExportBoqResponse> {
-    const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
+  // ------------------------------------------------------------------ document model (Sprint 7)
+  /**
+   * The ONE layout of the export (`BoqDocumentModel`) for the given options: the preview endpoint returns it, the xlsx
+   * export writes its main sheet from it. Lines = all project lines (≤ 5000), sorted like everywhere else.
+   */
+  private async prepareDocument(orgId: string, projectId: string, opts: { templateId?: string | undefined; split: 'summed' | 'byFloor'; markDraft: boolean; includeConfidence: boolean; chapters?: readonly string[] | null | undefined }) {
     const [project, org, all] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
     if (!project) throw notFound('project');
     await this.syncApprovalAudits(orgId, projectId, project);
-    if (all.length === 0) throw new ApiException(HttpStatus.CONFLICT, 'not_ready', 'the project has no BOQ lines yet; build the BOQ first');
     const lines = all.sort(compareLines);
-    const counts = countLines(lines);
-    // A red line a human has approved is handled (spec: "לבדיקה" = still needs a person); unapproved red lines and
-    // approved lines whose quantity changed since the approval (Stage 10, A-API-06) block.
-    assertExportAllowed(org, lines);
-    const template = await this.templateFor(orgId, req.templateId);
-
+    const template = await this.templateFor(orgId, opts.templateId);
     const latest = project.boq?.latestBuildId ?? null;
-    const evidence = latest && validId(latest) ? await this.evidenceGroups(orgId, projectId, storagePaths.boqEvidence(orgId, projectId, latest), lines) : new Map();
     const floorNames = Object.fromEntries(project.floors.map((f) => [f.code, f.name]));
+    const vatRate = org?.settings.vatRate ?? template.vatRate ?? 0.18;
     const date = new Date();
-    const data = await buildBoqWorkbook({
+    const doc = buildBoqDocument({
+      projectId,
       projectName: project.name,
       ...(org?.name ? { orgName: org.name } : {}),
       date,
       template,
       lines,
-      split: req.split,
-      markDraft: req.markDraft,
-      evidence,
-      vatRate: org?.settings.vatRate ?? template.vatRate ?? 0.18,
+      split: opts.split,
+      markDraft: opts.markDraft,
+      includeConfidence: opts.includeConfidence,
+      chapters: opts.chapters ?? null,
+      vatRate,
       floorNames,
+      buildId: latest,
+      blockExportOnRed: org?.settings.blockExportOnRed ?? true,
     });
+    return { project, org, lines, template, latest, floorNames, vatRate, date, doc };
+  }
+
+  /** GET …/boq/document (viewer+): the export's layout for the preview, with the gate warnings (never 409). */
+  async document(user: AuthContext, projectId: string, q: BoqDocumentQuery): Promise<BoqDocumentModel> {
+    const { orgId } = await this.access.requireProjectRole(user, projectId, 'viewer');
+    const { doc } = await this.prepareDocument(orgId, projectId, { templateId: q.templateId, split: q.split, markDraft: q.markDraft, includeConfidence: q.confidence, chapters: q.chapters });
+    return doc;
+  }
+
+  // ------------------------------------------------------------------ export
+  async export(user: AuthContext, projectId: string, req0: ExportBoqRequestInput): Promise<ExportBoqResponse> {
+    const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
+    const req = { split: req0.split ?? 'summed', markDraft: req0.markDraft ?? false, includeConfidence: req0.includeConfidence ?? true, templateId: req0.templateId, chapters: req0.chapters };
+    const { project, org, lines, template, latest, floorNames, vatRate, date, doc } = await this.prepareDocument(orgId, projectId, req);
+    if (lines.length === 0) throw new ApiException(HttpStatus.CONFLICT, 'not_ready', 'the project has no BOQ lines yet; build the BOQ first');
+    const counts = countLines(lines);
+    // A red line a human has approved is handled (spec: "לבדיקה" = still needs a person); unapproved red lines and
+    // approved lines whose quantity changed since the approval (Stage 10, A-API-06) block.
+    assertExportAllowed(org, lines);
+
+    const evidence = latest && validId(latest) ? await this.evidenceGroups(orgId, projectId, storagePaths.boqEvidence(orgId, projectId, latest), lines) : new Map();
+    const data = await buildBoqWorkbook(
+      {
+        projectId,
+        projectName: project.name,
+        ...(org?.name ? { orgName: org.name } : {}),
+        date,
+        template,
+        lines,
+        split: req.split,
+        markDraft: req.markDraft,
+        includeConfidence: req.includeConfidence,
+        chapters: req.chapters ?? null,
+        evidence,
+        vatRate,
+        floorNames,
+        buildId: latest,
+      },
+      doc,
+    );
     const exportId = randomUUID();
     const path = storagePaths.boqExportFile(orgId, projectId, exportId);
     await this.storage.writeExport(path, data);

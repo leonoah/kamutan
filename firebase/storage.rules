@@ -156,12 +156,19 @@ service firebase.storage {
       match /share/{rest=**} {
         allow read, write: if false;
       }
+      match /infected/{rest=**} {
+        allow read, write: if false;               // Sprint 7: worker moves ClamAV hits here; never served or signed
+      }
       match /similar/{rest=**} {
         allow read, write: if false;               // worker writes; API signs read URLs (never client-readable)
       }
     }
 
     // Sprint-0 artifact prefix — kept explicit so nobody re-opens it by accident.
+    match /orgs/{orgId}/infected/{rest=**} {
+      allow read, write: if false;                 // Sprint 7: infected library imports (worker), never served
+    }
+
     match /orgs/{orgId}/derived/{rest=**} {
       allow read, write: if false;
     }

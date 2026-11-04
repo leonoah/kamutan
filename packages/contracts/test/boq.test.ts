@@ -111,7 +111,7 @@ describe('boq lines', () => {
     expect(PatchBoqLineRequestSchema.safeParse({ qtyOverride: -1, reason: 'x' }).success).toBe(false);
   });
   it('export request defaults', () => {
-    expect(ExportBoqRequestSchema.parse({})).toEqual({ split: 'summed', markDraft: false });
+    expect(ExportBoqRequestSchema.parse({})).toEqual({ split: 'summed', markDraft: false, includeConfidence: true });
     expect(ExportBoqRequestSchema.safeParse({ split: 'perRoom' }).success).toBe(false);
   });
   it('project carries the boq summary', () => {

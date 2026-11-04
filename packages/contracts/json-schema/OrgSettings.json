@@ -29,6 +29,10 @@
         },
         "autoRebuild": {
           "type": "boolean"
+        },
+        "projectQuotaBytes": {
+          "type": "integer",
+          "exclusiveMinimum": 0
         }
       },
       "required": [

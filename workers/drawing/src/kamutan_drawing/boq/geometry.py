@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .dedup import Det
@@ -396,6 +396,11 @@ def key_units(m: dict[str, Any], items: list[GeoItem], docs: list[dict[str, Any]
             dets = [geo_det(g, g.room_ids) for g in here] or _measure_sheet(docs, str(mes.get("key")), fl)
             if not dets:
                 continue
+            if origin == "geometry":
+                # Sprint 7: the measure was computed (its height possibly shared from another sheet of the floor, or read
+                # from a mark): the stored items' own reasons ("הגובה אינו מופיע בשרטוט" of the construction sheet) are
+                # stale — the line keeps only the reasons of the measure that was used
+                dets = [replace(d, reasons=[]) for d in dets]
             out.append(GeoUnit(None, dets[0], round(q, 4), None if fl in ("None", "unknown") else fl, level, origin,
                                list(reasons), dets[1:]))  # fmt: skip
     return out

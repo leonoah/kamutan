@@ -73,6 +73,14 @@ export const storagePaths = Object.freeze({
    */
   quarantine: (orgId: string, fileId: string) => `orgs/${orgId}/quarantine/${fileId}`,
   /**
+   * Sprint 7 (Worker-BOQ): where the worker moves an upload its antivirus scan found infected (`file_infected`):
+   * orgs/{o}/projects/{p}/infected/{sheetSetId}/{sha256}.bin (library imports: orgs/{o}/infected/imports/{importId}/
+   * {sha256}.bin). Never signed, never served, never parsed; deleted with the org (purge of `orgs/{o}/`) or a future
+   * project delete (prefix `orgs/{o}/projects/{p}/`). NOT counted in `project.storageBytes`.
+   */
+  infected: (orgId: string, projectId: string, sheetSetId: string, sha256: string) => `orgs/${orgId}/projects/${projectId}/infected/${sheetSetId}/${sha256}.bin`,
+  infectedImport: (orgId: string, importId: string, sha256: string) => `orgs/${orgId}/infected/imports/${importId}/${sha256}.bin`,
+  /**
    * Verified upload, moved here by the API after size + magic-bytes checks:
    * orgs/{orgId}/projects/{projectId}/uploads/{sheetSetId}/source.{ext}. The `{filename}` of the brief is
    * the server-chosen `source.{ext}` (the sanitized original name is metadata only, SEC-13).
@@ -171,3 +179,6 @@ export const TEXT_ARTIFACT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/
 export const UPLOAD_PATH_RE = new RegExp(`^orgs/(${ID})/uploads/(${ID})/(${ID})$`);
 /** @deprecated Sprint 0 (see storagePaths.source). */
 export const SOURCE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/sources/([a-f0-9]{64})\\.(pdf|dwg|dxf|png)$`);
+
+/** Sprint 7: infected uploads moved aside by the worker (see `storagePaths.infected` / `infectedImport`). */
+export const INFECTED_PATH_RE = new RegExp(`^orgs/(${ID})/(?:projects/(${ID})/infected/(${ID})|infected/imports/(${UUID}))/([0-9a-f]{64})\\.bin$`);

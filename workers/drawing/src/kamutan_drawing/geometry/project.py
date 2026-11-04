@@ -7,16 +7,20 @@ on the basement and the ground plan). Rules:
   master; ``demolished_*`` only from demolition sheets), ties → more items, then sheet id;
 * ``stair_treads`` sums distinct stairs: stairs with the same ``key`` (floor | lifecycle | treads | width | going)
   are one stair — the ground plan's view of a stair numbered below ±0.00 already carries the basement floor;
+* a drawn height (note "H=", section, opening mark) of an element is shared with the same element on the other
+  sheets of its floor (same kind, length within ``SAME_LEN_TOL``) that only have an assumed height — the master plan
+  writes "U.K=75 / O.K=210" beside the window the construction plan closes (Sprint 7);
 * a key no sheet carries is still returned (``computable: false``, reason "לא נמצא בשרטוטים") so the BOQ can emit a
   suggested line instead of a silent omission.
 """
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .analyze import FLOOR_RANK, KEYS, M2, R_NOT_ON_DWG
+from .analyze import DRAWN_SOURCES, FLOOR_RANK, KEYS, M2, R_NOT_DRAWN_H, R_NOT_ON_DWG, R_OTHER_SHEET_H, measures
 
 RANK = {"construction": 0, "architecture": 1, "architecture_master": 2, "master": 2, "demolition": 5}
 R_NONE = "לא נמצא בשרטוטים — להשלמה ידנית"
@@ -33,7 +37,7 @@ def _rank(doc: Mapping[str, Any], key: str) -> int:
 
 def geometry_units(docs: Iterable[Mapping[str, Any]], *, keys: Sequence[str] | None = None) -> list[dict[str, Any]]:
     """``[{key, unit, qty|null, computable, reason, estimate, byFloor, refs: [{sheetId, id}], level, reasons}]``."""
-    docs = [d for d in docs if isinstance(d, Mapping)]
+    docs = share_heights([d for d in docs if isinstance(d, Mapping)])
     want = list(keys) if keys is not None else list(KEYS)
     out: list[dict[str, Any]] = []
     for key in want:
@@ -53,6 +57,67 @@ def geometry_units(docs: Iterable[Mapping[str, Any]], *, keys: Sequence[str] | N
                 if fl not in per_floor or sort < per_floor[fl][0]:
                     per_floor[fl] = (sort, d, m)
         out.append(_combine(key, [(d, m) for _, d, m in sorted(per_floor.values(), key=lambda t: _floor_sort(t[2]))]))
+    return out
+
+
+SAME_LEN_TOL = 0.03  # same element on two sheets: lengths within 3 % (and 5 cm)
+_SHARED = ("wallRuns", "lines")
+
+
+def _same(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+    la, lb = float(a.get("lengthM") or 0.0), float(b.get("lengthM") or 0.0)
+    if a.get("kind") != b.get("kind") or a.get("floor") != b.get("floor") or la <= 0 or lb <= 0:
+        return False
+    if abs(la - lb) > max(SAME_LEN_TOL * max(la, lb), 0.05):
+        return False
+    ta, tb = a.get("thicknessM"), b.get("thicknessM")
+    return ta is None or tb is None or abs(float(ta) - float(tb)) <= 0.03
+
+
+def share_heights(docs: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Copies of the documents in which an item without a drawn height takes the drawn height of the same item on
+    another (non-demolition) sheet of its floor; the measures of a changed document are recomputed. Pure."""
+    donors: list[tuple[str, str, Mapping[str, Any]]] = []
+    for d in docs:
+        if str(d.get("discipline") or "") == "demolition":
+            continue
+        for coll in _SHARED:
+            for it in d.get(coll) or []:
+                if isinstance(it, Mapping) and it.get("heightSource") in DRAWN_SOURCES[:-1] and it.get("heightM"):
+                    donors.append((str(d.get("sheetId")), coll, it))
+    if not donors:
+        return list(docs)
+    out: list[Mapping[str, Any]] = []
+    for d in docs:
+        sid = str(d.get("sheetId"))
+        if str(d.get("discipline") or "") == "demolition":
+            out.append(d)
+            continue
+        new: dict[str, Any] | None = None
+        for coll in _SHARED:
+            for k, it in enumerate(d.get(coll) or []):
+                if not isinstance(it, Mapping) or it.get("heightSource") in DRAWN_SOURCES:
+                    continue
+                src = [x for s2, c2, x in donors if s2 != sid and c2 == coll and _same(it, x)]
+                hs = {round(float(x["heightM"]), 2) for x in src}
+                if len(hs) != 1:
+                    continue  # none, or the other sheets disagree
+                h = hs.pop()
+                if new is None:
+                    new = copy.deepcopy(dict(d))
+                tgt = new[coll][k]
+                tgt["heightM"], tgt["heightSource"] = h, "other_sheet"
+                if tgt.get("areaM2") is not None or coll == "wallRuns":
+                    tgt["areaM2"] = round(float(tgt["lengthM"]) * h, 3)
+                keep = [r for r in tgt.get("reasons") or [] if not str(r).startswith("גובה") and r != R_NOT_DRAWN_H]
+                tgt["reasons"] = [*keep, R_OTHER_SHEET_H, *(r for r in src[0].get("reasons") or [] if str(r).startswith("גובה"))][
+                    :12
+                ]
+        if new is not None:
+            new["measures"] = measures(new)
+            out.append(new)
+        else:
+            out.append(d)
     return out
 
 

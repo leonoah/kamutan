@@ -28,6 +28,8 @@
                 "recent_auth_required",
                 "share_unavailable",
                 "method_not_allowed",
+                "quota_exceeded",
+                "file_infected",
                 "internal_error",
                 "service_unavailable"
               ]

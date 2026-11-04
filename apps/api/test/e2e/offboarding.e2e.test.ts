@@ -177,6 +177,9 @@ describe('Sprint 5 e2e — offboarding (SEC-52): export ZIP, offboard, blocked a
     expect(dry.due).toEqual([orgId]);
     expect(t.repo.docs.has(fsPaths.org(orgId))).toBe(true);
 
+    // Sprint 7: infected uploads the worker moved aside (orgs/{o}/projects/{p}/infected/…, orgs/{o}/infected/imports/…) go too
+    const infected = [storagePaths.infected(orgId, projectId, 'b'.repeat(64), 'b'.repeat(64)), storagePaths.infectedImport(orgId, '123e4567-e89b-12d3-a456-426614174000', 'c'.repeat(64))];
+    for (const k of infected) t.storage.objects.set(k, { data: Buffer.from('X5O!P%@AP'), contentType: 'application/octet-stream' });
     const auditHead = (t.repo.docs.get(fsPaths.auditHead(orgId)) as Doc).hash;
     const docsBefore = [...t.repo.docs.keys()].filter((k) => k.startsWith(`orgs/${orgId}/`) || k === fsPaths.org(orgId)).length;
     const res = await runPurge(t.gov, t.govStorage, { now: new Date(Date.now() + 31 * 86_400_000) });
@@ -186,6 +189,7 @@ describe('Sprint 5 e2e — offboarding (SEC-52): export ZIP, offboard, blocked a
     expect(t.repo.docs.has(fsPaths.job(`job_${orgId}`))).toBe(false);
     expect([...t.repo.docs.entries()].filter(([k, v]) => k.startsWith('shareTokens/') && v.orgId === orgId)).toEqual([]);
     for (const m of [t.storage.objects, t.boqStorage.objects, t.artifacts.objects, t.govStorage.objects]) expect([...m.keys()].filter((k) => k.startsWith(`orgs/${orgId}/`))).toEqual([]);
+    for (const k of infected) expect(t.storage.objects.has(k)).toBe(false);
     expect(cert).toMatchObject({ orgId, requestedBy: 'admin', counts: { members: 3, projects: 1 }, hashes: { auditHead } });
     expect(cert.counts.firestoreDocs).toBeGreaterThanOrEqual(docsBefore);
     expect(cert.counts.storageObjects).toBeGreaterThanOrEqual(3); // source + rooms/detections artifacts + zip

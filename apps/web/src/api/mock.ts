@@ -19,6 +19,7 @@ import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
 import { createReviewMock } from "./mockReview";
 import { createSprint5Mock, MOCK_ACTOR } from "./mockSprint5";
+import { buildBoqDocument } from "./mockSprint7";
 import { baseCorrection } from "@/features/corrections/model";
 import { getAuthService, hasRecentLogin } from "@/features/auth/authService";
 
@@ -64,6 +65,8 @@ export interface MockOptions {
   libraryMode?: "imported" | "default" | "none";
   /** Stage 10: seed members of the demo org (default: the signed-in admin + 3 others + 1 pending invitation). */
   members?: OrgMember[];
+  /** Sprint 7: per-project storage quota of the demo org (default 2 GB; `?mockQuotaMb=` in dev / e2e). */
+  projectQuotaBytes?: number;
 }
 
 /** Stage 10 demo members of org-demo (A-API-01). The signed-in user is added as admin on first read. */
@@ -104,6 +107,8 @@ export const demoProjects = (): Project[] => [
     address: "רחוב הדקל 12, רמת השרון",
     floors: [],
     stats: { sheets: 15, reviewOpen: 23, boqLines: 119, red: 4, yellow: 11, green: 104 },
+    // Sprint 7: the 15 Noah PDFs + their tiles / artifacts (mock figure).
+    storageBytes: 48_600_000,
     status: "active",
     createdBy: "mock-user",
     createdAt: "2026-10-11T11:32:00.000Z",
@@ -115,6 +120,7 @@ export const demoProjects = (): Project[] => [
     address: "שדרות ירושלים 40, תל אביב-יפו",
     floors: [],
     stats: { sheets: 0, reviewOpen: 0, boqLines: 0, red: 0, yellow: 0, green: 0 },
+    storageBytes: 0,
     status: "active",
     createdBy: "mock-user",
     createdAt: "2026-10-08T07:05:00.000Z",
@@ -266,9 +272,10 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     actor,
   });
   if (opts.blockExportOnRed) s5.setBlockExportOnRed(orgs[0]?.id ?? DEMO_ORG_ID, true);
+  if (opts.projectQuotaBytes) s5.setProjectQuota(orgs[0]?.id ?? DEMO_ORG_ID, opts.projectQuotaBytes);
   if (opts.boqPrebuilt && sheets.has("p-noah")) queueMicrotask(() => boq.buildBoq("p-noah"));
   const jobs: Job[] = [];
-  const tokens = new Map<string, { projectId: string; filename: string; kind: SheetSet["fileKind"]; uploaded: boolean }>();
+  const tokens = new Map<string, { projectId: string; filename: string; kind: SheetSet["fileKind"]; uploaded: boolean; sizeBytes: number }>();
   const uploadedPaths = new Set<string>();
   const listeners = new Set<Listener>();
   const emit = () => listeners.forEach((l) => l());
@@ -296,11 +303,22 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     const total = 18;
     const lag = 2; // pages start staggered, like a worker processing them in order
     const failSet = /encrypted/i.test(filename);
+    // Sprint 7 (error mapping only): "eicar" / "infected" in the name → the job fails with `file_infected`.
+    const infected = /eicar|infected/i.test(filename);
     const failPage = /broken/i.test(filename) ? 1 : -1;
     const timer = setInterval(() => {
       step += 1;
       const now = new Date().toISOString();
       set.status = "splitting";
+      if (infected && step >= 1) {
+        clearInterval(timer);
+        const error = { code: "file_infected", message: "הקובץ נחסם: זוהה תוכן זדוני" };
+        Object.assign(job, { status: "failed", stage: "ingest", error, updatedAt: now });
+        set.status = "failed";
+        for (const r of rows) if (r.version) Object.assign(r.version, { status: "failed", error, progress: { stage: "ingest", pct: 0 }, updatedAt: now });
+        emit();
+        return;
+      }
       if (failSet && step >= 2) {
         clearInterval(timer);
         const error = { code: "pdf_encrypted", message: "PDF is encrypted" };
@@ -442,10 +460,15 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         if (!ext || !["pdf", "dwg", "dxf", "png"].includes(ext)) {
           throw new ApiError(415, "unsupported_file_type", "unsupported");
         }
+        // Sprint 7: per-project storage quota (org setting, default 2 GB) → 413 with a Hebrew message.
+        const quota = s5.projectQuota(p.orgId);
+        if ((p.storageBytes ?? 0) + req.sizeBytes > quota) {
+          throw new ApiError(413, "quota_exceeded", "אין מספיק מקום בפרויקט: הקובץ חורג ממכסת האחסון של הפרויקט.");
+        }
         const fileId = nextId("f");
         const uploadToken = `mock-token-${fileId}-xxxxxxxx`;
         const kind = ext as SheetSet["fileKind"];
-        tokens.set(uploadToken, { projectId, filename: req.filename, kind, uploaded: false });
+        tokens.set(uploadToken, { projectId, filename: req.filename, kind, uploaded: false, sizeBytes: req.sizeBytes });
         return delay({
           fileId,
           storagePath: `orgs/${p.orgId}/uploads/mock-user/${fileId}`,
@@ -469,6 +492,8 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         if (req.replacesSheetSetId && !replaced) throw new ApiError(404, "not_found", "Sheet set to replace not found");
         if (replaced?.supersededBySetId) throw new ApiError(409, "already_superseded", "this set was already replaced");
         tokens.delete(req.uploadToken);
+        // Sprint 7: storage accounting on finalize (a refused `file_infected` file is not counted, see runJob).
+        if (!/eicar|infected/i.test(t.filename)) p.storageBytes = (p.storageBytes ?? 0) + t.sizeBytes;
         const now = new Date().toISOString();
         const set: SheetSet = {
           id: nextId("s"),
@@ -631,6 +656,9 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       },
       patchBoqLine: async (projectId, lineId, req) => {
         s5.assertProjectActive(projectId);
+        // Sprint 7: "עדכן גם בספריית הסעיפים" follows the library-edit rules (recent sign-in, like templates / rules);
+        // refused as a whole, so a retry after re-authentication is safe.
+        if (req.alsoUpdateLibrary) await requireRecentAuth();
         const before = boq.listLines(projectId).items.find((l) => l.id === lineId);
         const after = boq.patchLine(projectId, lineId, req, actor().uid);
         if (before) s5.recordLinePatch(projectId, before, after, req);
@@ -676,6 +704,26 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       },
       getBoqSheetEvidence: async (projectId, sheetId, versionId) => delay(boq.sheetEvidence(projectId, sheetId, versionId)),
       exportBoq: async (projectId, req) => delay(boq.exportBoq(projectId, req)),
+      // Sprint 7: the export model (same layout as the Excel) for the preview.
+      getBoqDocument: async (projectId, q) => {
+        const p = mustGet(projectId);
+        const res = boq.listLines(projectId);
+        if (!res.boq?.latestBuildId) throw new ApiError(409, "boq_not_built", "Build the BOQ first");
+        const tpl = boq.templates().find((x) => x.default) ?? boq.templates()[0]!;
+        const settings = s5.orgPatch(p.orgId).settings;
+        return delay(
+          buildBoqDocument({
+            projectName: p.name,
+            address: p.address ?? null,
+            orgName: orgs.find((o) => o.id === p.orgId)?.name ?? null,
+            template: tpl,
+            lines: res.items,
+            q,
+            vatRate: settings.vatRate ?? 0.18,
+            blockOnRed: settings.blockExportOnRed,
+          }),
+        );
+      },
       listLibraryItems: async (_orgId, q = {}) => delay(boq.listItems(q)),
       patchLibraryItem: async (_orgId, itemId, req) => delay(boq.patchItem(itemId, req)),
       createLibraryImport: async (orgId, req) => {

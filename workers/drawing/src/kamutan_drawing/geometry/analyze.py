@@ -20,6 +20,8 @@ from ..ingest.pdf_vector import VectorSheet
 from ..rooms.walls import extract_walls
 from . import hatches as H
 from . import labels as L
+from . import marks as MK
+from . import sections as SEC
 from . import stairs as S
 from .prims import (
     HIGHLIGHTS,
@@ -68,6 +70,11 @@ R_NOT_DRAWN_H = "הגובה אינו מופיע בשרטוט"
 R_H_ASSUMED = "גובה הקיר הונח כגובה התקרה בקומה ({h:.2f} מ') — לבדיקה"
 R_LOW_NO_H = "גובה הקיר הנמוך לא נקרא"
 R_GEOM = "כמות מחושבת מגאומטריה — לבדיקה"
+R_SECTION_H = "גובה לפי חתך בגיליון ({h:.2f} מ', קנ\"מ לפי סימוני המפלס)"
+R_SECTION_FOOTING = "גובה קיר הדיפון לפי החתך: מראש הקיר עד תחתית היסוד"
+R_OPENING_H = "גובה הפתח לפי סימון בשרטוט ({h:.2f} מ')"
+R_MARK_H = "גובה לפי סימון H= בשרטוט"
+R_OTHER_SHEET_H = "גובה לפי אותו פריט בגיליון אחר של הקומה"
 
 KIND_KEYS = {
     "stair": "geometry:stair",
@@ -104,6 +111,8 @@ class _Ctx:
     colours: dict[str, str] | None
     green_threshold: float | None
     out: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    notes_all: list[L.Note] = field(default_factory=list)
+    outside: list[BaseGeometry] = field(default_factory=list)  # highlight regions beside the plan (sections, details)
 
 
 def _rooms_of(rooms: Sequence[Any]) -> list[_Room]:
@@ -200,8 +209,11 @@ def analyze(
     legend_colours: dict[str, str] | None = None,
     green_threshold: float | None = None,
     walls_by_region: Mapping[str, BaseGeometry] | None = None,
+    read_marks: bool = True,
+    marks_ocr: MK.OcrFn | None = None,
 ) -> dict[str, Any]:
-    """Geometry of one plan sheet (all regions). Pure; never raises on odd input (empty lists instead)."""
+    """Geometry of one plan sheet (all regions). Pure apart from the height-mark OCR (``read_marks``; Tesseract,
+    ``marks_ocr`` in tests); never raises on odd input (empty lists instead)."""
     t_start = time.monotonic()
     doc: dict[str, Any] = {
         "schema": GEOMETRY_SCHEMA,
@@ -265,15 +277,68 @@ def analyze(
             legend_colours,
             green_threshold,
             {k: doc[k] for k in ("stairs", "regions", "wallRuns", "lines", "ceilings", "courtyards")},
+            notes_all,
         )
         if ctx.floor:
             doc["heights"].append({"floor": ctx.floor, "ceilingM": round(ceiling[0], 2), "source": ceiling[1]})
         _region(ctx, vs, segs, hl_fills, tokens, levels, text_boxes, rpoly)
+    n_marks = _opening_marks(doc, vs, green_threshold, marks_ocr) if read_marks else 0
     _ids(doc)
     doc["measures"] = measures(doc)
     doc["stats"] = {k: len(doc[k]) for k in ("stairs", "regions", "wallRuns", "lines", "ceilings", "courtyards")}
+    doc["stats"]["heights"] = _height_stats(doc, notes_all, n_marks)
     doc["stats"]["seconds"] = round(time.monotonic() - t_start, 3)
     return doc
+
+
+DRAWN_SOURCES = ("label", "section", "opening_mark", "other_sheet")
+
+
+def _height_stats(doc: Mapping[str, Any], notes: Sequence[L.Note], n_marks: int) -> dict[str, int]:
+    """``stats.heights``: heights read on the sheet (note "H=", ceiling marks, section walls, opening marks) and
+    items whose quantity uses a drawn height (not the floor's ceiling / a default)."""
+    sections = sum(1 for r in doc["wallRuns"] if r.get("heightSource") == "section")
+    read = sum(1 for n in notes if n.height_m is not None) + len(doc.get("heights") or []) + sections + n_marks
+    used = sum(1 for k in ("wallRuns", "lines") for i in doc[k] if i.get("heightSource") in DRAWN_SOURCES)
+    used += sum(1 for c in doc["courtyards"] if c.get("heightSource") == "level_mark")
+    return {"read": int(read), "used": int(used)}
+
+
+def _opening_marks(doc: dict[str, Any], vs: VectorSheet, green_threshold: float | None, ocr: MK.OcrFn | None) -> int:
+    """Rotated marks the glyph reader garbles, read by OCR beside the items that still lack a drawn height: an
+    opening's "U.K= / O.K=" (window closure: head − sill; door closure in block: head), "H=" of a low wall / screen.
+    Returns the number of items that got a mark."""
+    targets: list[tuple[str, dict[str, Any]]] = []
+    for ln in doc["lines"]:
+        if ln.get("heightM") is None and ln["kind"] in ("window_closure", "cistern_screen"):
+            targets.append(("line", ln))
+    for wr in doc["wallRuns"]:
+        if wr.get("heightSource") in ("label", "section"):
+            continue
+        if wr.get("closure") or (wr["kind"] == "low_wall" and wr.get("heightM") is None):
+            targets.append(("run", wr))
+    if not targets:
+        return 0
+    boxes = [(float(b["x"]), float(b["y"]), float(b["x"]) + float(b["w"]), float(b["y"]) + float(b["h"]))
+             for _, it in targets for b in [it["bboxMm"]]]  # fmt: skip
+    got = MK.read_marks(vs, boxes, ocr=ocr)
+    n = 0
+    for (kind, it), mk in zip(targets, got, strict=True):
+        opening = kind == "line" and it["kind"] == "window_closure" or kind == "run" and bool(it.get("closure"))
+        h = mk.opening_m if opening else mk.h_m
+        if h is None:
+            continue
+        n += 1
+        it["heightM"], it["heightSource"] = round(h, 2), "opening_mark" if opening else "label"
+        it["heightMark"] = mk.text[:80]
+        keep = [r for r in it["reasons"] if not r.startswith("גובה") and r != R_NOT_DRAWN_H]
+        it["reasons"] = [*keep, R_OPENING_H.format(h=h) if opening else R_MARK_H]
+        if kind == "run":
+            it["areaM2"] = round(float(it["lengthM"]) * h, 3)
+        sc, lv, rs = calibrate(KIND_KEYS["wall_run" if kind == "run" else "line"], float(it["scoreRaw"]), list(it["reasons"]),
+                               level="yellow", green_threshold=green_threshold)  # fmt: skip
+        it["confidence"], it["level"], it["reasons"] = sc, lv, rs
+    return n
 
 
 def _ids(doc: dict[str, Any]) -> None:
@@ -336,6 +401,7 @@ def _region(
         fams = H.hatch_families(segs, sel)
         for hr in H.hatch_regions(fams, min_area=0.05 * m * m):
             if not in_zone(hr.poly, ctx.zone.buffer(0.3 * m), 0.5):
+                ctx.outside.append(hr.poly)
                 continue
             hatch_regs.append(hr)
             if hr.seg_idx is not None:
@@ -350,7 +416,10 @@ def _region(
         by_cc.setdefault((f.cclass, f.rgb), []).append(f.poly)
     for (cc, rgb), gs in by_cc.items():
         for p in union_parts(gs):
-            if p.area < MIN_REGION_M2 * m * m or not in_zone(p, ctx.zone.buffer(0.3 * m), 0.5):
+            if p.area < MIN_REGION_M2 * m * m:
+                continue
+            if not in_zone(p, ctx.zone.buffer(0.3 * m), 0.5):
+                ctx.outside.append(p)
                 continue
             solid.append(H.HatchRegion(p, "solid", cc, rgb))
     # strokes outlining a hatch / fill are part of it
@@ -418,6 +487,46 @@ def _region(
 
     # ------------------------------------------------------------- courtyard (new retaining walls + new stair)
     _courtyards(ctx, runs, stair_ids, levels)
+
+    # ------------------------------------------------------------- heights drawn in a section beside the plan
+    _section_heights(ctx, [r for _, r in runs], levels)
+
+
+_SECTION_FLAGS = {"ac", "gypsum", "double", "block", "concrete", "cladding", "partition", "closure", "courtyard"}
+_REFERS_TO_SECTION = re.compile(r"חתכ|חתך")
+
+
+def _section_heights(ctx: _Ctx, runs: Sequence[dict[str, Any]], levels: Sequence[tuple[float, float, float]]) -> None:
+    """Wall runs whose height a section draws: new retaining walls (the section's concrete strip) and runs whose note
+    says "ראה חתך" (the strip named by a note of the same kind: "סגירת גבס למיזוג … ראה חתך" ↔ the red lining strip
+    with "פתח שירות … מ.א"). The section's height replaces the assumed one (heightSource ``section``)."""
+    if not ctx.outside or not runs:
+        return
+    walls = SEC.section_walls(ctx.outside, levels, ctx.notes_all, exclude=ctx.zone.buffer(0.3 * ctx.mm_per_m))
+    if not walls:
+        return
+    for run in runs:
+        if run.get("heightSource") == "label":
+            continue
+        label = str(run.get("label") or "")
+        if run["kind"] == "concrete_retaining":
+            want = {"concrete", "courtyard"}
+            cands = [w for w in walls if w.flags & want] or [w for w in walls if not w.flags]
+        elif _REFERS_TO_SECTION.search(label):
+            fl = L.flags_of(label) & _SECTION_FLAGS
+            cands = [w for w in walls if w.flags & fl]
+        else:
+            continue
+        if not cands:
+            continue
+        w = max(cands, key=lambda c: (len(c.flags & (L.flags_of(label) | {"concrete", "courtyard"})), c.height_m))
+        h = round(w.height_m, 2)
+        run["heightM"], run["heightSource"] = h, "section"
+        run["areaM2"] = round(float(run["lengthM"]) * h, 3)
+        run["sectionBboxMm"] = w.bbox_json()
+        keep = [r for r in run["reasons"] if not r.startswith("גובה")]
+        run["reasons"] = [*keep, R_SECTION_H.format(h=h)] + ([R_SECTION_FOOTING] if run["kind"] == "concrete_retaining" else [])
+        _finish(ctx, "wall_run", run)
 
 
 def _merge_pieces(regs: Sequence[H.HatchRegion], gap: float = 3.5) -> list[H.HatchRegion]:
@@ -554,6 +663,10 @@ def _wall_run(
         "id": _tmp_id("wr"),
         "kind": kind,
         "closure": "closure" in fl and "opening" in fl,
+        # a low wall's own material (its measure: gypsum partition or block wall by this, else by thickness)
+        "material": ("block" if fl & {"block", "concrete"} else "gypsum" if fl & {"gypsum", "partition"} else None)
+        if kind == "low_wall"
+        else None,
         "lifecycle": region.get("lifecycle") or "new",
         "lengthM": round(l_m, 3),
         "thicknessM": round(t_m, 3),
@@ -602,13 +715,18 @@ def _outlined_walls(
         if colour_class(rgb) not in HIGHLIGHTS:
             continue
         s0, n = int(vs.path_seg_start[i]), int(vs.path_seg_count[i])
-        if n < 4 or n > 16:
+        if n < 3 or n > 16:
             continue
         pts = [(float(x), float(y)) for x, y, _, _ in vs.segs[s0 : s0 + n]] + [
             (float(vs.segs[s0 + n - 1, 2]), float(vs.segs[s0 + n - 1, 3]))
         ]
-        if math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) > 0.2:
-            continue
+        gap = math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1])
+        if gap > 0.2:
+            # a wall stub drawn as three sides, its open end butting into an existing wall ("קיר נמוך" 100 × 10):
+            # closed when the open side is the short side of a rectangle
+            if n != 3 or not _u_closes(pts, m):
+                continue
+            pts = [*pts, pts[0]]
         p = Polygon(pts).buffer(0)
         if not isinstance(p, Polygon) or p.area <= 0:
             continue
@@ -621,6 +739,17 @@ def _outlined_walls(
         if WALL_T_M[0] * m <= t <= 0.35 * m and ln >= 0.4 * m:
             out.append((p, (rgb[0], rgb[1], rgb[2])))
     return out
+
+
+def _u_closes(pts: Sequence[tuple[float, float]], m: float) -> bool:
+    """Three sides a-b-c-d of a rectangle whose missing side d-a is as long as b-c (the wall's thickness) and short."""
+    (ax, ay), (bx, by), (cx, cy), (dx, dy) = pts[:4]
+    ab, bc, cd = math.hypot(bx - ax, by - ay), math.hypot(cx - bx, cy - by), math.hypot(dx - cx, dy - cy)
+    da = math.hypot(ax - dx, ay - dy)
+    if min(ab, bc, cd) <= 0 or abs(ab - cd) > 0.05 * max(ab, cd) or abs(da - bc) > 0.05 * max(da, bc):
+        return False
+    perp = abs((bx - ax) * (cx - bx) + (by - ay) * (cy - by)) / (ab * bc)
+    return perp < 0.05 and bc <= 0.35 * m
 
 
 def _stair(ctx: _Ctx, st: S.Stair) -> tuple[dict[str, Any], BaseGeometry]:
@@ -735,6 +864,7 @@ def _line(ctx: _Ctx, grp: Sequence[H.Chain]) -> None:
         "kind": kind,
         "lengthM": round(longest.length / m, 3),
         "heightM": round(h, 2) if h is not None else None,
+        "heightSource": "label" if h is not None else None,
         "polylineMm": line_json([longest.a, longest.b]),
         "bboxMm": bbox_json(geom),
         "floor": ctx.floor,
@@ -1003,6 +1133,12 @@ def measures(doc: Mapping[str, Any]) -> list[dict[str, Any]]:
                     floor=f,
                 )
             )
+        # a low wall with its height read ("קיר נמוך H=140") is a partition / block wall of that height
+        for lw in by_kind["low_wall"]:
+            if lw.get("areaM2") is not None:
+                mat = lw.get("material")
+                thin = mat == "gypsum" or (mat is None and float(lw.get("thicknessM") or 0.0) < BLOCK_MIN_T_M)
+                by_kind["gypsum_single" if thin else "block_new"].append(lw)
         if by_kind["block_new"]:
             out.append(_m("block_wall_area", M2, by_kind["block_new"], _sum(by_kind["block_new"], "areaM2"), floor=f))
         if by_kind["gypsum_single"]:

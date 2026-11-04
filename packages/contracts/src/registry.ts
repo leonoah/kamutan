@@ -1,5 +1,7 @@
 import type { ZodTypeAny } from 'zod';
 import { IdTokenClaimsSchema } from './auth.js';
+import { SheetSetStatusResponseSchema } from './uploads.js';
+import { BoqDocumentModelSchema, BoqDocumentQuerySchema, BoqDocumentRowSchema } from './boq-document.js';
 import {
   BoqBuildSchema,
   BoqEvidenceArtifactSchema,
@@ -376,4 +378,9 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   QuickMeasureResponse: QuickMeasureResponseSchema,
   BatchLineStatusRequest: BatchLineStatusRequestSchema,
   BatchLineStatusResponse: BatchLineStatusResponseSchema,
+  // Sprint 7 — BOQ preview document model
+  BoqDocumentQuery: BoqDocumentQuerySchema,
+  BoqDocumentModel: BoqDocumentModelSchema,
+  BoqDocumentRow: BoqDocumentRowSchema,
+  SheetSetStatusResponse: SheetSetStatusResponseSchema,
 });

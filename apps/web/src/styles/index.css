@@ -53,3 +53,47 @@
     @apply sr-only focus:not-sr-only focus:fixed focus:top-2 focus:start-2 focus:z-50 focus:rounded focus:bg-surface focus:px-3 focus:py-2 focus:shadow-float;
   }
 }
+
+/*
+ * Sprint 7: print of the BOQ preview — A4 portrait, RTL (inherited from <html dir="rtl">), the table header row repeats
+ * on every page (thead = table-header-group), rows never split across pages, no app chrome (header, toasts, toolbar
+ * are `print:hidden`), colours kept exact (header fill, confidence shapes).
+ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm 14mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  body {
+    font-size: 10pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  [data-app-chrome],
+  .skip-link {
+    display: none !important;
+  }
+  main {
+    outline: none !important;
+  }
+  .boq-doc table {
+    font-size: 9pt;
+  }
+  .boq-doc thead {
+    display: table-header-group;
+  }
+  .boq-doc tr,
+  .boq-doc td,
+  .boq-doc th {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .boq-doc a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

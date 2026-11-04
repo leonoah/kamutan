@@ -113,7 +113,7 @@ regions, stats). Never point it at the repo.
   poison its own org's dictionary (labels), not read or write anything else.
 * PDF vector extraction ~13k paths/s (finding F-4): an A0 with > 1.5 M paths hits the 120 s CPU limit (`parse_cpu_limit`).
 * Regions are axis-aligned rectangles from geometry clustering; L-shaped or overlapping viewports need the user's edit.
-* Per-project 2 GB quota, ClamAV: not in the worker (gate G3/G4, API/infra).
+* Per-project 2 GB quota: API (Sprint 7). ClamAV: in the worker since Sprint 7 (see "Sprint 7 — … ClamAV" below).
 * Latin in tiny fonts, `Ø` and a few symbol clusters are still misread (see `spikes/SHX_SPIKE_REPORT.md`).
 * `spikes/ground_truth/shx_gt.json` contains project text (incl. the project name) — keep the repo private.
 
@@ -2195,3 +2195,345 @@ known since Stage 10). No BOQ test fails.
 * Chapter 04 symbol lines (4.00 / 4.02 / 4.03 / 4.05 / 4.10, GT-D-001) and 9.01 (GT-D-002) unchanged (detection).
 * Text / geometry de-dup across sheets is per floor and per discipline order; two sheets of the same discipline and
   floor (a revision that is not marked superseded) would both count.
+
+## Sprint 7 — line rename across rebuilds, manual library items, ClamAV in the ingest path (Worker-BOQ)
+
+> **Sprint 7: antivirus scan shelved by the owner (04.11), code kept dormant, enable with KAMUTAN_AV_SCAN=require.**
+> Default mode is `off` everywhere (Cloud Run included; no "always required" rule any more), one INFO line per process,
+> no per-job log; `/healthz` → `antivirus {mode: "off", engines: []}` (not degraded). The ClamAV infra (Dockerfile,
+> entrypoint, CI, signatures workflow, ADR 0009, runbook) was reverted by the coordinator, so `require` also needs an
+> image with clamd / clamscan + signatures again. `service/scan.py`, `file_infected` / `scan_unavailable` and the
+> fake-scanner tests stay; real-ClamAV tests run only with `KAMUTAN_AV_TEST=1`. The bullets below describe the code as
+> it behaves when turned on.
+
+Brief: `docs/agents/SPRINT7_BRIEF.md` (row Worker-BOQ, items 2 and 6). Contracts: `packages/contracts/NOTES.md`
+"Sprint 7 published" (`BOQ_LINE_PRESERVED_FIELDS` + `descriptionOverride*`, `file_infected`, `SheetSet.error`).
+Image side (clamd, signature DB, entrypoint): DevOps, ADR 0009, `infra/docker/worker-drawing.Dockerfile`.
+
+### 1. Line rename (`boq/build.py`)
+* `PRESERVED` + `descriptionOverride`, `descriptionOverrideBy`, `descriptionOverrideAt`, `descriptionOverrideReason` —
+  identical (same order) to contracts `BOQ_LINE_PRESERVED_FIELDS` (`test_boq_contracts.py::test_preserved_fields_mirror_contracts`
+  parses `boq.ts`). The worker never writes or clears them: new lines don't carry the keys, rebuilt lines copy them from
+  the stored doc, a restore (`null`, API) stays `null`. `description` stays the computed wording (library item / rule).
+* Obsolete line: `has_human_marks()` = qtyOverride (0 counts) | descriptionOverride | note | locked → kept at qty 0, red,
+  `הסעיף לא נמצא בבנייה האחרונה`, never deleted. A restored, otherwise untouched draft line is deleted as before.
+* Race narrowed: each existing line is re-read (`_fresh`) right before its full-doc write, so a PATCH (rename, override,
+  approval) that lands while the build aggregates survives. A PATCH inside the few ms between that read and the write can
+  still be lost — the GCP store has no transaction here yet (open, see below).
+
+### 2. Manual library items (`boq/rules.py`, `boq/aggregate.py`)
+* `Item.manual` = `source == 'manual'`. `Library.resolve(code, …)`: a manual item of the **exact code** wins without the
+  description-similarity check (several manual items of a code → most similar, then id); `Library.preferred(code)`
+  (manual first, then id) for the Worker-Text catalog fill-in. So after "עדכן גם בספרייה" the next build resolves the code
+  to the renamed item and the line's `description` is the new wording (`itemId` unchanged when the API edits in place).
+* Unchanged: default items still resolve by exact code (A-LIVE-01); imported items still need description similarity ≥ 0.45
+  for a same-code match (another org's numbering) and the similarity fallback (≥ 0.6) is as before; a manual item of
+  another code never captures a rule; inactive items ignored; a renamed default (`source: manual` + `defaultsVersion`)
+  counts in `stats.library.defaults` as before. Noah (`org-demo`, no manual items): code path identical → lines unchanged.
+* The importer already never overwrites a `manual` item (same id) and only deactivates `source: 'default'` items.
+* **API please**: rename the item in place (same id) or set `active: false` on the old one — two active items of a code
+  are both offered by `template_chapter` (chapter 01). The worker prefers the manual one everywhere else.
+
+### 3. ClamAV before anything parses an upload (`service/scan.py`, `service/pipeline.py::_fetch`, `library_import/importer.py`)
+Order in `_fetch`: `malware` mark on the sheet set for this sha256 → `file_infected` at once (no read) · download ·
+size · sha256 · **scan** · magic-byte sniff · sandbox. The library import scans after download / size, before `sniff` /
+`boq_parse`.
+* Engines: `ClamdScanner` (zINSTREAM, 1 MiB chunks, unix or tcp, per-scan deadline), `ClamscanScanner` (`clamscan -`
+  on stdin, fixed argv, minimal env, `--database` optional), `FallbackScanner` (next engine only when one is
+  *unavailable*, never on a verdict). Replies: `stream: OK` / `… <sig> FOUND` / anything else (e.g. `INSTREAM size limit
+  exceeded. ERROR`) = no verdict. Signature names sanitised (`[A-Za-z0-9._:/+-]`, ≤ 120).
+* Policy: `KAMUTAN_AV_SCAN` = `off` (default, shelved) | `require` | `auto`; `KAMUTAN_AV=off` = `off`. With `require`,
+  fail closed: no verdict (no engine, connection refused, timeout, ERROR reply) → retryable **`scan_unavailable`** (job
+  `queued`, HTTP 500, Pub/Sub redelivers; after 5 attempts final `failed`); the file is never parsed unscanned. `auto`
+  without an engine logs WARNING `antivirus scan SKIPPED` per scan.
+* Engine env (agreed with DevOps before the shelving): `KAMUTAN_AV` clamd (clamd only — no clamscan next to clamd's
+  ~1.2 GB DB) | clamscan | unset (clamd if a socket exists, then clamscan); `KAMUTAN_CLAMD_SOCKET` (probe order starts
+  with `/run/clamav/clamd.sock`), `KAMUTAN_CLAMSCAN_BIN`, `KAMUTAN_CLAMAV_DB`, `KAMUTAN_AV_TIMEOUT_S` (120). Aliases
+  `KAMUTAN_CLAMD` (`unix:…` / `tcp:h:p`), `KAMUTAN_CLAMSCAN`.
+* **Infected** → non-retryable **`file_infected`**, message = the signature name (contracts: `SheetSet.error {code:
+  'file_infected', message: <signature>}`; the job — and, on a reprocess, the version — get the same error via
+  `_record_failure`). Quarantine (`scan.quarantine`): first the mark `malware {status: 'infected', signature, engine,
+  sha256, quarantinePath, at}` merged into the sheet set (library import: the job + `libraryImports/{id}` docs), then
+  the bytes move to `orgs/{o}/projects/{p}/infected/{sheetSetId}/{sha256}.bin` (import:
+  `orgs/{o}/infected/imports/{importId}/{sha256}.bin`), `application/octet-stream`, `private, no-store`, and the
+  original upload is deleted. `orgs/*/quarantine/` is the *client upload slot* the worker IAM may not touch (infra/IAM.md),
+  hence `infected/`. If the move fails the mark still blocks every later parse (logged ERROR). The extra `malware` field
+  on the sheet-set doc is not in the contract (non-strict zod strips it).
+* Initial upload: no version docs exist before the probe (page count unknown), so the error is on the job + sheet set
+  (the API's `GET …/sheet-sets/:setId` shows it); a reprocess job's version gets it too.
+* `/healthz` → `antivirus {mode, engines[], clamdPing?}`; `create_app` resolves one scanner per instance and passes it to
+  ingest and `library.import`; `app_from_env` uses `scanner_from_env()`.
+* No env defaults in dev tools / conftests any more (the `setdefault` lines in `cli.py`, `scripts/*_local.py`,
+  `tests/conftest.py` and `benchmark/acceptance/conftest.py` were reverted: default off makes them unnecessary).
+* Self-test: `python -m kamutan_drawing.service.scan --selftest` (EICAR assembled at run time; exit 0 = FOUND + clean OK,
+  2 = engine unavailable, 3 = skipped, 1 = wrong verdict).
+
+### Requests / coordination
+* **DevOps**: the self-test / CI requests are moot while the scan is shelved (infra reverted by the coordinator).
+* **API**: (a) `SheetSet.error.message` = signature name, as requested; the infected bytes are under `…/infected/` (for
+  `storageBytes` release and the project purge, which must include that prefix). (b) In-place library rename (above).
+
+### Tests / commands
+`tests/test_boq_s7.py` (8): preserved across same-input / changed-qty rebuilds with approval invalidation, restore to
+null, obsolete renamed line kept then deleted after restore, a rename PATCHed between the listing and the write survives,
+written lines validate against the published `BoqLine.json`, manual item by exact code + precedence + inactive ignored,
+default / imported matching unchanged, end-to-end library rename picked up by the next build (other lines identical).
+`tests/test_scan.py` (22; real-ClamAV ones skip unless `KAMUTAN_AV_TEST=1`): fake scanner — infected upload quarantined (mark, move, delete, signature message, never
+parsed: the sandbox is patched to fail), EICAR declared as PDF is `file_infected` not `unsupported_format` (scan before
+the sniff), redelivery / reprocess short-circuit without a read, move failure still blocks, unavailable → retryable then
+final, require without an engine fails closed, clean upload scanned once then parsed, push handler 200 / 500, library
+import infected + unavailable; policy / env (default off incl. Cloud Run, require / auto on request, one INFO line, healthz not degraded); verdict parsing; EICAR not stored in the
+source; a fake clamd (unix socket, INSTREAM framing, StreamMaxLength ERROR, timeout); a fake clamscan (FOUND / OK / exit
+2 / timeout) + fallback; self-test exit codes; **real ClamAV 1.5.4** `clamscan` and `clamd` (both installed here) detect
+the run-time EICAR with a generated hash DB (pass locally with `KAMUTAN_AV_TEST=1`). `tests/test_boq_contracts.py` +
+preserved-fields mirror (10 green).
+
+### Follow-up for Worker-Accuracy (Sprint 7 heights)
+* **`stats.heights`** (`service/pipeline.py::clean_height_stats`): the understand result's `geometryStats.heights {read,
+  used}` (untrusted → non-negative ints ≤ 1e6) → version `stats.heights`; written only when the sandbox reports it.
+  **Contract request (API)**: add `heights: {read: count, used: count}` (optional) to `VersionStatsSchema`
+  (`packages/contracts/src/sheets.ts`). zod there is non-strict (the field is stripped, not rejected, until then), but
+  the generated `SheetVersion.json` has `additionalProperties: false` — `tests/pipeline_util.validate_version` tolerates
+  `stats.heights` only while the schema lacks it (`pending_version_stats()`), strict again once it lands.
+* **Stale height reasons** (`boq/geometry.py::key_units`): for a *computable* `keys` measure the evidence items no longer
+  carry the stored artifact's own reasons — the line gets only the measure's reasons (the measure may have read its
+  height from a mark or another sheet of the floor). Not-computable measures unchanged. Noah (copy of `s6qa/s7acc_final`,
+  `boq_local.py --no-corrections`, `KAMUTAN_AV_SCAN=off`, same code with vs without this change): **only 7.03 differs** —
+  reasons `["גובה הפתח לפי סימון בשרטוט (1.35 מ')", "גובה לפי אותו פריט בגיליון אחר של הקומה"]`, the stale
+  `הגובה אינו מופיע בשרטוט` gone; qty 1.62 / level / byFloor / description of all 77 lines identical.
+* Tests (`tests/test_boq_s7.py`): `test_computed_measure_keeps_only_its_own_reasons`,
+  `test_version_stats_heights_from_geometry_stats` (cleaning + end-to-end through `process_sheet_version`).
+
+## Sprint 7 — drawn heights, 7.04 access panels, two-way pairing (Worker-Accuracy)
+
+Brief: `docs/agents/SPRINT7_BRIEF.md` items 3–4 (owns `ocr/ symbols/ links/ geometry/ rooms/ textitems/`). No edit of
+`pipeline/understand.py` (the geometry / text-items hooks already call the changed modules; every "keep this block
+here" marker untouched). Tests: `tests/test_sprint7_accuracy.py` (11).
+
+### Heights (item 3, `geometry/`)
+* **Sections** (`geometry/sections.py`, new): a tall thin highlight strip *outside* the plan zone (red hatch = cast
+  wall, red fill = lining) with level marks beside it. The vertical scale is not written; the level marks give it
+  (`mm_per_m = Δy / Δlevel`, every pair must agree ±12 %; values taken as read, else as depths below ±0.00 since the SHX
+  reader drops "-"). Pieces of one strip cut by an element drawn across it (the AC outlet box) are merged (gap ≤ 0.6 m).
+  The strip is named by the note pointing at it. Used for new retaining walls (concrete / courtyard strip: top of wall
+  to the underside of the footing, reason says so) and for runs whose note says "ראה חתך" (strip with a shared flag).
+  `heightSource: "section"`.
+* **Opening / H marks** (`geometry/marks.py`, new): "U.K=75 / O.K=210" is written vertically beside openings; the glyph
+  reader returns noise. Per item still lacking a drawn height (window closure lines, door closures in block, low walls /
+  screens without H) the dark text-sized strokes within 12 mm are rendered alone, turned 0/270/90°, read by Tesseract
+  `eng` with a whitelist `UOKH.=0123456789` (≤ 12 anchors × 3 calls per sheet; ≈ +1–2 s on sheets with anchors).
+  Opening height = O.K − U.K (door: O.K). Conflicting readings in a box → none. `analyze(read_marks=False)` / injected
+  `marks_ocr` for tests; Tesseract missing → no marks (previous behaviour).
+* **"H" and the number read apart** (`labels._h_beside_number`): the number on the same row right after a lone "H"
+  (the master low-wall note read "קיר נמוך / 140 / y H / 100" and took the "100" length dimension before).
+* **Low wall drawn as three sides** (`analyze._outlined_walls` + `_u_closes`): a red U whose open short side butts into
+  an existing wall is closed; a low wall with its height counts in `gypsum_partition_area` (thin / gypsum note) or
+  `block_wall_area` (new `material` field on low walls, passthrough).
+* **Shared across a floor's sheets** (`project.share_heights`, called by `geometry_units`): an item without a drawn
+  height takes the drawn height of the same item (same kind / floor, length ± 3 % and 5 cm, thickness ± 3 cm) on
+  another sheet; disagreeing donors → nothing; documents copied (pure), measures recomputed; `heightSource:
+  "other_sheet"`. The construction plan stays the authority sheet.
+* `lines[].heightSource` (label / opening_mark / other_sheet, passthrough); `stats.heights = {read, used}` in
+  `geometry.json.gz` and `geometryStats` (the brief's `stats.heights`).
+* Partitions: Noah's plans draw **no** H / section / ceiling plan for any partition — they keep the floor's ceiling
+  from the level marks (basement H=220, ground / first 2.65) with the "הונח" reason. "ה.ת 40" (lowered ceiling) and
+  "עד התקרה" (screen to the ceiling) are not used for partitions (no partition under them on Noah).
+
+### 7.04 access panels (`textitems/catalog.py` `tx_ac_access_panel`, `extract._fold_access_panels`, catalog v3)
+One panel per gypsum AC closure note ("סגירת גבס למיזוג") or AC ceiling box ("ה.ת … מזגן עילי", or the box's
+"יש לבצע חיזוקים עבור מזגן עילי" — the warm glyph store reads the box's "H" as "ה" and splits "ה.ת 40" into a block of
+its own; without this pattern warm gave 7.04 = 2), construction /
+architecture plans only (the master copies them; a bare "מזגן עילי" is a wall unit on every MEP sheet; "פירוק"
+excluded). An explicit "פתח שירות / ביקורת / אורבונד" note is the panel of a closure ≤ 40 mm away or of a closure that
+says "ראה חתך" (the Noah living-wall section), else a panel of its own. The floor's first note carries the count (qty),
+the others are folded into it (`pairedWith`) — because `r_text_access_panel` clusters at 300 mm and takes one quantity
+per cluster. Noah: ground 2 (living lining + kitchen box; the section's "פתח שירות" folded), first 1 (corridor box).
+
+### Two-way pairing (item 4, `links/graph.pair_two_ways`)
+"A two-way needs a two-way partner": a circuit with one 2-way `S` + one other switch `F` and no 2-way partner, and a
+lone 2-way `T` ≤ 30 mm away flagged `מחלף ללא מחלף שני` → `S`+`T` = `two_way` on `S`'s points, `F` takes `T`'s place
+(the crossing arcs' exchange; = GT 1bbe4113-G13 / G14 as drawn). Added 2-ways ("להוסיף מחלף") never paired; a circuit
+with 2+ other switches is left alone. **Does not fire on Noah**: the bed-head switch stays `switch_single`, because
+"מפסק מחליף קיים" cannot be read — see Gaps.
+Simulated with the bed-head switch as an existing 2-way (stored artifacts, `link_sheet` + `boq_local.py`): 4.10 1 → 2,
+4.09 16, 4.11 5, 4.12 3, 4.16 2 unchanged, **4.14 1 → 0** — the fan switch then sits (as drawn) in the type-23 spot's
+`single` group, and the BOQ rule counts 4.14 only for a `switch_fan` in an `add_to_existing` group.
+
+### Noah (`gt/noah/tools/run_s6_eval.sh`; before = `s7acc_before` = tree at sprint start, after = `s7acc_final`, cold
+glyph store, `KAMUTAN_AV_SCAN=off` (ClamAV landed mid-sprint; local clamscan exits 2); warm = 2nd ingest into the same
+root, `s7acc_final_warm` — `gt/noah/eval/sprint6_s7acc_*.json|md`)
+| line | BOQ | before | after | how |
+| --- | --- | --- | --- | --- |
+| 7.06 | 35.2 | 27.80 | **29.19** | + basement low wall 1.00 m × H=140 (was not detected); ground lining 4.40 × 2.65 now from the section (same value); other partitions: ceiling from level marks (no H drawn) |
+| 7.07 | 7.5 | 7.11 | 7.11 | 3.23 m × 2.20 — the stair-soffit height is not drawn |
+| 2.01 | 11 | 9.04 | **10.57** | 4.37 m × 2.42 m from the section (−0.50 to the footing underside; scale from −0.50/−0.70/−2.57) |
+| 2.03 | 2 | 2.12 | 2.12 | 0.80 m × 2.65 — no door head mark at the kitchen door on any sheet |
+| 7.03 | 1.5 | needsInput (hint 1.32) | **1.62** computed | 1.20 m × 1.35 m ("U.K=75 / O.K=210" on the ground master plan, shared to the construction sheet) |
+| 5.07 | 1.2 | 1.2 demo settings / needsInput 0.98 | same | cladding extent not marked; screen H=120 read as before |
+| 7.04 | 3 | 1 | **3** | ground 2 + first 1 |
+| 4.10 | 2 | 1 | 1 | note unreadable (Gaps) |
+| 4.09 / 4.11 / 4.12 / 4.14 / 4.16 | 16/5/3/1/2 | exact | exact (cold and warm) | |
+Totals: exact 58 → **59**, exact-or-within 60 → **61** (no room settings 56 → 57, 57 → 58); warm store: 59 / 61, every
+line identical to cold. Only 2.01 / 7.03 / 7.04 / 7.06 differ from before. (The warm "no room settings" build is not
+clean: the cold run's demo settings stay stored in the root and `{}` does not clear them — warm reported with settings.)
+Full suite: 670 passed, 2 failed = `test_integration_sample[1bbe4113]` < 60 s budget (75.9 s alone, load 6.5 on 2
+vCPU; geometry / marks do not run on lighting sheets) and `test_rooms_v4::…basement_split_with_reference` (stale shared
+artifacts, known since Stage 10). ruff / format / bandit clean, mypy 2.4.0 the CI way: the one error is in
+`raster_symbols/legend.py` (Raster-Spike), as are the repo-wide ruff / format findings.
+
+### Gaps
+* **4.10**: on 1bbe4113 PDFium's path API returns only the lower half of every glyph of "מפסק מחליף קיים / H=65" (the
+  segments stop at y = 237.5 mm; PDFium's *render* draws the whole note; not a clip in our parser — no other page
+  object covers the band). The glyph reader therefore reads noise. Tried: Tesseract `heb` on a PDFium render of the
+  note (12–32 px/mm, psm 6/7/11, dilated) — this SHX stick font is not read; word-spotting with the sheet's own "מחלף"
+  (NCC) — not discriminative. Prototype removed. Owner of `ingest/` (PDF vector extraction): find where the glyph tops
+  live (pattern / painted content?). Once the switch is known as a 2-way (reading or a reviewer correction), the pairing
+  above applies.
+* **4.14 with the pairing**: needs Worker-BOQ's "fan switch in any group → 4.14" (their Sprint 6 note, "ship together
+  with the re-pairing"), AND d_17 (the lower bed-head circle, an existing single → pendant 21) is detected as
+  `switch_fan` ("סוג עודכן לפי כיתוב סמוך") — with fan-anywhere it would add a false 4.14. Fix the refinement first.
+* Partition heights (7.06 / 7.07) and the kitchen door head (2.03): not on the drawings. 7.06's 35.2 vs 29.2 drawn.
+* The 7.03 BOQ line still lists the construction item's own "הגובה אינו מופיע בשרטוט" chip (Worker-BOQ copies
+  evidence-item reasons from the stored artifact, not from the project measure).
+
+### Requests
+* Worker-BOQ / orchestrator (`service/pipeline.py`): write `stats.heights` from `res.geometryStats.heights`
+  (non-negative ints, untrusted) — API: add `heights: {read, used}` to `VersionStatsSchema`.
+* Worker-BOQ: 4.14 fan-anywhere (above); `r_text_access_panel` could take catalog items' qty summed per cluster
+  (today: the first catalog qty — hence the per-floor head item).
+* API: `geometry.lines[].heightSource`, `wallRuns[].material` / `sectionBboxMm` / `heightMark` are passthrough fields.
+
+### Tests / commands
+`tests/test_sprint7_accuracy.py` (11): mark parsing / OCR crop + failure, window height from marks (and off), "H" + number
+on the same row, U-shaped low wall (and a long open side rejected), section scale (signed / depths / inconsistent),
+interrupted strip merged, heights shared across sheets (pure, authority kept, disagreeing donors), 7.04 folding (section
+note, lone access note, AC box, master excluded), two-way pairing (+ 4 untouched cases). Updated: `test_geometry.py`
+Noah 7.03 (computed 1.62), `test_textitems.py` Noah sample (+ 7.04: 3).
+
+### DevOps → Worker-BOQ (Sprint 7): ClamAV image contract, done (ADR 0009)
+* Image (`infra/docker/worker-drawing.Dockerfile`): ENV `KAMUTAN_AV=clamd`, `KAMUTAN_CLAMD_SOCKET=/run/clamav/clamd.sock`,
+  `KAMUTAN_CLAMD_CONF=/etc/clamav/clamd.conf`, `KAMUTAN_CLAMSCAN_BIN=/usr/bin/clamscan`, `KAMUTAN_CLAMAV_DB=/var/lib/clamav`
+  (read-only for uid 10001), `KAMUTAN_AV_TIMEOUT_S=120`. clamd limits: `StreamMaxLength 128M` (> 100 MiB upload),
+  `MaxFileSize 128M`, `MaxScanSize 400M`, `AlertExceedsMax no`, `ReadTimeout 120`, `MaxThreads 2`, `ExitOnOOM yes`.
+* Entrypoint (`infra/docker/worker-entrypoint.sh`): clamd answers PING **before** uvicorn starts. clamd dies → exit 70.
+  `KAMUTAN_AV=clamscan|off` → no daemon. Matches your fallback ("off on Cloud Run → clamscan + baked DB").
+  JSON log lines `clamd_ready` (DB versions, `loadSeconds`, `rssKb`) / `clamav_db_stale` / `clamd_exited` / `clamd_start_failed`.
+* Your requests: (1) `python -m kamutan_drawing.service.scan --selftest` now runs in `infra/scripts/clamav-smoke.sh`
+  (CI `docker` job, deploy, daily refresh): once via `docker exec` in the entrypoint container (clamd + baked DB) and
+  once with `KAMUTAN_AV=clamscan`; skipped for images that do not have the module. (2) CI `python` job (workers/drawing):
+  clamav + clamav-daemon installed with the services masked (no freshclam download), step
+  `KAMUTAN_AV_TEST=1 uv run pytest -q tests/test_scan.py --deselect …::test_real_installed_engine_with_its_own_signatures`.
+  The deselected test needs the official DB; the docker job covers real signatures. Local run: 20 passed, 1 deselected.
+* Alert filter `file_infected` (log match on the worker): keep that word in the log line for an infected upload.
+
+## Sprint 7 — raster symbol spike, E2E-05 (Raster-Spike)
+
+Brief: `docs/agents/SPRINT7_BRIEF.md` item 5 (time-boxed). **Recommendation: No-go.** The prototype stays behind
+`KAMUTAN_RASTER_SYMBOLS=1` (default **off**); with the flag off nothing changes (old `symbols/raster.py` path).
+
+### What was built (`src/kamutan_drawing/raster_symbols/`, new)
+* `image.py` — black-ink mask at 8 px/mm (grey < 120: grey furniture / hatching at ≈ 150–215 left out), long-line
+  removal (openings with 7 mm line elements at 0/45/90/135°), large-fill removal, text-line mask (≥ 3 similar-sized
+  components on one line, horizontal or vertical).
+* `legend.py` — legend rows from pixels: ruled table (`legend.tables.find_tables_segs` on the raster's long
+  horizontal runs), rules / borders removed with stroke crossings given back (symbols overshoot the 3.2 mm bands),
+  per row Tesseract `heb` (band, then the label crop alone, binarised, white margin); components outside Hebrew words
+  are symbol parts, grouped, and kept only if they line up in a column with ≥ 2 others; label = Hebrew words between
+  this symbol and the next one to its left; one-edit correction against the class keywords (`שקש בודד` → socket);
+  marker rows ("ראה הערה", "אביזר מוגן מים") become *negative* exemplars; a crop containing another glyph ("2X" + socket)
+  becomes a qualified family member. The old raster legend finder (`symbols/raster.py`) missed socket_single,
+  switch_single and socket_double on c054fd3a and 1bbe4113 (300 dpi probe); this one classifies all three on 4/4 legend
+  sheets at 200 dpi (at 300 dpi the 1bbe4113 socket label is misread). Many labels are still misread (רמקול, מחלף,
+  "שקע כח" on some sheets) → those glyphs get no class.
+* `match.py` — template bank (glyph × 45° poses × mirror when asymmetric, rotational symmetry skipped) at the
+  legend→plan scale (estimated: 1.0 unless 0.8 / 1.25 give ≥ 1.5× more strong hits), per-glyph full-sheet NCC
+  response maps (OpenCV `matchTemplate` when importable — **not** a dependency — else a scipy FFT fallback), ink-share
+  check (a solid fill / an empty edge is no symbol), KD-tree NMS (other-class runner-up → margin), "2X/3X" by Tesseract
+  `eng` around sockets (0/90/270°).
+* `template.py` (approach A) — every local maximum of a glyph's response map ≥ 0.8. `blobs.py` (approach B) —
+  symbol-sized connected ink groups after stripping, each classified by the best glyph response around its centre ≥ 0.8.
+* `__init__.py` — `detect_raster_symbols(...) -> DetectResult`; every item `source: raster`, reason `גיליון רסטר`,
+  `score_detection(raster=True)` → never green (calibration ceiling). `KAMUTAN_RASTER_SYMBOLS_METHOD=blobs|template`.
+* Hooks (additive): `pipeline/understand.py` (raster branch: new detector only when the flag is on);
+  `sandbox/runner.ENV_ALLOW` + `KAMUTAN_RASTER_SYMBOLS`, `KAMUTAN_RASTER_SYMBOLS_METHOD` (plain switches; the child's
+  environment is allow-listed, the flag would not reach the sandbox otherwise).
+
+### Test set and harness (outside git, `/home/claude/kamutan-data/raster-spike/`)
+`scripts/render_set.py`: the 15 Noah PDFs → `png200/`, `png300/` (pypdfium2, grayscale, display orientation = the GT
+frame; the /Rotate 270 sheets come out portrait like the GT). `scripts/bench.py DPI` runs the shared stages once and
+writes `bench/{template,blobs}_{dpi}/<sheet>/detections.json.gz`; `scripts/table.py` runs `kbench eval
+--pred-detections` (gt-v0.4.1-draft, centre tolerance 3 mm) → `bench/table.md`; `scripts/tune.py` dumps per-class
+score distributions (TP vs FP) → `bench/tune_200*.txt`; `scripts/diag.py` = best NCC of every glyph *at the GT points*.
+Scored sheets: the four with a symbol legend (c054fd3a, eb8be8a3 electrical; 1bbe4113, b2046277 lighting).
+OpenCV for the runs: `flock /tmp/kamutan-uv.lock uv pip install opencv-python-headless` (not in the lock; a `uv sync`
+removes it again).
+
+### Numbers (semantic class; kbench per-class over the 4 sheets)
+| class (GT n) | A template 200 R / P | A template 300 R / P | B blobs 200 R / P | B blobs 300 R / P |
+| --- | --- | --- | --- | --- |
+| socket_single (23) | 0.26 / 0.43 | 0.30 / 0.17 | 0.22 / 0.38 | 0.17 / 0.44 |
+| socket_double (16) | 0.19 / 1.00 | 0 / – | 0.19 / 1.00 | 0 / – |
+| switch_single (30) | 0 / 0 (5 FP) | 0 / 0 | 0 / 0 | 0 / – |
+| luminaire_ceiling (22) | 0 / – | 0 / – | 0 / – | 0 / – |
+| socket_power (7) | 1.00 / 0.64 | 0.71 / 0.83 | 0.86 / 0.60 | 0.57 / 0.80 |
+| micro, all classes | R 0.09 P 0.18 | R 0.07 P 0.18 | R 0.08 P 0.52 | R 0.04 P 0.50 |
+| time per A3, wall / CPU | 88 / 49 s | 92 / 57 s | 84 / 47 s | 86 / 54 s |
+
+Full per-class tables: `bench/table.md`. Times on the shared 2-vCPU box (load 5–8 from other agents; CPU s is the
+fairer number): legend 6–10 s (Tesseract), scale 5–9 s, response maps 50–90 s (≈ 100–300 poses × full-sheet NCC at
+8 px/mm with OpenCV; the scipy fallback is ≈ 3× slower), candidates + NMS + 2X OCR 1–14 s. dpi barely matters: the
+search runs at 8 px/mm either way; 300 dpi only changes the binarisation (thin lines a little fatter) and is not better.
+
+What the threshold sweep shows (`tune_200_v4.txt`, glyph-level, 200 dpi): socket glyph P 0.89 / 1.00 at NCC 0.80 / 0.85
+but only 16 / 11 of ≈ 60 socket-glyph GT points; switch_single never above 0.17 P at any threshold; luminaire_ceiling
+≤ 0.06. Diagnostic at the GT points (`diag.py`, c054fd3a): true sockets reach NCC 0.79–0.91, power sockets 0.92–0.95,
+switches 0.68–0.80 — and dimension text, door swings, frame corners, letters reach the same values. Stripping walls
+before the NCC (v3) lifts precision but cuts socket TP 50 → 11 (the socket's flat side *is* the wall line).
+
+### Why No-go
+* Gate: precision ≥ 0.9 on socket_single, socket_double, switch_single, luminaire_ceiling. Best observed: 0.43 / 1.00
+  (3 TP) / 0.00 / – . Two of the four main classes are at zero recall, and on the lighting sheets nothing useful fires.
+* The simple glyphs (switch = 2.4 mm circle + tick, ceiling point = circle + cross) are not separable from text and
+  drawing clutter by correlation alone at any threshold; sockets are separable only at ≈ 25 % recall.
+* socket_single vs socket_double depends on reading "2X" beside the symbol (plan text is rotated and touches leaders);
+  per-socket Tesseract finds it rarely (3/16).
+* An empty yellow BOQ is safer than a BOQ with 40–60 % wrong items that all look plausible.
+
+### What production quality would take (estimate)
+1. **A learned detector** (small one-stage detector or a patch classifier over candidate windows) trained on renders of
+   our own vector sheets: every vector sheet with confirmed detections is a free labelled raster (render at 150–300
+   dpi, random blur / noise / skew / JPEG to mimic scans). Needs a few hundred sheets across ≥ 5 offices for the legend
+   variety; Noah alone (4 legend sheets, ≈ 200 symbols) is far too small. Legend exemplars then condition it
+   (few-shot / siamese matching on the crop) rather than act as raw templates. 4–6 weeks incl. a labelled raster DEV set.
+2. **Full-page OCR first** (Hebrew + digits/Latin, rotated text) and mask text before symbol search; also gives the
+   2X/3X/TV/TEL qualifiers and H= annotations the vector path relies on. Tesseract on these SHX-like fonts is weak
+   (several labels per legend misread even on clean crops): a better OCR engine or the VLM gateway (LLM opt-in) for labels.
+3. Vectorisation as the alternative path (Stage 10 tried centre-line tracing): only worth it with thick-wall removal
+   and the text mask above, so the existing vector legend/chamfer machinery can run; still 20 s+ per A3.
+4. Real scanned / photographed sheets in the test set (ours are clean renders; real uploads are worse).
+Until then: keep raster sheets at "0 detections + reason", and offer manual counting / "upload the PDF" in the UI.
+
+### Tests / commands
+`tests/test_raster_symbols.py` (7): flag default off + method parsing, sandbox env allow-list (flags, no secrets),
+rotate_mask, NMS runner-up, structure stripping keeps a 3 mm ring, synthetic legend sheet at 200 dpi (legend classes,
+≥ 5 placed symbols found, all `source: raster`, never green, `גיליון רסטר`) for `blobs` and `template` (`template`
+skipped without OpenCV: the scipy fallback takes ≈ 75 s). Gates: ruff, ruff format, mypy (`uv run --with mypy==2.4.0
+mypy src`), bandit `-ll` clean.
+```
+cd workers/drawing
+.venv/bin/python /home/claude/kamutan-data/raster-spike/scripts/render_set.py
+.venv/bin/python /home/claude/kamutan-data/raster-spike/scripts/bench.py 200      # then 300
+python3 /home/claude/kamutan-data/raster-spike/scripts/table.py
+KAMUTAN_RASTER_SYMBOLS=1 uv run python scripts/ingest_local.py …                 # pipeline path (PNG input)
+```
+
+### Gaps / notes for others
+* `pipeline/understand.py` and `sandbox/runner.py` got additive edits (flag check, env allow-list) — owners please keep
+  them when merging.
+* OpenCV is optional and absent from `uv.lock` / the image; if the flag is ever enabled in production, add
+  `opencv-python-headless` (≈ 40 MB) as an extra (DevOps image budget) — the scipy fallback is correct but slower.
+* Pipeline path checked on one sheet (`scripts/pipeline_one.py`, `cli.ingest_file` through the sandbox, flag on):
+  c054fd3a 200 dpi → electrical, 19 detections, all yellow with `גיליון רסטר`, 86 s. Not run on all 15 PNGs (time box);
+  the bench harness calls the same functions without title-block / region exclusion (the pipeline passes both).
+* Full suite: 678 passed, 3 skipped, 1 failed — `test_rooms_v4::test_sample_mep_basement_split_with_reference`, the
+  known stale-shared-artifacts failure (Stage 10 notes; not touched here, CI skips it).

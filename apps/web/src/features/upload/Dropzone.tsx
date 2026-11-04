@@ -3,7 +3,11 @@ import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Ban, Check, FileImage, FileText, FileX2, Pause, Play, RotateCcw, UploadCloud, X } from "lucide-react";
 import { useBackend } from "@/api/client";
-import type { Backend, FileKind } from "@/api/types";
+import { DEFAULT_PROJECT_QUOTA_BYTES, type Backend, type FileKind, type Job } from "@/api/types";
+import { useProject } from "@/features/projects/queries";
+import { useCurrentOrg } from "@/features/org/useCurrentOrg";
+import { useLiveJobs } from "@/features/realtime/hooks";
+import { formatStorage } from "@/features/boq/sprint7";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +41,14 @@ export function Dropzone({ projectId, replaceable = [] }: { projectId: string; r
   const entries = allEntries.filter((e) => e.projectId === projectId);
   const { addFiles, clearFinished } = useUploadStore.getState();
 
+  // Sprint 7: the file's ingest job (a `file_infected` failure is shown on the file).
+  const project = useProject(projectId);
+  const { org } = useCurrentOrg();
+  const jobs = useLiveJobs(project.data?.orgId ?? null, projectId);
+  const jobById = new Map((jobs.data ?? []).map((j) => [j.id, j]));
+  const quota = project.data?.storageQuotaBytes ?? org?.settings?.projectQuotaBytes ?? DEFAULT_PROJECT_QUOTA_BYTES;
+  const quotaText = project.data?.storageBytes !== undefined ? { used: formatStorage(project.data.storageBytes), quota: formatStorage(quota) } : null;
+
   const valid = entries.filter((e) => e.status !== "rejected" && e.status !== "canceled");
   const done = valid.filter((e) => e.status === "done");
   const inFlight = valid.some((e) => !["done", "error"].includes(e.status));
@@ -49,8 +61,9 @@ export function Dropzone({ projectId, replaceable = [] }: { projectId: string; r
       announced.current.add(e.id);
       toast({ title: t("upload.processingStarted", { name: `\u2068${e.name}\u2069` }), tone: "success" });
       void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["project", projectId] });
     }
-  }, [done, qc, t]);
+  }, [done, qc, t, projectId]);
 
   const onFiles = useCallback(
     (list: FileList | null) => {
@@ -180,7 +193,14 @@ export function Dropzone({ projectId, replaceable = [] }: { projectId: string; r
           </div>
           <ul className="divide-y divide-border" aria-label={t("upload.listLabel")}>
             {entries.map((e) => (
-              <FileRow key={e.id} entry={e} backend={backend} replacesName={e.replacesSheetSetId ? (setNames.get(e.replacesSheetSetId) ?? null) : null} />
+              <FileRow
+                key={e.id}
+                entry={e}
+                backend={backend}
+                replacesName={e.replacesSheetSetId ? (setNames.get(e.replacesSheetSetId) ?? null) : null}
+                job={e.result ? (jobById.get(e.result.jobId) ?? null) : null}
+                quotaText={quotaText}
+              />
             ))}
           </ul>
           {!inFlight && entries.length > 0 ? (
@@ -199,18 +219,35 @@ export function Dropzone({ projectId, replaceable = [] }: { projectId: string; r
 const kindIcon = (kind: FileKind | null) =>
   kind === "png" ? FileImage : kind === null ? FileX2 : FileText;
 
-function FileRow({ entry, backend, replacesName }: { entry: UploadEntry; backend: Backend; replacesName: string | null }) {
+function FileRow({
+  entry,
+  backend,
+  replacesName,
+  job = null,
+  quotaText = null,
+}: {
+  entry: UploadEntry;
+  backend: Backend;
+  replacesName: string | null;
+  job?: Job | null;
+  quotaText?: { used: string; quota: string } | null;
+}) {
   const { t } = useTranslation();
   const { pause, resume, cancel, retry, remove } = useUploadStore.getState();
   const Icon = kindIcon(entry.kind);
   const pct = entry.size > 0 ? Math.floor((entry.loaded / entry.size) * 100) : 0;
-  const failed = entry.status === "rejected" || entry.status === "error";
+  // Sprint 7: the API / worker refused the file (`file_infected`): one message on that file.
+  const infected = entry.errorCode === "infected" || (job?.status === "failed" && job.error?.code === "file_infected");
+  const failed = entry.status === "rejected" || entry.status === "error" || infected;
   const iso = `\u2068${entry.name}\u2069`;
-  const showBar = ["queued", "preparing", "uploading", "paused", "finalizing", "done"].includes(entry.status);
+  const showBar = !infected && ["queued", "preparing", "uploading", "paused", "finalizing", "done"].includes(entry.status);
   const cancellable = ["queued", "preparing", "uploading", "paused"].includes(entry.status);
 
   const errorText = (() => {
+    if (infected) return t("upload.errorInfected");
     switch (entry.errorCode) {
+      case "quota":
+        return entry.errorMessage ?? (quotaText ? t("upload.errorQuota", quotaText) : t("upload.errorQuotaShort"));
       case "unsupported":
         return t("upload.errorUnsupported", { name: iso });
       case "too_large":
@@ -262,11 +299,11 @@ function FileRow({ entry, backend, replacesName }: { entry: UploadEntry; backend
           <span
             className={cn(
               "ms-auto inline-flex items-center gap-1 text-meta",
-              entry.status === "done" ? "text-conf-high" : failed ? "text-destructive" : "text-muted-foreground",
+              entry.status === "done" && !infected ? "text-conf-high" : failed ? "text-destructive" : "text-muted-foreground",
             )}
           >
-            {entry.status === "done" ? <Check className="size-3.5" aria-hidden /> : null}
-            {t(`upload.status.${entry.status}`)}
+            {entry.status === "done" && !infected ? <Check className="size-3.5" aria-hidden /> : null}
+            {infected ? t("upload.status.error") : t(`upload.status.${entry.status}`)}
             {entry.status === "uploading" || entry.status === "paused" ? <Ltr>{` ${pct}%`}</Ltr> : null}
           </span>
         </div>
@@ -284,10 +321,11 @@ function FileRow({ entry, backend, replacesName }: { entry: UploadEntry; backend
           <p className="text-meta text-muted-foreground">{t("upload.deduplicated")}</p>
         ) : null}
         {errorText ? (
-          <p className="text-dense text-destructive" role="alert">
+          <p className="text-dense text-destructive" role="alert" {...(infected ? { "data-file-infected": "" } : {})}>
             {errorText}
           </p>
         ) : null}
+
       </div>
       <div className="flex shrink-0 items-center gap-1">
         {entry.status === "uploading"

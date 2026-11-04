@@ -135,6 +135,8 @@ def notes(vs: VectorSheet, spans: Sequence[Any], *, exclude: Sequence[tuple[floa
         except Exception:  # noqa: BLE001 - a leader that cannot be followed is not fatal
             terms = []
         hs = [h for t in blk if (h := height_of(t.text)) is not None]
+        if not hs:
+            hs = _h_beside_number(blk)
         if not hs and (mj := HEIGHT_JOINED_RE.search(txt)):
             v = int(mj.group(1))
             if 10 <= v <= 420:
@@ -145,6 +147,31 @@ def notes(vs: VectorSheet, spans: Sequence[Any], *, exclude: Sequence[tuple[floa
             if bare and 30 <= bare[0] <= 300:
                 hs = [bare[0] / 100.0]
         out.append(Note(txt, (x0, y0, x1, y1), fl, hs[0] if hs else None, terms))
+    return out
+
+
+_LONE_H = re.compile(r"(?:^|[\s/])H\s*=?\s*$")
+
+
+def _h_beside_number(blk: Sequence[TextItem]) -> list[float]:
+    """ "H=140" read as two pieces, "H" and "140": the number on the same row right after the "H" (not a dimension
+    of the note's block one row below)."""
+    out: list[float] = []
+    for t in blk:
+        if not _LONE_H.search(t.text):
+            continue
+        cy, th = (t.bbox[1] + t.bbox[3]) / 2, max(t.bbox[3] - t.bbox[1], 0.5)
+        best: tuple[float, int] | None = None
+        for u in blk:
+            m = re.fullmatch(r"\s*(\d{2,3})\s*", u.text)
+            if u is t or not m:
+                continue
+            uy = (u.bbox[1] + u.bbox[3]) / 2
+            gap = u.bbox[0] - t.bbox[2]
+            if abs(uy - cy) <= 0.6 * th and -0.5 <= gap <= 4.0 * th and (best is None or gap < best[0]):
+                best = (gap, int(m.group(1)))
+        if best is not None and 10 <= best[1] <= 420:
+            out.append(best[1] / 100.0)
     return out
 
 

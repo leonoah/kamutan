@@ -12,5 +12,6 @@
 | [0005](0005-share-links-via-api.md) | קישורי שיתוף רק דרך ה-API | התקבל |
 | [0006](0006-coordinates-paper-mm.md) | קואורדינטות: מ"מ על הנייר, y כלפי מטה | התקבל |
 | [0007](0007-llm-gateway-policy.md) | מדיניות LLM gateway | התקבל |
+| [0008](0008-firebase-platform.md) | מעבר מ-Supabase ל-Firebase + Cloud Run | התקבל |
 
 תבנית: העתיקו קובץ קיים ושמרו על הסעיפים: סטטוס, הקשר, אפשרויות, החלטה, השלכות.

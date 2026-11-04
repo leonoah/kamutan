@@ -12,6 +12,7 @@ export * from './tiles.js';
 export * from './review.js';
 export * from './corrections.js';
 export * from './boq.js';
+export * from './boq-document.js';
 export * from './library.js';
 export { sha256Hex } from './sha256.js';
 export * from './share.js';

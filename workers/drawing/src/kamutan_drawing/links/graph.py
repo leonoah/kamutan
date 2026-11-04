@@ -60,6 +60,7 @@ R_SENSOR = "חיישן לפי כיתוב"
 R_FLOOR = "קומה לא ודאית"
 R_NO_POINT = "מפסק ללא נקודת מאור"
 R_INFERRED = "מפסק לא זוהה (לפי קשת)"
+R_PAIRED = "זוג מחליפים לפי סוג המפסקים (קשתות חוצות)"
 
 # reasons that never stop a group from being green (none today; all chips are warnings)
 INFO_REASONS: frozenset[str] = frozenset()
@@ -101,6 +102,7 @@ class LinkParams:
     distinct_glyph_mm: float = 1.0  # arc ends on one switch box but glyphs this far apart = 2 switches
     wire_colours: tuple[tuple[int, int, int], ...] = ()  # empty = learn from chains with both ends attached
     green_threshold: float | None = None  # org setting greenThreshold (Sprint 5), checked against the table's wilsonLb
+    pair_two_way_mm: float = 30.0  # a lone 2-way and an unpaired 2-way this close are one two-way pair (Sprint 7)
 
 
 @dataclass
@@ -617,6 +619,13 @@ def build_links(
                 "arcIds": [arcs[k].id for k in comp_arcs],
             }
         )
+    groups = pair_two_ways(
+        groups,
+        dets,
+        added={dets[i]["id"] for i in add_notes},
+        max_mm=prm.pair_two_way_mm,
+        green_threshold=prm.green_threshold,
+    )
     for n, g in enumerate(groups):
         g["id"] = f"lk_{n + 1}"
     arcs_json = [
@@ -637,6 +646,83 @@ def build_links(
         "unlinkedLuminaireIds": [dets[i]["id"] for i in sorted(unlinked_lums)],
     }
     return doc, link_stats(doc, unlinked_switches=unlinked_switches)
+
+
+def _relevel(g: dict[str, Any], green_threshold: float | None) -> None:
+    g["reasons"] = list(dict.fromkeys(g["reasons"]))
+    warn = any(r not in INFO_REASONS for r in g["reasons"])
+    level = level_for(g["confidence"], g["reasons"], warn=warn)
+    cal = default_table().calibrate(link_key(g["kind"]), g["confidence"], g["reasons"], level=level, warn=warn,
+                                    green_threshold=green_threshold)  # fmt: skip
+    g["level"], g["reasons"] = cal.level, cal.reasons
+
+
+def pair_two_ways(
+    groups: list[dict[str, Any]],
+    dets: Sequence[dict[str, Any]],
+    *,
+    added: Iterable[str] = (),
+    max_mm: float = 30.0,
+    green_threshold: float | None = None,
+) -> list[dict[str, Any]]:
+    """ "A two-way switch needs a two-way partner" (Sprint 7, Worker-Accuracy item 4).
+
+    Where two wiring arcs cross, the chaining can exchange their continuations: one circuit then holds a 2-way ``S``
+    beside one other (non-2-way) switch ``F`` and no 2-way partner, while a nearby circuit holds a lone 2-way ``T``
+    flagged ``מחלף ללא מחלף שני`` (Noah 1bbe4113, master suite: the existing 2-way at the bed head and the new 2-way
+    below the fan switch both feed the existing fan point; the fan switch's arc crosses theirs and ends at the
+    type-23 spot — GT 1bbe4113-G13 / G14). When ``T`` is ≤ ``max_mm`` from ``S`` the two are exchanged back:
+
+    * ``S`` + ``T`` → a ``two_way`` group on ``S``'s points;
+    * ``F`` takes ``T``'s place on ``T``'s points (``single`` / ``shared``; ``fan`` from ``F``).
+
+    A circuit with more than one other switch is left alone (nothing tells which one crossed); an added 2-way
+    ("להוסיף מחלף", ``added``) is legitimately alone and never paired. Both groups get ``R_PAIRED``. Pure."""
+    by_id = {str(d["id"]): d for d in dets}
+    added = set(added)
+
+    def cls(i: str) -> str:
+        return str(by_id.get(i, {}).get("class") or "")
+
+    def ctr(i: str) -> np.ndarray:
+        return _center(by_id[i])
+
+    lone = [
+        (k, g["switchIds"][0])
+        for k, g in enumerate(groups)
+        if len(g["switchIds"]) == 1 and cls(g["switchIds"][0]) == "switch_2way" and R_PARTNER in g["reasons"]
+        and g["switchIds"][0] not in added and g["pointIds"]
+    ]  # fmt: skip
+    if not lone:
+        return groups
+    out = [dict(g) for g in groups]
+    used: set[int] = set()
+    for k, g in enumerate(groups):
+        if k in used or g["kind"] == "two_way" or not g["pointIds"] or len(g["switchIds"]) != 2:
+            continue
+        twos = [i for i in g["switchIds"] if cls(i) == "switch_2way"]
+        if len(twos) != 1 or twos[0] in added:
+            continue
+        s = twos[0]
+        f = next(i for i in g["switchIds"] if i != s)
+        cands = [(float(np.hypot(*(ctr(s) - ctr(t)))), j, t) for j, t in lone if j != k and j not in used]
+        cands = [c for c in cands if c[0] <= max_mm]
+        if not cands:
+            continue
+        _d, j, t = min(cands)
+        used |= {j, k}
+        h = groups[j]
+        drop = (R_MANY, R_MIXED, R_PARTNER, R_SW_TYPE)
+        out[k] = {**g, "kind": "two_way", "switchIds": [s, t], "fan": False,
+                  "confidence": round(float(g["confidence"]) * 0.8, 3),
+                  "reasons": [*[r for r in g["reasons"] if r not in drop], R_PAIRED]}  # fmt: skip
+        out[j] = {**h, "kind": "single" if len(h["pointIds"]) == 1 else "shared", "switchIds": [f],
+                  "fan": cls(f) == "switch_fan" or bool(g.get("fan") and cls(f) != "switch_2way"),
+                  "confidence": round(float(h["confidence"]) * 0.8, 3),
+                  "reasons": [*[r for r in h["reasons"] if r not in drop], R_PAIRED]}  # fmt: skip
+        _relevel(out[k], green_threshold)
+        _relevel(out[j], green_threshold)
+    return out
 
 
 def _infer_switches(arcs: list[Arc], dets: Sequence[dict[str, Any]], sw: set[int], distinct_mm: float) -> int:

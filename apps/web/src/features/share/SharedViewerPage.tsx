@@ -14,6 +14,8 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { chapterLabel, compareCodes, fmtQty } from "@/features/boq/model";
 import { useShareBoq, useShareMeta, useShareOverlay } from "./queries";
+import { ManualNameMarker } from "@/features/boq/ManualNameMarker";
+import { isPublicDescriptionManual } from "@/features/boq/sprint7";
 
 const SharedDrawing = lazy(() => import("./SharedDrawing"));
 
@@ -308,6 +310,7 @@ function SharedViewer({
                               <span className="line-clamp-2">{l.description}</span>
                               <span className="sr-only"> · {t("shareViewer.showOnDrawing", { code: l.code })}</span>
                             </button>
+                            {isPublicDescriptionManual(l) ? <ManualNameMarker className="mt-1" /> : null}
                             {on && floors.length > 1 ? (
                               <span className="mt-1 block text-meta text-muted-foreground">
                                 {floors.map(([f, n]) => `${t(`floors.${f}`, { defaultValue: f })} ${fmtQty(n)}`).join(" · ")}

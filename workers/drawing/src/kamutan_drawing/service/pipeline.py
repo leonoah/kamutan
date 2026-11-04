@@ -9,7 +9,9 @@ Flow (docs/agents/SPRINT1_BRIEF.md):
 1. ``jobs/{jobId}`` must exist and belong to the job's org/project (else ``invalid_payload``,
    nothing is written). A succeeded job with the same sha256 is a redelivery: re-assert
    ``ready`` and return (idempotent).
-2. Download ``storagePath`` (≤ 100 MB), verify sha256, re-check magic bytes against ``fileKind``.
+2. Download ``storagePath`` (≤ 100 MB), verify sha256, **antivirus scan** (:mod:`.scan`, Sprint 7: before the
+   magic-byte sniff and any parser; fail closed → retryable ``scan_unavailable``; infected → marked on the sheet set,
+   moved to ``…/infected/``, ``file_infected``), re-check magic bytes against ``fileKind``.
 3. ``probe`` (sandbox): page list (DWG → DXF via ``dwg2dxf`` when installed, else
    ``unsupported_kind``).
 4. Initial mode: create ``sheets/{sheetSetId}-p{i}`` + ``versions/{versionId}`` (queued) for all
@@ -56,6 +58,7 @@ from ..pipeline.floor_check import flag_floor_contradiction
 from ..sandbox.runner import Limits, run_task, safe_output_path
 from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
 from .contracts import IngestSheetVersionJob
+from .scan import Scanner, infected_error, infected_mark, quarantine, scan_upload, scanner_from_env
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +85,8 @@ class Options:
     # LLM gateway for low-confidence legend labels; None = built from the environment (disabled by default)
     llm: Any = None
     llm_max_labels: int = 12
+    # Sprint 7 antivirus engine; None = from the environment at job time (``scan.scanner_from_env``; default off)
+    scanner: Scanner | None = None
 
 
 @dataclass
@@ -258,7 +263,16 @@ def _reassert_ready(job: IngestSheetVersionJob, docs: DocStore, paths: _Paths, d
     return JobOutcome("skipped", outcomes)
 
 
-def _fetch(job: IngestSheetVersionJob, blobs: BlobStore) -> tuple[bytes, str]:
+def infected_path(job: IngestSheetVersionJob) -> str:
+    """Where an infected upload is moved (under the project: purged with it; not the client ``quarantine/`` slot)."""
+    return f"{job.project_path}/infected/{job.sheetSetId}/{job.sha256}.bin"
+
+
+def _fetch(job: IngestSheetVersionJob, blobs: BlobStore, docs: DocStore, scanner: Scanner | None) -> tuple[bytes, str]:
+    set_path = f"{job.project_path}/sheetSets/{job.sheetSetId}"
+    if (mark := infected_mark(docs.get(set_path), job.sha256)) is not None:
+        # already quarantined (redelivery / reprocess): never read or parse it again
+        raise infected_error(mark.get("signature"))
     try:
         data = blobs.read(job.storagePath)
     except BlobNotFound:
@@ -267,6 +281,12 @@ def _fetch(job: IngestSheetVersionJob, blobs: BlobStore) -> tuple[bytes, str]:
         raise IngestError(E.TOO_LARGE, "file exceeds 100 MB")
     if hashlib.sha256(data).hexdigest() != job.sha256:
         raise IngestError(E.SHA256_MISMATCH, "file content does not match the uploaded sha256")
+    # Sprint 7: scan before anything looks inside the file (the magic-byte sniff included)
+    res = scan_upload(scanner or scanner_from_env(), data, what=f"upload {job.sheetSetId}")
+    if not res.clean:
+        quarantine(blobs, docs, data=data, source_path=job.storagePath, dest_path=infected_path(job),
+                   mark_paths=[set_path], sha256=job.sha256, result=res)  # fmt: skip
+        raise infected_error(res.signature)
     kind = detect_kind(data[:4096])
     if kind is None:
         raise IngestError(E.UNSUPPORTED_FORMAT, "file type is not PDF, DXF, DWG, PNG or JPEG")
@@ -334,7 +354,7 @@ def _run(
     known_pages: list[int],
     on_page: Callable[[PageOutcome], None] | None,
 ) -> JobOutcome:
-    data, kind = _fetch(job, blobs)
+    data, kind = _fetch(job, blobs, docs, opts.scanner)
     src = Path(workdir) / f"source.{kind}"
     src.write_bytes(data)
     del data
@@ -831,6 +851,10 @@ def _understand(
         blobs.write(pre + GEOMETRY_FILE, data, "application/gzip", cache_control=IMMUTABLE)
         if FIXTURES_IN_ARTIFACTS:
             artifacts["geometry"] = pre + GEOMETRY_FILE
+    # Sprint 7 (Worker-Accuracy): drawn heights read / used by the geometry measures → version `stats.heights`
+    heights = clean_height_stats(res.get("geometryStats"))
+    if heights is not None:
+        stats["heights"] = heights
     if capped:
         log.warning("job %s page %d: calibration ceiling lowered sandbox greens %s (table %s)", job.jobId, index, capped,
                     stats["calibration"]["version"])  # fmt: skip
@@ -1050,6 +1074,20 @@ def _clean_region_floors(raw: Any, regions: list[dict[str, Any]]) -> dict[str, s
     if not isinstance(raw, dict):
         return {}
     return {str(k): str(v) for k, v in raw.items() if str(k) in ids and isinstance(v, str) and _FLOOR.match(v)}
+
+
+def clean_height_stats(geometry_stats: Any) -> dict[str, int] | None:
+    """``geometryStats.heights {read, used}`` from the sandbox (untrusted) → non-negative ints (capped), else None."""
+    h = geometry_stats.get("heights") if isinstance(geometry_stats, dict) else None
+    if not isinstance(h, dict):
+        return None
+
+    def n(v: Any) -> int:
+        return (
+            min(1_000_000, max(0, int(v))) if isinstance(v, int | float) and not isinstance(v, bool) and math.isfinite(v) else 0
+        )
+
+    return {"read": n(h.get("read")), "used": n(h.get("used"))}
 
 
 def _clean_link_stats(d: dict[str, Any]) -> dict[str, Any]:

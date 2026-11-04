@@ -29,9 +29,13 @@ PARSE_MEMORY_LIMIT = "parse_memory_limit"
 PARSE_CRASHED = "parse_crashed"
 PARSE_OUTPUT_TOO_LARGE = "parse_output_too_large"
 TOO_MANY_ATTEMPTS = "too_many_attempts"
+# Sprint 7 (SEC-15): the antivirus scan found malware; the upload is quarantined and never parsed
+FILE_INFECTED = "file_infected"
 # Retryable: infrastructure / unexpected.
 STORAGE_UNAVAILABLE = "storage_unavailable"
 INTERNAL = "internal"
+# Sprint 7: no antivirus verdict (engine missing / not answering / timeout) — fail closed, Pub/Sub retries
+SCAN_UNAVAILABLE = "scan_unavailable"
 
 NON_RETRYABLE = frozenset(
     {
@@ -54,6 +58,7 @@ NON_RETRYABLE = frozenset(
         PARSE_CRASHED,
         PARSE_OUTPUT_TOO_LARGE,
         TOO_MANY_ATTEMPTS,
+        FILE_INFECTED,
     }
 )
 

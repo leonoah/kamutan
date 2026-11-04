@@ -1081,6 +1081,10 @@ class Item:
     description: str
     unit: str
     default: bool = False  # shipped default library (contracts defaults, A-LIVE-01): codes = the default rules' codes
+    # Sprint 7: `source: 'manual'` — the org's own wording for this code (a line renamed with "עדכן גם בספרייה", or an
+    # item added by an admin). Resolved by exact code (its wording is expected to differ from the rule's) and preferred
+    # over any other item of the same code.
+    manual: bool = False
 
 
 @dataclass(frozen=True)
@@ -1109,6 +1113,7 @@ class Library:
                     str(d.get("description") or ""),
                     str(d.get("unit") or ""),
                     d.get("source") == "default" or isinstance(d.get("defaultsVersion"), int | float),
+                    d.get("source") == "manual",
                 )
             )
         items.sort(key=lambda i: (i.chapter, i.code, i.id))
@@ -1133,6 +1138,10 @@ class Library:
     def by_code(self, code: str) -> list[Item]:
         return [i for i in self.items if i.code == code]
 
+    def preferred(self, code: str) -> Item | None:
+        """The item that names ``code`` for this org: a ``manual`` one first (the org's own wording), then by id."""
+        return min(self.by_code(code), key=lambda i: (not i.manual, i.id), default=None)
+
     def containing(self, keywords: list[str] | tuple[str, ...]) -> list[Item]:
         """Items whose description contains any of ``keywords`` (normalised; room-specific lines such as
         "מקלחון חדר רחצה הורים" / "מקלחון מרתף")."""
@@ -1141,9 +1150,20 @@ class Library:
 
     def resolve(self, code: str | None, description: str, *, trust_code: bool = False) -> Resolution | None:
         """Map a rule's reference (code + description) to an org item. ``trust_code`` (user-chosen codes from
-        legend confirmations / symbol mappings, user rules): an exact code wins whatever the description."""
+        legend confirmations / symbol mappings, user rules): an exact code wins whatever the description.
+
+        A ``manual`` item of the code (Sprint 7, renamed through "עדכן גם בספרייה") wins by exact code: the user
+        reworded it on purpose, so the rule's wording is not expected to match any more. Default items keep their
+        exact-code match (A-LIVE-01); imported items still need a similar description (another org's numbering)."""
         if code:
             same = self.by_code(code)
+            manual = sorted((i for i in same if i.manual), key=lambda i: i.id)
+            if manual:
+                pick = manual[0]
+                if len(manual) > 1 and description:
+                    pick = max(manual, key=lambda i: (similarity(description, i.description), i.id))
+                s = similarity(description, pick.description) if description else 0.0
+                return Resolution(pick, "user_code" if trust_code else "code", s)
             if same:
 
                 def code_sim(i: Item) -> float:

@@ -1,3 +1,4 @@
+import { documentApiQuery, normalizeDocument } from "@/features/boq/sprint7";
 import { env } from "@/lib/env";
 import {
   ApiError,
@@ -605,9 +606,16 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
         ...(req.templateId ? { templateId: req.templateId } : {}),
         split: req.split,
         markDraft: req.draftNote,
+        // Sprint 7 (contracts ExportBoqRequest): the preview's options
+        ...(req.includeConfidence !== undefined ? { includeConfidence: req.includeConfidence } : {}),
+        ...(req.chapters?.length ? { chapters: req.chapters } : {}),
       });
       return { url: r.url, filename: r.fileName, expiresAt: r.expiresAt };
     },
+
+    // Sprint 7 (brief "Shared interfaces"): the export model used by the Excel writer, for the preview screen.
+    getBoqDocument: async (projectId, q) =>
+      normalizeDocument(await request<Parameters<typeof normalizeDocument>[0]>(`/projects/${enc(projectId)}/boq/document?${documentApiQuery(q)}`)),
 
     /* Sprint 3 — org library / templates / rules (`?orgId=` scope, contracts library.ts) */
     listLibraryItems: (orgId, q = {}) => {

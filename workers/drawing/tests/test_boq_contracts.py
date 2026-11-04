@@ -201,3 +201,19 @@ def test_room_defaults_mirror_contracts():
     assert default_settings("bathroom", True, ceiling_m=2.2)["claddingHeightM"] == 2.2
     assert default_settings("bathroom", True, niche=True) == {**default_settings("kitchen", False), "floorTiled": True}
     assert default_settings("kitchen", False)["claddingHeightM"] == 0.0
+
+
+# ----------------------------------------------------------------------------- Sprint 7
+def test_preserved_fields_mirror_contracts():
+    """boq/build.py PRESERVED == contracts BOQ_LINE_PRESERVED_FIELDS (incl. the Sprint-7 descriptionOverride*)."""
+    import re
+
+    from kamutan_drawing.boq.build import PRESERVED
+
+    src = CONTRACTS.parent / "src" / "boq.ts"
+    if not src.exists():
+        pytest.skip("packages/contracts/src/boq.ts not found")
+    m = re.search(r"BOQ_LINE_PRESERVED_FIELDS = \[(.*?)\] as const", src.read_text(), re.DOTALL)
+    assert m, "BOQ_LINE_PRESERVED_FIELDS not found in boq.ts"
+    body = re.sub(r"//[^\n]*", "", m.group(1))
+    assert tuple(re.findall(r"'([A-Za-z]+)'", body)) == PRESERVED

@@ -24,6 +24,10 @@ export const API_ERROR_CODES = [
   'share_unavailable',
   /** Sprint 5: non-GET on the public share API (405). */
   'method_not_allowed',
+  /** Sprint 7: the per-project storage quota (org `projectQuotaBytes`, default 2 GB) would be exceeded (413, Hebrew message). */
+  'quota_exceeded',
+  /** Sprint 7: the antivirus scan (worker, ClamAV) found malware in the upload — quarantined, never processed. */
+  'file_infected',
   'internal_error',
   'service_unavailable',
 ] as const;

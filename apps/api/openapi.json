@@ -202,6 +202,11 @@
                               },
                               "autoRebuild": {
                                 "type": "boolean"
+                              },
+                              "projectQuotaBytes": {
+                                "type": "integer",
+                                "exclusiveMinimum": true,
+                                "minimum": 0
                               }
                             },
                             "required": [
@@ -301,6 +306,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -415,6 +422,11 @@
                               },
                               "autoRebuild": {
                                 "type": "boolean"
+                              },
+                              "projectQuotaBytes": {
+                                "type": "integer",
+                                "exclusiveMinimum": true,
+                                "minimum": 0
                               }
                             },
                             "required": [
@@ -512,6 +524,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -640,6 +654,11 @@
                         },
                         "autoRebuild": {
                           "type": "boolean"
+                        },
+                        "projectQuotaBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": true,
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -720,6 +739,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -798,6 +819,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -876,6 +899,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -994,6 +1019,11 @@
                         },
                         "autoRebuild": {
                           "type": "boolean"
+                        },
+                        "projectQuotaBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": true,
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -1084,6 +1114,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1162,6 +1194,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1332,6 +1366,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1410,6 +1446,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1488,6 +1526,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1566,6 +1606,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1766,6 +1808,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1844,6 +1888,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1922,6 +1968,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2000,6 +2048,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2078,6 +2128,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2156,6 +2208,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2294,6 +2348,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2372,6 +2428,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2450,6 +2508,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2528,6 +2588,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2606,6 +2668,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2859,6 +2923,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2937,6 +3003,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3015,6 +3083,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3093,6 +3163,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3171,6 +3243,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3249,6 +3323,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3466,6 +3542,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3544,6 +3622,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3622,6 +3702,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3700,6 +3782,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3924,6 +4008,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4002,6 +4088,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4080,6 +4168,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4158,6 +4248,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4297,6 +4389,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4375,6 +4469,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4453,6 +4549,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4719,6 +4817,15 @@
                           "createdAt": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "storageBytes": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "storageQuotaBytes": {
+                            "type": "integer",
+                            "exclusiveMinimum": true,
+                            "minimum": 0
                           }
                         },
                         "required": [
@@ -4778,6 +4885,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4856,6 +4965,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4934,6 +5045,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5186,6 +5299,15 @@
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "storageBytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "storageQuotaBytes": {
+                      "type": "integer",
+                      "exclusiveMinimum": true,
+                      "minimum": 0
                     }
                   },
                   "required": [
@@ -5233,6 +5355,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5311,6 +5435,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5389,6 +5515,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5467,6 +5595,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5545,6 +5675,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5776,6 +5908,15 @@
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "storageBytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "storageQuotaBytes": {
+                      "type": "integer",
+                      "exclusiveMinimum": true,
+                      "minimum": 0
                     }
                   },
                   "required": [
@@ -5823,6 +5964,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5901,6 +6044,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6159,6 +6304,15 @@
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "storageBytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "storageQuotaBytes": {
+                      "type": "integer",
+                      "exclusiveMinimum": true,
+                      "minimum": 0
                     }
                   },
                   "required": [
@@ -6206,6 +6360,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6284,6 +6440,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6362,6 +6520,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6440,6 +6600,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6631,6 +6793,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6709,6 +6873,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6787,6 +6953,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6865,6 +7033,88 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6943,6 +7193,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7021,6 +7273,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7216,6 +7470,26 @@
                           "type": "string",
                           "format": "date-time"
                         },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "message": {
+                              "type": "string",
+                              "maxLength": 2000
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
+                        },
                         "replacesSheetSetId": {
                           "type": "string",
                           "minLength": 1,
@@ -7339,6 +7613,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7417,6 +7693,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7495,6 +7773,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7573,6 +7853,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7651,6 +7933,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7729,6 +8013,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7807,6 +8093,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7885,6 +8173,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7963,6 +8253,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8041,6 +8333,545 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/api/v1/projects/{projectId}/sheet-sets/{sheetSetId}": {
+      "get": {
+        "operationId": "UploadsController_status_v1",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sheetSetId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sheetSet": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "orgId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "projectId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "fileKind": {
+                          "type": "string",
+                          "enum": [
+                            "pdf",
+                            "dwg",
+                            "dxf",
+                            "png"
+                          ]
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "storagePath": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "uploaded",
+                            "queued",
+                            "splitting",
+                            "ready",
+                            "failed"
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "uploadedBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "sizeBytes": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "ingestJobId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "versionId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "pageCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "nullable": true
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "message": {
+                              "type": "string",
+                              "maxLength": 2000
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
+                        },
+                        "replacesSheetSetId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "supersededBySetId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "supersededAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "supersede": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "pending",
+                                "matched"
+                              ]
+                            },
+                            "matchedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "nullable": true
+                            },
+                            "sheetMap": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "pattern": "^[A-Za-z0-9_-]+$",
+                                "nullable": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "orgId",
+                        "projectId",
+                        "fileKind",
+                        "sha256",
+                        "storagePath",
+                        "status",
+                        "uploadedBy",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "job": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "queued",
+                            "running",
+                            "succeeded",
+                            "failed",
+                            "cancelled"
+                          ]
+                        },
+                        "progress": {
+                          "type": "object",
+                          "properties": {
+                            "stage": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 32
+                            },
+                            "pct": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "stage",
+                            "pct"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "status",
+                        "progress"
+                      ],
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "message": {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        "messageHe": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "messageHe"
+                      ],
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
+                    "infected": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "sheetSet",
+                    "job",
+                    "error",
+                    "infected"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8492,6 +9323,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8570,6 +9403,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8648,6 +9483,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9370,6 +10207,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9448,6 +10287,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9853,6 +10694,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9931,6 +10774,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10009,6 +10854,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10087,6 +10934,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10165,6 +11014,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10558,6 +11409,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10636,6 +11489,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10714,6 +11569,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10792,6 +11649,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10870,6 +11729,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10948,6 +11809,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11212,6 +12075,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11290,6 +12155,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11368,6 +12235,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11446,6 +12315,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11524,6 +12395,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11602,6 +12475,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12516,6 +13391,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12594,6 +13471,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12672,6 +13551,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12750,6 +13631,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12828,6 +13711,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12906,6 +13791,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13347,6 +14234,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13425,6 +14314,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13503,6 +14394,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13581,6 +14474,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13987,6 +14882,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14065,6 +14962,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14143,6 +15042,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14221,6 +15122,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14843,6 +15746,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14921,6 +15826,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14999,6 +15906,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15077,6 +15986,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15155,6 +16066,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15233,6 +16146,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15825,6 +16740,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15903,6 +16820,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15981,6 +16900,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16059,6 +16980,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16137,6 +17060,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16215,6 +17140,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16516,6 +17443,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16594,6 +17523,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16672,6 +17603,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16750,6 +17683,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17000,6 +17935,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17078,6 +18015,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17156,6 +18095,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17234,6 +18175,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17312,6 +18255,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17390,6 +18335,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17636,6 +18583,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17714,6 +18663,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17792,6 +18743,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17870,6 +18823,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17948,6 +18903,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18276,6 +19233,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18354,6 +19313,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18432,6 +19393,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18510,6 +19473,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18588,6 +19553,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18941,6 +19908,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19019,6 +19988,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19097,6 +20068,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19175,6 +20148,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19253,6 +20228,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19331,6 +20308,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19409,6 +20388,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19487,6 +20468,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19565,6 +20548,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19643,6 +20628,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19985,6 +20972,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20063,6 +21052,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20141,6 +21132,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20219,6 +21212,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20495,6 +21490,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20573,6 +21570,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20651,6 +21650,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20729,6 +21730,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21115,6 +22118,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21193,6 +22198,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21271,6 +22278,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21349,6 +22358,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21427,6 +22438,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -24953,6 +25966,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25031,6 +26046,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25109,6 +26126,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25187,6 +26206,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -28737,6 +29758,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -28815,6 +29838,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -28893,6 +29918,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -28971,6 +29998,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29049,6 +30078,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29456,6 +30487,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29534,6 +30567,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29612,6 +30647,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29690,6 +30727,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29768,6 +30807,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -30645,6 +31686,28 @@
                             ],
                             "additionalProperties": false,
                             "nullable": true
+                          },
+                          "descriptionOverride": {
+                            "type": "string",
+                            "maxLength": 500,
+                            "nullable": true
+                          },
+                          "descriptionOverrideBy": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$",
+                            "nullable": true
+                          },
+                          "descriptionOverrideAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "descriptionOverrideReason": {
+                            "type": "string",
+                            "maxLength": 500,
+                            "nullable": true
                           }
                         },
                         "required": [
@@ -30706,6 +31769,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -30784,6 +31849,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -30862,6 +31929,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -30940,6 +32009,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -31049,6 +32120,23 @@
                     "type": "string",
                     "maxLength": 2000,
                     "nullable": true
+                  },
+                  "description": {
+                    "allOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    ],
+                    "nullable": true
+                  },
+                  "alsoUpdateLibrary": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -31406,6 +32494,28 @@
                           ],
                           "additionalProperties": false,
                           "nullable": true
+                        },
+                        "descriptionOverride": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "nullable": true
+                        },
+                        "descriptionOverrideBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "descriptionOverrideAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "descriptionOverrideReason": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "nullable": true
                         }
                       },
                       "required": [
@@ -31417,6 +32527,35 @@
                         "unit",
                         "level",
                         "status"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "library": {
+                      "type": "object",
+                      "properties": {
+                        "itemId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "created": {
+                          "type": "boolean"
+                        },
+                        "deactivatedItemIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "itemId",
+                        "created",
+                        "deactivatedItemIds"
                       ],
                       "additionalProperties": false
                     }
@@ -31460,6 +32599,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -31538,6 +32679,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -31616,6 +32759,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -31694,6 +32839,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -31772,6 +32919,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -31850,6 +32999,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -32078,6 +33229,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -32156,6 +33309,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -32234,6 +33389,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -32312,6 +33469,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -32390,6 +33549,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -32854,6 +34015,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -32932,6 +34095,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33010,6 +34175,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33198,6 +34365,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33276,6 +34445,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33354,6 +34525,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33432,6 +34605,843 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "boq"
+        ]
+      }
+    },
+    "/api/v1/projects/{projectId}/boq/document": {
+      "get": {
+        "operationId": "BoqController_document_v1",
+        "parameters": [
+          {
+            "name": "projectId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "split",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "summed",
+                    "floor",
+                    "byFloor"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "confidence",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "1",
+                    "0",
+                    "true",
+                    "false"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "chapters",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              ]
+            }
+          },
+          {
+            "name": "templateId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                }
+              ]
+            }
+          },
+          {
+            "name": "markDraft",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "1",
+                    "0",
+                    "true",
+                    "false"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schema": {
+                      "type": "string",
+                      "enum": [
+                        "kamutan.boq-document/1"
+                      ]
+                    },
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "templateId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$",
+                      "nullable": true
+                    },
+                    "buildId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$",
+                      "nullable": true
+                    },
+                    "options": {
+                      "type": "object",
+                      "properties": {
+                        "split": {
+                          "type": "string",
+                          "enum": [
+                            "summed",
+                            "byFloor"
+                          ]
+                        },
+                        "includeConfidence": {
+                          "type": "boolean"
+                        },
+                        "chapters": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32
+                          },
+                          "nullable": true
+                        },
+                        "markDraft": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "split",
+                        "includeConfidence",
+                        "chapters",
+                        "markDraft"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "titleRows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "warning",
+                              "title",
+                              "draft"
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "maxLength": 2000
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "columns": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "enum": [
+                              "code",
+                              "description",
+                              "unit",
+                              "qty",
+                              "unitPrice",
+                              "total",
+                              "confidence",
+                              "status"
+                            ]
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 200
+                          },
+                          "width": {
+                            "type": "number",
+                            "exclusiveMinimum": true,
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "title",
+                          "width"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "chapters": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string",
+                            "maxLength": 32
+                          },
+                          "title": {
+                            "type": "string",
+                            "maxLength": 500
+                          },
+                          "notes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 2000
+                            }
+                          },
+                          "rows": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "line",
+                                    "subtotal",
+                                    "note"
+                                  ]
+                                },
+                                "lineId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 128,
+                                  "pattern": "^[A-Za-z0-9_-]+$",
+                                  "nullable": true
+                                },
+                                "code": {
+                                  "type": "string",
+                                  "maxLength": 32,
+                                  "nullable": true
+                                },
+                                "description": {
+                                  "type": "string",
+                                  "maxLength": 4000
+                                },
+                                "unit": {
+                                  "type": "string",
+                                  "maxLength": 32,
+                                  "nullable": true
+                                },
+                                "qty": {
+                                  "type": "number",
+                                  "nullable": true
+                                },
+                                "qtyFormat": {
+                                  "type": "string",
+                                  "enum": [
+                                    "general",
+                                    "decimal2"
+                                  ]
+                                },
+                                "price": {
+                                  "type": "number",
+                                  "nullable": true
+                                },
+                                "total": {
+                                  "type": "number",
+                                  "nullable": true
+                                },
+                                "level": {
+                                  "type": "string",
+                                  "enum": [
+                                    "green",
+                                    "yellow",
+                                    "red"
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "draft",
+                                    "reviewed",
+                                    "approved"
+                                  ]
+                                },
+                                "floor": {
+                                  "type": "string",
+                                  "maxLength": 32,
+                                  "nullable": true
+                                },
+                                "needsInput": {
+                                  "type": "boolean"
+                                },
+                                "qtyOverridden": {
+                                  "type": "boolean"
+                                },
+                                "descriptionOverridden": {
+                                  "type": "boolean"
+                                },
+                                "cellNote": {
+                                  "type": "string",
+                                  "maxLength": 1000,
+                                  "nullable": true
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "lineId",
+                                "code",
+                                "description",
+                                "unit",
+                                "qty",
+                                "price",
+                                "total"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "subtotal": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "title",
+                          "notes",
+                          "rows",
+                          "subtotal"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "totals": {
+                      "type": "object",
+                      "properties": {
+                        "beforeVat": {
+                          "type": "number"
+                        },
+                        "vat": {
+                          "type": "number"
+                        },
+                        "afterVat": {
+                          "type": "number"
+                        },
+                        "vatRate": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": [
+                        "beforeVat",
+                        "vat",
+                        "afterVat",
+                        "vatRate"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "red",
+                              "reapproval",
+                              "unapproved",
+                              "needsInput"
+                            ]
+                          },
+                          "count": {
+                            "type": "integer",
+                            "exclusiveMinimum": true,
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "count"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "exportBlocked": {
+                      "type": "boolean"
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "lines": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "green": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "yellow": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "red": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "draft": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "reviewed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "approved": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "overridden": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "lines",
+                        "green",
+                        "yellow",
+                        "red",
+                        "draft",
+                        "reviewed",
+                        "approved",
+                        "overridden"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "generatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "schema",
+                    "projectId",
+                    "templateId",
+                    "buildId",
+                    "options",
+                    "titleRows",
+                    "columns",
+                    "chapters",
+                    "totals",
+                    "warnings",
+                    "exportBlocked",
+                    "counts",
+                    "generatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
+                            "internal_error",
+                            "service_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "bad_request",
+                            "validation_failed",
+                            "unauthorized",
+                            "forbidden",
+                            "mfa_required",
+                            "not_found",
+                            "conflict",
+                            "payload_too_large",
+                            "unsupported_file_type",
+                            "upload_expired",
+                            "upload_missing",
+                            "rate_limited",
+                            "not_ready",
+                            "export_blocked",
+                            "org_offboarding",
+                            "recent_auth_required",
+                            "share_unavailable",
+                            "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33527,6 +35537,20 @@
                   "markDraft": {
                     "type": "boolean",
                     "default": false
+                  },
+                  "includeConfidence": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "chapters": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    "minItems": 1,
+                    "maxItems": 64
                   }
                 },
                 "additionalProperties": false
@@ -33655,6 +35679,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33733,6 +35759,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33811,6 +35839,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33889,6 +35919,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33967,6 +35999,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -34045,6 +36079,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -34863,6 +36899,28 @@
                           ],
                           "additionalProperties": false,
                           "nullable": true
+                        },
+                        "descriptionOverride": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "nullable": true
+                        },
+                        "descriptionOverrideBy": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$",
+                          "nullable": true
+                        },
+                        "descriptionOverrideAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        },
+                        "descriptionOverrideReason": {
+                          "type": "string",
+                          "maxLength": 500,
+                          "nullable": true
                         }
                       },
                       "required": [
@@ -34956,6 +37014,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35034,6 +37094,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35112,6 +37174,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35190,6 +37254,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35268,6 +37334,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35346,6 +37414,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36060,6 +38130,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36138,6 +38210,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36216,6 +38290,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36294,6 +38370,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36372,6 +38450,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36450,6 +38530,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36983,6 +39065,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37061,6 +39145,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37139,6 +39225,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37217,6 +39305,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38103,6 +40193,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38181,6 +40273,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38259,6 +40353,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38337,6 +40433,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38415,6 +40513,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38493,6 +40593,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38961,6 +41063,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39039,6 +41143,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39117,6 +41223,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39195,6 +41303,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39273,6 +41383,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39578,6 +41690,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39656,6 +41770,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39734,6 +41850,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39812,6 +41930,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39890,6 +42010,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40466,6 +42588,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40544,6 +42668,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40622,6 +42748,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40700,6 +42828,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41155,6 +43285,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41233,6 +43365,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41311,6 +43445,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41892,6 +44028,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41970,6 +44108,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42048,6 +44188,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42126,6 +44268,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42204,6 +44348,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42767,6 +44913,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42845,6 +44993,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42923,6 +45073,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43001,6 +45153,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43079,6 +45233,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43157,6 +45313,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43235,6 +45393,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43675,6 +45835,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43753,6 +45915,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43831,6 +45995,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44115,6 +46281,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44193,6 +46361,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44271,6 +46441,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44349,6 +46521,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44427,6 +46601,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44568,6 +46744,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44646,6 +46824,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44724,6 +46904,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44802,6 +46984,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44893,6 +47077,11 @@
                   },
                   "trainingOptIn": {
                     "type": "boolean"
+                  },
+                  "projectQuotaBytes": {
+                    "type": "integer",
+                    "minimum": 104857600,
+                    "maximum": 1099511627776
                   }
                 },
                 "additionalProperties": false
@@ -44936,6 +47125,11 @@
                         },
                         "autoRebuild": {
                           "type": "boolean"
+                        },
+                        "projectQuotaBytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": true,
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -44985,6 +47179,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45063,6 +47259,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45141,6 +47339,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45219,6 +47419,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45297,6 +47499,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45560,6 +47764,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45638,6 +47844,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45716,6 +47924,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45794,6 +48004,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45872,6 +48084,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45950,6 +48164,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46209,6 +48425,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46287,6 +48505,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46365,6 +48585,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46443,6 +48665,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46616,6 +48840,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46694,6 +48920,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46772,6 +49000,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46850,6 +49080,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46928,6 +49160,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47059,7 +49293,8 @@
                               "qtyOverride",
                               "note",
                               "rebuild",
-                              "correction"
+                              "correction",
+                              "description"
                             ]
                           },
                           "before": {},
@@ -47128,6 +49363,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47206,6 +49443,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47284,6 +49523,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47362,6 +49603,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47542,6 +49785,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47620,6 +49865,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47698,6 +49945,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47776,6 +50025,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47854,6 +50105,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47932,6 +50185,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48010,6 +50265,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48325,6 +50582,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48403,6 +50662,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48481,6 +50742,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48894,6 +51157,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48972,6 +51237,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49050,6 +51317,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49128,6 +51397,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49206,6 +51477,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49531,6 +51804,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49609,6 +51884,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49687,6 +51964,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49765,6 +52044,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50097,6 +52378,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50175,6 +52458,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50253,6 +52538,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50331,6 +52618,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50647,6 +52936,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50725,6 +53016,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50803,6 +53096,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51027,6 +53322,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51105,6 +53402,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51183,6 +53482,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51543,6 +53844,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51621,6 +53924,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51699,6 +54004,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51829,6 +54136,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51907,6 +54216,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51985,6 +54296,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52083,6 +54396,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52161,6 +54476,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52239,6 +54556,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52317,6 +54636,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52395,6 +54716,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52650,6 +54973,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52728,6 +55053,8 @@
                             "recent_auth_required",
                             "share_unavailable",
                             "method_not_allowed",
+                            "quota_exceeded",
+                            "file_infected",
                             "internal_error",
                             "service_unavailable"
                           ]

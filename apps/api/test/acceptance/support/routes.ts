@@ -81,6 +81,7 @@ export const ROUTES: RouteCase[] = [
   { route: `GET ${V}/projects/{projectId}`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: P(o) }) },
   { route: `PATCH ${V}/projects/{projectId}`, min: 'editor', spec: 'editor', specRow: ROW.create, build: (o) => ({ method: 'patch', url: P(o), body: { address: 'רחוב חדש 2' } }) },
   { route: `POST ${V}/projects/{projectId}/uploads`, min: 'editor', spec: 'editor', specRow: ROW.create, build: (o) => ({ method: 'post', url: `${P(o)}/uploads`, body: { filename: 'חשמל.pdf', sizeBytes: 1000 } }) },
+  { route: `GET ${V}/projects/{projectId}/sheet-sets/{sheetSetId}`, min: 'viewer', spec: 'viewer', specRow: `${ROW.view} (Sprint 7 upload status)`, build: (o) => ({ method: 'get', url: `${P(o)}/sheet-sets/${o.sheet.sheetId.replace(/-p0$/, '')}` }) },
   { route: `POST ${V}/projects/{projectId}/sheet-sets`, min: 'editor', spec: 'editor', specRow: ROW.create, build: (o) => ({ method: 'post', url: `${P(o)}/sheet-sets`, body: { uploadToken: 'x'.repeat(40) } }) },
   { route: `GET ${V}/projects/{projectId}/sheets`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/sheets` }) },
   { route: `GET ${V}/projects/{projectId}/sheets/{sheetId}/versions/{versionId}`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: SV(o) }) },
@@ -108,6 +109,9 @@ export const ROUTES: RouteCase[] = [
   { route: `POST ${V}/projects/{projectId}/boq/export`, min: 'editor', spec: 'editor', specRow: ROW.export, build: (o) => ({ method: 'post', url: `${P(o)}/boq/export`, body: {} }) },
   { route: `POST ${V}/projects/{projectId}/boq/export/marked-pdf`, min: 'editor', spec: 'editor', specRow: ROW.export, build: (o) => ({ method: 'post', url: `${P(o)}/boq/export/marked-pdf`, body: {} }) },
   { route: `PATCH ${V}/projects/{projectId}/boq/lines/{lineId}`, variant: 'status', min: 'reviewer', spec: 'reviewer', specRow: ROW.approve, build: (o) => ({ method: 'patch', url: `${P(o)}/boq/lines/${o.lines.status}`, body: { status: 'reviewed' } }) },
+  // Sprint 7: rename a line (editor+, same role as a library item edit) and the BOQ preview document (viewer+)
+  { route: `PATCH ${V}/projects/{projectId}/boq/lines/{lineId}`, variant: 'description', min: 'editor', spec: 'editor', specRow: 'Sprint 7 owner request 2: "כל עורך+ יכול לשנות שם של שורה"', build: (o, r) => ({ method: 'patch', url: `${P(o)}/boq/lines/${o.lines.plain}`, body: { description: `מפסק – שם של ${r}` } }) },
+  { route: `GET ${V}/projects/{projectId}/boq/document`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/boq/document?split=floor&confidence=1` }) },
   { route: `PATCH ${V}/projects/{projectId}/boq/lines/{lineId}`, variant: 'qtyOverride', min: 'editor', spec: 'editor', specRow: 'E2E-11: "עורך משנה את הכמות"', build: (o, r) => ({ method: 'patch', url: `${P(o)}/boq/lines/${o.lines.override}`, body: { qtyOverride: 5, reason: `override by ${r}` } }) },
   // Sprint 6: bulk review / approve (same role as the single status PATCH) and quick measure of a line (= a correction)
   { route: `POST ${V}/projects/{projectId}/boq/lines/batch-status`, min: 'reviewer', spec: 'reviewer', specRow: ROW.approve, build: (o) => ({ method: 'post', url: `${P(o)}/boq/lines/batch-status`, body: { lineIds: [o.lines.status], to: 'reviewed' } }) },

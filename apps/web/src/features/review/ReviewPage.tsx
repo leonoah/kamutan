@@ -20,6 +20,7 @@ import { useCurrentOrg } from "@/features/org/useCurrentOrg";
 import { BoqPanel, type PanelTab } from "@/features/boq/BoqPanel";
 import { OverrideDialog } from "@/features/boq/OverrideDialog";
 import { ExportDialog } from "@/features/boq/ExportDialog";
+import { canRenameLine } from "@/features/boq/sprint7";
 import { ReceiptGroups } from "@/features/boq/ReceiptGroups";
 import { LibraryNotice } from "@/features/boq/LibraryNotice";
 import { CalibrationBadge, cappedLines, resolveCalibration } from "@/features/calibration/CalibrationBadge";
@@ -1313,7 +1314,7 @@ export function ReviewPage() {
     if (e.altKey) return;
     const target = e.target as HTMLElement | null;
     // checkboxes (BOQ multi-select) keep the shortcuts: Shift+A right after ticking lines must work
-    if (target?.closest?.("input:not([type='checkbox']), textarea, select, [role='menu'], [contenteditable='true']")) return;
+    if (target?.closest?.("input:not([type='checkbox']), textarea, select, [role='menu'], [contenteditable='true'], [data-rename-editor]")) return;
     if (document.querySelector("[role='dialog'][data-state='open'], [role='alertdialog'][data-state='open']")) return;
     const code = e.code;
     const shift = e.shiftKey;
@@ -1835,6 +1836,9 @@ export function ReviewPage() {
           checkedIds={checkedIds}
           onCheck={onCheck}
           bulkBar={bulkBar}
+          projectId={projectId}
+          canRename={canRenameLine(role)}
+          previewHref={`/projects/${projectId}/boq/preview${split ? "?split=floor" : ""}`}
         />
         <section id="drawing-panel" tabIndex={-1} aria-label={t("review.drawingPanel")} className="flex min-h-0 flex-col border-x border-border">
           <h2 className="sr-only">{t("review.drawingPanel")}</h2>

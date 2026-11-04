@@ -25,9 +25,19 @@ export const OrgSettingsSchema = z
     vatRate: z.number().min(0).max(1).optional(),
     /** Sprint 4: corrections / room settings schedule a debounced BOQ rebuild (default true). */
     autoRebuild: z.boolean().optional(),
+    /** Sprint 7: storage quota per project in bytes (uploaded source files; default `DEFAULT_PROJECT_QUOTA_BYTES` = 2 GB). */
+    projectQuotaBytes: z.number().int().positive().optional(),
   })
   .strict();
 export type OrgSettings = z.infer<typeof OrgSettingsSchema>;
+
+/** Sprint 7: default per-project storage quota (2 GB = 2 × 1024³ bytes) and the range an admin may set. */
+export const DEFAULT_PROJECT_QUOTA_BYTES = 2 * 1024 ** 3;
+export const PROJECT_QUOTA_MIN_BYTES = 100 * 1024 * 1024;
+export const PROJECT_QUOTA_MAX_BYTES = 1024 ** 4;
+/** Effective quota of an org (setting, else the default). */
+export const projectQuotaOf = (settings: { projectQuotaBytes?: number | undefined } | null | undefined): number =>
+  typeof settings?.projectQuotaBytes === 'number' && settings.projectQuotaBytes > 0 ? settings.projectQuotaBytes : DEFAULT_PROJECT_QUOTA_BYTES;
 
 export const DEFAULT_ORG_SETTINGS: Readonly<OrgSettings> = Object.freeze({
   llmEnabled: false,
@@ -53,6 +63,8 @@ export const PatchOrgSettingsRequestSchema = z
     llmEnabled: z.boolean().optional(),
     /** Opt-in: corrections may be used to train models (SEC: never without opt-in). */
     trainingOptIn: z.boolean().optional(),
+    /** Sprint 7: per-project storage quota in bytes (100 MB … 1 TB). Lowering it below a project's usage blocks new uploads only. */
+    projectQuotaBytes: z.number().int().min(PROJECT_QUOTA_MIN_BYTES).max(PROJECT_QUOTA_MAX_BYTES).optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'at least one setting is required' });

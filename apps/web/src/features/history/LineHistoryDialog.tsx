@@ -8,6 +8,7 @@ import { Ltr } from "@/components/Ltr";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { fmtQty } from "@/features/boq/model";
+import { lineDescription } from "@/features/boq/sprint7";
 
 export function useLineHistory(projectId: string, lineId: string | null) {
   const api = useApi();
@@ -47,6 +48,17 @@ export function describeChange(item: LineHistoryItem, t: TFunction): { before: s
       };
     case "note":
       return { before: typeof b.note === "string" ? b.note : null, after: typeof a.note === "string" ? a.note : null, note: null };
+    case "description": {
+      // Sprint 7: rename — strings (contracts) or {description, override, library?} (mock).
+      const text = (raw: unknown, o: Record<string, unknown>) => (typeof raw === "string" ? raw : typeof o.description === "string" ? o.description : null);
+      const restored = (typeof item.after === "object" && item.after !== null && a.override === null) || item.after === null;
+      const after = text(item.after, a);
+      return {
+        before: text(item.before, b),
+        after: after ?? (restored ? t("history.descriptionRestored") : null),
+        note: [restored && after ? t("history.descriptionRestored") : null, a.library === true ? t("history.descriptionLibrary") : null].filter(Boolean).join(" · ") || null,
+      };
+    }
     case "rebuild":
       return { before: qty(b), after: qty(a), note: null };
     case "correction": {
@@ -69,7 +81,7 @@ export function LineHistoryDialog({
   onOpenChange,
 }: {
   projectId: string;
-  line: Pick<BoqLine, "id" | "code" | "description"> | null;
+  line: (Pick<BoqLine, "id" | "code" | "description"> & { descriptionOverride?: string | null }) | null;
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
@@ -83,7 +95,7 @@ export function LineHistoryDialog({
           <DialogTitle>
             {t("history.title")} · <Ltr>{line?.code ?? ""}</Ltr>
           </DialogTitle>
-          <DialogDescription>{line?.description}</DialogDescription>
+          <DialogDescription>{line ? lineDescription(line) : null}</DialogDescription>
         </DialogHeader>
         {q.isError ? (
           <p role="alert" className="text-dense text-destructive">{t("history.loadError")}</p>

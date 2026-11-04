@@ -21,6 +21,7 @@ import {
   type SymbolMapping,
 } from '@kamutan/contracts';
 import { auditHash, logAuditEvent } from './audit-chain';
+import { countedBytes, isInfected, releasableBytes } from './storage-usage';
 import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
 import { toJob, toLegendEntry, toMember, toOrg, toProject, toSheet, toSheetSet, toSymbolMapping, toVersion, versionSummary, type Doc } from './mappers';
 import {
@@ -32,6 +33,7 @@ import {
   type ReprocessResult,
   type Repository,
   type ResolveClusterInput,
+  QuotaExceededError,
 } from './repository';
 
 /** Firestore-like 20-char auto id. */
@@ -203,7 +205,16 @@ export class InMemoryRepository implements Repository {
       const setPath = fsPaths.sheetSet(orgId, projectId, input.sha256);
       const existing = this.docs.get(setPath);
       if (existing) return { sheetSet: toSheetSet(orgId, projectId, input.sha256, existing), deduplicated: true };
-      if (!this.docs.has(fsPaths.project(orgId, projectId))) throw new Error('project does not exist');
+      const projectPath = fsPaths.project(orgId, projectId);
+      const project = this.docs.get(projectPath);
+      if (!project) throw new Error('project does not exist');
+      // Sprint 7: per-project storage quota (same rules as the Firestore driver; legacy projects recounted once).
+      const prefix = `orgs/${orgId}/projects/${projectId}/sheetSets/`;
+      const used =
+        typeof project.storageBytes === 'number'
+          ? project.storageBytes
+          : [...this.docs.entries()].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/')).reduce((a, [, d]) => a + countedBytes(d), 0);
+      if (input.quotaBytes !== undefined && used + input.sizeBytes > input.quotaBytes) throw new QuotaExceededError(used, input.quotaBytes, input.sizeBytes);
       const now = this.now();
       const setId = input.sha256;
       const versionId = autoId();
@@ -221,8 +232,10 @@ export class InMemoryRepository implements Repository {
         versionId,
         pageCount: null,
         createdAt: now,
+        storageCounted: true,
       };
       this.docs.set(setPath, set);
+      this.docs.set(projectPath, { ...project, storageBytes: used + input.sizeBytes });
       this.docs.set(fsPaths.job(jobId), {
         orgId,
         projectId,
@@ -252,6 +265,37 @@ export class InMemoryRepository implements Repository {
   async findSheetSetByUploadFileId(orgId: string, projectId: string, fileId: string): Promise<SheetSet | null> {
     const hit = this.children(`orgs/${orgId}/projects/${projectId}/sheetSets`).find(([, d]) => d.uploadFileId === fileId);
     return hit ? toSheetSet(orgId, projectId, hit[0].split('/').at(-1) as string, hit[1]) : null;
+  }
+
+  ensureStorageCounted(orgId: string, projectId: string): Promise<number | null> {
+    return this.tx(() => {
+      const projectPath = fsPaths.project(orgId, projectId);
+      const p = this.docs.get(projectPath);
+      if (!p) return null;
+      if (typeof p.storageBytes === 'number') return p.storageBytes;
+      const prefix = `orgs/${orgId}/projects/${projectId}/sheetSets/`;
+      const used = [...this.docs.entries()].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/')).reduce((a, [, d]) => a + countedBytes(d), 0);
+      this.docs.set(projectPath, { ...p, storageBytes: used });
+      return used;
+    });
+  }
+
+  releaseInfectedStorage(orgId: string, projectId: string, sheetSetId?: string): Promise<number> {
+    return this.tx(() => {
+      const prefix = `orgs/${orgId}/projects/${projectId}/sheetSets/`;
+      const projectPath = fsPaths.project(orgId, projectId);
+      let n = 0;
+      for (const [k, d] of [...this.docs.entries()]) {
+        if (!k.startsWith(prefix) || k.slice(prefix.length).includes('/')) continue;
+        if (sheetSetId && k !== prefix + sheetSetId) continue;
+        if (!isInfected(d) || d.storageReleasedAt) continue;
+        this.docs.set(k, { ...d, storageReleasedAt: this.now() });
+        const p = this.docs.get(projectPath);
+        if (p && typeof p.storageBytes === 'number') this.docs.set(projectPath, { ...p, storageBytes: Math.max(0, p.storageBytes - releasableBytes(d)) });
+        n++;
+      }
+      return n;
+    });
   }
 
   async setSheetSetStatus(orgId: string, projectId: string, sheetSetId: string, status: SheetSetStatus) {

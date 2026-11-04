@@ -39,6 +39,7 @@ import {
 import { computeBoq, synthesizeLinks, type EngineSheet } from "./mockBoqEngine";
 import { applyCorrectionDeltas, applyRoomSettingsDeltas, computePlumbing, computeTiling, type S4Sheet } from "./mockSprint4Engine";
 import { applySprint6, finalizeSprint6 } from "./mockSprint6";
+import { upsertLibraryWording, validateDescriptionPatch } from "./mockSprint7";
 import { applyCorrections, applyLinkCorrections } from "@/features/corrections/model";
 import { fetchArtifact } from "@/features/understanding/artifacts";
 import { allowedTransitions } from "@/features/boq/model";
@@ -246,7 +247,22 @@ export function createBoqMock(deps: BoqMockDeps) {
       lines.map((l) => {
         const o = prev.get(l.id);
         if (!o) return [l.id, l];
-        const kept: BoqLine = { ...l, qtyOverride: o.qtyOverride ?? null, qtyOverrideReason: o.qtyOverrideReason ?? null, status: o.status, note: o.note ?? null, reviewedBy: o.reviewedBy ?? null, reviewedAt: o.reviewedAt ?? null, approvedBy: o.approvedBy ?? null, approvedAt: o.approvedAt ?? null };
+        const kept: BoqLine = {
+          ...l,
+          qtyOverride: o.qtyOverride ?? null,
+          qtyOverrideReason: o.qtyOverrideReason ?? null,
+          status: o.status,
+          note: o.note ?? null,
+          reviewedBy: o.reviewedBy ?? null,
+          reviewedAt: o.reviewedAt ?? null,
+          approvedBy: o.approvedBy ?? null,
+          approvedAt: o.approvedAt ?? null,
+          // Sprint 7: a renamed line keeps its wording across rebuilds (like qtyOverride; Worker-BOQ never writes it).
+          descriptionOverride: o.descriptionOverride ?? null,
+          descriptionOverrideBy: o.descriptionOverrideBy ?? null,
+          descriptionOverrideAt: o.descriptionOverrideAt ?? null,
+          descriptionOverrideReason: o.descriptionOverrideReason ?? null,
+        };
         const ownReasons = (l.reasons ?? []).filter((r) => !isQtyChangedReason(r));
         // the chip of an earlier drop stays until a human re-approves (or the qty goes back)
         const carried = o.status === "reviewed" ? (o.reasons ?? []).filter(isQtyChangedReason) : [];
@@ -517,7 +533,20 @@ export function createBoqMock(deps: BoqMockDeps) {
         // Sprint-3 decision (kept in Sprint 5): an override on an approved line re-opens it as "נבדק".
         if (l.status === "approved") Object.assign(l, { status: "reviewed", approvedBy: null, approvedAt: null });
         Object.assign(l, req.qtyOverride === null ? { qtyOverrideReason: null, qtyOverrideBy: null, qtyOverrideAt: null } : { qtyOverrideReason: req.reason!.trim(), qtyOverrideBy: uid, qtyOverrideAt: now() });
-      } else if (req.reason !== undefined) throw new ApiError(400, "validation_failed", "reason is only allowed with qtyOverride");
+      } else if (req.reason !== undefined && req.description === undefined) throw new ApiError(400, "validation_failed", "reason is only allowed with qtyOverride or description");
+      if (req.description !== undefined) {
+        // Sprint 7: rename (editor+); `null` restores the original wording. Never touched by a rebuild.
+        if (role !== "admin" && role !== "editor") throw new ApiError(403, "forbidden", "editors only");
+        const d = validateDescriptionPatch(req.description);
+        const value = d !== null && d === l.description.replace(/\s+/g, " ").trim() ? null : d;
+        Object.assign(
+          l,
+          value === null
+            ? { descriptionOverride: null, descriptionOverrideBy: null, descriptionOverrideAt: null, descriptionOverrideReason: null }
+            : { descriptionOverride: value, descriptionOverrideBy: uid, descriptionOverrideAt: now(), descriptionOverrideReason: req.reason?.trim() || null },
+        );
+        if (req.alsoUpdateLibrary) upsertLibraryWording(library, l, value ?? l.description, now());
+      }
       if (req.note !== undefined) l.note = req.note;
       deps.emit();
       return { ...l };

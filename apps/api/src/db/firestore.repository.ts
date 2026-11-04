@@ -1,5 +1,6 @@
 import {
   DEFAULT_ORG_SETTINGS,
+  FILE_INFECTED_ERROR,
   fsPaths,
   type Job,
   type LegendEntry,
@@ -22,6 +23,7 @@ import { auditHash, logAuditEvent } from './audit-chain';
 import { confirmAudit, newVersionDoc, regionsAudit } from './in-memory.repository';
 import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
 import { mappers, versionSummary } from './mappers';
+import { countedBytes, isInfected, releasableBytes } from './storage-usage';
 import {
   RepoConflictError,
   type AuditInput,
@@ -31,6 +33,7 @@ import {
   type ReprocessResult,
   type Repository,
   type ResolveClusterInput,
+  QuotaExceededError,
 } from './repository';
 
 /** Per-transaction audit chain state (head read in this tx + events written so far). */
@@ -170,8 +173,17 @@ export class FirestoreRepository implements Repository {
       if (existing.exists) {
         return { sheetSet: mappers.toSheetSet(orgId, projectId, setRef.id, plain(existing.data()) ?? {}), deduplicated: true };
       }
-      const project = await tx.get(this.db.doc(fsPaths.project(orgId, projectId)));
+      const projectRef = this.db.doc(fsPaths.project(orgId, projectId));
+      const project = await tx.get(projectRef);
       if (!project.exists) throw new Error('project does not exist');
+      // Sprint 7: per-project storage quota, atomic with the set creation (legacy projects are recounted once).
+      const stored = (project.data() as DocumentData).storageBytes;
+      let used = typeof stored === 'number' && Number.isFinite(stored) ? stored : null;
+      if (used === null) {
+        const sets = await tx.get(this.db.collection(`orgs/${orgId}/projects/${projectId}/sheetSets`));
+        used = sets.docs.reduce((a, d) => a + countedBytes(d.data()), 0);
+      }
+      if (input.quotaBytes !== undefined && used + input.sizeBytes > input.quotaBytes) throw new QuotaExceededError(used, input.quotaBytes, input.sizeBytes);
       const head = await this.auditHead(tx, orgId);
 
       const now = Timestamp.now();
@@ -190,8 +202,10 @@ export class FirestoreRepository implements Repository {
         versionId,
         pageCount: null,
         createdAt: now,
+        storageCounted: true,
       };
       tx.create(setRef, set);
+      tx.update(projectRef, { storageBytes: used + input.sizeBytes });
       tx.create(jobRef, {
         orgId,
         projectId,
@@ -222,6 +236,41 @@ export class FirestoreRepository implements Repository {
     const snap = await this.db.collection(`orgs/${orgId}/projects/${projectId}/sheetSets`).where('uploadFileId', '==', fileId).limit(1).get();
     const d = snap.docs[0];
     return d ? mappers.toSheetSet(orgId, projectId, d.id, plain(d.data()) ?? {}) : null;
+  }
+
+  async ensureStorageCounted(orgId: string, projectId: string): Promise<number | null> {
+    return this.db.runTransaction(async (tx) => {
+      const projectRef = this.db.doc(fsPaths.project(orgId, projectId));
+      const project = await tx.get(projectRef);
+      if (!project.exists) return null;
+      const cur = (project.data() as DocumentData).storageBytes;
+      if (typeof cur === 'number') return cur;
+      const sets = await tx.get(this.db.collection(`orgs/${orgId}/projects/${projectId}/sheetSets`));
+      const used = sets.docs.reduce((a, d) => a + countedBytes(d.data()), 0);
+      tx.update(projectRef, { storageBytes: used });
+      return used;
+    });
+  }
+
+  async releaseInfectedStorage(orgId: string, projectId: string, sheetSetId?: string): Promise<number> {
+    const col = this.db.collection(`orgs/${orgId}/projects/${projectId}/sheetSets`);
+    const ids = sheetSetId ? [sheetSetId] : (await col.where('error.code', '==', FILE_INFECTED_ERROR).limit(200).get()).docs.map((d) => d.id);
+    let n = 0;
+    for (const id of ids) {
+      const released = await this.db.runTransaction(async (tx) => {
+        const setRef = col.doc(id);
+        const projectRef = this.db.doc(fsPaths.project(orgId, projectId));
+        const [set, project] = await Promise.all([tx.get(setRef), tx.get(projectRef)]);
+        const d = set.data();
+        if (!set.exists || !d || !project.exists || !isInfected(d) || d.storageReleasedAt) return false;
+        const cur = (project.data() as DocumentData).storageBytes;
+        tx.update(setRef, { storageReleasedAt: Timestamp.now() });
+        if (typeof cur === 'number') tx.update(projectRef, { storageBytes: Math.max(0, cur - releasableBytes(d)) });
+        return true;
+      });
+      if (released) n++;
+    }
+    return n;
   }
 
   async setSheetSetStatus(orgId: string, projectId: string, sheetSetId: string, status: SheetSetStatus) {

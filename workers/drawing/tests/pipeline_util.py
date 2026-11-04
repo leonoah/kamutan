@@ -96,8 +96,18 @@ def validate(name: str, obj: dict[str, Any]) -> None:
     jsonschema.validate(obj, _schema(name))
 
 
+def pending_version_stats() -> set[str]:
+    """Worker-written ``stats`` keys the contract does not list yet (Sprint 7: ``heights``, NOTES contract request).
+    Empty once ``SheetVersion.json`` has them — the validation is strict again then."""
+    stats = _schema("SheetVersion")["definitions"]["SheetVersion"]["properties"]["stats"]["anyOf"][0]["properties"]
+    return {"heights"} - set(stats)
+
+
 def validate_version(doc: dict[str, Any], vid: str, sid: str) -> None:
     d = {k: v for k, v in copy.deepcopy(doc).items() if k not in INTERNAL_VERSION_FIELDS}
+    if isinstance(d.get("stats"), dict):
+        for k in pending_version_stats():
+            d["stats"].pop(k, None)
     validate("SheetVersion", {**d, "id": vid, "sheetId": sid})
 
 

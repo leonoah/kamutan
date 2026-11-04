@@ -261,4 +261,35 @@ describe("REST client", () => {
       ["/api/v1/projects/p1/boq/lines/batch-status", "POST", { lineIds: ["l1", "l2", "l3"], to: "approved", includeRed: false }],
     ]);
   });
+
+  it("Sprint 7: GET boq/document (query + normalisation), PATCH a line's description (+ library), share line marker", async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.includes("/boq/document")
+        ? json({
+            titleRows: ["כתב כמויות"],
+            columns: ["סעיף", { key: "description", title: "תאור העבודה" }],
+            chapters: [{ code: "04", title: "חשמל", notes: ["א"], subtotal: 0, rows: [{ lineId: "l1", code: "4.01", description: "x", unit: "יח'", qty: null, price: null, total: null, kind: "line" }] }],
+            totals: { beforeVat: 0, vat: 0, afterVat: 0 },
+            warnings: [{ kind: "needsInput", count: 1 }],
+            generatedAt: "2026-11-04T10:00:00.000Z",
+          })
+        : json({ line: { id: "l1", code: "4.01", qty: 2, unit: "יח'", level: "green", status: "draft", chapter: "04", description: "x", descriptionOverride: "y" } }),
+    );
+    const api = createHttpClient(async () => "t", "/api/v1", fetchImpl as unknown as typeof fetch);
+    const d = await api.getBoqDocument("p1", { split: "floor", confidence: true, chapters: ["04", "05"] });
+    expect(d.columns).toEqual([
+      { key: "code", title: "סעיף" },
+      { key: "description", title: "תאור העבודה" },
+    ]);
+    expect(d.chapters[0]!.rows[0]!.qty).toBeNull();
+    const l = await api.patchBoqLine("p1", "l1", { description: "y", reason: "לקוח", alsoUpdateLibrary: true });
+    expect(l.descriptionOverride).toBe("y");
+    await api.patchBoqLine("p1", "l1", { description: null });
+    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
+    expect(calls[0]![0]).toBe("/api/v1/projects/p1/boq/document?split=floor&confidence=1&chapters=04%2C05");
+    expect(calls.slice(1).map(([u, i]) => [u, i.method, JSON.parse(i.body as string)])).toEqual([
+      ["/api/v1/projects/p1/boq/lines/l1", "PATCH", { description: "y", reason: "לקוח", alsoUpdateLibrary: true }],
+      ["/api/v1/projects/p1/boq/lines/l1", "PATCH", { description: null }],
+    ]);
+  });
 });

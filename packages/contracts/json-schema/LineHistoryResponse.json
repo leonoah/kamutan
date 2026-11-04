@@ -60,7 +60,8 @@
                   "qtyOverride",
                   "note",
                   "rebuild",
-                  "correction"
+                  "correction",
+                  "description"
                 ]
               },
               "before": {},

@@ -5,8 +5,10 @@ Orchestrator side (holds the identity, never parses): the workbook is parsed onl
 
 * ``jobs/{jobId}`` must exist and belong to the org (else ``invalid_payload``, nothing written); a succeeded job
   for the same ``importId`` is a redelivery → no-op.
-* download ``storagePath`` (= ``orgs/{orgId}/imports/{importId}.{sourceKind}``, ≤ 20 MB) · magic bytes vs
-  ``sourceKind`` (the API checked them too; the file is still untrusted).
+* download ``storagePath`` (= ``orgs/{orgId}/imports/{importId}.{sourceKind}``, ≤ 20 MB) · **antivirus scan**
+  (Sprint 7, ``service.scan``; fail closed; infected → ``malware`` mark on the job / import docs, moved to
+  ``orgs/{o}/infected/imports/{importId}/{sha256}.bin``, ``file_infected``) · magic bytes vs ``sourceKind`` (the API
+  checked them too; the file is still untrusted).
 * items → ``itemLibrary/{itemId}`` with contracts ``itemIdFor(code, description)`` =
   ``it_{code, [^A-Za-z0-9_-] → "-"}_{sha256(code + "\\n" + normalizeDescription(description))[:16]}``: the same
   item (from this or any other file) always maps to the same doc → **idempotent**, no duplicates. An existing
@@ -33,6 +35,7 @@ from .. import errors as E
 from ..boq.contracts import LibraryImportJob
 from ..errors import IngestError
 from ..sandbox.runner import Limits, run_task
+from ..service.scan import Scanner, infected_error, infected_mark, quarantine, scan_upload, scanner_from_env
 from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
 from .parse import norm
 from .readers import sniff
@@ -94,7 +97,13 @@ def _list(docs: DocStore, collection: str) -> list[tuple[str, dict[str, Any]]]:
 
 
 def run_library_import(
-    job: LibraryImportJob, blobs: BlobStore, docs: DocStore, *, limits: Limits | None = None, workdir_root: str | None = None
+    job: LibraryImportJob,
+    blobs: BlobStore,
+    docs: DocStore,
+    *,
+    limits: Limits | None = None,
+    workdir_root: str | None = None,
+    scanner: Scanner | None = None,
 ) -> ImportOutcome:
     job_path = f"jobs/{job.jobId}"
     imp_path = f"orgs/{job.orgId}/libraryImports/{job.importId}"
@@ -121,7 +130,7 @@ def run_library_import(
     if has_imp:
         docs.set(imp_path, {"status": "running", "error": None})
     try:
-        out = _run(job, blobs, docs, limits or Limits(), workdir_root)
+        out = _run(job, blobs, docs, limits or Limits(), workdir_root, scanner, [job_path, *([imp_path] if has_imp else [])])
     except Exception as e:
         if isinstance(e, IngestError):
             err = e
@@ -157,19 +166,39 @@ def run_library_import(
     return out
 
 
-def _run(job: LibraryImportJob, blobs: BlobStore, docs: DocStore, limits: Limits, workdir_root: str | None) -> ImportOutcome:
+def infected_import_path(job: LibraryImportJob, sha256: str) -> str:
+    return f"orgs/{job.orgId}/infected/imports/{job.importId}/{sha256}.bin"
+
+
+def _run(
+    job: LibraryImportJob,
+    blobs: BlobStore,
+    docs: DocStore,
+    limits: Limits,
+    workdir_root: str | None,
+    scanner: Scanner | None,
+    mark_paths: list[str],
+) -> ImportOutcome:
+    for p in mark_paths:
+        if (mark := _mark(docs.get(p))) is not None:
+            raise infected_error(mark.get("signature"))  # already quarantined: never read or parse it again
     try:
         data = blobs.read(job.storagePath)
     except BlobNotFound:
         raise IngestError(E.SOURCE_NOT_FOUND, "uploaded file not found") from None
     if len(data) > MAX_IMPORT_BYTES:
         raise IngestError(E.TOO_LARGE, "file exceeds 20 MB")
+    sha = hashlib.sha256(data).hexdigest()
+    res = scan_upload(scanner or scanner_from_env(), data, what=f"library import {job.importId}")
+    if not res.clean:
+        quarantine(blobs, docs, data=data, source_path=job.storagePath, dest_path=infected_import_path(job, sha),
+                   mark_paths=mark_paths, sha256=sha, result=res)  # fmt: skip
+        raise infected_error(res.signature)
     kind = sniff(data[:8])
     if kind is None:
         raise IngestError(E.UNSUPPORTED_FORMAT, "file is not an Excel workbook (.xls / .xlsx)")
     if kind != job.sourceKind:
         raise IngestError(E.FILE_TYPE_MISMATCH, f"file content is {kind}, not {job.sourceKind}")
-    sha = hashlib.sha256(data).hexdigest()
     workdir = tempfile.mkdtemp(prefix="kamutan-import-", dir=workdir_root)
     try:
         src = Path(workdir) / f"source.{kind}"
@@ -186,6 +215,12 @@ def _run(job: LibraryImportJob, blobs: BlobStore, docs: DocStore, limits: Limits
     out = write_library(job.orgId, job.importId, parsed, docs)
     out.sha256 = sha
     return out
+
+
+def _mark(doc: dict[str, Any] | None) -> dict[str, object] | None:
+    """The job / import doc's ``malware`` mark (an import has its own storage object: any sha)."""
+    m = (doc or {}).get("malware")
+    return infected_mark(doc, str(m.get("sha256"))) if isinstance(m, dict) else None
 
 
 def _s(v: Any, n: int) -> str:

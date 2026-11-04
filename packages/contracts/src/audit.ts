@@ -78,7 +78,8 @@ export type AuditVerifyResponse = z.infer<typeof AuditVerifyResponseSchema>;
 // BOQ line history (FR-26, E2E-11)
 // ---------------------------------------------------------------------------
 
-export const LINE_HISTORY_ACTIONS = ['status', 'qtyOverride', 'note', 'rebuild', 'correction'] as const;
+/** Sprint 7: + `description` (rename: before / after = displayed text). */
+export const LINE_HISTORY_ACTIONS = ['status', 'qtyOverride', 'note', 'rebuild', 'correction', 'description'] as const;
 export const LineHistoryActionSchema = z.enum(LINE_HISTORY_ACTIONS);
 export type LineHistoryAction = z.infer<typeof LineHistoryActionSchema>;
 
@@ -187,6 +188,7 @@ const SETTING_HE: Readonly<Record<string, string>> = Object.freeze({
   blockExportOnRed: 'חסימת ייצוא עם פריטים לבדיקה',
   llmEnabled: 'שימוש במודל שפה',
   trainingOptIn: 'שימוש בתיקונים לאימון',
+  projectQuotaBytes: 'מכסת אחסון לפרויקט (בתים)',
   enabled: 'פעיל',
   priority: 'עדיפות',
   itemCode: 'סעיף',
@@ -242,6 +244,14 @@ export function auditSummaryHe(e: Pick<AuditEvent, 'entity' | 'action' | 'entity
         if (typeof a.reason === 'string' && a.reason) parts.push(`סיבה: ${a.reason.slice(0, 200)}`);
       }
       if (a.noteChanged === true) parts.push('הערה עודכנה');
+      // Sprint 7: rename of the line (descriptionOverride); `to: null` = restored to the original wording.
+      if (a.description && typeof a.description === 'object') {
+        const d = a.description as { from?: unknown; to?: unknown; original?: unknown };
+        const q = (v: unknown) => `«${String(v ?? '').slice(0, 80)}»`;
+        parts.push(d.to === null ? `שם השורה שוחזר לנוסח המקורי ${q(d.original ?? '')}` : `שם השורה עודכן: ${q(d.from)} → ${q(d.to)}`);
+        if (a.alsoUpdateLibrary === true) parts.push('עודכן גם בספריית הסעיפים');
+        if (!('qtyOverride' in a) && typeof a.reason === 'string' && a.reason) parts.push(`סיבה: ${a.reason.slice(0, 200)}`);
+      }
       if (e.action === 'approval_invalidated') parts.push(`הכמות השתנתה ${fmt(a.fromQty ?? a.prevQty)} → ${fmt(a.toQty ?? a.qty)}`, 'האישור בוטל, נדרש אישור מחדש');
       if (e.action === 'rebuild') parts.push(`חישוב מחדש ${fmt(a.prevQty ?? a.from)} → ${fmt(a.qty ?? a.to)}`);
       break;

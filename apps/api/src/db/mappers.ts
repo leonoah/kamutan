@@ -106,6 +106,8 @@ export function toProject(id: string, d: Doc): Project {
     status: d.status as Project['status'],
     createdBy: String(d.createdBy),
     createdAt: iso(d.createdAt),
+    // Sprint 7: API-maintained storage usage of the project's source files (absent on old docs = not counted yet).
+    ...(typeof d.storageBytes === 'number' && Number.isFinite(d.storageBytes) ? { storageBytes: Math.max(0, Math.round(d.storageBytes)) } : {}),
   };
 }
 
@@ -153,7 +155,17 @@ export function toSheetSet(orgId: string, projectId: string, id: string, d: Doc)
     ...(d.supersededBySetId !== undefined ? { supersededBySetId: idOrNull(d.supersededBySetId) } : {}),
     ...(d.supersededAt !== undefined ? { supersededAt: isoOrNull(d.supersededAt) } : {}),
     ...(d.supersede && typeof d.supersede === 'object' ? { supersede: toSupersede(d.supersede as Doc) } : {}),
+    // Sprint 7 (worker): why the set failed, e.g. `file_infected` (antivirus).
+    ...(d.error !== undefined ? { error: processingErrorOf(d.error) } : {}),
   };
+}
+
+/** Worker-written `{code, message}` (tolerant: malformed → null; message capped). */
+export function processingErrorOf(v: unknown): { code: string; message: string } | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Doc;
+  if (typeof o.code !== 'string' || !/^[a-z0-9_.-]{1,64}$/i.test(o.code)) return null;
+  return { code: o.code, message: typeof o.message === 'string' ? o.message.slice(0, 2000) : '' };
 }
 
 function strings(v: unknown, max: number): string[] {

@@ -29,6 +29,7 @@ import functools
 import json
 import logging
 import os
+from dataclasses import replace
 from typing import Any, cast
 
 from fastapi import FastAPI, Request
@@ -44,6 +45,7 @@ from ..library_import.importer import run_library_import
 from ..stores.base import BlobStore, DocStore
 from .contracts import IngestSheetVersionJob
 from .pipeline import Options, process_sheet_version
+from .scan import describe, scan_mode, scanner_from_env
 from .similar import FIND_SIMILAR_TYPE, FindSimilarJob, run_find_similar
 
 log = logging.getLogger(__name__)
@@ -52,6 +54,8 @@ log = logging.getLogger(__name__)
 def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None) -> FastAPI:
     app = FastAPI(title="kamutan-drawing-worker", docs_url=None, redoc_url=None, openapi_url=None)
     opts = options or Options()
+    scanner = opts.scanner or scanner_from_env()  # one choice per instance (default off: service/scan.py)
+    opts = replace(opts, scanner=scanner)
 
     # Inner functions are registered as routes by their decorators (semgrep false positive).
     @app.get("/healthz")  # nosemgrep
@@ -69,6 +73,8 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
                 "dropRoot": os.geteuid() == 0 and uid_drop_possible(),
                 "dwg2dxf": dwg2dxf_path() is not None,
             },
+            # Sprint 7 (shelved): antivirus mode + engines of this instance; mode off = no engines, not degraded
+            "antivirus": {"mode": scan_mode(), **describe(scanner)},
         }
 
     @app.post("/pubsub/ingest")  # nosemgrep
@@ -101,7 +107,12 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
                 await run_in_threadpool(run_boq_build, job, blobs, docs)
             elif isinstance(job, LibraryImportJob):
                 await run_in_threadpool(
-                    functools.partial(run_library_import, limits=opts.limits, workdir_root=opts.workdir_root), job, blobs, docs
+                    functools.partial(
+                        run_library_import, limits=opts.limits, workdir_root=opts.workdir_root, scanner=opts.scanner
+                    ),
+                    job,
+                    blobs,
+                    docs,
                 )
             elif isinstance(job, MarkedPdfJob):
                 await run_in_threadpool(
@@ -140,5 +151,6 @@ def app_from_env() -> FastAPI:  # pragma: no cover - production wiring (needs AD
         ocr=os.environ.get("KAMUTAN_OCR", "1") == "1",
         dpi=int(os.environ.get("KAMUTAN_TILE_DPI", "300")),
         limits=limits,
+        scanner=scanner_from_env(),  # KAMUTAN_AV_SCAN (default off: shelved; require turns the scan on)
     )
     return create_app(GcsBlobStore(), FirestoreDocStore(), opts)

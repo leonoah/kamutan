@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  displayDescription,
   effectiveQty,
   REVIEW_CLUSTER_MIN,
   REVIEW_DEFAULT_SCORE,
@@ -307,7 +308,7 @@ export function computeQueueBase(input: QueueInput): QueueBase {
       risk: round(riskOf(qty, score, l.level)),
       score: null,
       qtyImpact: Math.abs(qty),
-      title: `${l.code} ${l.description}`.slice(0, 300),
+      title: `${l.code} ${displayDescription(l)}`.slice(0, 300),
       reasons: (l.reasons ?? []).slice(0, 32),
       suggestedAction: 'review_line',
       sheetId: null,

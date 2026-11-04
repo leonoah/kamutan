@@ -1,4 +1,4 @@
-# @kamutan/api — notes (Sprint 0 + 1 + 2 + 3 + 4 + 5 + 6, Firebase, ADR 0008)
+# @kamutan/api — notes (Sprint 0 – 7, Firebase, ADR 0008)
 
 NestJS 11 (TypeScript strict) Core API. Sprint 0: **login → create project → upload & store a file**. Sprint 1:
 **quarantine upload → ingest via Pub/Sub → sheets list / confirm / regions / tiles (signed URLs) / reprocess / job status**.
@@ -9,6 +9,62 @@ risk-ranked review queue, room settings (tiling inputs), learn-from-correction (
 Runs as Cloud Functions 2nd gen `api` (europe-west1) behind the Firebase Hosting rewrite `/api/**`
 (same origin → no CORS needed), and locally via `src/main.ts`. Contracts (Zod, source of truth for DTOs,
 Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
+
+## Sprint 7 (API agent) — read this first, Web + Worker-BOQ
+
+Contracts: packages/contracts/NOTES.md **"Sprint 7 published"** (+ follow-up). All additive.
+
+### Endpoints
+
+| Method | Path | Min role | Notes |
+| --- | --- | --- | --- |
+| GET | `/projects/:pid/boq/document?split=none\|floor&confidence=1\|0&chapters=04,05&templateId=&markDraft=0\|1` | viewer | `BoqDocumentModel` = the export's main-sheet layout for the export dialog's options. Built by `src/boq/boq-document.ts` `buildBoqDocument` — the SAME function the xlsx writer uses (`excel.ts writeMainSheet(doc)`), so preview and file cannot drift. `warnings` / `exportBlocked` = the export gate over all lines (never 409 here). 400 bad options, 404 template / outsider. Empty BOQ → no chapters (not 409). |
+| PATCH | `/projects/:pid/boq/lines/:lineId` | reviewer (+ **editor** for `description` / `alsoUpdateLibrary`) | `description: string\|null` → `descriptionOverride{,By,At,Reason}` (normalised, ≤ 500; null or the original text clears all four). Allowed on approved lines when it is the only change (approval kept). `alsoUpdateLibrary: true` → after the line commit: library item `itemIdFor(code, text)` created (`source: 'manual'`, chapter / chapterTitle / unit / tags copied from the code's active item, else from the line) or re-activated, and **every other active item of that code deactivated** (incl. the default item) — Worker-BOQ request 1; response `library {itemId, created, deactivatedItemIds}`. Role = the library item edit role (`LIBRARY_EDIT_ROLE` editor, no MFA — same as `PATCH /library/items`). Audit `boqLines/update {description {from, to, original}, reason, alsoUpdateLibrary, libraryItemId}` + `itemLibrary/create\|update` per library write. |
+| GET | `/projects/:pid/sheet-sets/:sheetSetId` | viewer | `SheetSetStatusResponse {sheetSet, job, error {code, message, messageHe}, infected}` — upload status after finalize (worker `file_infected` / `scan_unavailable` / other job errors). Releases an infected set's bytes. |
+
+### Changed
+- **Excel**: main sheet written from the model (fidelity tests in `unit/excel.test.ts` / `export-real-sample` unchanged and green);
+  `POST …/boq/export` takes `includeConfidence` (default true) and `chapters`; the floor / room / evidence sheets list
+  the document's lines with `displayDescription` (renames everywhere, `sanitizeCell` on every text cell).
+- Renames shown in: BOQ read path (`toBoqLine` maps the four fields), Excel (all sheets), share snapshot
+  (`displayDescription` in `boq.json.gz` at link creation), review-queue `line` titles, history (`action:
+  'description'`, before / after = displayed text, summary "שינוי שם השורה · «…» → «…»" / "שחזור לנוסח המקורי").
+- **Quota**: `POST …/uploads` refuses a declared size that cannot fit (413); `POST …/sheet-sets` checks + counts
+  atomically inside `createSheetSetIngest` (`quotaBytes` = `projectQuotaOf(org.settings)`; set gets `storageCounted`,
+  project `storageBytes += size`); over quota → quarantine object deleted, 413 `quota_exceeded`, Hebrew `message`
+  (`quotaExceededMessageHe`), issues `usedBytes` / `quotaBytes` / `requestedBytes`. Dedupe adds nothing. Legacy
+  projects (no `storageBytes`) are recounted from their sets (in the finalize transaction and on `GET /projects/:id`
+  — `ensureStorageCounted`). `GET /projects` + `/projects/:id` return `storageBytes` + `storageQuotaBytes`.
+  `PATCH /orgs/:id/settings {projectQuotaBytes}` (admin + MFA + recent sign-in; 100 MB … 1 TB; audited).
+- **Usage = Σ sizeBytes of sheet sets without `storageReleasedAt`** (`src/db/storage-usage.ts`). Superseded sets stay
+  counted (their source is kept). Infected sets are released (`releaseInfectedStorage`, idempotent per set, on GET
+  sheet-set status and GET project) — decision: infected bytes are excluded from the quota; the files live in
+  `…/infected/` until the org purge (`orgs/{o}/` prefix, covered — `e2e/offboarding` asserts it).
+- `firebase/storage.rules`: explicit deny on `orgs/*/projects/*/infected/**` and `orgs/*/infected/**` (catch-all
+  already denied).
+
+### Tests
+`unit/boq-document.test.ts` (model ↔ xlsx main sheet row by row for summed / byFloor / no confidence / draft + chapter
+filter; rename + formula injection in all sheets; needsInput; gate warnings vs chapter filter), `e2e/sprint7.e2e.test.ts`
+(14: rename roles / validation / audit / history / restore / approved / rebuild-preserve / library / Excel / share;
+document options / warnings / 400 / 404 / export parity; quota recount / finalize / dedupe / 413 reserve + finalize /
+settings / infected status + release), acceptance `uploads` A-API-12 + A-API-13 flipped (A-API-13b "≤ 100 sheets"
+still todo), roles matrix + openapi (+2 routes, + description variant), `e2e/offboarding` purge covers `infected/`.
+
+Commands (04.11.2026, all green): `pnpm turbo run lint typecheck test build --filter=@kamutan/api
+--filter=@kamutan/contracts --filter=@kamutan/firebase-tests --concurrency=2` (api 399 passed / 21 emulator-skipped / 3
+todo; contracts 148; firebase-tests 50 / 199 emulator-skipped), `pnpm --filter @kamutan/contracts gen` (180 schemas),
+`pnpm --filter @kamutan/api openapi`; worker mirror `uv run pytest tests/test_boq_contracts.py` 10 passed.
+
+### Open
+- The library rewrite runs after the line PATCH commits (not one transaction); a failure there leaves the line renamed
+  and the library unchanged (the request errors; retry is idempotent).
+- No delete endpoint for sheet sets / projects exists; any future one must stamp `storageReleasedAt` (same helper) and
+  delete the `uploads/` + `infected/` prefixes.
+- Review-queue `line` titles come from the cached base (per build) → a rename shows there after the next build.
+- `≤ 100 sheets per project` (SEC-14) not enforced. Price column stays empty (`price: null`, totals 0) as in every export.
+- Emulator-only: the Firestore `releaseInfectedStorage` query (`error.code ==`, single-field auto index) and the
+  in-transaction sheet-set recount run first in CI.
 
 ## Sprint 6 (API agent) — read this first, Web + Worker-BOQ / Text / Geometry
 

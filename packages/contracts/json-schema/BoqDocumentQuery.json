@@ -1,0 +1,50 @@
+{
+  "$ref": "#/definitions/BoqDocumentQuery",
+  "definitions": {
+    "BoqDocumentQuery": {
+      "type": "object",
+      "properties": {
+        "split": {
+          "type": "string",
+          "enum": [
+            "none",
+            "summed",
+            "floor",
+            "byFloor"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "1",
+            "0",
+            "true",
+            "false"
+          ]
+        },
+        "chapters": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "templateId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "markDraft": {
+          "type": "string",
+          "enum": [
+            "1",
+            "0",
+            "true",
+            "false"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BoqDocumentQuery.json"
+}

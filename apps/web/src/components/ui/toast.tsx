@@ -140,7 +140,7 @@ export function Toaster() {
       {/* newest on top; the "+N הודעות" pill sits under the stack (the older, collapsed ones) */}
       <ToastPrimitive.Viewport
         className={cn(
-          "fixed end-4 z-[60] flex max-h-[calc(100dvh-5rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto outline-none",
+          "fixed end-4 z-[60] flex max-h-[calc(100dvh-5rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto outline-none print:hidden",
           hidden > 0 || expanded ? "bottom-14" : "bottom-4",
         )}
       />
@@ -150,7 +150,7 @@ export function Toaster() {
           data-toast-overflow
           aria-expanded={expanded}
           onClick={() => setExpanded((e) => !e)}
-          className="fixed bottom-4 end-4 z-[60] rounded-full border border-border bg-surface px-3 py-1 text-meta font-medium text-foreground shadow-float hover:bg-muted"
+          className="fixed bottom-4 end-4 z-[60] rounded-full border border-border bg-surface px-3 py-1 text-meta font-medium text-foreground shadow-float hover:bg-muted print:hidden"
         >
           {expanded ? t("common.collapseToasts") : t("common.moreToasts", { count: hidden })}
         </button>

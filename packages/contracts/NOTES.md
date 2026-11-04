@@ -313,3 +313,70 @@ computable measures only. **Not changed**: 7.04 (counts explicit service-opening
 "one per AC gypsum closure" needs a text-count estimator that no estimate kind expresses yet; open for a v8 contract
 change. Worker conventions (per-floor sheet authority for text / geometry, catalog fill-in, catalog anchor consumes the
 detection, room-settings tiling over geometry) are acknowledged as worker behaviour, not yet contract text.
+
+## Sprint 7 published (API agent) — Web / Worker-BOQ read this
+
+All additive (one default added to `ExportBoqRequest`); `json-schema/` regenerated (**180 schemas, +4**: `BoqDocumentQuery`,
+`BoqDocumentModel`, `BoqDocumentRow`, `SheetSetStatusResponse`). Tests: `test/sprint7.test.ts`.
+
+**BOQ preview — `boq-document.ts`** (`GET /v1/projects/:pid/boq/document`, viewer+):
+- Query `BoqDocumentQuerySchema` = the export dialog options: `split=none|summed|floor|byFloor` (→ `summed`/`byFloor`),
+  `confidence=1|0` (default 1: "רמת ביטחון" + "סטטוס" columns), `chapters=04,05` (chapterKey match, ≤ 64; absent =
+  all), `templateId?`, `markDraft=0|1`. POST `…/boq/export` takes the same options: `ExportBoqRequest` + 
+  **`includeConfidence` (default true)** + **`chapters?: string[]`**.
+- `BoqDocumentModel {schema 'kamutan.boq-document/1', projectId, templateId, buildId, options, titleRows [{kind
+  warning|title|draft, text}], columns [{key code|description|unit|qty|unitPrice|total|confidence|status, title,
+  width}], chapters [{code, title, notes[], rows[], subtotal}], totals {beforeVat, vat, afterVat, vatRate}, warnings
+  [{kind red|reapproval|unapproved|needsInput, count>0}], exportBlocked, counts (BoqCounts of the lines in the
+  document), generatedAt}`.
+- Row `{kind line|subtotal|note, lineId|null, code|null, description, unit|null, qty|null, qtyFormat? general|decimal2,
+  price|null, total|null, level?, status?, floor?, needsInput?, qtyOverridden?, descriptionOverridden?, cellNote?}`.
+  Chapter rows in xlsx order: `note` rows ("הערות:" then one per note) → `line` rows (one per line, or per (line, floor)
+  with `split=byFloor`; `description` = displayDescription + " – {floor name}") → one `subtotal` row ("סה"כ"). `qty: null`
+  = empty cell (needsInput line without override, `cellNote` "להשלמה ידנית"). `price` is null today (no prices in the
+  system) → `total` 0, as the xlsx formula `qty × price` evaluates. `level` / `status` only with confidence=1; status =
+  `effectiveStatus`. Text is RAW (not formula-escaped) — the xlsx writer escapes, the web renders text.
+- `warnings` / `exportBlocked` = the export gate over ALL project lines (`exportBlockingLines`, org `blockExportOnRed`);
+  `BOQ_DOCUMENT_WARNING_HE[kind](n)` Hebrew banner text. The `warning` title row (= the xlsx warning row) counts the
+  red / yellow lines in the document.
+- The API builds this model ONCE (`apps/api/src/boq/boq-document.ts`) and the xlsx main sheet is written from it;
+  `apps/api/test/unit/boq-document.test.ts` checks model ↔ xlsx row by row.
+
+**Line rename — `boq.ts`**:
+- `BoqLine.descriptionOverride` (≤ 500) + `descriptionOverrideBy`, `descriptionOverrideAt`, `descriptionOverrideReason`
+  (all optional/nullable). In `BOQ_LINE_API_FIELDS` and **`BOQ_LINE_PRESERVED_FIELDS`** (Worker-BOQ: never write, keep
+  across rebuilds — `applyRebuild` keeps them). `description` stays the original text.
+- `displayDescription(line)` (override wins) / `isDescriptionOverridden(line)`; `DESCRIPTION_OVERRIDE_MAX` 500,
+  `DESCRIPTION_OVERRIDE_HE` "✎ ידני", `DESCRIPTION_RESTORE_HE` "שחזר לנוסח המקורי", `DESCRIPTION_ALSO_LIBRARY_HE`,
+  `normalizeDescriptionInput` (NFC, control chars → space, whitespace collapsed, trimmed).
+- `PatchBoqLineRequest` + `description: string (1..500 after normalisation) | null` (null = restore; a text equal to the
+  original also clears) and `alsoUpdateLibrary?: boolean` (only with a string description). `reason` is now allowed with
+  `qtyOverride` and/or a string `description` (→ `descriptionOverrideReason`). Role: editor+ for `description` /
+  `alsoUpdateLibrary` (route stays reviewer+, service re-checks). Works on approved lines (wording only).
+- `PatchBoqLineResponse.library? {itemId, created, deactivatedItemIds[]}` when `alsoUpdateLibrary`.
+- History: `LINE_HISTORY_ACTIONS` + `'description'` (before / after = the displayed text, reason); audit `boqLines/update`
+  carries `description {from, to}` (+ `alsoUpdateLibrary`, `libraryItemId`); `auditSummaryHe` "שם השורה עודכן: «…» → «…»".
+
+**Upload hardening**:
+- `errors.ts` + `quota_exceeded` (413) and `file_infected`. `uploads.ts`: `FILE_INFECTED_ERROR`, `QUOTA_EXCEEDED_ERROR`,
+  `quotaExceededMessageHe(used, quota, requested)` (the 413 `message` is this Hebrew text; `issues` =
+  `usedBytes` / `quotaBytes` / `requestedBytes` as strings), `UPLOAD_ERROR_MESSAGES_HE` (file_infected, quota_exceeded,
+  payload_too_large, …).
+- `OrgSettings.projectQuotaBytes?` (stored; absent = `DEFAULT_PROJECT_QUOTA_BYTES` = 2 × 1024³), `projectQuotaOf(settings)`;
+  `PatchOrgSettingsRequest.projectQuotaBytes` (`PROJECT_QUOTA_MIN_BYTES` 100 MB … `PROJECT_QUOTA_MAX_BYTES` 1 TB; admin +
+  MFA + recent sign-in like every settings PATCH).
+- `Project.storageBytes?` (API-maintained, absent = 0) and `Project.storageQuotaBytes?` (read-only, from the org).
+- **`SheetSet.error? {code, message}|null`** — Worker-BOQ: on an infected file write the set `status: 'failed'`,
+  `error: {code: 'file_infected', message: <signature name>}` (+ the job error with the same code). New
+  **`GET /v1/projects/:pid/sheet-sets/:setId`** (viewer+) → `SheetSetStatusResponse {sheetSet, job {id, status,
+  progress}|null, error {code, message, messageHe}|null, infected}` (error = set error, else job error); `GET /jobs/:id`
+  passes `error.code` through unchanged. The API releases an infected set's bytes from `storageBytes` (idempotent,
+  on that read / the project read).
+
+**Sprint 7 follow-up (Worker-BOQ requests)**: `storagePaths.infected(o, p, setId, sha256)` =
+`orgs/{o}/projects/{p}/infected/{setId}/{sha256}.bin`, `storagePaths.infectedImport(o, importId, sha256)` =
+`orgs/{o}/infected/imports/{importId}/{sha256}.bin`, `INFECTED_PATH_RE` (not matched by `ARTIFACT_PATH_RE`: never
+signed). `SCAN_UNAVAILABLE_ERROR` (`scan_unavailable`, retryable) + its Hebrew text in `UPLOAD_ERROR_MESSAGES_HE`.
+**Decision: infected bytes are EXCLUDED from `storageBytes`** — the API releases a set's bytes as soon as it reads
+`error.code == 'file_infected'` (the user cannot use or delete that file); they stay in `infected/` until the org purge
+(`orgs/{o}/` prefix) or a future project delete (prefix `orgs/{o}/projects/{p}/`). Tests: `test/sprint7.test.ts`.

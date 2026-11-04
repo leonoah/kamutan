@@ -4,6 +4,7 @@ import {
   DocIdSchema,
   effectiveQty,
   effectiveStatus,
+  displayDescription,
   JOB_TYPES,
   SHARE_BOQ_SNAPSHOT_SCHEMA,
   SHARE_TOKEN_BYTES,
@@ -88,7 +89,7 @@ export function boqSnapshot(linkId: string, buildId: string | null, all: BoqLine
     linkId,
     buildId,
     snapshotAt: at.toISOString(),
-    lines: lines.map((l) => ({ id: l.id, chapter: l.chapter, code: l.code, description: l.description, unit: l.unit, qty: effectiveQty(l), level: l.level, status: effectiveStatus(l), floor: l.floor ?? null, byFloor: l.byFloor ?? {} })),
+    lines: lines.map((l) => ({ id: l.id, chapter: l.chapter, code: l.code, description: displayDescription(l), unit: l.unit, qty: effectiveQty(l), level: l.level, status: effectiveStatus(l), floor: l.floor ?? null, byFloor: l.byFloor ?? {} })),
     floors: floorsOf(lines),
     counts: { lines: c.lines, green: c.green, yellow: c.yellow, red: c.red, approved: c.approved },
   };

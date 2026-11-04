@@ -1,6 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ChevronDown, Hammer, History, RefreshCw } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, ChevronDown, Eye, Hammer, History, RefreshCw } from "lucide-react";
 import { qtyChangedSinceApproval, type BoqBuild, type BoqChapter, type BoqLine, type ProjectBoqState } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -15,6 +16,8 @@ import { chapterLabel, fmtQty, floorsOf, groupByChapter, isCompositeLine, isOver
 import { coverageOf, lineNeedsInput, originOf, quickActionOf } from "./sprint6";
 import { CoverageText, MissingQty, NeedsInputChip, OriginBadge, QuickActionButton } from "./Sprint6Parts";
 import { isBuildActive } from "./queries";
+import { LineDescription } from "./LineDescription";
+import { lineDescription } from "./sprint7";
 
 export type PanelTab = "boq" | "counts";
 
@@ -70,6 +73,11 @@ export interface BoqPanelProps {
   onCheck?: (ids: string[], on: boolean) => void;
   /** The bulk action bar (shown above the table while lines are checked). */
   bulkBar?: ReactNode;
+  /** Sprint 7: project id (inline rename) and whether the user may rename lines (editor+). */
+  projectId?: string;
+  canRename?: boolean;
+  /** Sprint 7: link to the BOQ preview ("תצוגה מקדימה"). */
+  previewHref?: string;
 }
 
 /** Native checkbox with an indeterminate state (chapter / select-all when only some lines are checked). */
@@ -334,7 +342,18 @@ function BoqTable(p: BoqPanelProps) {
             <span aria-hidden>{t("boq.bulk.selectAll")}</span>
           </label>
         ) : null}
-        <span className="ms-auto text-muted-foreground">
+        {p.previewHref ? (
+          <Link
+            to={p.previewHref}
+            data-preview-link
+            title={t("hub.previewFull")}
+            className="ms-auto inline-flex h-6 items-center gap-1 rounded-sm px-1 font-medium text-primary hover:bg-primary/10"
+          >
+            <Eye className="size-3.5" aria-hidden />
+            {t("hub.preview")}
+          </Link>
+        ) : null}
+        <span className={cn("text-muted-foreground", !p.previewHref && "ms-auto")}>
           {p.lines.length === p.totalLines ? t("boq.lines", { count: p.totalLines }) : `${p.lines.length} / ${t("boq.lines", { count: p.totalLines })}`}
         </span>
       </div>
@@ -478,6 +497,8 @@ function BoqTable(p: BoqPanelProps) {
                       onHistory={p.onHistory}
                       onQuickAction={p.onQuickAction}
                       quickActive={p.quickLineId === l.id}
+                      projectId={p.projectId}
+                      canRename={Boolean(p.canRename && p.projectId)}
                       check={sel ? { on: checked.has(l.id), toggle: (shift) => toggleOne(l.id, shift) } : null}
                       rowRef={(el) => {
                         if (el) rowRefs.current.set(l.id, el);
@@ -509,7 +530,11 @@ function LineRow({
   quickActive,
   check,
   rowRef,
+  projectId,
+  canRename,
 }: {
+  projectId?: string | undefined;
+  canRename?: boolean;
   check?: { on: boolean; toggle: (shift: boolean) => void } | null;
   onQuickAction?: ((line: BoqLine) => void) | undefined;
   quickActive?: boolean;
@@ -543,7 +568,7 @@ function LineRow({
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       className={cn(
-        "group cursor-pointer transition-colors hover:bg-surface-sunken/70",
+        "group group/line cursor-pointer transition-colors hover:bg-surface-sunken/70",
         check?.on && "bg-primary/[0.05]",
         selected && "bg-highlight/60 outline outline-1 -outline-offset-1 outline-primary",
         flash && "bg-highlight",
@@ -562,33 +587,32 @@ function LineRow({
         <Ltr>{l.code}</Ltr>
       </td>
       <td className={cell}>
-        <button
-          type="button"
-          aria-pressed={selected}
-          aria-label={t("boq.selectLine", { code: l.code, desc: l.description })}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect();
-          }}
-          className="block w-full rounded-sm text-start"
-        >
-          <span className="line-clamp-2 text-foreground">{l.description}</span>
-        </button>
-        <span className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-          <OriginBadge origin={origin} />
-          {waiting ? <NeedsInputChip /> : null}
-          {reasons.length ? (
-            <span className="flex min-w-0 items-center gap-1">
-              <ReasonChip code={reasons[0]!} className={cn("h-[18px] min-w-0", waiting ? "h-auto min-h-[18px] whitespace-normal py-px" : "truncate")} />
-              {reasons.length > 1 ? (
-                <span className="shrink-0 text-meta text-muted-foreground" title={reasons.slice(1).join(" · ")}>
-                  +{reasons.length - 1}
+        <LineDescription
+          projectId={projectId ?? ""}
+          line={l}
+          canEdit={Boolean(canRename && projectId)}
+          variant="panel"
+          selected={selected}
+          onSelect={onSelect}
+          selectLabel={t("boq.selectLine", { code: l.code, desc: lineDescription(l) })}
+          extra={
+            <>
+              <OriginBadge origin={origin} />
+              {waiting ? <NeedsInputChip /> : null}
+              {reasons.length ? (
+                <span className="flex min-w-0 items-center gap-1">
+                  <ReasonChip code={reasons[0]!} className={cn("h-[18px] min-w-0", waiting ? "h-auto min-h-[18px] whitespace-normal py-px" : "truncate")} />
+                  {reasons.length > 1 ? (
+                    <span className="shrink-0 text-meta text-muted-foreground" title={reasons.slice(1).join(" · ")}>
+                      +{reasons.length - 1}
+                    </span>
+                  ) : null}
                 </span>
               ) : null}
-            </span>
-          ) : null}
-          {quick && onQuickAction && waiting ? <QuickActionButton line={l} action={quick} active={quickActive} onRun={() => onQuickAction(l)} /> : null}
-        </span>
+              {quick && onQuickAction && waiting ? <QuickActionButton line={l} action={quick} active={quickActive} onRun={() => onQuickAction(l)} /> : null}
+            </>
+          }
+        />
       </td>
       <td className={cn(cell, "pt-2 text-meta text-muted-foreground")}>
         <span className="line-clamp-1">{l.unit}</span>

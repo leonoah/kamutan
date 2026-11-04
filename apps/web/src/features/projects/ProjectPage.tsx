@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { BookOpenCheck, ChevronRight, ClipboardCheck, Layers, MapPin, Pencil, UploadCloud } from "lucide-react";
-import { isSupersededSet, type SheetRow } from "@/api/types";
+import { BookOpenCheck, ChevronRight, ClipboardCheck, HardDrive, Layers, MapPin, Pencil, UploadCloud } from "lucide-react";
+import { DEFAULT_PROJECT_QUOTA_BYTES, isSupersededSet, type SheetRow } from "@/api/types";
+import { formatStorage, quotaPct } from "@/features/boq/sprint7";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Dropzone } from "@/features/upload/Dropzone";
@@ -135,6 +136,9 @@ export function ProjectPage() {
               </span>
             ) : null}
             {pct !== null ? <span>{t("review.verifiedTotal", { pct })}</span> : null}
+            {p.storageBytes !== undefined ? (
+              <StorageUsage used={p.storageBytes} quota={p.storageQuotaBytes ?? org?.settings?.projectQuotaBytes ?? DEFAULT_PROJECT_QUOTA_BYTES} />
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -243,5 +247,36 @@ export function ProjectPage() {
 
       <EditProjectDialog open={editOpen} onOpenChange={setEditOpen} project={p} />
     </div>
+  );
+}
+
+/** Sprint 7: "אחסון: x מתוך y" + a thin meter (amber from 80%, red when full). */
+function StorageUsage({ used, quota }: { used: number; quota: number }) {
+  const { t } = useTranslation();
+  const pct = quotaPct(used, quota);
+  const full = used >= quota;
+  const near = !full && pct >= 80;
+  return (
+    <span className="inline-flex items-center gap-1.5" data-storage>
+      <HardDrive className="size-3.5" aria-hidden />
+      <span>
+        {t("hub.storage", { used: formatStorage(used), quota: formatStorage(quota) })}
+        {full ? <span className="ms-1 font-medium text-destructive">· {t("hub.storageFull")}</span> : near ? <span className="ms-1 font-medium text-foreground">· {t("hub.storageNearFull")}</span> : null}
+      </span>
+      <span
+        role="meter"
+        aria-label={t("hub.storageLabel")}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        aria-valuetext={t("hub.storage", { used: formatStorage(used), quota: formatStorage(quota) })}
+        className="relative inline-block h-1.5 w-16 overflow-hidden rounded-full bg-muted"
+      >
+        <span
+          className={cn("absolute inset-y-0 start-0 rounded-full", full ? "bg-destructive" : near ? "bg-conf-mid" : "bg-primary")}
+          style={{ width: `${Math.max(pct, used > 0 ? 2 : 0)}%` }}
+        />
+      </span>
+    </span>
   );
 }

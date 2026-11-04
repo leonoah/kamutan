@@ -13,7 +13,7 @@ export type UploadStatus =
   | "canceled"
   | "rejected"; // failed client-side validation
 
-export type UploadErrorCode = FileErrorCode | "network" | "expired" | "server";
+export type UploadErrorCode = FileErrorCode | "network" | "expired" | "server" | "quota" | "infected";
 
 export interface UploadEntry {
   id: string;
@@ -24,6 +24,8 @@ export interface UploadEntry {
   status: UploadStatus;
   loaded: number;
   errorCode: UploadErrorCode | null;
+  /** Sprint 7: the API's Hebrew message (413 quota_exceeded), shown instead of the generic text when present. */
+  errorMessage?: string | null;
   file: File;
   /** Stage 10: this file is a new revision of that set ("מחליף את סט X", or "העלה מחדש" of a failed set). */
   replacesSheetSetId?: string;
@@ -48,8 +50,14 @@ const handles = new Map<string, UploadHandle>();
 const canceledBeforeStart = new Set<string>();
 let entrySeq = 0;
 
-function mapError(err: unknown): UploadErrorCode {
+/** Hebrew letters → the API's message is meant for the user. */
+const HEBREW = /[\u0590-\u05FF]/;
+
+export function mapError(err: unknown): UploadErrorCode {
   if (err instanceof ApiError) {
+    // Sprint 7: per-project storage quota (413) and `file_infected` (if the API refuses it synchronously).
+    if (err.code === "quota_exceeded") return "quota";
+    if (err.code === "file_infected") return "infected";
     if (err.code === "unsupported_file_type") return "unsupported";
     if (err.code === "payload_too_large") return "too_large";
     if (err.code === "upload_expired" || err.code === "upload_missing") return "expired";
@@ -64,7 +72,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
   const statusOf = (id: string) => get().entries.find((e) => e.id === id)?.status;
 
   async function runOne(backend: Backend, entry: UploadEntry) {
-    patch(entry.id, { status: "preparing", loaded: 0, errorCode: null });
+    patch(entry.id, { status: "preparing", loaded: 0, errorCode: null, errorMessage: null });
     try {
       const target = await backend.api.createUpload(entry.projectId, { filename: entry.name, sizeBytes: entry.size });
       if (canceledBeforeStart.delete(entry.id)) throw new UploadCanceledError();
@@ -88,7 +96,10 @@ export const useUploadStore = create<UploadState>((set, get) => {
     } catch (err) {
       handles.delete(entry.id);
       if (err instanceof UploadCanceledError) patch(entry.id, { status: "canceled", errorCode: null });
-      else patch(entry.id, { status: "error", errorCode: mapError(err) });
+      else {
+        const code = mapError(err);
+        patch(entry.id, { status: "error", errorCode: code, errorMessage: code === "quota" && err instanceof ApiError && HEBREW.test(err.message) ? err.message : null });
+      }
     }
   }
 

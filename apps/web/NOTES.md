@@ -728,3 +728,87 @@ Brief: `docs/agents/SPRINT6_BRIEF.md` (row "Web", "Shared interfaces") + the own
 - Quick measure on a line with a server `quickAction.sheetId` the user has not got ready falls back to the current sheet.
 - Only the selected line's shape evidence is drawn (hovering a row previews markers only, as before).
 - The hub card shows no origin badges (kept compact: only the "להשלמה ידנית" state and its action).
+
+# Sprint 7 (web + viewer): BOQ preview, rename a line, storage quota, `file_infected`
+
+Brief: `docs/agents/SPRINT7_BRIEF.md` (owner requests 1–2, row "Web", "Shared interfaces"). `packages/viewer` needed no
+change. Reconciled with the API agent's "Sprint 7 published" (`packages/contracts/NOTES.md`, `boq-document.ts`) at the
+end of the sprint; app DTOs stay hand-kept in `src/api/types.ts`.
+
+## Contracts (aligned with "Sprint 7 published")
+- `BoqLine` additive: `descriptionOverride`, `descriptionOverrideBy`, `descriptionOverrideAt`, `descriptionOverrideReason`.
+  `description` stays the original; display = `lineDescription(l)` (override ?? original, `features/boq/sprint7.ts`).
+- `PATCH /projects/:pid/boq/lines/:id` `{description: string|null, reason?, alsoUpdateLibrary?: boolean}` (null = restore).
+- `GET /projects/:pid/boq/document?split=floor|none&confidence=1|0&chapters=04,05` → `BoqDocumentModel`
+  (`kamutan.boq-document/1`; `getBoqDocument`; `confidence` always sent, the API defaults it to 1). `normalizeDocument`
+  only adapts shapes: title rows `{kind: warning|title|draft, text}` (plain strings tolerated), columns `{key,title}`,
+  `code`/`unit` null → "", `cellNote`, `totals.vatRate` → `vatRate`, `exportBlocked` → `blocked`. Row order is the API's:
+  `note` rows ("הערות:" + notes) → `line` rows → one `subtotal` row; `chapter.notes` is only rendered when a chapter has
+  no note rows. Warning kinds `red | reapproval | unapproved | needsInput`.
+- `POST …/boq/export` now also takes `includeConfidence` + `chapters`: the preview's "ייצוא לאקסל" sends them
+  (`ExportDialog previewOptions`).
+- `PublicBoqLine.descriptionManual?: boolean` — **web request, not in the contract**: the public DTO deliberately carries
+  no override marker (Sprint 5 security gate), so the API's share snapshot shows the renamed wording WITHOUT "✎ ידני";
+  the viewer shows the marker when the field arrives (the mock sends it). Decision for the owner / API agent.
+- `Project.storageBytes` + `storageQuotaBytes` (read-only), `OrgSettings.projectQuotaBytes` (default 2 GB,
+  `DEFAULT_PROJECT_QUOTA_BYTES`). Errors `quota_exceeded` (413) and `file_infected` mapped in the upload store.
+- History action `description` (before → after: strings, or `{description, override, library?}` objects — both read).
+
+## Screens
+- **BOQ preview** `/projects/:id/boq/preview` (`features/boq/BoqPreviewPage.tsx`, lazy route inside AppShell). Linked
+  from the hub BOQ card ("תצוגה מקדימה"), the BOQ panel toolbar and the Excel export dialog (keeps the split). Renders
+  ONLY the API's model: warning banner (red / not approved / needs input, as the export gate), title rows, the column
+  set (+ "רמת ביטחון"/"סטטוס"), chapter header + "הערות:" numbered notes, line rows, "סה"כ" per chapter, totals before
+  VAT / VAT / after VAT, "הופק … · N שורות". The xlsx warning title row is rendered (and printed) in the document; the
+  gate banner above it is screen-only. Lines waiting for input: empty qty + "להשלמה ידנית". Renamed lines: "✎ ידני"
+  (screen only, tooltip = original wording). Options in the URL (`split`, `confidence`, `chapters`); row / description
+  link → `/review?line=<id>`. "ייצוא לאקסל" opens `ExportDialog` (`initialSplit`, no preview link); "הדפסה" =
+  `window.print()`. **Print CSS** (`styles/index.css`, `tokens.css`): `@page A4 portrait`, light palette whatever the
+  theme, thead = table-header-group (repeats; verified in Chromium's PDF), rows never split, app header / toolbar /
+  toasts / phone list `print:hidden`, compact print column widths. **Phones** (< md): stacked list per chapter (cards:
+  code + description, qty + unit, total, confidence, status), totals at the end.
+- **Rename a line** (`features/boq/LineDescription.tsx`, used by the BOQ panel and the hub card; editor+ only =
+  `canRenameLine`): double-click the text, Enter on the panel's text button, or the ✎ button (hover / focus; always on
+  touch). The editor is one card (over the row on md+, in the flow on phones): textarea (≤ 500, counter, Enter saves,
+  Shift+Enter newline is collapsed, Esc cancels), optional reason, "עדכן גם בספריית הסעיפים" (+ hint), "שחזר לנוסח המקורי"
+  when renamed (+ the original wording). `useRenameLine`: optimistic, refetches the document + history (+ library). One
+  toast with "בטל". `recent_auth_required` / `mfa_required` (library option) → the shared `useReauthGate` box inside the
+  editor, then the same PATCH is retried. Typing the original wording back = restore. Workspace shortcuts are off inside
+  the editor (`[data-rename-editor]`). Marker "✎ ידני" (`ManualNameMarker`) in the panel, hub, preview and share viewer;
+  history entry "שינוי שם השורה" before → after (+ reason, "עודכן גם בספריית הסעיפים", "חזרה לנוסח המקורי").
+- **Storage quota**: hub header "אחסון: x מתוך y" + meter (amber "כמעט מלא" ≥ 80%, red "המכסה מלאה"); upload row on 413
+  `quota_exceeded`: the API's Hebrew message, else ours with the numbers.
+- **`file_infected`** (owner shelved the virus scan: error mapping ONLY, no other UI / copy): the upload row of that file
+  shows "הקובץ נחסם: זוהה תוכן זדוני" (sync API error or the ingest job's `error.code`), and the processing panel maps
+  `project.errors.file_infected` to the same sentence. Nothing advertises scanning.
+
+## Mock (`src/api/mockSprint7.ts`, wired in `mockBoq.ts` / `mock.ts` / `mockSprint5.ts`)
+- `buildBoqDocument` follows the API's `excel.ts` rules (template title rows + address + date, columns, chapters in
+  template order, by-floor rows "<desc> – <floor>", overridden qty one row, empty prices → totals 0, VAT from org
+  settings, warnings, `blocked`). Rename: validation (≤ 500 after whitespace clean-up), editor+, kept across rebuilds
+  (`installDerived`), audit/history, share snapshot, library upsert (`source` → manual); the library option needs a
+  recent sign-in (`?mockAuthAge=3600` to see the box). Quota: p-noah stores 48.6 MB; `?mockQuotaMb=50` shrinks the
+  quota; finalize adds the size. A file named `eicar…`/`…infected…` fails its job with `file_infected`.
+
+## Open contract points
+- Share snapshot marker (`descriptionManual`), see above.
+- `PatchBoqLineResponse.library` (item id / created) is not shown; the toast says "גם בספריית הסעיפים" on success.
+
+## Tests
+- Unit: web 344 (was 311): `features/boq/sprint7.test.ts` (wording / validation / optimistic / URL ↔ query / columns /
+  normalisation / money / mock document incl. split + prices + warnings / library upsert / storage / error mapping /
+  history), `features/boq/sprint7.ui.test.tsx` (preview + axe, options in URL, row → review, export split, links from
+  hub / panel / dialog, rename Esc / Enter / counter / reason / marker / toast / history + axe, restore + undo, survives a
+  rebuild, library + re-auth, hub pencil + storage, reviewer has no pencil, preview + share snapshot marker, 413, file
+  infected + axe), `api/http.test.ts` (+1 routes / bodies). Viewer 62 unchanged.
+- Playwright `e2e/sprint7.e2e.ts` (both modes): preview from the hub + axe + options; print media (chrome hidden,
+  table-header-group, white page) + screenshot + axe + Chromium PDF (> 1 page, header row on every page via pdftotext
+  when installed); row → review + export keeps split; links from panel / dialog; iPad grid; phone list; rename flow +
+  history + preview marker + restore; library + re-auth; hub rename + reviewer; quota + `file_infected` in the dialog.
+- Screenshots (checked by hand): `/home/claude/kamutan-data/acceptance/ui/screens/{desktop,ipad,mobile}/s7-*.png`
+  (+ `s7-03-print.pdf`).
+
+## Known gaps
+- Prices do not exist yet: unit price is empty and totals are ₪ 0 (exactly as the Excel's formulas show it).
+- The "✎ ידני" marker is hidden in print (client-facing paper); say if the owner wants it printed.
+- The hub card's header wraps to two rows on narrow desktop columns (preview + review buttons).

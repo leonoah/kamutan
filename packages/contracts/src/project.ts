@@ -50,6 +50,14 @@ export const ProjectSchema = z.object({
   status: ProjectStatusSchema,
   createdBy: UidSchema,
   createdAt: TimestampSchema,
+  /**
+   * Sprint 7: bytes of the project's stored source files (API-maintained: + sizeBytes when an upload is finalized into
+   * a NEW sheet set; identical bytes / failed checks add nothing; infected files (worker `file_infected`) are released).
+   * Absent on old docs = 0. Superseded sets stay counted (their files are kept for history).
+   */
+  storageBytes: z.number().int().nonnegative().optional(),
+  /** Sprint 7 (read-only, from the org settings): the per-project quota the hub shows usage against. */
+  storageQuotaBytes: z.number().int().positive().optional(),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 

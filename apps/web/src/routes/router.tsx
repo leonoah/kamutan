@@ -44,6 +44,11 @@ export const routes: RouteObject[] = [
               { path: "/projects/:projectId", element: <ProjectPage /> },
               { path: "/projects/:projectId/sheets", element: <SheetsPage /> },
               { path: "/projects/:projectId/legend", element: <LegendPage /> },
+              // Sprint 7: the BOQ as the Excel will look (print CSS: A4 portrait, no app chrome).
+              {
+                path: "/projects/:projectId/boq/preview",
+                lazy: async () => ({ Component: (await import("@/features/boq/BoqPreviewPage")).BoqPreviewPage }),
+              },
               { path: "/library", element: <LibraryPage /> },
               {
                 path: "/settings",

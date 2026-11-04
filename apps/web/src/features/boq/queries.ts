@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useApi, useBackend } from "@/api/client";
 import type {
+  BoqDocumentQuery,
   BoqBuild,
   BoqLine,
   BoqLinesResponse,
@@ -15,6 +16,7 @@ import type {
 } from "@/api/types";
 import { useSubscription } from "@/lib/useSubscription";
 import { applyQuickMeasure } from "./sprint6";
+import { applyRename } from "./sprint7";
 
 /* ---------------- BOQ state + builds (Firestore listeners) ---------------- */
 
@@ -80,10 +82,51 @@ export function usePatchBoqLine(projectId: string) {
       return { prev };
     },
     onError: (_e, _v, ctx) => ctx?.prev.forEach(([k, v]) => qc.setQueryData(k, v)),
-    onSuccess: (line) =>
+    onSuccess: (line) => {
       qc.setQueriesData<BoqLinesResponse>({ queryKey: boqLinesKey(projectId) }, (cur) =>
         cur ? { ...cur, items: cur.items.map((l) => (l.id === line.id ? line : l)) } : cur,
-      ),
+      );
+      void qc.invalidateQueries({ queryKey: ["boq-document", projectId] });
+    },
+  });
+}
+
+/**
+ * Sprint 7: rename a line (or restore its original wording with `description: null`), optionally also in the org
+ * library. Optimistic; the server's line replaces it; the preview document and the history refetch.
+ */
+export function useRenameLine(projectId: string) {
+  const api = useApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lineId, description, reason, alsoUpdateLibrary }: { lineId: string; description: string | null; reason: string | null; alsoUpdateLibrary: boolean }) =>
+      api.patchBoqLine(projectId, lineId, {
+        description,
+        ...(reason ? { reason } : {}),
+        ...(alsoUpdateLibrary ? { alsoUpdateLibrary: true } : {}),
+      }),
+    onMutate: ({ lineId, description, reason }) => ({
+      rollback: patchCachedLines(qc, projectId, (l) => (l.id === lineId ? applyRename(l, description, reason, null) : l)),
+    }),
+    onError: (_e, _v, ctx) => ctx?.rollback(),
+    onSuccess: (line, v) => {
+      patchCachedLines(qc, projectId, (l) => (l.id === line.id ? line : l));
+      void qc.invalidateQueries({ queryKey: ["boq-document", projectId] });
+      void qc.invalidateQueries({ queryKey: ["line-history", projectId] });
+      if (v.alsoUpdateLibrary) void qc.invalidateQueries({ queryKey: ["library-items"] });
+    },
+  });
+}
+
+/** Sprint 7: the BOQ document model (preview), per build and options. */
+export function useBoqDocument(projectId: string, q: BoqDocumentQuery, buildId: string | null | undefined) {
+  const api = useApi();
+  return useQuery({
+    queryKey: ["boq-document", projectId, buildId ?? null, q],
+    enabled: Boolean(buildId),
+    queryFn: () => api.getBoqDocument(projectId, q),
+    placeholderData: (prev) => prev,
+    staleTime: 0,
   });
 }
 

@@ -47,7 +47,13 @@ export interface Project {
   status: "active" | "archived";
   createdBy: string;
   createdAt: string; // ISO
+  /** Sprint 7: bytes stored by the project (sources + derived), counted on finalize. */
+  storageBytes?: number;
+  /** Sprint 7 (contracts, read-only): the project's quota (from the org setting `projectQuotaBytes`). */
+  storageQuotaBytes?: number;
 }
+/** Sprint 7: default per-project storage quota (org setting `projectQuotaBytes`). */
+export const DEFAULT_PROJECT_QUOTA_BYTES = 2 * 1024 ** 3;
 
 export interface CreateProjectInput {
   orgId: string;
@@ -571,7 +577,15 @@ export interface BoqLine {
   needsInput?: boolean;
   /** One-click action that completes the line (opens the measure / count tool bound to the line and its sheet). */
   quickAction?: BoqQuickAction | null;
+  /* Sprint 7 (SPRINT7_BRIEF "Shared interfaces", additive; mirrored until the API agent publishes "Sprint 7 published") */
+  /** The project's own wording of the line ("✎ ידני"); never overwritten by a rebuild. `description` stays the original. */
+  descriptionOverride?: string | null;
+  descriptionOverrideBy?: string | null;
+  descriptionOverrideAt?: string | null;
+  descriptionOverrideReason?: string | null;
 }
+/** Sprint 7: max length of a line description (rename). */
+export const DESCRIPTION_MAX = 500;
 /** Sprint 6: origin of a line's quantity. */
 export const BOQ_LINE_ORIGINS = ["detected", "text", "geometry", "suggested", "manual"] as const;
 export type BoqLineOrigin = (typeof BOQ_LINE_ORIGINS)[number];
@@ -667,9 +681,13 @@ export interface BoqLinesResponse {
 export interface PatchBoqLineRequest {
   status?: BoqLineStatus;
   qtyOverride?: number | null;
-  /** Required with a numeric qtyOverride (contracts PatchBoqLineRequest.reason). */
+  /** Required with a numeric qtyOverride (contracts PatchBoqLineRequest.reason); optional with `description`. */
   reason?: string;
   note?: string | null;
+  /** Sprint 7: rename the line (≤ 500 chars); `null` restores the original wording. */
+  description?: string | null;
+  /** Sprint 7: also update the org library item of this code (editor+, MFA / recent sign-in like library edits). */
+  alsoUpdateLibrary?: boolean;
 }
 /** POST /v1/projects/:pid/boq/build */
 export interface BuildBoqResponse {
@@ -763,11 +781,79 @@ export interface ExportBoqRequest {
   split: "summed" | "byFloor";
   /** Add "טיוטה – כולל פריטים שלא אומתו" to the file title. */
   draftNote: boolean;
+  /** Sprint 7 (= the preview options): the "רמת ביטחון" + "סטטוס" columns (API default true), only these chapters. */
+  includeConfidence?: boolean;
+  chapters?: string[];
 }
 export interface ExportBoqResponse {
   url: string;
   filename: string;
   expiresAt: string;
+}
+
+/* ---------- Sprint 7: BOQ document model (GET /v1/projects/:pid/boq/document) ----------
+ * ONE export model built by the API, consumed by both the Excel writer and the preview — the browser never lays the
+ * BOQ out itself. Mirrored from the brief until "Sprint 7 published".
+ */
+export type BoqDocumentColumnKey = "code" | "description" | "unit" | "qty" | "unitPrice" | "total" | "confidence" | "status" | (string & {});
+export interface BoqDocumentColumn {
+  key: BoqDocumentColumnKey;
+  title: string;
+}
+export type BoqDocumentRowKind = "line" | "subtotal" | "note";
+export interface BoqDocumentRow {
+  /** null on subtotal / note rows. */
+  lineId: string | null;
+  code: string;
+  /** The exported wording (a renamed line carries its override). */
+  description: string;
+  unit: string;
+  /** null = "להשלמה ידנית" (empty cell + note in the Excel). */
+  qty: number | null;
+  price: number | null;
+  total: number | null;
+  level?: DbLevel | null;
+  status?: BoqLineStatus | null;
+  kind: BoqDocumentRowKind;
+  /** Optional extras (not in the brief): split-by-floor row, the line waits for input, renamed, cell note. */
+  floor?: string | null;
+  needsInput?: boolean;
+  qtyOverridden?: boolean;
+  descriptionOverridden?: boolean;
+  /** Comment of the quantity cell in the xlsx (contracts `cellNote`: "להשלמה ידנית", "כמות שונתה ידנית…"). */
+  cellNote?: string | null;
+  qtyFormat?: "general" | "decimal2";
+}
+export interface BoqDocumentChapter {
+  code: string;
+  title: string;
+  notes: string[];
+  rows: BoqDocumentRow[];
+  subtotal: number | null;
+}
+export type BoqDocumentWarningKind = "red" | "reapproval" | "unapproved" | "needsInput";
+/** contracts: `warning` = the xlsx warning row, `title` = a template title row, `draft` = "טיוטה – …". */
+export interface BoqDocumentTitleRow {
+  kind: "warning" | "title" | "draft";
+  text: string;
+}
+export interface BoqDocumentModel {
+  titleRows: BoqDocumentTitleRow[];
+  columns: BoqDocumentColumn[];
+  chapters: BoqDocumentChapter[];
+  totals: { beforeVat: number; vat: number; afterVat: number };
+  warnings: { kind: BoqDocumentWarningKind; count: number }[];
+  generatedAt: string;
+  /** contracts `totals.vatRate` (lifted here). */
+  vatRate?: number;
+  /** contracts `exportBlocked`: POST …/boq/export would answer 409 now. */
+  blocked?: boolean;
+}
+export interface BoqDocumentQuery {
+  split: "none" | "floor";
+  confidence: boolean;
+  /** Chapter codes; null = all. */
+  chapters: string[] | null;
 }
 
 /** orgs/{o}/itemLibrary/{itemId} */
@@ -1100,6 +1186,8 @@ export interface OrgSettings {
   llmMonthlyBudgetUsd?: number;
   vatRate?: number;
   autoRebuild?: boolean;
+  /** Sprint 7: per-project storage quota (admin, default 2 GB). */
+  projectQuotaBytes?: number;
 }
 export type PatchOrgSettingsRequest = Partial<Pick<OrgSettings, "greenThreshold" | "blockExportOnRed" | "llmEnabled" | "trainingOptIn">>;
 export const GREEN_THRESHOLD_MIN = 0.9;
@@ -1110,7 +1198,7 @@ export interface ActorRef {
   uid: string;
   displayName: string | null;
 }
-export type LineHistoryAction = "status" | "qtyOverride" | "note" | "rebuild" | "correction";
+export type LineHistoryAction = "status" | "qtyOverride" | "note" | "rebuild" | "correction" | "description";
 /** GET /v1/projects/:pid/boq/lines/:lineId/history — newest first. */
 export interface LineHistoryItem {
   at: string;
@@ -1287,6 +1375,8 @@ export interface PublicBoqLine {
   status: BoqLineStatus;
   byFloor: Record<string, number>;
   order?: number;
+  /** Sprint 7: `description` is the project's own wording (renamed line) → "✎ ידני" marker. No author / reason. */
+  descriptionManual?: boolean;
 }
 export interface PublicShareBoq {
   /** F-4: the BOQ is a snapshot taken at link creation (null = link older than snapshots → empty BOQ). */
@@ -1427,6 +1517,8 @@ export interface ApiClient {
   quickMeasureBoqLine(projectId: string, lineId: string, req: QuickMeasureRequest): Promise<QuickMeasureResponse>;
   getBoqSheetEvidence(projectId: string, sheetId: string, versionId: string): Promise<BoqSheetEvidence>;
   exportBoq(projectId: string, req: ExportBoqRequest): Promise<ExportBoqResponse>;
+  /** Sprint 7: the BOQ document model (same layout as the Excel) for the preview. */
+  getBoqDocument(projectId: string, q: BoqDocumentQuery): Promise<BoqDocumentModel>;
   /* Sprint 3 — org library, templates, rules */
   listLibraryItems(orgId: string, q?: ListLibraryQuery): Promise<LibraryItemPage>;
   patchLibraryItem(orgId: string, itemId: string, req: PatchLibraryItemRequest): Promise<LibraryItem>;

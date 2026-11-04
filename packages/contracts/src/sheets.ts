@@ -33,6 +33,11 @@ export const SheetSetSchema = z.object({
   /** Number of pages (sheets), set by the worker after splitting. */
   pageCount: z.number().int().nonnegative().nullable().optional(),
   createdAt: TimestampSchema,
+  /**
+   * Sprint 7: why the set failed (worker): `file_infected` = the antivirus scan found malware (file quarantined, never
+   * parsed; message is the signature name, never file content); other codes as job errors.
+   */
+  error: z.object({ code: z.string().min(1).max(64), message: z.string().max(2000) }).nullable().optional(),
   // --- Stage 10 (A-API-05): revised upload ---
   /** This set is a revision of that set (finalize `replacesSheetSetId`). */
   replacesSheetSetId: DocIdSchema.nullable().optional(),
@@ -311,6 +316,8 @@ export const VersionStatsSchema = z.object({
   calibration: CalibrationStatsSchema.optional(),
   /** Sprint 5 (Worker-Cal): wall-clock milliseconds per pipeline stage (e.g. `{render: 4100, detect: 9800}`). */
   timingsMs: TimingsMsSchema.optional(),
+  /** Sprint 7 (Worker-Accuracy): drawn height marks read on this sheet / used by a measure. */
+  heights: z.object({ read: count, used: count }).optional(),
 });
 export type VersionStats = z.infer<typeof VersionStatsSchema>;
 
