@@ -212,8 +212,9 @@ export const PublicShareMetaSchema = z.object({
 export type PublicShareMeta = z.infer<typeof PublicShareMetaSchema>;
 
 /**
- * A BOQ line as an external viewer sees it (frozen at link creation, F-4): no notes, no reasons, no override marker, no
- * user ids. (Sprint 5 security gate removed `reasons` / `overridden` from this public DTO.)
+ * A BOQ line as an external viewer sees it (frozen at link creation, F-4): no notes, no reasons, no quantity-override
+ * marker, no user ids. (Sprint 5 security gate removed `reasons` / `overridden` from this public DTO.) Owner decision
+ * 05.11.2026: a renamed line shows "✎ ידני" — only the boolean is shared, never the original wording or who renamed it.
  */
 export const PublicShareBoqLineSchema = z.object({
   id: DocIdSchema,
@@ -227,6 +228,8 @@ export const PublicShareBoqLineSchema = z.object({
   status: BoqLineStatusSchema,
   floor: z.string().nullable(),
   byFloor: z.record(z.string(), z.number()),
+  /** True when the description was renamed in the project (`descriptionOverride`); optional for older snapshots. */
+  descriptionManual: z.boolean().optional(),
 });
 export type PublicShareBoqLine = z.infer<typeof PublicShareBoqLineSchema>;
 

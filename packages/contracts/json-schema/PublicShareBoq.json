@@ -68,6 +68,9 @@
                 "additionalProperties": {
                   "type": "number"
                 }
+              },
+              "descriptionManual": {
+                "type": "boolean"
               }
             },
             "required": [

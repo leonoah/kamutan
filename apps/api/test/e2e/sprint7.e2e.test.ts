@@ -140,6 +140,11 @@ describe('Sprint 7 e2e (API)', () => {
       const descs = (pub.body.lines as Doc[]).map((l) => l.description);
       expect(descs).toContain('=1+1 שקע');
       expect(descs).toContain('נקודת מאור תקרה');
+      // Owner decision 05.11: renamed lines carry only a boolean marker — never the original wording or who renamed it.
+      const renamed = (pub.body.lines as Doc[]).find((l) => l.description === '=1+1 שקע')!;
+      expect(renamed.descriptionManual).toBe(true);
+      expect(Object.keys(renamed)).not.toEqual(expect.arrayContaining(['descriptionOverride', 'descriptionOverrideBy']));
+      expect((pub.body.lines as Doc[]).some((l) => l.descriptionManual === undefined)).toBe(true); // untouched lines carry no marker
     });
   });
 
