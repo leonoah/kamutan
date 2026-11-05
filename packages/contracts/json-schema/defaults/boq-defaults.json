@@ -148,7 +148,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_socket_double",
@@ -164,7 +164,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_socket_triple",
@@ -180,7 +180,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_socket_power",
@@ -196,7 +196,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_socket_power_double",
@@ -212,7 +212,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_comms_point",
@@ -231,7 +231,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_socket_box_6",
@@ -247,7 +247,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_speaker",
@@ -263,7 +263,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_heater_feed",
@@ -279,7 +279,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_intercom",
@@ -295,7 +295,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_conduit_cobra",
@@ -311,7 +311,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_socket_3phase",
@@ -327,7 +327,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_doorbell",
@@ -343,7 +343,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_water_heater_feed",
@@ -359,7 +359,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_panel",
@@ -378,7 +378,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_light_single",
@@ -394,7 +394,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_light_two_way",
@@ -410,7 +410,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_light_shared_2",
@@ -426,7 +426,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_light_shared_3",
@@ -442,7 +442,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_light_add_2way",
@@ -460,7 +460,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_light_add_fan",
@@ -478,7 +478,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_light_sensor",
@@ -493,7 +493,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_install_luminaires",
@@ -520,7 +520,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_ac_drain",
@@ -537,7 +537,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_basin_wall_faucet",
@@ -559,7 +559,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_basin_flower_faucet",
@@ -581,7 +581,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_wc_concealed",
@@ -598,7 +598,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_washing_machine",
@@ -615,7 +615,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_garden_tap",
@@ -632,7 +632,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_wc_monoblock",
@@ -649,7 +649,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_shower_basement",
@@ -670,7 +670,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_shower",
@@ -692,7 +692,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_plumb_bath",
@@ -709,7 +709,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_oneoff_water_feed",
@@ -739,7 +739,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_oneoff_manifold",
@@ -769,7 +769,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_oneoff_heater_feed",
@@ -792,7 +792,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_oneoff_greywater_pump",
@@ -821,7 +821,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_oneoff_rain_pump",
@@ -844,7 +844,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_tile_cladding_wet",
@@ -869,7 +869,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_tile_floor_wet",
@@ -889,7 +889,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_tile_corners",
@@ -906,7 +906,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_waterproofing_wet",
@@ -928,7 +928,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_tile_partial_kitchen",
@@ -947,7 +947,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_tile_partial_other",
@@ -970,7 +970,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_waterproof_marker",
@@ -986,7 +986,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_note_point",
@@ -1002,7 +1002,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_breaker",
@@ -1018,7 +1018,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_legend_entry",
@@ -1034,7 +1034,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_legend_box",
@@ -1050,7 +1050,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_region",
@@ -1066,7 +1066,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_room",
@@ -1082,7 +1082,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_faucet_basin",
@@ -1098,7 +1098,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_faucet_wall",
@@ -1114,7 +1114,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_floor_tiling",
@@ -1130,7 +1130,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_none_wall_cladding",
@@ -1146,7 +1146,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_auth_sockets",
@@ -1171,7 +1171,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_auth_comms",
@@ -1196,7 +1196,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_auth_feeds",
@@ -1218,7 +1218,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_auth_switches",
@@ -1241,7 +1241,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_auth_luminaires",
@@ -1265,7 +1265,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_auth_fixtures",
@@ -1293,7 +1293,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_auth_ac",
@@ -1318,7 +1318,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_text_island_conduit",
@@ -1342,7 +1342,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_text_ventilator_feed",
@@ -1365,7 +1365,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_text_comms_panel",
@@ -1393,7 +1393,7 @@
       "priority": 130,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_text_boiler_timer",
@@ -1417,7 +1417,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_text_projector_conduit",
@@ -1441,7 +1441,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_text_panel_36",
@@ -1468,7 +1468,7 @@
       "priority": 130,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_text_vent_pipe",
@@ -1488,7 +1488,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_retaining_walls",
@@ -1506,7 +1506,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_retaining_walls",
@@ -1531,7 +1531,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_slab_stairs",
@@ -1560,7 +1560,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_opening_closure_block",
@@ -1578,7 +1578,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_opening_closure_block",
@@ -1603,7 +1603,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_stair_treads",
@@ -1621,7 +1621,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_stair_treads",
@@ -1646,7 +1646,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_backsplash",
@@ -1664,7 +1664,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_backsplash",
@@ -1689,7 +1689,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_cladding_partial",
@@ -1707,7 +1707,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_cladding_partial",
@@ -1732,7 +1732,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_courtyard_waterproofing",
@@ -1764,7 +1764,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_gypsum_ceiling",
@@ -1782,7 +1782,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_gypsum_ceiling",
@@ -1807,7 +1807,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_valance_equipment",
@@ -1825,7 +1825,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_valance_equipment",
@@ -1849,7 +1849,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_gypsum_closure",
@@ -1867,7 +1867,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_gypsum_closure",
@@ -1891,7 +1891,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_text_access_panel",
@@ -1911,7 +1911,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_access_panel",
@@ -1936,7 +1936,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_valance_curtain",
@@ -1954,7 +1954,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_valance_curtain",
@@ -1979,7 +1979,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_gypsum_partition",
@@ -1990,7 +1990,8 @@
           "gypsum_partition_area"
         ],
         "measure": "wall_area",
-        "sides": 1
+        "faces": 2,
+        "heightMode": "storey"
       },
       "itemCode": "7.06",
       "itemDescription": "מחיצות גבס עם בידוד צמר סלעים",
@@ -1998,7 +1999,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_gypsum_partition",
@@ -2022,7 +2023,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_gypsum_partition_double",
@@ -2041,7 +2042,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_gypsum_partition_double",
@@ -2066,7 +2067,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_repairs_after_demolition",
@@ -2090,7 +2091,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_geo_plaster_walls",
@@ -2108,7 +2109,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_plaster_walls",
@@ -2133,7 +2134,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_paint_interior",
@@ -2164,7 +2165,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_suggest_putty",
@@ -2196,7 +2197,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     },
     {
       "id": "r_template_demolition",
@@ -2219,7 +2220,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 7
+      "defaultsVersion": 8
     }
   ]
 }

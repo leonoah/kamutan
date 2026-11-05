@@ -288,6 +288,17 @@
                     "type": "null"
                   }
                 ]
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [

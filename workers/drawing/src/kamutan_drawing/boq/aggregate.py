@@ -910,7 +910,7 @@ def aggregate(
         gdets = [gu.det, *gu.extra]
         share = round(gu.qty / len(gdets), 4)
         gunit = Unit(gu.rule, [(d, None) for d in gdets], gu.qty, list(gu.reasons), gu.level, floor=gu.floor,
-                     origin=gu.origin, ev_qty={d.key: share for d in gdets})  # fmt: skip
+                     origin=gu.origin, ev_qty=gu.ev_qty or {d.key: share for d in gdets})  # fmt: skip
         if gu.origin == "suggested":  # not computable: the user measures it (the estimate is a hint in the reasons)
             gunit.qty, gunit.ev_qty, gunit.level = 0.0, {}, "red"
             gunit.ignore_member_levels = True
@@ -1103,6 +1103,8 @@ def _evidence_extra(d: Det, e: dict[str, Any]) -> None:
                            "mm": [{"x": round(px, 2), "y": round(py, 2)} for px, py in d.shape[:2000]]}  # fmt: skip
     if d.treads is not None:
         e["stair"] = {"treads": min(200, d.treads[0]), "risers": None if d.treads[1] is None else min(200, d.treads[1])}
+    if d.note:
+        e["reason"] = d.note[:200]
 
 
 def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:

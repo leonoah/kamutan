@@ -1924,7 +1924,8 @@ uv run pytest -q tests/test_geometry.py
 * 2.01: centreline 4.37 m × 2.07 m (yard levels) vs the GT's outer lengths 4.7 m × 2.1–2.4 m → −18 % vs the BOQ. The
   height above the top level / footing is not drawn.
 * 7.06: the BOQ's 35.2 m² is ≈ 1.27 × what the plans draw (27.8 m² at ceiling height); maybe full storey heights or
-  both faces — owner convention. The basement low wall (H=140, outline) is not read: its "H=140" is not OCR'd.
+  both faces — owner convention (decided 05.11: "Owner decision 05.11 — 7.06 partitions" below). The basement low
+  wall (H=140, outline) is not read: its "H=140" is not OCR'd.
 * Heights: the SHX reader rarely reads "H=…"; partitions take the floor ceiling (ground / first 2.65 from the level
   marks, basement 2.20) — always with the "הונח" reason.
 * Rooms (not changed here): on ad257a1c the kitchen polygon leaks ≈ 1.1 m² into the courtyard landing (courtyard door
@@ -2393,6 +2394,7 @@ artifacts, known since Stage 10). ruff / format / bandit clean, mypy 2.4.0 the C
   with the re-pairing"), AND d_17 (the lower bed-head circle, an existing single → pendant 21) is detected as
   `switch_fan` ("סוג עודכן לפי כיתוב סמוך") — with fan-anywhere it would add a false 4.14. Fix the refinement first.
 * Partition heights (7.06 / 7.07) and the kitchen door head (2.03): not on the drawings. 7.06's 35.2 vs 29.2 drawn.
+  (7.06 since 05.11: owner convention, see "Owner decision 05.11 — 7.06 partitions" below.)
 * The 7.03 BOQ line still lists the construction item's own "הגובה אינו מופיע בשרטוט" chip (Worker-BOQ copies
   evidence-item reasons from the stored artifact, not from the project measure).
 
@@ -2537,3 +2539,60 @@ KAMUTAN_RASTER_SYMBOLS=1 uv run python scripts/ingest_local.py …              
   the bench harness calls the same functions without title-block / region exclusion (the pipeline passes both).
 * Full suite: 678 passed, 3 skipped, 1 failed — `test_rooms_v4::test_sample_mep_basement_split_with_reference`, the
   known stale-shared-artifacts failure (Stage 10 notes; not touched here, CI skips it).
+
+## Owner decision 05.11 — 7.06 partitions (length × full storey height × both faces)
+
+Convention, as configuration (not a constant): `GeometryItemMatch.faces` (1|2) and `heightMode` ('storey'|'drawn')
+on a `keys` rule over the partition measures (`gypsum_partition_area`, `gypsum_double_partition_area`). Default rule
+`r_geo_gypsum_partition` (7.06): `faces: 2, heightMode: 'storey'` (contracts rules **v8**, `sides: 1` dropped — it was
+ignored with `keys`). Both absent = the measure as produced (one face, drawn / assumed height): every other rule and
+7.07 are unchanged.
+
+* **Lining vs partition** (`geometry/analyze._linings`, after the section heights; new wall-run fields `lining`
+  (bool | null) and `wallContactM`): for every gypsum run / low wall the long faces (edges ≥ 1.5 t, ends trimmed by the
+  probe) are probed 6 cm outwards against the wall mass = the wall network (`extract_walls`) + the cavities of outlined
+  walls (holes < 0.4 m wide: an existing wall drawn as two lines) + new block / concrete runs − new gypsum runs − walls
+  drawn as demolished (the master plan draws the new first-floor partition beside the yellow wall it replaces). A wall
+  behind ≥ 60 % of one face (covered ≥ 0.6 × probed / 2) → `lining: true` (one gypsum face). No wall network → null
+  (counted with the rule's faces).
+* **Convention** (`analyze.convention_items`, `measures(doc, faces=, height_mode=)`, `project.geometry_units(...,
+  faces=, height_mode=)`, pure): faces = 1 for a lining, else the rule's; `storey` = the storey's floor-to-ceiling
+  height (the room's ceiling when the item took it, else the floor's ceiling from the level marks; default 2.60 said
+  so) for storey-high partitions — a low wall, or a drawn height (label / section / mark / other sheet) more than 5 cm
+  below the storey, keeps its drawn height; the "הונח … לבדיקה" reason is replaced by "גובה המחיצה = גובה הקומה
+  מהרצפה עד התקרה (h)". Only computable re-measured (key, floor) measures replace the stored ones (a stored
+  non-computable measure keeps its reason / estimate). Convention measures carry `items` (per element: sheetId, id,
+  lengthM, heightM, heightSource ("storey" when the storey height was used), faces, lining, areaM2, reason).
+* **BOQ** (`boq/geometry.key_units`): each evidence item gets its element's `quantity` (m², instead of an even share)
+  and `reason` — "מחיצה דו-צדדית בגובה קומה" / "חיפוי חד-צדדי" / "מחיצה דו-צדדית בגובה המסומן בשרטוט" (low wall);
+  the line's reasons carry them too. Contracts (additive): `BoqEvidenceItem.reason` (≤ 200), `WallRun.lining` /
+  `wallContactM`, `GeometryItemMatch.faces` / `heightMode`, `GEOMETRY_HEIGHT_MODES`, `DEFAULT_BOQ_RULES_VERSION` 8.
+* **7.07 kept as is** (no faces / heightMode): "מחיצת גבס דו כרומי" already prices both skins per m² of partition, and
+  its height follows the stair soffit (not storey-high): BOQ 7.5 vs 7.11 one face; two faces would give 14.2.
+
+### Noah (`run_s6_eval.sh s7_706`, clean CLI ingest, `KAMUTAN_AV_SCAN=off`; before = `s7acc_final`)
+| element (authority sheet) | length m | height m | faces | m² |
+| --- | --- | --- | --- | --- |
+| basement partition bedroom / living + bath return (ad257a1c wr_2) | 4.44 | 2.20 storey (H=220) | 2 | 19.55 |
+| basement kitchen low wall "קיר נמוך H=140" (ad257a1c wr_4) | 1.00 | 1.40 drawn | 2 | 2.80 |
+| ground AC lining "סגירת גבס למיזוג אוויר בקיר" (1470f005 wr_2) | 4.40 | 2.65 storey (= section) | 1 lining | 11.66 |
+| first bath / bedroom partition (8099ab2c wr_3) | 1.90 | 2.65 storey | 2 | 10.07 |
+| first parents' bath niche pieces (8099ab2c wr_1, wr_2) | 2 × 0.25 | 2.65 storey | 1 lining | 2 × 0.67 |
+| **7.06** | | | | **29.19 → 45.40** (BOQ 35.2: −17 % → +29 %) |
+Only 7.06 changed (all 77 lines compared, with and without room settings); exact 59 / within 61 (nors 57 / 58) as
+before; gated ΣAE 36.46 → 40.65 (7.06 AE 6.0 → 10.2). Not tuned. Why 45.4 ≠ 35.2: the convention doubles the three
+free-standing pieces (basement 4.44 m, first 1.90 m, low wall); with the AC lining at one face the honest total is
+45.4. The GT's own note says it is open whether the AC lining belongs in 7.06 — without it the same convention gives
+33.8 (two faces) ≈ 35.2, which suggests the client's quantity leaves the lining out (or prices it elsewhere); a
+question for the owner, not a code change.
+
+### Tests / commands
+`tests/test_partition_convention.py` (9): lining vs free-standing vs low wall on a synthetic plan, a partition beside
+a demolished wall is not a lining, measures without / with the convention (storey, drawn, faces 1, room ceiling,
+default ceiling, no height), `geometry_units` breakdown, default 7.06 rule → per-evidence m² + reason and 7.07
+unchanged, a rule without the convention unchanged. `test_geometry.py::test_noah_7_06_owner_convention` (Noah
+classification + 45.4). Contracts: `sprint6.test.ts` "Owner decision 05.11"; `corrections.test.ts` version 8.
+Checks (05.11): ruff / ruff format clean (src + tests), mypy 2.4.0 the CI way no issues, bandit 1.9.4 `-ll` clean;
+full suite (`--ignore=tests/fuzz`) 687 passed, 4 skipped, 1 failed = `test_rooms_v4::…basement_split_with_reference`
+(the known stale-shared-artifacts failure); `pnpm turbo run lint typecheck test --filter=@kamutan/contracts
+--filter=@kamutan/api` green (contracts 148 + 3 new, API 399).

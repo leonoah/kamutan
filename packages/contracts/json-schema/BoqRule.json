@@ -3168,6 +3168,20 @@
                   "type": "number",
                   "minimum": 0,
                   "maximum": 100000
+                },
+                "faces": {
+                  "type": "number",
+                  "enum": [
+                    1,
+                    2
+                  ]
+                },
+                "heightMode": {
+                  "type": "string",
+                  "enum": [
+                    "storey",
+                    "drawn"
+                  ]
                 }
               },
               "required": [
@@ -3415,6 +3429,20 @@
                   "type": "number",
                   "minimum": 0,
                   "maximum": 100000
+                },
+                "faces": {
+                  "type": "number",
+                  "enum": [
+                    1,
+                    2
+                  ]
+                },
+                "heightMode": {
+                  "type": "string",
+                  "enum": [
+                    "storey",
+                    "drawn"
+                  ]
                 }
               },
               "required": [
@@ -3798,6 +3826,20 @@
                                   "type": "number",
                                   "minimum": 0,
                                   "maximum": 100000
+                                },
+                                "faces": {
+                                  "type": "number",
+                                  "enum": [
+                                    1,
+                                    2
+                                  ]
+                                },
+                                "heightMode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "storey",
+                                    "drawn"
+                                  ]
                                 }
                               },
                               "required": [

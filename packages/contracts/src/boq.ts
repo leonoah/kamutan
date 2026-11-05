@@ -713,6 +713,9 @@ export const BoqEvidenceItemSchema = z
     geometryMm: EvidenceGeometrySchema.nullable().optional(),
     /** Stair facts of a `stair` item. */
     stair: z.object({ treads: z.number().int().min(0).max(200), risers: z.number().int().min(0).max(200).nullable().optional() }).strict().nullable().optional(),
+    /** Why this item contributes `quantity` as it does (Hebrew, user-facing), e.g. a partition measured by convention:
+     * "מחיצה דו-צדדית בגובה קומה" / "חיפוי חד-צדדי". */
+    reason: z.string().max(200).nullable().optional(),
   })
   .strict();
 export type BoqEvidenceItem = z.infer<typeof BoqEvidenceItemSchema>;

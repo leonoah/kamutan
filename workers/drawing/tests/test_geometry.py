@@ -482,8 +482,13 @@ def _noah_docs() -> list[dict[str, Any]]:
 
 
 @pytest.fixture(scope="module")
-def noah_units() -> dict[str, dict[str, Any]]:
-    return {u["key"]: u for u in geometry_units(_noah_docs())}
+def noah_docs() -> list[dict[str, Any]]:
+    return _noah_docs()
+
+
+@pytest.fixture(scope="module")
+def noah_units(noah_docs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {u["key"]: u for u in geometry_units(noah_docs)}
 
 
 def test_noah_targets(noah_units: dict[str, dict[str, Any]]) -> None:
@@ -508,6 +513,25 @@ def test_noah_targets(noah_units: dict[str, dict[str, Any]]) -> None:
     assert u["plaster_new_walls_area"]["estimate"]["qty"] == pytest.approx(22.0, rel=0.1)  # 8.02
     assert not u["kitchen_backsplash_area"]["computable"]  # 5.06 not on the drawings
     assert all(x["level"] != "green" for x in u.values())
+
+
+def test_noah_7_06_owner_convention(noah_docs: list[dict[str, Any]]) -> None:
+    """Owner decision 05.11: 7.06 = length × full storey height × both faces; the ground AC lining (against the
+    existing wall) one face, the basement low wall (H=140) its drawn height. Honest total ≈ 45.4 m² vs BOQ 35.2."""
+    u = geometry_units(noah_docs, keys=["gypsum_partition_area"], faces=2, height_mode="storey")[0]
+    items = {(i["sheetId"].split("-")[1], round(float(i["lengthM"]), 1)): i for i in u["items"]}
+    lining = items[("1470f005", 4.4)]  # ground: "סגירת גבס למיזוג אוויר בקיר"
+    assert lining["lining"] is True and lining["faces"] == 1 and lining["heightM"] == 2.65
+    base = items[("ad257a1c", 4.4)]  # basement bedroom / living partition + bath return
+    assert base["lining"] is False and base["faces"] == 2 and base["heightM"] == 2.2  # level mark H=220
+    low = items[("ad257a1c", 1.0)]
+    assert low["kind"] == "low_wall" and low["faces"] == 2 and low["heightM"] == 1.4
+    first = items[("8099ab2c", 1.9)]  # first floor: bath / bedroom partition
+    assert first["lining"] is False and first["faces"] == 2 and first["heightM"] == 2.65
+    assert u["qty"] == pytest.approx(45.4, abs=0.5) and u["byFloor"]["ground"] == pytest.approx(11.66, abs=0.05)
+    # the same lining on the ground master plan is also classified as one (one item per sheet, construction counts)
+    master = next(d for d in noah_docs if d["sheetId"].startswith("noah-08222cb2"))
+    assert [r["lining"] for r in master["wallRuns"] if r["kind"] == "gypsum_single"] == [True]
 
 
 # ---------------------------------------------------------------------------------------------------- understand hook

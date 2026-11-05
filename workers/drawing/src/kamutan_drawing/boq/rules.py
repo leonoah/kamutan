@@ -715,7 +715,14 @@ _SPRINT6_RULES: list[dict[str, Any]] = [
     {
         "id": "r_geo_gypsum_partition",
         "kind": "area_item",
-        "match": {"source": "wall_run", "keys": ["gypsum_partition_area"], "measure": "wall_area", "sides": 1},
+        # owner decision 05.11: length × full storey height × both faces (a lining: one face; a low wall: its drawn H)
+        "match": {
+            "source": "wall_run",
+            "keys": ["gypsum_partition_area"],
+            "measure": "wall_area",
+            "faces": 2,
+            "heightMode": "storey",
+        },
         "itemCode": "7.06",
         "itemDescription": "מחיצות גבס עם בידוד צמר סלעים",
         "unit": 'מ"ר',
@@ -835,7 +842,7 @@ SPRINT6_RULE_IDS = frozenset(r["id"] for r in _SPRINT6_RULES)
 
 
 # contracts DEFAULT_BOQ_RULES_VERSION: bump with every change of DEFAULT_RULES (outdated default docs are replaced)
-DEFAULT_RULES_VERSION = 7  # contracts rules v7 (API agent: 2.02 trigger, 8.02 / 9.03 wording)
+DEFAULT_RULES_VERSION = 8  # contracts rules v8 (owner decision 05.11: 7.06 faces 2 + storey height)
 DEFAULT_DOC_FIELDS: dict[str, Any] = {"enabled": True, "source": "default", "defaultsVersion": DEFAULT_RULES_VERSION}
 
 # Mirror of contracts DEFAULT_BOQ_RULES (tests/test_boq_contracts.py diffs it against boq-defaults.json).

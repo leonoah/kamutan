@@ -210,7 +210,12 @@ export const HatchRegionSchema = z
   .object({ id: idWith('hr_'), category: GeometryCategorySchema, pattern: nn(z.string().max(32)), color: nn(z.string().max(16)), lifecycle, areaM2: nnum, perimeterM: nnum, roomId: nn(z.string().max(128)), roomName: nn(z.string().max(100)), roomType: nn(z.string().max(32)), labelBboxMm: nn(BBoxMmSchema), labelSource: nn(z.string().max(16)), ...shapeBase })
   .passthrough();
 export const WallRunSchema = z
-  .object({ id: idWith('wr_'), kind: GeometryCategorySchema, closure: z.boolean().optional(), lifecycle, lengthM: nnum, thicknessM: nnum, heightM: nnum, heightSource: nn(z.string().max(16)), areaM2: nnum, roomIds: z.array(z.string().max(128)).max(32).optional(), regionId: nn(z.string().max(128)), ...shapeBase })
+  .object({ id: idWith('wr_'), kind: GeometryCategorySchema, closure: z.boolean().optional(), lifecycle, lengthM: nnum, thicknessM: nnum, heightM: nnum, heightSource: nn(z.string().max(16)), areaM2: nnum, roomIds: z.array(z.string().max(128)).max(32).optional(), regionId: nn(z.string().max(128)),
+    /** Gypsum run / low wall: one long face against an existing or masonry wall (a lining: one gypsum face); null = not tested. */
+    lining: nn(z.boolean()),
+    /** Length (m) of the run's faces with a wall right behind them (the `lining` test). */
+    wallContactM: nnum,
+    ...shapeBase })
   .passthrough();
 export const GeometryLineSchema = z
   .object({ id: idWith('ln_'), kind: GeometryCategorySchema, lengthM: nnum, heightM: nnum, polylineMm: nn(z.array(PointMmSchema).max(20_000)), roomId: nn(z.string().max(128)), roomType: nn(z.string().max(32)), ...shapeBase })

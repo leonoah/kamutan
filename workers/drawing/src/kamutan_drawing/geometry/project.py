@@ -20,7 +20,17 @@ import copy
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .analyze import DRAWN_SOURCES, FLOOR_RANK, KEYS, M2, R_NOT_DRAWN_H, R_NOT_ON_DWG, R_OTHER_SHEET_H, measures
+from .analyze import (
+    DRAWN_SOURCES,
+    FLOOR_RANK,
+    KEYS,
+    M2,
+    R_NOT_DRAWN_H,
+    R_NOT_ON_DWG,
+    R_OTHER_SHEET_H,
+    WALL_CONVENTION_KEYS,
+    measures,
+)
 
 RANK = {"construction": 0, "architecture": 1, "architecture_master": 2, "master": 2, "demolition": 5}
 R_NONE = "לא נמצא בשרטוטים — להשלמה ידנית"
@@ -35,10 +45,21 @@ def _rank(doc: Mapping[str, Any], key: str) -> int:
     return RANK.get(disc, 8)
 
 
-def geometry_units(docs: Iterable[Mapping[str, Any]], *, keys: Sequence[str] | None = None) -> list[dict[str, Any]]:
-    """``[{key, unit, qty|null, computable, reason, estimate, byFloor, refs: [{sheetId, id}], level, reasons}]``."""
+def geometry_units(
+    docs: Iterable[Mapping[str, Any]],
+    *,
+    keys: Sequence[str] | None = None,
+    faces: int | None = None,
+    height_mode: str | None = None,
+) -> list[dict[str, Any]]:
+    """``[{key, unit, qty|null, computable, reason, estimate, byFloor, refs: [{sheetId, id}], level, reasons}]``.
+
+    ``faces`` / ``height_mode``: the partition convention of a BOQ rule (``analyze.measures``) — the partition keys are
+    re-measured with it and carry ``items`` (``[{sheetId, id, lengthM, heightM, faces, areaM2, reason, …}]``)."""
     docs = share_heights([d for d in docs if isinstance(d, Mapping)])
     want = list(keys) if keys is not None else list(KEYS)
+    if (faces is not None or height_mode is not None) and any(k in WALL_CONVENTION_KEYS for k in want):
+        docs = [_with_convention(d, faces, height_mode) for d in docs]
     out: list[dict[str, Any]] = []
     for key in want:
         if key == "stair_treads":
@@ -58,6 +79,26 @@ def geometry_units(docs: Iterable[Mapping[str, Any]], *, keys: Sequence[str] | N
                     per_floor[fl] = (sort, d, m)
         out.append(_combine(key, [(d, m) for _, d, m in sorted(per_floor.values(), key=lambda t: _floor_sort(t[2]))]))
     return out
+
+
+def _with_convention(doc: Mapping[str, Any], faces: int | None, height_mode: str | None) -> Mapping[str, Any]:
+    """The document with its partition measures re-measured by the convention: a re-measured (key, floor) replaces the
+    stored one when it is computable; a stored measure that is not (an element without a height: its reason and
+    estimate) is kept; every other measure stays as stored."""
+    conv = {(m["key"], m.get("floor")): m for m in measures(doc, faces=faces, height_mode=height_mode)
+            if m.get("key") in WALL_CONVENTION_KEYS}  # fmt: skip
+    out: list[Mapping[str, Any]] = []
+    seen: set[tuple[Any, Any]] = set()
+    for m in doc.get("measures") or []:
+        k = (m.get("key"), m.get("floor")) if isinstance(m, Mapping) else None
+        if k is not None and k in conv:
+            seen.add(k)
+            if conv[k].get("computable"):
+                out.append(conv[k])
+                continue
+        out.append(m)
+    out.extend(m for k, m in conv.items() if k not in seen)
+    return {**doc, "measures": out}
 
 
 SAME_LEN_TOL = 0.03  # same element on two sheets: lengths within 3 % (and 5 cm)
@@ -153,8 +194,11 @@ def _combine(key: str, picked: Sequence[tuple[Mapping[str, Any], Mapping[str, An
     level = min(levels, key=lambda x: {"red": 0, "yellow": 1, "green": 2}.get(x, 0))
     reasons = list(dict.fromkeys(r for _, m in picked for r in (m.get("reasons") or [])))[:12]
     refs = [{"sheetId": str(d.get("sheetId")), "id": str(i)} for d, m in picked for i in (m.get("refs") or [])][:128]
-    return {"key": key, "unit": unit, "qty": qty, "computable": comp, "reason": reason, "estimate": estimate,
-            "byFloor": by_floor, "refs": refs, "level": level, "reasons": reasons}  # fmt: skip
+    out = {"key": key, "unit": unit, "qty": qty, "computable": comp, "reason": reason, "estimate": estimate,
+           "byFloor": by_floor, "refs": refs, "level": level, "reasons": reasons}  # fmt: skip
+    if any("items" in m for _, m in picked):
+        out["items"] = [{"sheetId": str(d.get("sheetId")), **i} for d, m in picked for i in (m.get("items") or [])][:128]
+    return out
 
 
 def _stairs(docs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:

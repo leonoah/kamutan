@@ -87,6 +87,8 @@ class Det:
     shape: tuple[tuple[float, float], ...] | None = None
     closed: bool = True
     treads: tuple[int, int | None] | None = None
+    # the evidence item's own reason (a partition measured by convention: "מחיצה דו-צדדית בגובה קומה" / "חיפוי חד-צדדי")
+    note: str | None = None
 
     @property
     def key(self) -> str:

@@ -670,6 +670,22 @@
                   }
                 ]
               },
+              "lining": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "wallContactM": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "floor": {
                 "anyOf": [
                   {

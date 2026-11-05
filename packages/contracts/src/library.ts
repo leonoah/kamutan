@@ -436,6 +436,9 @@ export type TextItemMatch = z.infer<typeof TextItemMatchSchema>;
 
 /** What a geometry rule measures. Defaults: hatch / room / polyline → area (area_item) or length (length_item); wall_run → wall_area / length; stair → treads. */
 export const GEOMETRY_MEASURES = ['area', 'length', 'wall_area', 'count', 'treads'] as const;
+/** Height convention of partition measures (`GeometryItemMatch.heightMode`): `storey` = floor to ceiling of the storey,
+ * `drawn` = each element's own (drawn, else assumed) height. */
+export const GEOMETRY_HEIGHT_MODES = ['storey', 'drawn'] as const;
 
 /**
  * Sprint 6 (`area_item` m² / `length_item` m' / count): features of geometry.json.gz of `source` (shape kind), of one of
@@ -466,6 +469,17 @@ export const GeometryItemMatchSchema = z
     heightM: z.number().finite().positive().max(30).optional(),
     sides: z.union([z.literal(1), z.literal(2)]).optional(),
     minQty: z.number().finite().min(0).max(100_000).optional(),
+    /**
+     * Partition convention of a `keys` selector on wall-run partition measures (`gypsum_partition_area`,
+     * `gypsum_double_partition_area`; owner decision 05.11 for 7.06). `faces: 2` counts both faces of a free-standing
+     * partition — a lining (one face against an existing / masonry wall, wall run `lining: true`) always counts one;
+     * `heightMode: 'storey'` measures storey-high partitions at the storey's floor-to-ceiling height (a low wall /
+     * partial-height element keeps its drawn height), `'drawn'` keeps each element's own height (drawn, else assumed
+     * and flagged). Both absent = the measure as produced (one face, drawn or assumed height). Each element's m² and
+     * reason go on its evidence item (`quantity`, `reason`).
+     */
+    faces: z.union([z.literal(1), z.literal(2)]).optional(),
+    heightMode: z.enum(GEOMETRY_HEIGHT_MODES).optional(),
   })
   .strict()
   .refine((m) => (m.keys?.length ?? 0) > 0 || (m.categories?.length ?? 0) > 0 || (m.legendPatterns?.length ?? 0) > 0 || m.source === 'stair', {
@@ -838,7 +852,8 @@ const SPRINT6_RULES: readonly RuleSeed[] = [
   suggested('r_suggest_access_panel', { trigger: textTrigger('תקרת?\\s*גבס'), estimate: null, reason: 'לספור פתחי שירות בתקרה – להשלמה ידנית', quickAction: 'count' }, '7.04', 'אספקה והתקנה של פתח שירות בתקרת גבס', 'יחידה'),
   geoItem('r_geo_valance_curtain', 'length_item', { source: 'polyline', keys: ['valance_curtain_length'], measure: 'length' }, '7.05', 'סינר גבס מסתור לווילון', 'מ"א', 110),
   suggested('r_suggest_valance_curtain', { trigger: textTrigger('סינר[^.]{0,30}וילון', 'מסתור\\s*ל?וילון'), estimate: null, reason: NEEDS_MEASURE }, '7.05', 'סינר גבס מסתור לווילון', 'מ"א'),
-  geoItem('r_geo_gypsum_partition', 'area_item', { source: 'wall_run', keys: ['gypsum_partition_area'], measure: 'wall_area', sides: 1 }, '7.06', 'מחיצות גבס עם בידוד צמר סלעים', 'מ"ר'),
+  // owner decision 05.11: length × full storey height × both faces (a lining against a wall: one face; a low wall: its drawn H)
+  geoItem('r_geo_gypsum_partition', 'area_item', { source: 'wall_run', keys: ['gypsum_partition_area'], measure: 'wall_area', faces: 2, heightMode: 'storey' }, '7.06', 'מחיצות גבס עם בידוד צמר סלעים', 'מ"ר'),
   suggested('r_suggest_gypsum_partition', { trigger: textTrigger('מחיצ(ה|ות)\\s*(ה)?גבס'), estimate: null, reason: NEEDS_MEASURE }, '7.06', 'מחיצות גבס עם בידוד צמר סלעים', 'מ"ר'),
   geoItem('r_geo_gypsum_partition_double', 'area_item', { source: 'wall_run', keys: ['gypsum_double_partition_area'], measure: 'wall_area', sides: 1 }, '7.07', 'מחיצות גבס כפולות (דו קרומיות) עם בידוד צמר סלעים', 'מ"ר'),
   suggested('r_suggest_gypsum_partition_double', { trigger: textTrigger('דו[- ]?קרומי', 'מחיצ(ה|ות)\\s*גבס\\s*כפול'), estimate: null, reason: NEEDS_MEASURE }, '7.07', 'מחיצות גבס כפולות (דו קרומיות) עם בידוד צמר סלעים', 'מ"ר'),
@@ -1012,8 +1027,10 @@ export const DEFAULT_BOQ_RULES: readonly RuleSeed[] = Object.freeze([
  * 7 = Sprint 6 Worker-BOQ requests: 2.02 trigger + `גרם מדרגות`; 8.02 / 9.03 wording closer to trade wording (library
  *     resolution of imported items needs similarity ≥ 0.45); documented `CONSUME_NEAR_MAX_MM` and non-computable →
  *     needsInput. 7.04 unchanged (counts explicit service-opening notes only; open).
+ * 8 = owner decision 05.11: 7.06 gypsum partitions = length × full storey height × both faces (`faces: 2`,
+ *     `heightMode: 'storey'`; a lining against a wall counts one face, a low wall keeps its drawn height). 7.07 unchanged.
  */
-export const DEFAULT_BOQ_RULES_VERSION = 7;
+export const DEFAULT_BOQ_RULES_VERSION = 8;
 
 /** A seeded rule doc. */
 export const defaultRuleDoc = (r: RuleSeed): Omit<BoqRule, 'updatedAt' | 'updatedBy'> =>

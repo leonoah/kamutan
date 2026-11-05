@@ -491,6 +491,9 @@ def _region(
     # ------------------------------------------------------------- heights drawn in a section beside the plan
     _section_heights(ctx, [r for _, r in runs], levels)
 
+    # ------------------------------------------------------------- lining (one face) vs free-standing partition
+    _linings(ctx, runs, [hr.poly for hr, it in region_items if it.get("lifecycle") == "demolish"])
+
 
 _SECTION_FLAGS = {"ac", "gypsum", "double", "block", "concrete", "cladding", "partition", "closure", "courtyard"}
 _REFERS_TO_SECTION = re.compile(r"חתכ|חתך")
@@ -527,6 +530,87 @@ def _section_heights(ctx: _Ctx, runs: Sequence[dict[str, Any]], levels: Sequence
         keep = [r for r in run["reasons"] if not r.startswith("גובה")]
         run["reasons"] = [*keep, R_SECTION_H.format(h=h)] + ([R_SECTION_FOOTING] if run["kind"] == "concrete_retaining" else [])
         _finish(ctx, "wall_run", run)
+
+
+LINING_KINDS = ("gypsum_single", "gypsum_double", "low_wall")
+LINING_PROBE_M = 0.06  # probe this far beyond a long face of the run
+LINING_STEP_M = 0.02
+LINING_MIN_FRAC = 0.6  # a lining: ≥ 60 % of its length has an existing / masonry wall right behind one face
+WALL_CAVITY_M = 0.4  # a hole of the wall network narrower than this is the inside of an outlined wall, not a room
+
+
+def _wall_mass(ctx: _Ctx, runs: Sequence[tuple[BaseGeometry, Mapping[str, Any]]]) -> BaseGeometry | None:
+    """Existing and masonry walls of the region: the wall network with the cavities of outlined walls filled (an
+    existing wall drawn as two lines leaves a thin hole between its faces), without the new gypsum runs (a partition
+    beside another partition is not a lining). New block / concrete runs are masonry and stay."""
+    if ctx.walls is None or ctx.walls.is_empty:
+        return None
+    m = ctx.mm_per_m
+    parts: list[BaseGeometry] = [ctx.walls]
+    for p in polygons_of(ctx.walls):
+        for ring in p.interiors:
+            hole = Polygon(ring)
+            if hole.is_valid and hole.buffer(-WALL_CAVITY_M / 2 * m).is_empty:
+                parts.append(hole)
+    parts.extend(g for g, r in runs if r.get("kind") in ("block_new", "concrete_retaining"))
+    mass = unary_union(parts)
+    gyp = [g for g, r in runs if r.get("kind") in LINING_KINDS]
+    if gyp:
+        mass = mass.difference(unary_union(gyp).buffer(0.01 * m))
+    return mass
+
+
+def _face_contact(poly: BaseGeometry, mass: BaseGeometry, t_mm: float, m: float) -> tuple[float, float]:
+    """(covered, probed) length (paper mm) of the run's long faces: probed = the long faces with their ends trimmed by
+    the probe distance (the short end faces are not sides), covered = the part with ``mass`` right behind it (probe
+    ``LINING_PROBE_M`` outwards)."""
+    from shapely import contains_xy
+    from shapely.geometry.polygon import orient
+
+    shapes = [orient(p, 1.0) for p in polygons_of(poly)]
+    d, step = LINING_PROBE_M * m, LINING_STEP_M * m
+    min_edge = max(1.5 * t_mm, 0.1 * m)
+    covered = probed = 0.0
+    for p in shapes:
+        cs = list(p.exterior.coords)
+        for (x0, y0), (x1, y1) in itertools.pairwise(cs):
+            ln = math.hypot(x1 - x0, y1 - y0)
+            if ln < min_edge or ln <= 2 * d:
+                continue
+            ux, uy = (x1 - x0) / ln, (y1 - y0) / ln
+            nx, ny = uy, -ux  # outward normal of a counter-clockwise ring (y down: still the right-hand side)
+            n = max(int((ln - 2 * d) / step), 1)
+            ss = np.linspace(d, ln - d, n + 1)
+            px, py = x0 + ux * ss + nx * d, y0 + uy * ss + ny * d
+            inside = contains_xy(mass, px, py)
+            if p.contains(Point(float(px[0]), float(py[0]))):  # orientation guard: the probe went inwards
+                inside = contains_xy(mass, x0 + ux * ss - nx * d, y0 + uy * ss - ny * d)
+            covered += float(inside.mean()) * (ln - 2 * d)
+            probed += ln - 2 * d
+    return covered, probed
+
+
+def _linings(ctx: _Ctx, runs: Sequence[tuple[BaseGeometry, dict[str, Any]]], demolished: Sequence[BaseGeometry] = ()) -> None:
+    """``lining`` of every gypsum run / low wall: True when one long face lies against an existing or masonry wall
+    along ≥ ``LINING_MIN_FRAC`` of its length (one gypsum face: "חיפוי חד-צדדי"), False for a free-standing partition
+    (both faces gypsum), None when the region has no wall network to test against. A wall drawn as demolished is no
+    backing (the master plan draws the new partition beside the wall it replaces). ``wallContactM`` = the length of
+    the run's faces with a wall right behind them."""
+    gyp = [(g, r) for g, r in runs if r.get("kind") in LINING_KINDS]
+    if not gyp:
+        return
+    mass = _wall_mass(ctx, runs)
+    m = ctx.mm_per_m
+    if mass is not None and demolished:
+        mass = mass.difference(unary_union(list(demolished)).buffer(0.02 * m))
+    for g, r in gyp:
+        if mass is None or mass.is_empty:
+            r["lining"] = None
+            continue
+        covered, probed = _face_contact(g, mass, float(r.get("thicknessM") or 0.0) * m, m)
+        # a straight strip has two long faces: one of them fully against a wall = half of what was probed
+        r["lining"] = bool(probed > 0 and covered >= LINING_MIN_FRAC * probed / 2.0)
+        r["wallContactM"] = round(covered / m, 3)
 
 
 def _merge_pieces(regs: Sequence[H.HatchRegion], gap: float = 3.5) -> list[H.HatchRegion]:
@@ -679,6 +763,8 @@ def _wall_run(
         "roomIds": _rooms_touching(ctx, poly),
         "label": note.text[:200] if note else None,
         "regionId": region.get("id"),
+        # one long face against an existing / masonry wall (a lining: one gypsum face); set by ``_linings``
+        "lining": None,
         "confidence": 0.0,
         "scoreRaw": round(score, 3),
         "level": "yellow",
@@ -1095,8 +1181,87 @@ R_NO_HEIGHT = "גובה לא מופיע בשרטוט — להשלמה ידנית
 R_FACES = "אילו פני קיר מטויחים אינו מצוין — הערכה"
 
 
-def measures(doc: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Per-sheet measures (see the module docs for the keys). Items of several floors on one sheet are split."""
+# --- partition convention (owner decision 05.11, BOQ 7.06): area = length × storey height × faces
+WALL_CONVENTION_KEYS = ("gypsum_partition_area", "gypsum_double_partition_area")
+HEIGHT_MODES = ("storey", "drawn")
+STOREY_TOL_M = 0.05  # a drawn height this much below the storey height is a partial-height element
+R_PARTITION_2_STOREY = "מחיצה דו-צדדית בגובה קומה"
+R_PARTITION_2_DRAWN = "מחיצה דו-צדדית בגובה המסומן בשרטוט"
+R_PARTITION_2 = "מחיצה דו-צדדית"
+R_LINING_1 = "חיפוי חד-צדדי"
+R_STOREY_H = "גובה המחיצה = גובה הקומה מהרצפה עד התקרה ({h:.2f} מ')"
+
+
+def _storey_height(doc: Mapping[str, Any], item: Mapping[str, Any]) -> tuple[float | None, str | None]:
+    """Floor-to-ceiling height of the item's storey: the room's ceiling when the item took it, else the floor's
+    ceiling of the sheet (level marks / default), else None."""
+    if item.get("heightSource") == "room" and item.get("heightM"):
+        return float(item["heightM"]), "room"
+    for h in doc.get("heights") or []:
+        if isinstance(h, Mapping) and h.get("floor") == item.get("floor") and h.get("ceilingM"):
+            return float(h["ceilingM"]), str(h.get("source") or "default")
+    return None, None
+
+
+def convention_items(
+    doc: Mapping[str, Any], items: Sequence[Mapping[str, Any]], faces: int, height_mode: str
+) -> list[dict[str, Any]]:
+    """Copies of partition items (gypsum runs / low walls with a height) measured by the partition convention:
+    ``faces`` 2 counts both faces of a free-standing partition, a lining (``lining``: one face against an existing /
+    masonry wall) always one; ``height_mode`` ``storey`` takes the floor-to-ceiling height of the storey for
+    storey-high partitions and keeps a drawn height only for a low wall / partial-height element (drawn below the
+    storey height), ``drawn`` keeps the item's own height (drawn, else assumed and flagged). Adds ``faces``,
+    ``convention`` (the item's Hebrew reason) and recomputes ``heightM`` / ``areaM2``."""
+    out: list[dict[str, Any]] = []
+    for it in items:
+        h0 = it.get("heightM")
+        c = dict(it)
+        if h0 is None or not it.get("lengthM"):
+            out.append(c)  # no height (a low wall whose H was not read): not measured, as before
+            continue
+        h = float(h0)
+        reasons = list(it.get("reasons") or [])
+        drawn = it.get("heightSource") in DRAWN_SOURCES
+        storey_used = False
+        if height_mode == "storey":
+            storey, src = _storey_height(doc, it)
+            partial = it.get("kind") == "low_wall" or (drawn and storey is not None and h < storey - STOREY_TOL_M)
+            if storey is not None and not partial:
+                h, storey_used = storey, True
+                reasons = [r for r in reasons if not str(r).startswith("גובה") and r != R_NOT_DRAWN_H]
+                reasons.append(R_DEFAULT_H.format(h=h) if src == "default" else R_STOREY_H.format(h=h))
+        n = 1 if it.get("lining") else faces
+        if it.get("lining"):
+            why = R_LINING_1
+        elif n == 2:
+            why = R_PARTITION_2_STOREY if storey_used else R_PARTITION_2_DRAWN if drawn else R_PARTITION_2
+        else:
+            why = None
+        if why:
+            reasons = [why, *reasons]
+        if storey_used:
+            c["heightSource"] = "storey"
+        c.update(heightM=round(h, 2), faces=n, areaM2=round(float(it["lengthM"]) * h * n, 3), convention=why,
+                 reasons=list(dict.fromkeys(reasons))[:12])  # fmt: skip
+        out.append(c)
+    return out
+
+
+def _breakdown(items: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return [{"id": str(i.get("id")), "kind": i.get("kind"), "lengthM": i.get("lengthM"), "heightM": i.get("heightM"),
+             "heightSource": i.get("heightSource"), "faces": i.get("faces"), "lining": i.get("lining"),
+             "areaM2": i.get("areaM2"), "reason": i.get("convention")} for i in items][:64]  # fmt: skip
+
+
+def measures(doc: Mapping[str, Any], *, faces: int | None = None, height_mode: str | None = None) -> list[dict[str, Any]]:
+    """Per-sheet measures (see the module docs for the keys). Items of several floors on one sheet are split.
+
+    ``faces`` / ``height_mode`` (a BOQ rule's partition convention, both None = the items as produced: one face, the
+    drawn or assumed height) re-measure the partition keys (``WALL_CONVENTION_KEYS``) by :func:`convention_items`; those
+    measures then carry ``items`` (per element: length, height, faces, m², reason)."""
+    conv = faces is not None or height_mode is not None
+    n_faces = 2 if faces == 2 else 1
+    mode = height_mode if height_mode in HEIGHT_MODES else "drawn"
     out: list[dict[str, Any]] = []
     floors = sorted(
         {
@@ -1141,20 +1306,17 @@ def measures(doc: Mapping[str, Any]) -> list[dict[str, Any]]:
                 by_kind["gypsum_single" if thin else "block_new"].append(lw)
         if by_kind["block_new"]:
             out.append(_m("block_wall_area", M2, by_kind["block_new"], _sum(by_kind["block_new"], "areaM2"), floor=f))
-        if by_kind["gypsum_single"]:
-            out.append(
-                _m("gypsum_partition_area", M2, by_kind["gypsum_single"], _sum(by_kind["gypsum_single"], "areaM2"), floor=f)
-            )
-        if by_kind["gypsum_double"]:
-            out.append(
-                _m(
-                    "gypsum_double_partition_area",
-                    M2,
-                    by_kind["gypsum_double"],
-                    _sum(by_kind["gypsum_double"], "areaM2"),
-                    floor=f,
-                )
-            )
+        for kind, key in (("gypsum_single", "gypsum_partition_area"), ("gypsum_double", "gypsum_double_partition_area")):
+            parts = by_kind[kind]
+            if not parts:
+                continue
+            if conv:
+                parts = convention_items(doc, parts, n_faces, mode)
+                mes = _m(key, M2, parts, _sum(parts, "areaM2"), floor=f)
+                mes["items"] = _breakdown(parts)
+                out.append(mes)
+            else:
+                out.append(_m(key, M2, parts, _sum(parts, "areaM2"), floor=f))
         cys = on("courtyards")
         if cys:
             out.append(_m("courtyard_wall_area", M2, cys, _sum(cys, "wallAreaM2"), floor=f))

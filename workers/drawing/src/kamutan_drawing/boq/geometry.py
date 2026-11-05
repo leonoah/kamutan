@@ -1,8 +1,9 @@
 """Sprint 6: BOQ lines from drawing geometry — rule kinds ``area_item`` / ``length_item`` (pure). Contracts:
 ``GeometryItemMatchSchema`` (library.ts) + ``kamutan.geometry/1`` features (takeoff.ts)::
 
-    match = {source: hatch|room|wall_run|polyline|stair, categories?, legendPatterns?, disciplines?, floors?,
-             roomTypes?, lifecycle?, measure?: area|length|wall_area|count|treads, heightM?, sides?: 1|2, minQty?}
+    match = {source: hatch|room|wall_run|polyline|stair, keys?, categories?, legendPatterns?, disciplines?, floors?,
+             roomTypes?, lifecycle?, measure?: area|length|wall_area|count|treads, heightM?, sides?: 1|2, minQty?,
+             faces?: 1|2, heightMode?: storey|drawn}
 
 Features of ``source`` (feature ``kind``), of one of ``categories`` (when given) AND whose ``legendLabel`` matches one
 of ``legendPatterns`` (when given), filtered by sheet discipline, floor, room types (any of the feature's rooms, mapped
@@ -11,6 +12,11 @@ room / polyline → area for area_item, length for length_item; wall_run → wal
 ``wall_area`` = ``wallAreaM2``, else ``lengthM`` × (rule ``heightM``, else the feature's) × ``sides`` (no height → the
 feature is skipped, ``stats.noHeight``); ``count`` = ``count`` ?? 1; ``treads`` = ``stair.treads``. Features below
 ``minQty`` are ignored. Missing real-world sizes are computed from the paper-mm shape and the sheet scale.
+
+``faces`` / ``heightMode`` (with ``keys``, the partition measures — owner decision 05.11 for 7.06): ``faces: 2`` counts
+both faces of a free-standing partition (a lining against an existing / masonry wall keeps one), ``heightMode: storey``
+takes the storey's floor-to-ceiling height (a low wall keeps its drawn height); each element's m² and reason
+("מחיצה דו-צדדית בגובה קומה" / "חיפוי חד-צדדי") go on its evidence item. Neither given → the measure as produced.
 
 Worker convention: per floor one sheet counts (the first of ``disciplines``, default construction > architecture >
 architecture_master > the rest), so a wall drawn on two plans is counted once. Evidence: one item per feature
@@ -30,6 +36,7 @@ from .spaces import ROOM_SOURCE_ORDER
 from .textitems import norm_he, patterns_of
 
 GEOMETRY_SCHEMA = "kamutan.geometry/1"
+HEIGHT_MODES = ("storey", "drawn")
 SOURCES = ("hatch", "room", "wall_run", "polyline", "stair")
 MEASURES = ("area", "length", "wall_area", "count", "treads")
 MAX_FEATURES = 20_000
@@ -229,6 +236,7 @@ class GeoUnit:
     origin: str = "geometry"  # "suggested": a measure Worker-Geometry could only estimate
     reasons: list[str] = field(default_factory=list)
     extra: list[Det] = field(default_factory=list)  # more evidence of the same unit (a measure's other shapes)
+    ev_qty: dict[str, float] | None = None  # per evidence (Det.key) quantity when known (else an even share)
 
 
 def _bbox(pts: tuple[tuple[float, float], ...]) -> tuple[float, float, float, float] | None:
@@ -368,8 +376,13 @@ def key_units(m: dict[str, Any], items: list[GeoItem], docs: list[dict[str, Any]
         return []
     by_ref = {(g.sheet_id, g.id): g for g in items}
     floors = {str(f) for f in m.get("floors") or []}
+    faces = m.get("faces") if m.get("faces") in (1, 2) else None
+    height_mode = m.get("heightMode") if m.get("heightMode") in HEIGHT_MODES else None
     out: list[GeoUnit] = []
-    for mes in project_measures(docs, keys=keys):
+    for mes in project_measures(docs, keys=keys, faces=faces, height_mode=height_mode):
+        # per element of a convention measure: its m² and reason (sheetId, id) → (areaM2, reason)
+        elems = {(str(i.get("sheetId")), str(i.get("id"))): (_pos(i.get("areaM2")), i.get("reason"))
+                 for i in mes.get("items") or [] if isinstance(i, dict)}  # fmt: skip
         refs = [by_ref[(str(r.get("sheetId")), str(r.get("id")))] for r in mes.get("refs") or []
                 if (str(r.get("sheetId")), str(r.get("id"))) in by_ref]  # fmt: skip
         level = str(mes.get("level")) if mes.get("level") in ("green", "yellow", "red") else "yellow"
@@ -396,13 +409,20 @@ def key_units(m: dict[str, Any], items: list[GeoItem], docs: list[dict[str, Any]
             dets = [geo_det(g, g.room_ids) for g in here] or _measure_sheet(docs, str(mes.get("key")), fl)
             if not dets:
                 continue
+            ev: dict[str, float] | None = None
             if origin == "geometry":
                 # Sprint 7: the measure was computed (its height possibly shared from another sheet of the floor, or read
                 # from a mark): the stored items' own reasons ("הגובה אינו מופיע בשרטוט" of the construction sheet) are
                 # stale — the line keeps only the reasons of the measure that was used
                 dets = [replace(d, reasons=[]) for d in dets]
+                if elems:
+                    dets = [replace(d, note=str(e[1])[:200]) if (e := elems.get((d.sheet_id, d.id))) and e[1] else d
+                            for d in dets]  # fmt: skip
+                    known = {d.key: e[0] for d in dets if (e := elems.get((d.sheet_id, d.id))) and e[0] is not None}
+                    if len(known) == len(dets) and abs(sum(known.values()) - q) <= 0.01 * max(q, 1.0):
+                        ev = {k: round(v, 4) for k, v in known.items()}
             out.append(GeoUnit(None, dets[0], round(q, 4), None if fl in ("None", "unknown") else fl, level, origin,
-                               list(reasons), dets[1:]))  # fmt: skip
+                               list(reasons), dets[1:], ev))  # fmt: skip
     return out
 
 

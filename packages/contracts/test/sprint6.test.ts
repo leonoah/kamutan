@@ -230,3 +230,27 @@ describe('Sprint 6 — artifacts', () => {
     }
   });
 });
+
+describe('Owner decision 05.11 — 7.06 partition convention (faces / heightMode)', () => {
+  const rule7 = (id: string) => DEFAULT_BOQ_RULES.find((r) => r.id === id);
+  it('7.06 counts both faces at storey height; 7.07 unchanged', () => {
+    expect(rule7('r_geo_gypsum_partition')?.match).toMatchObject({ keys: ['gypsum_partition_area'], faces: 2, heightMode: 'storey' });
+    const m707 = rule7('r_geo_gypsum_partition_double')?.match as Record<string, unknown>;
+    expect(m707.faces).toBeUndefined();
+    expect(m707.heightMode).toBeUndefined();
+  });
+  it('faces 1|2 and heightMode storey|drawn only', () => {
+    const base = { ...defaultRuleDoc(rule7('r_geo_gypsum_partition')!), updatedAt: null } as Record<string, unknown>;
+    const withMatch = (m: Record<string, unknown>) => BoqRuleSchema.safeParse({ ...base, match: { ...(base.match as object), ...m } }).success;
+    expect(withMatch({ faces: 1, heightMode: 'drawn' })).toBe(true);
+    expect(withMatch({ faces: 3 })).toBe(false);
+    expect(withMatch({ heightMode: 'ceiling' })).toBe(false);
+  });
+  it('evidence reason and wall-run lining are additive', () => {
+    const ev = { sheetId: 's1', versionId: 'v1', detectionId: 'wr_1', linkGroupId: null, floor: 'ground', kind: 'geometry', quantity: 11.66, reason: 'חיפוי חד-צדדי' };
+    expect(BoqEvidenceItemSchema.safeParse(ev).success).toBe(true);
+    expect(BoqEvidenceItemSchema.safeParse({ ...ev, reason: 'x'.repeat(201) }).success).toBe(false);
+    const wr = { id: 'wr_1', kind: 'gypsum_single', lifecycle: 'new', lengthM: 4.4, thicknessM: 0.07, heightM: 2.65, heightSource: 'section', areaM2: 11.66, regionId: null, floor: 'ground', confidence: 0.6, level: 'yellow', reasons: ['x'], polygonMm: null, bboxMm: null, label: null, lining: true, wallContactM: 4.28 };
+    expect(GeometryArtifactSchema.safeParse({ schema: 'kamutan.geometry/1', discipline: 'construction', scaleDenominator: 50, wallRuns: [wr] }).success).toBe(true);
+  });
+});
