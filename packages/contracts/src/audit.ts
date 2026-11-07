@@ -79,7 +79,8 @@ export type AuditVerifyResponse = z.infer<typeof AuditVerifyResponseSchema>;
 // ---------------------------------------------------------------------------
 
 /** Sprint 7: + `description` (rename: before / after = displayed text). */
-export const LINE_HISTORY_ACTIONS = ['status', 'qtyOverride', 'note', 'rebuild', 'correction', 'description'] as const;
+/** Sprint 8: + `price` (priceOverride: before / after = the override value, null = library price). */
+export const LINE_HISTORY_ACTIONS = ['status', 'qtyOverride', 'note', 'rebuild', 'correction', 'description', 'price'] as const;
 export const LineHistoryActionSchema = z.enum(LINE_HISTORY_ACTIONS);
 export type LineHistoryAction = z.infer<typeof LineHistoryActionSchema>;
 
@@ -167,6 +168,9 @@ export const AUDIT_ACTION_HE: Readonly<Record<string, string>> = Object.freeze({
   remove: 'הסרה',
   rebuild: 'חישוב מחדש',
   approval_invalidated: 'האישור בוטל – הכמות השתנתה',
+  delete: 'מחיקה',
+  import_prices: 'ייבוא מחירים',
+  update_pricing: 'הנחה / תוספת',
 });
 
 const CORRECTION_KIND_HE: Readonly<Record<string, string>> = Object.freeze({
@@ -192,6 +196,7 @@ const SETTING_HE: Readonly<Record<string, string>> = Object.freeze({
   enabled: 'פעיל',
   priority: 'עדיפות',
   itemCode: 'סעיף',
+  vatRate: 'מע"מ',
 });
 
 const fmt = (v: unknown): string => {
@@ -201,6 +206,8 @@ const fmt = (v: unknown): string => {
   if (typeof v === 'string') return (BOQ_STATUS_HE as Record<string, string>)[v] ?? ROLE_HE[v] ?? v;
   return '…';
 };
+/** Sprint 8: "₪1,234.5" (null → "ללא מחיר"). */
+const money = (v: unknown): string => (typeof v === 'number' && Number.isFinite(v) ? `₪${(Math.round(v * 100) / 100).toLocaleString('en-US')}` : 'ללא מחיר');
 const classHe = (c: unknown): string | null => (typeof c === 'string' && c in SYMBOL_CLASS_INFO ? SYMBOL_CLASS_INFO[c as SymbolClass].he : typeof c === 'string' ? c : null);
 const changesHe = (changes: unknown): string[] =>
   changes && typeof changes === 'object'
@@ -252,10 +259,32 @@ export function auditSummaryHe(e: Pick<AuditEvent, 'entity' | 'action' | 'entity
         if (a.alsoUpdateLibrary === true) parts.push('עודכן גם בספריית הסעיפים');
         if (!('qtyOverride' in a) && typeof a.reason === 'string' && a.reason) parts.push(`סיבה: ${a.reason.slice(0, 200)}`);
       }
+      // Sprint 8: the line's project unit price (priceOverride); `to: null` = back to the library price.
+      if (a.price && typeof a.price === 'object') {
+        const p = a.price as { from?: unknown; to?: unknown };
+        parts.push(p.to === null ? 'ביטול מחיר ידני (חזרה למחיר הספרייה)' : `מחיר ידני ${money(p.from)} → ${money(p.to)}`);
+        if (!('qtyOverride' in a) && !a.description && typeof a.reason === 'string' && a.reason) parts.push(`סיבה: ${a.reason.slice(0, 200)}`);
+      }
       if (e.action === 'approval_invalidated') parts.push(`הכמות השתנתה ${fmt(a.fromQty ?? a.prevQty)} → ${fmt(a.toQty ?? a.qty)}`, 'האישור בוטל, נדרש אישור מחדש');
       if (e.action === 'rebuild') parts.push(`חישוב מחדש ${fmt(a.prevQty ?? a.from)} → ${fmt(a.qty ?? a.to)}`);
       break;
     }
+    case 'itemLibrary': {
+      parts.push(typeof a.code === 'string' ? `סעיף ${a.code}` : ent, act);
+      // Sprint 8: price edits (single / bulk) and imports.
+      if (a.price && typeof a.price === 'object') {
+        const p = a.price as { from?: unknown; to?: unknown };
+        parts.push(p.to === null ? 'מחיר הוסר' : `מחיר ${money(p.from)} → ${money(p.to)}`);
+        if (typeof a.batchId === 'string') parts.push('(פעולה קבוצתית)');
+      }
+      if (e.action === 'import_prices') parts.push(`${fmt(a.applied)} מחירים עודכנו`, `${fmt(a.unmatched)} ללא התאמה`, `${fmt(a.conflicts)} בהתנגשות`);
+      break;
+    }
+    case 'projects':
+      parts.push(ent, act);
+      if (e.action === 'update_pricing') parts.push(typeof a.to === 'number' && a.to !== 0 ? `${a.to < 0 ? 'הנחה' : 'תוספת'} ${Math.abs(a.to)}%` : 'ללא הנחה / תוספת');
+      if (e.action === 'delete' && typeof a.name === 'string') parts.push(`«${a.name.slice(0, 80)}»`);
+      break;
     case 'orgs':
       parts.push(e.action === 'update_settings' ? 'שינוי הגדרות ארגון' : `${ent} · ${act}`, ...changesHe(a.changes));
       break;
@@ -285,6 +314,8 @@ export function auditSummaryHe(e: Pick<AuditEvent, 'entity' | 'action' | 'entity
     case 'sheetSets':
       parts.push(ent, act);
       if (typeof a.discipline === 'string') parts.push(a.discipline);
+      // Sprint 8: sheet-set delete.
+      if (e.action === 'delete' && typeof a.sheets === 'number') parts.push(`${a.sheets} גיליונות`);
       break;
     case 'legendEntries':
     case 'unknownClusters': {

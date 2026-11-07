@@ -1,6 +1,30 @@
 import type { ZodTypeAny } from 'zod';
 import { IdTokenClaimsSchema } from './auth.js';
 import { SheetSetStatusResponseSchema } from './uploads.js';
+import {
+  BoqTotalsSchema,
+  BulkLibraryPriceRequestSchema,
+  BulkLibraryPriceResponseSchema,
+  ItemPriceSchema,
+  PatchProjectPricingRequestSchema,
+  PatchProjectPricingResponseSchema,
+  PriceImportReportSchema,
+  ProjectPricingSchema,
+  ApplyImportPricesRequestSchema,
+  ApplyImportPricesResponseSchema,
+} from './prices.js';
+import {
+  BoqCompareExportRequestSchema,
+  BoqCompareExportResponseSchema,
+  BoqCompareItemSchema,
+  BoqCompareQuerySchema,
+  BoqComparisonSchema,
+  BoqLinesSnapshotSchema,
+  BoqBuildListSchema,
+  BoqBuildListQuerySchema,
+  BoqBuildSummarySchema,
+} from './compare.js';
+import { DeleteProjectRequestSchema, DeleteProjectResponseSchema, DeleteSheetSetResponseSchema } from './housekeeping.js';
 import { BoqDocumentModelSchema, BoqDocumentQuerySchema, BoqDocumentRowSchema } from './boq-document.js';
 import {
   BoqBuildSchema,
@@ -383,4 +407,28 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   BoqDocumentModel: BoqDocumentModelSchema,
   BoqDocumentRow: BoqDocumentRowSchema,
   SheetSetStatusResponse: SheetSetStatusResponseSchema,
+  // Sprint 8 — prices, comparison, housekeeping
+  ItemPrice: ItemPriceSchema,
+  BoqTotals: BoqTotalsSchema,
+  ProjectPricing: ProjectPricingSchema,
+  PatchProjectPricingRequest: PatchProjectPricingRequestSchema,
+  PatchProjectPricingResponse: PatchProjectPricingResponseSchema,
+  BulkLibraryPriceRequest: BulkLibraryPriceRequestSchema,
+  BulkLibraryPriceResponse: BulkLibraryPriceResponseSchema,
+  PriceImportReport: PriceImportReportSchema,
+  BoqLinesSnapshot: BoqLinesSnapshotSchema,
+  BoqCompareQuery: BoqCompareQuerySchema,
+  BoqComparison: BoqComparisonSchema,
+  BoqCompareItem: BoqCompareItemSchema,
+  BoqCompareExportRequest: BoqCompareExportRequestSchema,
+  BoqCompareExportResponse: BoqCompareExportResponseSchema,
+  DeleteSheetSetResponse: DeleteSheetSetResponseSchema,
+  DeleteProjectRequest: DeleteProjectRequestSchema,
+  DeleteProjectResponse: DeleteProjectResponseSchema,
+  // Sprint 8 integration (web)
+  BoqBuildListQuery: BoqBuildListQuerySchema,
+  BoqBuildList: BoqBuildListSchema,
+  BoqBuildSummary: BoqBuildSummarySchema,
+  ApplyImportPricesRequest: ApplyImportPricesRequestSchema,
+  ApplyImportPricesResponse: ApplyImportPricesResponseSchema,
 });

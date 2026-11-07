@@ -334,6 +334,17 @@
                   "type": "null"
                 }
               ]
+            },
+            "linesRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [

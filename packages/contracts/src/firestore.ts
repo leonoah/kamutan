@@ -118,6 +118,13 @@ export const storagePaths = Object.freeze({
   geometry: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/geometry.json.gz`,
   /** Sprint 3: evidence of one BOQ build (`kamutan.boq-evidence/1`, worker; API reads server-side). */
   boqEvidence: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/evidence.json.gz`,
+  /** Sprint 8: compact lines snapshot of one build (`kamutan.boq-lines/1`, worker; API reads server-side for comparisons). */
+  boqLinesSnapshot: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/lines.json.gz`,
+  /** Sprint 8: every object of a project (prefix; project delete) and of one sheet (sheet-set delete). */
+  projectPrefix: (o: string, p: string) => `orgs/${o}/projects/${p}/`,
+  sheetPrefix: (o: string, p: string, s: string) => `orgs/${o}/projects/${p}/sheets/${s}/`,
+  uploadsPrefix: (o: string, p: string, sheetSetId: string) => `orgs/${o}/projects/${p}/uploads/${sheetSetId}/`,
+  infectedPrefix: (o: string, p: string, sheetSetId: string) => `orgs/${o}/projects/${p}/infected/${sheetSetId}/`,
   /** Sprint 3: Excel export (API writes; signed URL only, 2 min). */
   boqExportFile: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}.xlsx`,
   /** Sprint 5: marked PDF (worker writes; API signs 15 min / redirects share viewers). */
@@ -151,6 +158,8 @@ export const ARTIFACT_PATH_RE = new RegExp(
 );
 /** Sprint 3: evidence file of a build. */
 export const BOQ_EVIDENCE_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/boq/(${ID})/evidence\\.json\\.gz$`);
+/** Sprint 8: lines snapshot of a build (never signed / served). */
+export const BOQ_LINES_SNAPSHOT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/boq/(${ID})/lines\\.json\\.gz$`);
 /** Sprint 3: Excel export object. */
 export const BOQ_EXPORT_PATH_RE = new RegExp(`^orgs/(${ID})/projects/(${ID})/exports/(${ID})\\.xlsx$`);
 /** Sprint 5: marked PDF object. */

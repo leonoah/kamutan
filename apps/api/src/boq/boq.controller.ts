@@ -29,6 +29,22 @@ import {
   type BoqDocumentQuery,
   type BatchLineStatusRequest,
   type BatchLineStatusResponse,
+  BoqCompareExportRequestSchema,
+  BoqCompareExportResponseSchema,
+  BoqCompareQuerySchema,
+  BoqComparisonSchema,
+  PatchProjectPricingRequestSchema,
+  PatchProjectPricingResponseSchema,
+  type BoqCompareExportRequest,
+  type BoqCompareExportResponse,
+  type BoqCompareQuery,
+  type BoqComparison,
+  type PatchProjectPricingRequest,
+  type PatchProjectPricingResponse,
+  BoqBuildListQuerySchema,
+  BoqBuildListSchema,
+  type BoqBuildList,
+  type BoqBuildListQuery,
 } from '@kamutan/contracts';
 import type { Request } from 'express';
 import type { AuthContext } from '../auth/auth-context';
@@ -38,6 +54,7 @@ import { traceparentFrom } from '../common/trace';
 import { ApiErrors, ApiZodBody, ApiZodQuery, ApiZodResponse } from '../common/zod-openapi';
 import { zodPipe } from '../common/zod-validation.pipe';
 import { BoqService } from './boq.service';
+import { CompareService } from './compare.service';
 
 const project = { from: 'project-param', key: 'projectId' } as const;
 
@@ -46,7 +63,10 @@ const project = { from: 'project-param', key: 'projectId' } as const;
 @ApiBearerAuth()
 @Controller({ path: 'projects/:projectId/boq', version: '1' })
 export class BoqController {
-  constructor(private readonly svc: BoqService) {}
+  constructor(
+    private readonly svc: BoqService,
+    private readonly cmp: CompareService,
+  ) {}
 
   /** Creates boqBuilds/{id} + `boq.build` job (deduplicated while one is queued/running). Audited. */
   @Post('build')
@@ -145,5 +165,51 @@ export class BoqController {
   @ApiErrors(400, 401, 403, 404, 409, 429)
   export(@Param('projectId') projectId: string, @Body(zodPipe(ExportBoqRequestSchema)) body: ExportBoqRequest, @CurrentUser() user: AuthContext): Promise<ExportBoqResponse> {
     return this.svc.export(user, projectId, body);
+  }
+
+  /** Sprint 8: project discount (< 0) / markup (> 0) % of the BOQ totals (editor+, audited `projects/update_pricing`). */
+  @Patch('pricing')
+  @RequireRole('editor', project)
+  @ApiZodBody(PatchProjectPricingRequestSchema)
+  @ApiZodResponse(200, PatchProjectPricingResponseSchema)
+  @ApiErrors(400, 401, 403, 404, 429)
+  pricing(@Param('projectId') projectId: string, @Body(zodPipe(PatchProjectPricingRequestSchema)) body: PatchProjectPricingRequest, @CurrentUser() user: AuthContext): Promise<PatchProjectPricingResponse> {
+    return this.svc.setPricing(user, projectId, body);
+  }
+
+  /**
+   * Sprint 8 "מה השתנה": added / removed / changed lines between two builds (default: latest vs the one before;
+   * `base=export`: since the latest BOQ export) with Δqty, Δ₪ and the sheet versions that caused them. 409 not_ready
+   * (Hebrew message) when there is nothing to compare with or a build has no lines snapshot.
+   */
+  /** Sprint 8 integration: builds for the compare picker (newest first; line count, snapshot flag, last export). */
+  @Get('builds')
+  @RequireRole('viewer', project)
+  @ApiZodQuery(BoqBuildListQuerySchema)
+  @ApiZodResponse(200, BoqBuildListSchema)
+  @ApiErrors(400, 401, 404, 429)
+  builds(@Param('projectId') projectId: string, @Query(zodPipe(BoqBuildListQuerySchema)) q: BoqBuildListQuery, @CurrentUser() user: AuthContext): Promise<BoqBuildList> {
+    return this.cmp.builds(user, projectId, q);
+  }
+
+  @Get('compare')
+  @RequireRole('viewer', project)
+  @ApiZodQuery(BoqCompareQuerySchema)
+  @ApiZodResponse(200, BoqComparisonSchema)
+  @ApiErrors(400, 401, 404, 409, 429)
+  compare(@Param('projectId') projectId: string, @Query(zodPipe(BoqCompareQuerySchema)) q: BoqCompareQuery, @CurrentUser() user: AuthContext): Promise<BoqComparison> {
+    return this.cmp.compare(user, projectId, q);
+  }
+
+  /** Sprint 8: the comparison as Excel "תוספות ושינויים" (formulas for Δ and totals) → 2-minute signed URL. Audited. */
+  @Post('compare/export')
+  @HttpCode(200)
+  @RateLimit('export')
+  @RequireRole('editor', project)
+  @ApiZodBody(BoqCompareExportRequestSchema)
+  @ApiZodResponse(200, BoqCompareExportResponseSchema)
+  @ApiErrors(400, 401, 403, 404, 409, 429)
+  compareExport(@Param('projectId') projectId: string, @Body(zodPipe(BoqCompareExportRequestSchema)) body: BoqCompareExportRequest, @CurrentUser() user: AuthContext): Promise<BoqCompareExportResponse> {
+    return this.cmp.exportComparison(user, projectId, body);
   }
 }

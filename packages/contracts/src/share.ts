@@ -3,6 +3,7 @@ import { pageOf, Sha256HexSchema, TimestampSchema } from './common.js';
 import { BoqLineStatusSchema } from './boq.js';
 import { ConfidenceLevelSchema } from './review.js';
 import { DocIdSchema, UidSchema } from './org.js';
+import { BoqTotalsSchema } from './prices.js';
 
 /**
  * orgs/{orgId}/projects/{projectId}/shareLinks/{linkId} — written only by the API.
@@ -11,6 +12,9 @@ import { DocIdSchema, UidSchema } from './org.js';
  *
  * Sprint 5 additions are optional on the doc schema (Sprint-0 docs stay valid); the API view fills the defaults.
  */
+/** Why a link was revoked (Sprint 8: + `sheet_set_deleted` — a sheet it locks was deleted). */
+export const SHARE_REVOKE_REASONS = ['user', 'offboarding', 'project_deleted', 'sheet_set_deleted'] as const;
+
 export const ShareLinkSchema = z.object({
   id: DocIdSchema,
   tokenHash: Sha256HexSchema,
@@ -32,7 +36,7 @@ export const ShareLinkSchema = z.object({
   lastViewedAt: TimestampSchema.nullable().optional(),
   revokedBy: UidSchema.nullable().optional(),
   /** Why it was revoked: by a user, by org offboarding, or because the project was deleted. */
-  revokeReason: z.enum(['user', 'offboarding', 'project_deleted']).nullable().optional(),
+  revokeReason: z.enum(SHARE_REVOKE_REASONS).nullable().optional(),
   /** exports/{id} of the per-link watermarked marked PDF (only when allowPdfDownload). */
   pdfExportId: DocIdSchema.nullable().optional(),
   /**
@@ -51,6 +55,8 @@ export const ShareLinkSchema = z.object({
    * snapshot. Absent on older links (they keep the Sprint-5 behaviour, ids filtered to the snapshot).
    */
   boqBuildId: DocIdSchema.nullable().optional(),
+  /** Sprint 8: "הצג מחירים" — prices are stored in the snapshot only when true (absent = false). */
+  showPrices: z.boolean().optional(),
 });
 export type ShareLink = z.infer<typeof ShareLinkSchema>;
 
@@ -94,7 +100,9 @@ export const ShareLinkViewSchema = ShareLinkSchema.omit({ tokenHash: true }).ext
   viewCount: z.number().int().nonnegative(),
   lastViewedAt: TimestampSchema.nullable(),
   revokedBy: UidSchema.nullable(),
-  revokeReason: z.enum(['user', 'offboarding', 'project_deleted']).nullable(),
+  revokeReason: z.enum(SHARE_REVOKE_REASONS).nullable(),
+  /** Sprint 8: the link's snapshot carries unit prices and totals ("הצג מחירים"). */
+  showPrices: z.boolean(),
   pdfExportId: DocIdSchema.nullable(),
   /** Derived: revoked > expired > active. */
   state: ShareLinkStateSchema,
@@ -117,6 +125,8 @@ export const CreateShareLinkRequestSchema = z
     allowPdfDownload: z.boolean().default(false),
     /** F-3: explicit opt-in to share sheets whose title block was NOT detected (they cannot be masked). */
     includeUnmaskedSheets: z.boolean().default(false),
+    /** Sprint 8: "הצג מחירים" — freeze unit prices + totals into the snapshot (default false: no price leaves the org). */
+    showPrices: z.boolean().default(false),
   })
   .strict();
 export type CreateShareLinkRequest = z.infer<typeof CreateShareLinkRequestSchema>;
@@ -190,6 +200,8 @@ export const PublicShareMetaSchema = z.object({
     createdAt: TimestampSchema,
     hideTitleBlock: z.boolean(),
     allowPdfDownload: z.boolean(),
+    /** Sprint 8 (optional for older clients): the BOQ carries prices. */
+    showPrices: z.boolean().optional(),
     /** The text burned into tiles / PDF: "שותף עם {recipient|label} • {date} • {shortId}". */
     watermark: z.string(),
   }),
@@ -230,6 +242,9 @@ export const PublicShareBoqLineSchema = z.object({
   byFloor: z.record(z.string(), z.number()),
   /** True when the description was renamed in the project (`descriptionOverride`); optional for older snapshots. */
   descriptionManual: z.boolean().optional(),
+  /** Sprint 8: only in snapshots of links with `showPrices` (absent otherwise): effective unit price / line total. */
+  unitPrice: z.number().finite().nullable().optional(),
+  total: z.number().finite().nullable().optional(),
 });
 export type PublicShareBoqLine = z.infer<typeof PublicShareBoqLineSchema>;
 
@@ -239,6 +254,9 @@ export const PublicShareBoqSchema = z.object({
   lines: z.array(PublicShareBoqLineSchema),
   floors: z.array(z.string()),
   counts: z.object({ lines: z.number().int(), green: z.number().int(), yellow: z.number().int(), red: z.number().int(), approved: z.number().int() }),
+  /** Sprint 8: true when the snapshot carries prices (link `showPrices`); then `totals` is set. */
+  showPrices: z.boolean().optional(),
+  totals: BoqTotalsSchema.nullable().optional(),
 });
 export type PublicShareBoq = z.infer<typeof PublicShareBoqSchema>;
 

@@ -3,6 +3,32 @@
  * Kept local so the web app builds without the contracts package; switch to
  * `import type { … } from "@kamutan/contracts"` once its build is wired into turbo for web.
  */
+import type {
+  ApplyImportPricesResponse as ContractApplyImportPricesResponse,
+  BoqBuildSummary as ContractBoqBuildSummary,
+  BoqComparison as ContractBoqComparison,
+  BoqCompareExportResponse as ContractBoqCompareExportResponse,
+  BoqTotals as ContractBoqTotals,
+  BulkLibraryPriceResponse as ContractBulkLibraryPriceResponse,
+  DeleteProjectResponse as ContractDeleteProjectResponse,
+  DeleteSheetSetResponse as ContractDeleteSheetSetResponse,
+  ItemPrice as ContractItemPrice,
+  PatchProjectPricingResponse as ContractPatchProjectPricingResponse,
+  PriceImportReport as ContractPriceImportReport,
+  ProjectPricing as ContractProjectPricing,
+} from "@kamutan/contracts";
+
+/* Sprint 8 shapes come straight from @kamutan/contracts ("Sprint 8 published"; type-only, no runtime cost). */
+export type BoqTotals = ContractBoqTotals;
+export type ItemPrice = ContractItemPrice;
+export type ProjectPricing = ContractProjectPricing;
+export type PatchProjectPricingResponse = ContractPatchProjectPricingResponse;
+export type PriceImportReport = ContractPriceImportReport;
+export type BoqComparison = ContractBoqComparison;
+export type BoqCompareItem = BoqComparison["items"][number];
+export type BoqCompareCause = BoqCompareItem["causes"][number];
+export type BoqCompareExportResponse = ContractBoqCompareExportResponse;
+
 export type Role = "admin" | "editor" | "reviewer" | "viewer";
 export type FileKind = "pdf" | "dwg" | "dxf" | "png";
 
@@ -51,6 +77,11 @@ export interface Project {
   storageBytes?: number;
   /** Sprint 7 (contracts, read-only): the project's quota (from the org setting `projectQuotaBytes`). */
   storageQuotaBytes?: number;
+  /** Sprint 8 (contracts ProjectPricing): discount (< 0) / markup (> 0) of the BOQ totals; `PATCH …/boq/pricing`. */
+  pricing?: ProjectPricing | null;
+  /** Integration (read-only): current (non-superseded) sheets and the per-project limit (hub banner). */
+  sheetCount?: number;
+  sheetLimit?: number;
 }
 /** Sprint 7: default per-project storage quota (org setting `projectQuotaBytes`). */
 export const DEFAULT_PROJECT_QUOTA_BYTES = 2 * 1024 ** 3;
@@ -111,6 +142,8 @@ export interface SheetSet {
   name?: string;
   uploadedBy: string;
   createdAt: string;
+  /** Sprint 8 (read-only): bytes the set holds (source + derived) — what a delete releases. */
+  storageBytes?: number;
   /** Stage 10 revised upload (contracts sheets.ts): the set this one replaces / the set that replaced this one. */
   replacesSheetSetId?: string | null;
   supersededBySetId?: string | null;
@@ -583,6 +616,19 @@ export interface BoqLine {
   descriptionOverrideBy?: string | null;
   descriptionOverrideAt?: string | null;
   descriptionOverrideReason?: string | null;
+  /* Sprint 8 (contracts boq.ts) */
+  /**
+   * API-DERIVED on read (never stored): the EFFECTIVE unit price (`priceOverride` ?? the org library price; null =
+   * "ללא מחיר"), where it comes from, and effective qty × unitPrice (a needsInput line without override counts 0).
+   */
+  unitPrice?: number | null;
+  unitPriceSource?: "override" | "library" | null;
+  lineTotal?: number | null;
+  /** The project's own unit price for this line ("✎ ידני"); never overwritten by a rebuild. */
+  priceOverride?: number | null;
+  priceOverrideBy?: string | null;
+  priceOverrideAt?: string | null;
+  priceOverrideReason?: string | null;
 }
 /** Sprint 7: max length of a line description (rename). */
 export const DESCRIPTION_MAX = 500;
@@ -676,6 +722,8 @@ export interface BoqLinesResponse {
   blockExportOnRed?: boolean;
   /** Sprint 5: calibration of the latest build (summary.calibration / build stats). */
   calibration?: CalibrationStats | null;
+  /** Sprint 8 (contracts BoqSummary.totals): totals over ALL lines (effective prices, project discount, org VAT). */
+  totals?: BoqTotals | null;
 }
 /** PATCH /v1/projects/:pid/boq/lines/:lineId */
 export interface PatchBoqLineRequest {
@@ -688,6 +736,8 @@ export interface PatchBoqLineRequest {
   description?: string | null;
   /** Sprint 7: also update the org library item of this code (editor+, MFA / recent sign-in like library edits). */
   alsoUpdateLibrary?: boolean;
+  /** Sprint 8: the line's own unit price (0..PRICE_MAX ₪); `null` restores the library price. Editor+, `reason` optional. */
+  priceOverride?: number | null;
 }
 /** POST /v1/projects/:pid/boq/build */
 export interface BuildBoqResponse {
@@ -820,6 +870,9 @@ export interface BoqDocumentRow {
   needsInput?: boolean;
   qtyOverridden?: boolean;
   descriptionOverridden?: boolean;
+  /** Sprint 8 (contracts): where the row's unit price comes from; `unpriced` = no price ("ללא מחיר"). */
+  priceSource?: "override" | "library" | null;
+  unpriced?: boolean;
   /** Comment of the quantity cell in the xlsx (contracts `cellNote`: "להשלמה ידנית", "כמות שונתה ידנית…"). */
   cellNote?: string | null;
   qtyFormat?: "general" | "decimal2";
@@ -831,7 +884,7 @@ export interface BoqDocumentChapter {
   rows: BoqDocumentRow[];
   subtotal: number | null;
 }
-export type BoqDocumentWarningKind = "red" | "reapproval" | "unapproved" | "needsInput";
+export type BoqDocumentWarningKind = "red" | "reapproval" | "unapproved" | "needsInput" | "unpriced";
 /** contracts: `warning` = the xlsx warning row, `title` = a template title row, `draft` = "טיוטה – …". */
 export interface BoqDocumentTitleRow {
   kind: "warning" | "title" | "draft";
@@ -841,7 +894,8 @@ export interface BoqDocumentModel {
   titleRows: BoqDocumentTitleRow[];
   columns: BoqDocumentColumn[];
   chapters: BoqDocumentChapter[];
-  totals: { beforeVat: number; vat: number; afterVat: number };
+  /** Sprint 8: contracts BoqTotals (older documents: the three VAT totals only — the adapter fills the rest). */
+  totals: Pick<BoqTotals, "beforeVat" | "vat" | "afterVat"> & Partial<BoqTotals>;
   warnings: { kind: BoqDocumentWarningKind; count: number }[];
   generatedAt: string;
   /** contracts `totals.vatRate` (lifted here). */
@@ -871,6 +925,8 @@ export interface LibraryItem {
   sourceRef?: string | null;
   active: boolean;
   updatedAt: string | null;
+  /** Sprint 8 (contracts ItemPrice): the org's unit price of this item (absent / null = no price). */
+  price?: ItemPrice | null;
 }
 export interface LibraryItemPage {
   items: LibraryItem[];
@@ -883,7 +939,11 @@ export interface ListLibraryQuery {
   limit?: number;
 }
 /** code + description are the item's identity (contracts): only unit / chapterTitle / tags / active change. */
-export type PatchLibraryItemRequest = Partial<Pick<LibraryItem, "unit" | "tags" | "active">> & { chapterTitle?: string };
+export type PatchLibraryItemRequest = Partial<Pick<LibraryItem, "unit" | "tags" | "active">> & {
+  chapterTitle?: string;
+  /** Sprint 8: set (₪) or clear (`null`) the item's price (`source: 'manual'`). Editor+. */
+  price?: number | null;
+};
 
 export interface BoqChapter {
   code: string;
@@ -922,6 +982,12 @@ export interface BoqRule {
 export interface CreateLibraryImportRequest {
   filename: string;
   sizeBytes: number;
+  /** Sprint 8 (contracts): `prices` = take only the unit prices of a priced past BOQ; default `library`. */
+  mode?: "library" | "prices";
+  /** Sprint 8: an imported price may replace a MANUAL one (default false: reported as `manual_price` conflicts). */
+  overwriteManualPrices?: boolean;
+  /** Integration: compute the report without writing (mode `prices` only); then `applyPriceImport`. */
+  dryRun?: boolean;
 }
 export interface CreateLibraryImportResponse {
   importId: string;
@@ -938,16 +1004,57 @@ export interface LibraryImportResult {
   templateCreated: { id: string; name: string } | null;
   /** Codes whose description differs between files / rows (need a human decision). */
   ambiguousCodes: { code: string; descriptions: string[] }[];
+  /** Sprint 8 (contracts `stats.prices`): the price report of the import. */
+  prices?: PriceImportReport | null;
 }
 export interface LibraryImport {
   id: string;
   filename: string;
+  /** Sprint 8 */
+  mode?: "library" | "prices";
+  overwriteManualPrices?: boolean;
+  /** Integration: a dry run (nothing written yet) and when `apply-prices` ran. */
+  dryRun?: boolean;
+  pricesAppliedAt?: string | null;
   status: LibraryImportStatus;
   progress: number;
   jobId: string | null;
   result: LibraryImportResult | null;
   error: { code: string; message: string } | null;
 }
+
+
+/* ---------- Sprint 8: prices, version comparison, deletes — contracts "Sprint 8 published" ---------- */
+
+export interface BulkPriceRequest {
+  items: { itemId: string; amount: number | null }[];
+}
+/** POST /library/prices → {batchId, updated [{itemId, code, from, to}], skipped [{itemId, reason}]}. */
+export type BulkPriceResponse = ContractBulkLibraryPriceResponse;
+
+/** GET …/boq/compare query: `base` previous (default) | export ("מאז הייצוא האחרון"), or explicit build ids. */
+export interface BoqCompareQuery {
+  base?: "previous" | "export";
+  from?: string;
+  to?: string;
+}
+/** Integration: GET …/boq/builds (compare picker) → {items: BoqBuildSummary[]}. */
+export type BoqBuildSummary = ContractBoqBuildSummary;
+/** Integration: POST /library/imports/:id/apply-prices {orgId, overwriteItemIds} (a reviewed dry-run price import). */
+export interface ApplyPriceImportRequest {
+  overwriteItemIds: string[];
+}
+export type ApplyPriceImportResponse = ContractApplyImportPricesResponse;
+
+/** DELETE /projects/:pid/sheet-sets/:id (contracts; `storageQuotaBytes` since the integration). */
+export type DeleteSheetSetResponse = ContractDeleteSheetSetResponse;
+export interface DeleteProjectRequest {
+  /** Typed confirmation = the project name (contracts `deleteConfirmationMatches`: NFC, trimmed, spaces collapsed). */
+  confirmName: string;
+}
+export type DeleteProjectResponse = ContractDeleteProjectResponse;
+/** Sprint 8 (contracts MAX_SHEETS_PER_PROJECT): at most 100 sheets per project (409 `sheet_limit`). */
+export const MAX_SHEETS_PER_PROJECT = 100;
 
 /* ---------- Sprint 4: corrections, review queue, room settings, find-similar (docs/agents/SPRINT4_BRIEF.md) ----------
  * TODO(contracts): hand-kept mirror of the brief's shapes; the API agent adds them to @kamutan/contracts concurrently.
@@ -1189,7 +1296,9 @@ export interface OrgSettings {
   /** Sprint 7: per-project storage quota (admin, default 2 GB). */
   projectQuotaBytes?: number;
 }
-export type PatchOrgSettingsRequest = Partial<Pick<OrgSettings, "greenThreshold" | "blockExportOnRed" | "llmEnabled" | "trainingOptIn">>;
+export type PatchOrgSettingsRequest = Partial<Pick<OrgSettings, "greenThreshold" | "blockExportOnRed" | "llmEnabled" | "trainingOptIn" | "vatRate">>;
+/** Sprint 8: VAT default (contracts DEFAULT_ORG_SETTINGS.vatRate). */
+export const VAT_RATE_DEFAULT = 0.18;
 export const GREEN_THRESHOLD_MIN = 0.9;
 export const GREEN_THRESHOLD_MAX = 0.995;
 export const GREEN_THRESHOLD_DEFAULT = 0.98;
@@ -1198,7 +1307,7 @@ export interface ActorRef {
   uid: string;
   displayName: string | null;
 }
-export type LineHistoryAction = "status" | "qtyOverride" | "note" | "rebuild" | "correction" | "description";
+export type LineHistoryAction = "status" | "qtyOverride" | "note" | "rebuild" | "correction" | "description" | "price";
 /** GET /v1/projects/:pid/boq/lines/:lineId/history — newest first. */
 export interface LineHistoryItem {
   at: string;
@@ -1296,6 +1405,8 @@ export interface ShareLink {
   lastViewedAt: string | null;
   createdBy: string;
   createdAt: string;
+  /** Sprint 8: the snapshot carries unit prices + totals ("הצג מחירים", off by default). */
+  showPrices?: boolean;
   /** Security gate F-3: per locked sheet — title block masked? part of the link? */
   sheets?: ShareLinkSheet[];
 }
@@ -1324,6 +1435,8 @@ export interface CreateShareLinkRequest {
   allowPdfDownload?: boolean;
   /** F-3: explicit opt-in to share sheets whose title block was not detected (they cannot be masked). */
   includeUnmaskedSheets?: boolean;
+  /** Sprint 8: store prices in the snapshot (editor+, default false). */
+  showPrices?: boolean;
 }
 /** The raw token is in `url` ONCE (never stored by the server). */
 export interface CreateShareLinkResponse {
@@ -1356,6 +1469,8 @@ export interface PublicShareMeta {
   allowPdfDownload: boolean;
   /** Owner opted to show the confidence column (●▲◆ + word only, never scores or reasons). */
   showConfidence: boolean;
+  /** Sprint 8: the link was created with "הצג מחירים" (the snapshot carries prices). */
+  showPrices?: boolean;
   /** "שותף עם {recipient|label} • {date} • {linkId-short}" (also burned into tiles + PDF by the server). */
   watermark: string;
   sheets: PublicShareSheet[];
@@ -1373,16 +1488,26 @@ export interface PublicBoqLine {
   qty: number;
   level: DbLevel | null;
   status: BoqLineStatus;
+  floor?: string | null;
   byFloor: Record<string, number>;
   order?: number;
   /** Sprint 7: `description` is the project's own wording (renamed line) → "✎ ידני" marker. No author / reason. */
   descriptionManual?: boolean;
+  /** Sprint 8: only in a snapshot made with "הצג מחירים" (effective unit price and qty × price). */
+  unitPrice?: number | null;
+  total?: number | null;
 }
 export interface PublicShareBoq {
   /** F-4: the BOQ is a snapshot taken at link creation (null = link older than snapshots → empty BOQ). */
   snapshotAt?: string | null;
   lines: PublicBoqLine[];
   chapters?: { code: string; title: string }[];
+  /** contracts PublicShareBoq: floors in the snapshot and the confidence / approval counts. */
+  floors?: string[];
+  counts?: { lines: number; green: number; yellow: number; red: number; approved: number };
+  /** Sprint 8 (contracts): only for links with "הצג מחירים". */
+  showPrices?: boolean;
+  totals?: BoqTotals | null;
 }
 /** One locked sheet version's overlay (no raw text layer). `evidence`: line id → detection ids on this sheet. */
 export interface PublicShareOverlay {
@@ -1565,6 +1690,22 @@ export interface ApiClient {
   removeMember(orgId: string, memberId: string): Promise<void>;
   /** POST /invites/:inviteId/accept (signed-in user whose verified email matches). */
   acceptInvite(inviteId: string): Promise<{ orgId: string; role: Role; alreadyMember: boolean }>;
+
+  /* Sprint 8 — prices, comparison, deletes */
+  /** POST /library/prices */
+  bulkPatchPrices(orgId: string, req: BulkPriceRequest): Promise<BulkPriceResponse>;
+  /** PATCH /projects/:pid/boq/pricing {adjustmentPct} */
+  patchProjectPricing(projectId: string, adjustmentPct: number | null): Promise<PatchProjectPricingResponse>;
+  /** Integration: POST /library/imports/:id/apply-prices */
+  applyPriceImport(orgId: string, importId: string, req: ApplyPriceImportRequest): Promise<ApplyPriceImportResponse>;
+  /** Integration: GET …/boq/builds?limit= (newest first) */
+  listBoqBuilds(projectId: string): Promise<BoqBuildSummary[]>;
+  /** GET …/boq/compare?from=&to=&base= */
+  compareBoqBuilds(projectId: string, q: BoqCompareQuery): Promise<BoqComparison>;
+  /** POST …/boq/compare/export {from?, to?, base} */
+  exportBoqComparison(projectId: string, q: BoqCompareQuery): Promise<BoqCompareExportResponse>;
+  deleteSheetSet(projectId: string, sheetSetId: string): Promise<DeleteSheetSetResponse>;
+  deleteProject(projectId: string, req: DeleteProjectRequest): Promise<DeleteProjectResponse>;
 }
 
 /* ---------- Storage (resumable uploads) ---------- */

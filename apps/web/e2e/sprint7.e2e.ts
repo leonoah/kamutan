@@ -103,7 +103,8 @@ test.describe("Sprint 7: BOQ preview", () => {
     const r = docRow(page, "4.01");
     const lineId = await r.getAttribute("data-row-line");
     await r.locator("td").first().click();
-    await expect(page).toHaveURL(new RegExp(`/projects/p-noah/review\\?line=${encodeURIComponent(lineId!)}`));
+    // the workspace consumes ?line= (selects the row, then drops the param): the selection below is the real check
+    await expect(page).toHaveURL(/\/projects\/p-noah\/review/);
     await expect(page.getByRole("application").first()).toBeVisible({ timeout: 60_000 });
     await expect(page.locator(`tr[data-line="${lineId}"]`)).toHaveAttribute("data-selected", "true", { timeout: 30_000 });
   });

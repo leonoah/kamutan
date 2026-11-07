@@ -2,7 +2,9 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/api/client";
-import { GREEN_THRESHOLD_DEFAULT, GREEN_THRESHOLD_MAX, GREEN_THRESHOLD_MIN, type OrgSettings, type PatchOrgSettingsRequest } from "@/api/types";
+import { GREEN_THRESHOLD_DEFAULT, GREEN_THRESHOLD_MAX, GREEN_THRESHOLD_MIN, VAT_RATE_DEFAULT, type OrgSettings, type PatchOrgSettingsRequest } from "@/api/types";
+import { Input } from "@/components/ui/input";
+import { parsePct, round2 } from "@/features/prices/model";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { Ltr } from "@/components/Ltr";
@@ -11,7 +13,7 @@ import { useReauthGate } from "@/features/auth/reauth";
 import { cn } from "@/lib/utils";
 
 type Editable = Required<PatchOrgSettingsRequest>;
-const KEYS = ["greenThreshold", "blockExportOnRed", "llmEnabled", "trainingOptIn"] as const;
+const KEYS = ["greenThreshold", "blockExportOnRed", "llmEnabled", "trainingOptIn", "vatRate"] as const;
 
 export function fromOrg(s: Partial<OrgSettings> | undefined): Editable {
   return {
@@ -19,8 +21,11 @@ export function fromOrg(s: Partial<OrgSettings> | undefined): Editable {
     blockExportOnRed: s?.blockExportOnRed ?? true,
     llmEnabled: s?.llmEnabled ?? false,
     trainingOptIn: s?.trainingOptIn ?? false,
+    vatRate: s?.vatRate ?? VAT_RATE_DEFAULT,
   };
 }
+/** Sprint 8: VAT is typed as a percent ("18", "17.5"); stored as a rate (0.18). */
+const vatPctText = (rate: number) => String(round2(rate * 100));
 /** Only changed fields go to PATCH (each change is one audit event server side). */
 export function diffSettings(a: Editable, b: Editable): PatchOrgSettingsRequest {
   const out: PatchOrgSettingsRequest = {};
@@ -53,6 +58,11 @@ export function OrgSettingsPage() {
     },
   });
   const gtId = useId();
+  const vatId = useId();
+  const [vatText, setVatText] = useState(() => vatPctText(saved.vatRate));
+  useEffect(() => setVatText(vatPctText(saved.vatRate)), [saved.vatRate]);
+  const vatPct = parsePct(vatText, 0, 50);
+  const vatBad = vatPct === null || Number.isNaN(vatPct);
   if (!org) return null;
 
   return (
@@ -63,7 +73,7 @@ export function OrgSettingsPage() {
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (dirty) void gate.guard(() => save.mutate());
+        if (dirty && !vatBad) void gate.guard(() => save.mutate());
       }}
       data-org-settings
     >
@@ -91,6 +101,30 @@ export function OrgSettingsPage() {
         <p id={`${gtId}-h`} className="text-dense text-muted-foreground">{t("settings.greenThresholdHint")}</p>
       </section>
 
+      <section className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-5" data-vat-setting>
+        <label htmlFor={vatId} className="text-body font-bold text-foreground">{t("prices.vat.label")}</label>
+        <div className="flex items-center gap-2">
+          <Input
+            id={vatId}
+            inputMode="decimal"
+            dir="ltr"
+            value={vatText}
+            onChange={(e) => {
+              setVatText(e.target.value);
+              const v = parsePct(e.target.value, 0, 50);
+              if (v !== null && !Number.isNaN(v)) setDraft((d) => ({ ...d, vatRate: Math.round(v * 100) / 10_000 }));
+            }}
+            aria-invalid={vatBad}
+            aria-describedby={`${vatId}-h`}
+            className="w-24 text-end tabular"
+          />
+          <span aria-hidden className="text-body text-muted-foreground">%</span>
+        </div>
+        <p id={`${vatId}-h`} className={cn("text-dense", vatBad ? "text-destructive" : "text-muted-foreground")} role={vatBad ? "alert" : undefined}>
+          {vatBad ? t("prices.vat.invalid") : t("prices.vat.hint")}
+        </p>
+      </section>
+
       <section className="flex flex-col divide-y divide-border rounded-lg border border-border bg-surface">
         <SwitchRow label={t("settings.blockExportOnRed")} hint={t("settings.blockExportOnRedHint")} checked={draft.blockExportOnRed} onChange={(v) => setDraft((d) => ({ ...d, blockExportOnRed: v }))} />
         <SwitchRow label={t("settings.llmEnabled")} hint={t("settings.llmEnabledHint")} checked={draft.llmEnabled} onChange={(v) => setDraft((d) => ({ ...d, llmEnabled: v }))} />
@@ -98,12 +132,19 @@ export function OrgSettingsPage() {
       </section>
 
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={!dirty || save.isPending || gate.pending}>
+        <Button type="submit" disabled={!dirty || vatBad || save.isPending || gate.pending}>
           {save.isPending ? t("settings.saving") : t("settings.save")}
         </Button>
         {dirty ? (
           <>
-            <Button type="button" variant="ghost" onClick={() => setDraft(saved)}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setDraft(saved);
+                setVatText(vatPctText(saved.vatRate));
+              }}
+            >
               {t("settings.reset")}
             </Button>
             <span role="status" className="text-dense text-muted-foreground">{t("settings.unsaved")}</span>

@@ -7,6 +7,7 @@ import { ARTIFACT_READER } from '../understanding/artifact-reader';
 import { createArtifactReader } from '../understanding/understanding.module';
 import { BoqController } from './boq.controller';
 import { BoqService } from './boq.service';
+import { CompareService } from './compare.service';
 import { BOQ_STORAGE, FirebaseBoqStorage, InMemoryBoqStorage, type BoqStorage } from './boq-storage';
 
 export function createBoqStorage(cfg: AppConfig): BoqStorage {
@@ -20,6 +21,7 @@ export function createBoqStorage(cfg: AppConfig): BoqStorage {
   providers: [
     LibraryService,
     BoqService,
+    CompareService,
     { provide: BOQ_STORAGE, inject: [APP_CONFIG], useFactory: createBoqStorage },
     // links.json.gz for the evidence listing (same reader/caps as the overlay).
     { provide: ARTIFACT_READER, inject: [APP_CONFIG], useFactory: createArtifactReader },

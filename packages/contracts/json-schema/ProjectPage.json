@@ -201,6 +201,54 @@
               "storageQuotaBytes": {
                 "type": "integer",
                 "exclusiveMinimum": 0
+              },
+              "sheetCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sheetLimit": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "pricing": {
+                "type": "object",
+                "properties": {
+                  "adjustmentPct": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 200
+                  },
+                  "updatedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "updatedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "adjustmentPct",
+                  "updatedBy",
+                  "updatedAt"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [

@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { AlertTriangle, ChevronDown, Eye, Hammer, History, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, Eye, GitCompareArrows, Hammer, History, RefreshCw } from "lucide-react";
 import { qtyChangedSinceApproval, type BoqBuild, type BoqChapter, type BoqLine, type ProjectBoqState } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -15,9 +15,22 @@ import { StatusPill } from "./StatusPill";
 import { chapterLabel, fmtQty, floorsOf, groupByChapter, isCompositeLine, isOverridden, rangeIds, receiptOf, effectiveQty, type StatusFilter } from "./model";
 import { coverageOf, lineNeedsInput, originOf, quickActionOf } from "./sprint6";
 import { CoverageText, MissingQty, NeedsInputChip, OriginBadge, QuickActionButton } from "./Sprint6Parts";
-import { isBuildActive } from "./queries";
+import { isBuildActive, useBoqLines } from "./queries";
 import { LineDescription } from "./LineDescription";
 import { lineDescription } from "./sprint7";
+import { formatMoney, isUnpriced, sumTotals, totalsOf } from "@/features/prices/model";
+import { LineTotalCell, PriceCell, PriceOverrideDialog, TotalsSummary } from "@/features/prices/PriceParts";
+import { usePricing } from "@/features/prices/queries";
+
+const PRICES_KEY = "kamutan.boq.showPrices";
+/** Per-viewer convenience: the "מחירים" columns stay as the user left them (default on). */
+function readShowPrices(): boolean {
+  try {
+    return localStorage.getItem(PRICES_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
 
 export type PanelTab = "boq" | "counts";
 
@@ -78,6 +91,10 @@ export interface BoqPanelProps {
   canRename?: boolean;
   /** Sprint 7: link to the BOQ preview ("תצוגה מקדימה"). */
   previewHref?: string;
+  /** Sprint 8: link to the comparison screen ("מה השתנה"). */
+  compareHref?: string;
+  /** Sprint 8: editors may set a line's own unit price ("✎ ידני"). */
+  canEditPrice?: boolean;
 }
 
 /** Native checkbox with an indeterminate state (chapter / select-all when only some lines are checked). */
@@ -251,14 +268,37 @@ function BoqTable(p: BoqPanelProps) {
     if (p.selectedLineId) rowRefs.current.get(p.selectedLineId)?.scrollIntoView?.({ block: "nearest" });
   }, [p.selectedLineId]);
 
-  const statuses: StatusFilter[] = ["all", "draft", "reviewed", "approved", "qtyChanged", "needsInput"];
+  const statuses: StatusFilter[] = ["all", "draft", "reviewed", "approved", "qtyChanged", "needsInput", "unpriced"];
+  // Sprint 8: prices — unit price + line total columns, chapter subtotals and the totals footer (whole BOQ, not the filter)
+  const [prices, setPricesState] = useState(readShowPrices);
+  const setPrices = (v: boolean) => {
+    setPricesState(v);
+    try {
+      localStorage.setItem(PRICES_KEY, v ? "1" : "0");
+    } catch {
+      /* private mode: per session only */
+    }
+  };
+  const pricing = usePricing(p.projectId);
+  const everyLine = p.allLines ?? p.lines;
+  // contracts BoqSummary.totals (API, over ALL lines); computed only while the API has not sent them
+  const serverTotals = useBoqLines(p.projectId ?? "", p.state?.latestBuildId).data?.totals ?? null;
+  const totals = useMemo(() => serverTotals ?? totalsOf(everyLine as BoqLine[], pricing), [serverTotals, everyLine, pricing]);
+  const subtotalOf = useMemo(() => {
+    const by = new Map<string, BoqLine[]>();
+    for (const l of everyLine) by.set(l.chapter, [...(by.get(l.chapter) ?? []), l]);
+    return (code: string) => sumTotals(by.get(code) ?? []);
+  }, [everyLine]);
+  const unpricedCount = useMemo(() => everyLine.filter(isUnpriced).length, [everyLine]);
+  const [priceLine, setPriceLine] = useState<BoqLine | null>(null);
+  const editPrice = Boolean(p.canEditPrice && p.projectId);
   const qtyChangedCount = useMemo(() => p.allLines?.filter(qtyChangedSinceApproval).length ?? 0, [p.allLines]);
   const needsInputCount = useMemo(() => (p.allLines ?? p.lines).filter(lineNeedsInput).length, [p.allLines, p.lines]);
   const hasOrder = useMemo(() => p.lines.some((l) => l.orderQty != null), [p.lines]);
   const order = Boolean(p.showOrder) && hasOrder;
   const sel = Boolean(p.selectable && p.onCheck);
   const checked = p.checkedIds ?? EMPTY_SET;
-  const cols = 6 + floors.length + (order ? 1 : 0) + (sel ? 1 : 0);
+  const cols = 6 + floors.length + (order ? 1 : 0) + (sel ? 1 : 0) + (prices ? 1 : 0);
   const orderedIds = useMemo(() => groups.flatMap((g) => g.lines.map((l) => l.id)), [groups]);
   const anchor = useRef<string | null>(null);
   const toggleOne = (id: string, shift: boolean) => {
@@ -300,7 +340,9 @@ function BoqTable(p: BoqPanelProps) {
                   ? t("boq.status.qtyChangedCount", { count: qtyChangedCount })
                   : s === "needsInput"
                     ? t("boq.needsInputCount", { count: needsInputCount })
-                    : t(`boq.status.${s}`)}
+                    : s === "unpriced"
+                      ? t("prices.noPriceChip", { count: unpricedCount })
+                      : t(`boq.status.${s}`)}
               </option>
             ))}
           </select>
@@ -320,6 +362,25 @@ function BoqTable(p: BoqPanelProps) {
             {t("boq.needsInputCount", { count: needsInputCount })}
           </button>
         ) : null}
+        {unpricedCount ? (
+          <button
+            type="button"
+            aria-pressed={p.statusFilter === "unpriced"}
+            title={t("prices.noPriceFilter")}
+            data-filter-unpriced
+            onClick={() => p.onStatusFilter(p.statusFilter === "unpriced" ? "all" : "unpriced")}
+            className={cn(
+              "inline-flex h-6 items-center gap-1 rounded-sm border border-dashed border-muted-foreground/60 px-1.5 text-foreground hover:bg-muted",
+              p.statusFilter === "unpriced" && "border-solid bg-muted font-medium",
+            )}
+          >
+            {t("prices.noPriceChip", { count: unpricedCount })}
+          </button>
+        ) : null}
+        <label className="inline-flex items-center gap-1 text-foreground" title={t("prices.toggleHint")}>
+          <input type="checkbox" checked={prices} onChange={(e) => setPrices(e.target.checked)} data-toggle-prices className="size-3.5 accent-[rgb(var(--primary))]" />
+          {t("prices.toggle")}
+        </label>
         {hasOrder && p.onShowOrder ? (
           <label className="inline-flex items-center gap-1 text-foreground" title={t("boq.orderQtyToggle")}>
             <input
@@ -342,18 +403,29 @@ function BoqTable(p: BoqPanelProps) {
             <span aria-hidden>{t("boq.bulk.selectAll")}</span>
           </label>
         ) : null}
+        {p.compareHref ? (
+          <Link
+            to={p.compareHref}
+            data-compare-link
+            title={t("compare.openFull")}
+            className="ms-auto inline-flex h-6 items-center gap-1 rounded-sm px-1 font-medium text-primary hover:bg-primary/10"
+          >
+            <GitCompareArrows className="size-3.5" aria-hidden />
+            {t("compare.open")}
+          </Link>
+        ) : null}
         {p.previewHref ? (
           <Link
             to={p.previewHref}
             data-preview-link
             title={t("hub.previewFull")}
-            className="ms-auto inline-flex h-6 items-center gap-1 rounded-sm px-1 font-medium text-primary hover:bg-primary/10"
+            className={cn("inline-flex h-6 items-center gap-1 rounded-sm px-1 font-medium text-primary hover:bg-primary/10", !p.compareHref && "ms-auto")}
           >
             <Eye className="size-3.5" aria-hidden />
             {t("hub.preview")}
           </Link>
         ) : null}
-        <span className={cn("text-muted-foreground", !p.previewHref && "ms-auto")}>
+        <span className={cn("text-muted-foreground", !p.previewHref && !p.compareHref && "ms-auto")}>
           {p.lines.length === p.totalLines ? t("boq.lines", { count: p.totalLines }) : `${p.lines.length} / ${t("boq.lines", { count: p.totalLines })}`}
         </span>
       </div>
@@ -386,7 +458,8 @@ function BoqTable(p: BoqPanelProps) {
               ))}
               <col className="w-[4.25rem]" />
               {order ? <col className="w-[4.25rem]" /> : null}
-              <col className={floors.length ? "w-10" : "w-[5.75rem]"} />
+              {prices ? <col className="w-[6.25rem]" /> : null}
+              <col className={floors.length || prices ? "w-10" : "w-[5.75rem]"} />
             </colgroup>
             <thead>
               <tr className="text-meta text-muted-foreground">
@@ -418,8 +491,15 @@ function BoqTable(p: BoqPanelProps) {
                     {t("boq.orderQtyShort")}
                   </th>
                 ) : null}
+                {prices ? (
+                  // one column in the narrow pane: the line total, with "× unit price" (editable) under it
+                  <th scope="col" className="sticky top-0 z-20 h-8 border-b border-border bg-surface px-1 text-end font-medium" data-col="total">
+                    {t("prices.columnTotal")}
+                    <span className="sr-only"> · {t("prices.columnPrice")}</span>
+                  </th>
+                ) : null}
                 <th scope="col" className="sticky top-0 z-20 h-8 border-b border-border bg-surface pe-3 ps-1 text-start font-medium">
-                  {floors.length ? <span className="sr-only">{t("boq.columns.status")}</span> : t("boq.columns.status")}
+                  {floors.length || prices ? <span className="sr-only">{t("boq.columns.status")}</span> : t("boq.columns.status")}
                 </th>
               </tr>
             </thead>
@@ -450,6 +530,12 @@ function BoqTable(p: BoqPanelProps) {
                         <span className="min-w-0 flex-1 truncate font-bold text-foreground">{chapterLabel(g.code, g.title)}</span>
                         <span className="shrink-0 text-meta text-muted-foreground">{t("boq.chapterVerified", { pct: g.stats.pct })}</span>
                       </div>
+                      {prices ? (
+                        <span className="mt-0.5 flex justify-between gap-2 text-meta" data-chapter-subtotal={g.code}>
+                          <span className="text-muted-foreground">{t("prices.chapterSubtotal")}</span>
+                          <Ltr className="font-medium tabular text-foreground">{formatMoney(subtotalOf(g.code))}</Ltr>
+                        </span>
+                      ) : null}
                       <CoverageText c={cov} className="mt-0.5 block" />
                       <SectionProgress high={g.stats.green} mid={g.stats.yellow} low={g.stats.red} className="mt-1.5" />
                       {g.notes.length ? (
@@ -499,6 +585,8 @@ function BoqTable(p: BoqPanelProps) {
                       quickActive={p.quickLineId === l.id}
                       projectId={p.projectId}
                       canRename={Boolean(p.canRename && p.projectId)}
+                      prices={prices ? { canEdit: editPrice, onEdit: setPriceLine } : null}
+                      compactStatus={floors.length > 0 || prices}
                       check={sel ? { on: checked.has(l.id), toggle: (shift) => toggleOne(l.id, shift) } : null}
                       rowRef={(el) => {
                         if (el) rowRefs.current.set(l.id, el);
@@ -512,6 +600,19 @@ function BoqTable(p: BoqPanelProps) {
           </table>
         )}
       </div>
+      {/* Sprint 8: totals of the whole BOQ (not the filter): one line closed, the full breakdown open. */}
+      <details className="group shrink-0 border-t border-border bg-surface-sunken/60 px-3 py-1.5" data-boq-totals open={prices}>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-meta">
+          <span className="inline-flex items-center gap-1 text-muted-foreground">
+            <ChevronDown className="size-3 transition-transform ltr:-rotate-90 rtl:rotate-90 group-open:!rotate-0" aria-hidden />
+            <span className="group-open:hidden">{t("prices.totals.afterVat")}</span>
+            <span className="hidden group-open:inline">{t("prices.totals.title")}</span>
+          </span>
+          <Ltr className="font-bold tabular text-foreground group-open:hidden">{formatMoney(totals.afterVat)}</Ltr>
+        </summary>
+        <TotalsSummary totals={totals} compact className="pb-1 pt-1.5" />
+      </details>
+      <PriceOverrideDialog projectId={p.projectId ?? ""} line={priceLine} onClose={() => setPriceLine(null)} onHistory={p.onHistory} />
     </TooltipProvider>
   );
 }
@@ -532,7 +633,11 @@ function LineRow({
   rowRef,
   projectId,
   canRename,
+  prices,
+  compactStatus,
 }: {
+  prices?: { canEdit: boolean; onEdit: (l: BoqLine) => void } | null;
+  compactStatus?: boolean;
   projectId?: string | undefined;
   canRename?: boolean;
   check?: { on: boolean; toggle: (shift: boolean) => void } | null;
@@ -564,6 +669,7 @@ function LineRow({
       data-origin={origin}
       data-needs-input={waiting || undefined}
       data-checked={check?.on || undefined}
+      data-unpriced={isUnpriced(l) || undefined}
       onClick={onSelect}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
@@ -630,10 +736,18 @@ function LineRow({
           {l.orderQty != null ? fmtQty(l.orderQty) : "·"}
         </td>
       ) : null}
+      {prices ? (
+        <td className={cn(cell, "pt-2 text-end")}>
+          <span className="flex flex-col items-end gap-0.5">
+            <LineTotalCell line={l} />
+            <PriceCell line={l} canEdit={prices.canEdit} onEdit={prices.onEdit} compact />
+          </span>
+        </td>
+      ) : null}
       <td className={cn(cell, "pe-3 pt-1.5")}>
         <span className="flex items-center gap-0.5">
           {/* keyed by status: a change replays the pop-in (the inline confirmation instead of a toast per line) */}
-          <StatusPill key={l.status} status={l.status} compact={floors.length > 0} className="duration-300 animate-in fade-in-0 zoom-in-75" />
+          <StatusPill key={l.status} status={l.status} compact={Boolean(compactStatus)} className="duration-300 animate-in fade-in-0 zoom-in-75" />
           {onHistory ? (
             <button
               type="button"

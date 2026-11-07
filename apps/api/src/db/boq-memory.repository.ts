@@ -20,10 +20,29 @@ import {
   type PatchBoqTemplateRequest,
   type PatchLibraryItemRequest,
   type ProcessingError,
+  type ProjectPricing,
   type StaleReason,
 } from '@kamutan/contracts';
-import { approvalInvalidatedAudit, approvalsInvalidatedOf, planBatchStatus, planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
-import { BATCH_STATUS_CHUNK, MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BatchStatusResult, type BoqRepository } from './boq-repository';
+import {
+  approvalInvalidatedAudit,
+  approvalsInvalidatedOf,
+  importPricesAudit,
+  importedPriceSkip,
+  isBoqExportDoc,
+  priceApplyBlocker,
+  planBatchStatus,
+  planLibraryItemPatch,
+  planLinePatch,
+  samePrice,
+  toBoqBuild,
+  toBoqExport,
+  toBoqLine,
+  toLibraryImport,
+  toLibraryItem,
+  toRule,
+  toTemplate,
+} from './boq-docs';
+import { BATCH_STATUS_CHUNK, MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BatchStatusResult, type BoqRepository, type BulkPriceResult, type ImportedPriceResult } from './boq-repository';
 import { autoId, type InMemoryRepository } from './in-memory.repository';
 import type { Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -74,10 +93,86 @@ export class InMemoryBoqRepository implements BoqRepository {
       const path = fsPaths.libraryItem(orgId, itemId);
       const d = this.docs.get(path);
       if (!d) return null;
-      const next = { ...d, ...patch, updatedAt: this.core.now(), updatedBy: actorUid };
+      const cur = toLibraryItem(itemId, d);
+      if (!cur) return null;
+      const { upd, audit } = planLibraryItemPatch(cur, patch, actorUid, this.core.now());
+      const next = { ...d, ...upd };
       this.docs.set(path, next);
-      this.core.appendAuditSync(orgId, { actorId: actorUid, entity: 'itemLibrary', entityId: itemId, action: 'update', after: { fields: Object.keys(patch).sort(), active: patch.active ?? null } });
+      this.core.appendAuditSync(orgId, { actorId: actorUid, entity: 'itemLibrary', entityId: itemId, action: 'update', after: audit });
       return toLibraryItem(itemId, next);
+    });
+  }
+
+  bulkSetLibraryPrices(orgId: string, entries: ReadonlyArray<{ itemId: string; amount: number | null }>, actorUid: string, batchId: string) {
+    return this.core.tx((): BulkPriceResult => {
+      const out: BulkPriceResult = { updated: [], skipped: [] };
+      const now = this.core.now();
+      for (const e of entries) {
+        const path = fsPaths.libraryItem(orgId, e.itemId);
+        const d = this.docs.get(path);
+        const cur = d ? toLibraryItem(e.itemId, d) : null;
+        if (!d || !cur) {
+          out.skipped.push({ itemId: e.itemId, reason: 'not_found' });
+          continue;
+        }
+        if (samePrice(cur, e.amount)) {
+          out.skipped.push({ itemId: e.itemId, reason: 'unchanged' });
+          continue;
+        }
+        const { upd, audit } = planLibraryItemPatch(cur, { price: e.amount }, actorUid, now, batchId);
+        this.docs.set(path, { ...d, ...upd });
+        this.core.appendAuditSync(orgId, { actorId: actorUid, entity: 'itemLibrary', entityId: e.itemId, action: 'update', after: audit });
+        out.updated.push({ itemId: e.itemId, code: cur.code, from: cur.price?.amount ?? null, to: e.amount });
+      }
+      return out;
+    });
+  }
+
+  auditImportPrices(orgId: string, importId: string): Promise<boolean> {
+    return this.core.tx(() => {
+      const path = fsPaths.libraryImport(orgId, importId);
+      const d = this.docs.get(path);
+      if (!d) return false;
+      const ev = importPricesAudit(importId, toLibraryImport(importId, d));
+      if (!ev || d.pricesAuditedAt) return false;
+      this.docs.set(path, { ...d, pricesAuditedAt: this.core.now() });
+      this.core.appendAuditSync(orgId, ev);
+      return true;
+    });
+  }
+
+  claimPriceApply(orgId: string, importId: string, actorUid: string) {
+    return this.core.tx((): LibraryImport | null => {
+      const path = fsPaths.libraryImport(orgId, importId);
+      const d = this.docs.get(path);
+      if (!d) return null;
+      const blocker = priceApplyBlocker(toLibraryImport(importId, d));
+      if (blocker) throw new RepoConflictError(blocker);
+      const next = { ...d, pricesAppliedAt: this.core.now(), pricesAppliedBy: actorUid };
+      this.docs.set(path, next);
+      return toLibraryImport(importId, next);
+    });
+  }
+
+  writeImportedPrices(orgId: string, importId: string, entries: ReadonlyArray<{ itemId: string; amount: number; allowManual: boolean }>, actorUid: string) {
+    return this.core.tx((): ImportedPriceResult => {
+      const out: ImportedPriceResult = { written: [], skipped: [] };
+      const now = this.core.now();
+      for (const e of entries) {
+        const path = fsPaths.libraryItem(orgId, e.itemId);
+        const d = this.docs.get(path);
+        const cur = d ? toLibraryItem(e.itemId, d) : null;
+        const skip = importedPriceSkip(cur, e.amount, e.allowManual);
+        if (skip || !cur || !d) {
+          out.skipped.push({ itemId: e.itemId, reason: skip ?? 'not_found' });
+          continue;
+        }
+        const { upd, audit } = planLibraryItemPatch(cur, { price: e.amount }, actorUid, now, undefined, importId);
+        this.docs.set(path, { ...d, ...upd });
+        this.core.appendAuditSync(orgId, { actorId: actorUid, entity: 'itemLibrary', entityId: e.itemId, action: 'update', after: audit });
+        out.written.push({ itemId: e.itemId, overwroteManual: cur.price?.source === 'manual' });
+      }
+      return out;
     });
   }
 
@@ -313,6 +408,27 @@ export class InMemoryBoqRepository implements BoqRepository {
     this.docs.set(pPath, { ...p, boq: { ...boq, stale: true, staleReason: reason, staleAt: this.core.now() } });
   }
 
+  async listBuilds(orgId: string, projectId: string, limit: number): Promise<BoqBuild[]> {
+    return this.core
+      .children(`orgs/${orgId}/projects/${projectId}/boqBuilds`)
+      .sort(([ka, a], [kb, b]) => ((b.createdAt as Date | undefined)?.getTime() ?? 0) - ((a.createdAt as Date | undefined)?.getTime() ?? 0) || (kb < ka ? -1 : 1))
+      .slice(0, limit)
+      .map(([k, d]) => toBoqBuild(idOf(k), d));
+  }
+
+  setProjectPricing(orgId: string, projectId: string, adjustmentPct: number, actorUid: string) {
+    return this.core.tx((): ProjectPricing | null => {
+      const pPath = fsPaths.project(orgId, projectId);
+      const p = this.docs.get(pPath);
+      if (!p) return null;
+      const from = (p.pricing as Doc | undefined)?.adjustmentPct ?? 0;
+      const now = this.core.now();
+      this.docs.set(pPath, { ...p, pricing: { adjustmentPct, updatedBy: actorUid, updatedAt: now } });
+      this.core.appendAuditSync(orgId, { actorId: actorUid, entity: 'projects', entityId: projectId, action: 'update_pricing', after: { projectId, from, to: adjustmentPct } });
+      return { adjustmentPct, updatedBy: actorUid, updatedAt: now.toISOString() };
+    });
+  }
+
   async markOrgStale(orgId: string, reason: StaleReason): Promise<number> {
     const projects = this.core.children(`orgs/${orgId}/projects`);
     for (const [k] of projects) await this.markStale(orgId, idOf(k), reason);
@@ -401,6 +517,20 @@ export class InMemoryBoqRepository implements BoqRepository {
       });
       return doc;
     });
+  }
+
+  async latestBoqExport(orgId: string, projectId: string): Promise<BoqExport | null> {
+    return (await this.listBoqExports(orgId, projectId, 1))[0] ?? null;
+  }
+
+  async listBoqExports(orgId: string, projectId: string, limit: number): Promise<BoqExport[]> {
+    return this.core
+      .children(`orgs/${orgId}/projects/${projectId}/exports`)
+      .filter(([, d]) => isBoqExportDoc(d))
+      .sort(([, a], [, b]) => ((b.createdAt as Date | undefined)?.getTime() ?? 0) - ((a.createdAt as Date | undefined)?.getTime() ?? 0))
+      .slice(0, limit)
+      .map(([k, d]) => toBoqExport(idOf(k), d))
+      .filter((x): x is BoqExport => x !== null);
   }
 }
 

@@ -23,6 +23,7 @@ with a similar description, else the most similar description → reason ``שי�
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -1077,6 +1078,17 @@ def containment(short: str, long: str) -> float:
 
 CODE_MATCH_MIN = 0.45  # same code: the description must still look alike (another org's numbering)
 SIMILAR_MIN = 0.6
+
+
+def price_amount(v: Any) -> float | None:
+    """Sprint 8: the amount of a stored price — contracts ``itemLibrary.price {amount, currency, …}`` or a line's
+    ``priceOverride`` (an object or a bare number); None when absent / not a finite non-negative number."""
+    if isinstance(v, dict):
+        v = v.get("amount")
+    if isinstance(v, bool) or not isinstance(v, int | float):
+        return None
+    f = float(v)
+    return f if math.isfinite(f) and f >= 0 else None
 
 
 @dataclass(frozen=True)

@@ -271,7 +271,8 @@ export function lineDomain(l: Pick<BoqLine, "ruleId" | "chapter" | "code">): str
 
 /** `qtyChanged` (Stage 10): approved lines that dropped to "נבדק" because their quantity changed since the approval. */
 /** `needsInput` (Sprint 6): suggested lines waiting for a manual measure / count / confirm ("להשלמה ידנית"). */
-export type StatusFilter = BoqLineStatus | "all" | "qtyChanged" | "needsInput";
+/** `unpriced` (Sprint 8): lines without a unit price ("ללא מחיר" — no override and nothing in the price list). */
+export type StatusFilter = BoqLineStatus | "all" | "qtyChanged" | "needsInput" | "unpriced";
 /** The drawing's filters applied to lines: תחום → line domain, קומה → line has qty on that floor, ביטחון → level. */
 export function filterLines(lines: readonly BoqLine[], f: OverlayFilters, status: StatusFilter = "all"): BoqLine[] {
   const dom = new Set(f.domains);
@@ -282,7 +283,13 @@ export function filterLines(lines: readonly BoqLine[], f: OverlayFilters, status
       (dom.size === 0 || dom.has(lineDomain(l))) &&
       (f.floor === null || (l.byFloor?.[f.floor] ?? 0) > 0) &&
       (status === "all" ||
-        (status === "qtyChanged" ? qtyChangedSinceApproval(l) : status === "needsInput" ? Boolean(l.needsInput) && !isOverridden(l) : l.status === status)),
+        (status === "qtyChanged"
+          ? qtyChangedSinceApproval(l)
+          : status === "needsInput"
+            ? Boolean(l.needsInput) && !isOverridden(l)
+            : status === "unpriced"
+              ? (l.priceOverride ?? l.unitPrice ?? null) === null
+              : l.status === status)),
   );
 }
 

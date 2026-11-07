@@ -13,7 +13,19 @@ import {
   type IngestStage,
   type OrgMember,
   type Role,
+  MAX_SHEETS_PER_PROJECT,
+  VAT_RATE_DEFAULT,
 } from "./types";
+import {
+  PRICE_ADJUSTMENT_MAX_PCT,
+  PRICE_ADJUSTMENT_MIN_PCT,
+  PROJECT_DELETE_MISMATCH_HE,
+  SHEET_LIMIT_ERROR,
+  SHEET_SET_DELETE_BUSY_HE,
+  SHEET_SET_DELETE_BUSY_MS,
+  deleteConfirmationMatches,
+  sheetLimitMessageHe,
+} from "@kamutan/contracts";
 import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, rowFromDevIndex, sampleTiles, seedNoah, type DevIndexEntry } from "./mockSheets";
 import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
@@ -67,6 +79,10 @@ export interface MockOptions {
   members?: OrgMember[];
   /** Sprint 7: per-project storage quota of the demo org (default 2 GB; `?mockQuotaMb=` in dev / e2e). */
   projectQuotaBytes?: number;
+  /** Sprint 8: max sheets per project (default 100 = MAX_SHEETS_PER_PROJECT; `?mockSheetLimit=` in dev / e2e). */
+  sheetLimit?: number;
+  /** Sprint 8: seed the org price list (default true). */
+  seedPrices?: boolean;
 }
 
 /** Stage 10 demo members of org-demo (A-API-01). The signed-in user is added as admin on first read. */
@@ -220,6 +236,21 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
 
   const boq = createBoqMock({
     libraryMode: opts.libraryMode ?? "imported",
+    ...(opts.seedPrices === false ? { seedPrices: false } : {}),
+    actorUid: () => actor().uid,
+    // Sprint 8: "history in audit" — every price change of the org price list is one event.
+    // API (boq-docs planLibraryItemPatch): `itemLibrary/update {fields, active, code, price {from, to, source}, batchId?}`
+    onLibraryPrice: (item, before, after, batchId) =>
+      s5.appendAudit(
+        {
+          action: "update",
+          entity: "itemLibrary",
+          entityId: item.id,
+          projectId: null,
+          after: { fields: ["price"], active: null, code: item.code, price: { from: before?.amount ?? null, to: after?.amount ?? null, source: after?.source ?? "manual" }, ...(batchId ? { batchId } : {}), ...(after?.importId ? { importId: after.importId } : {}) },
+        },
+        orgs[0]?.id ?? DEMO_ORG_ID,
+      ),
     onApprovalInvalidated: (projectId, line, from, to) => {
       s5.appendAudit({ actor: null, actorKind: "system", action: "approval_invalidated", entity: "boqLines", entityId: line.id, projectId, before: { status: "approved", qty: from }, after: { status: "reviewed", qty: to }, meta: { kind: "status", reason: line.reasons?.[0] ?? null } }, projects.get(projectId)?.orgId ?? DEMO_ORG_ID);
     },
@@ -274,6 +305,18 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
   if (opts.blockExportOnRed) s5.setBlockExportOnRed(orgs[0]?.id ?? DEMO_ORG_ID, true);
   if (opts.projectQuotaBytes) s5.setProjectQuota(orgs[0]?.id ?? DEMO_ORG_ID, opts.projectQuotaBytes);
   if (opts.boqPrebuilt && sheets.has("p-noah")) queueMicrotask(() => boq.buildBoq("p-noah"));
+  // Sprint 8: bytes per sheet set (released by a delete). The seeded Noah sets share the project's mock figure.
+  const setBytes = new Map<string, number>();
+  /** Bytes of a set: counted on finalize; sets that came from the dev index share the project's figure evenly. */
+  const bytesOf = (projectId: string, setId: string): number => {
+    const known = setBytes.get(setId);
+    if (known !== undefined) return known;
+    const list = sheetSets.get(projectId) ?? [];
+    const counted = list.reduce((s, x) => s + (setBytes.get(x.id) ?? 0), 0);
+    const unknown = list.filter((x) => !setBytes.has(x.id)).length;
+    return Math.max(0, Math.round(((projects.get(projectId)?.storageBytes ?? 0) - counted) / Math.max(1, unknown)));
+  };
+  const sheetLimit = opts.sheetLimit ?? MAX_SHEETS_PER_PROJECT;
   const jobs: Job[] = [];
   const tokens = new Map<string, { projectId: string; filename: string; kind: SheetSet["fileKind"]; uploaded: boolean; sizeBytes: number }>();
   const uploadedPaths = new Set<string>();
@@ -390,7 +433,9 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
    * A-UI-11 / A-LIVE-02 (mock side): once a BOQ is built, the project card's counts come from the same lines as the
    * hub (the API writes them on the project doc after each build).
    */
-  const withLiveStats = (p: Project): Project => {
+  const withLiveStats = (p0: Project): Project => {
+    // Sprint 8: sheet count + the per-project limit on every project read
+    const p: Project = { ...p0, sheetCount: (sheets.get(p0.id) ?? []).length, sheetLimit };
     if (!boq.state(p.id)?.latestBuildId) return p;
     const lines = boq.listLines(p.id).items;
     if (!lines.length) return p;
@@ -452,7 +497,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
           else delete p.address;
         }
         if (patch.status !== undefined) p.status = patch.status;
-        return delay(structuredClone(p));
+        return delay(withLiveStats(structuredClone(p)));
       },
       createUpload: async (projectId, req) => {
         const p = mustGet(projectId);
@@ -491,9 +536,15 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         const replaced = req.replacesSheetSetId ? (sheetSets.get(projectId) ?? []).find((x) => x.id === req.replacesSheetSetId) : null;
         if (req.replacesSheetSetId && !replaced) throw new ApiError(404, "not_found", "Sheet set to replace not found");
         if (replaced?.supersededBySetId) throw new ApiError(409, "already_superseded", "this set was already replaced");
+        // Sprint 8: at most 100 sheets per project (a replacement frees its old set's sheets first).
+        const pagesOf = t.kind === "pdf" ? 2 : 1;
+        const freed = replaced ? (sheets.get(projectId) ?? []).filter((r) => r.sheet.sheetSetId === replaced.id).length : 0;
+        if ((sheets.get(projectId) ?? []).length - freed + pagesOf > sheetLimit)
+          throw new ApiError(409, SHEET_LIMIT_ERROR, sheetLimitMessageHe((sheets.get(projectId) ?? []).length - freed, sheetLimit));
         tokens.delete(req.uploadToken);
         // Sprint 7: storage accounting on finalize (a refused `file_infected` file is not counted, see runJob).
-        if (!/eicar|infected/i.test(t.filename)) p.storageBytes = (p.storageBytes ?? 0) + t.sizeBytes;
+        const counted = !/eicar|infected/i.test(t.filename);
+        if (counted) p.storageBytes = (p.storageBytes ?? 0) + t.sizeBytes;
         const now = new Date().toISOString();
         const set: SheetSet = {
           id: nextId("s"),
@@ -544,6 +595,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
           progress: 0,
           createdAt: now,
         };
+        if (counted) setBytes.set(set.id, t.sizeBytes);
         sheetSets.set(projectId, [set, ...(sheetSets.get(projectId) ?? [])]);
         sheets.set(projectId, [...(sheets.get(projectId) ?? []), ...rows]);
         jobs.unshift(job);
@@ -651,8 +703,10 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       },
       getBoqBuild: async (projectId, buildId) => delay(boq.getBuild(projectId, buildId)),
       listBoqLines: async (projectId) => {
-        mustGet(projectId);
-        return delay(boq.listLines(projectId));
+        const p = mustGet(projectId);
+        // Sprint 8 (contracts BoqSummary.totals): over ALL lines, project discount, org VAT
+        const res = boq.listLines(projectId);
+        return delay(res.boq ? { ...res, totals: boq.totals(projectId, s5.orgPatch(p.orgId).settings.vatRate ?? VAT_RATE_DEFAULT, p.pricing?.adjustmentPct ?? null) } : res);
       },
       patchBoqLine: async (projectId, lineId, req) => {
         s5.assertProjectActive(projectId);
@@ -721,6 +775,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
             q,
             vatRate: settings.vatRate ?? 0.18,
             blockOnRed: settings.blockExportOnRed,
+            adjustmentPct: p.pricing?.adjustmentPct ?? null,
           }),
         );
       },
@@ -728,7 +783,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       patchLibraryItem: async (_orgId, itemId, req) => delay(boq.patchItem(itemId, req)),
       createLibraryImport: async (orgId, req) => {
         if (req.sizeBytes > 20 * 1024 * 1024) throw new ApiError(413, "file_too_large", "max 20MB");
-        return delay(boq.createImport(orgId, req.filename));
+        return delay(boq.createImport(orgId, req.filename, req.mode ?? "library", req.overwriteManualPrices ?? false, req.dryRun ?? false));
       },
       startLibraryImport: async (_orgId, importId, uploadToken) => delay(boq.startImport(importId, uploadToken)),
       getLibraryImport: async (_orgId, importId) => delay(boq.getImport(importId)),
@@ -831,6 +886,94 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         return delay(undefined);
       },
       acceptInvite: async () => delay({ orgId: orgs[0]?.id ?? DEMO_ORG_ID, role: orgs[0]?.role ?? "viewer", alreadyMember: true }),
+
+      /* ---------- Sprint 8 (contracts prices.ts / compare.ts / housekeeping.ts) ---------- */
+      bulkPatchPrices: async (_orgId, req) => delay(boq.bulkPrices(req)),
+      applyPriceImport: async (_orgId, importId, req) => {
+        const r = boq.applyPriceImport(importId, req.overwriteItemIds);
+        emit();
+        return delay(r);
+      },
+      patchProjectPricing: async (projectId, adjustmentPct) => {
+        const p = mustGet(projectId);
+        s5.assertProjectActive(projectId);
+        const role = orgs[0]?.role ?? "viewer";
+        if (role !== "admin" && role !== "editor") throw new ApiError(403, "forbidden", "editors only");
+        if (adjustmentPct !== null && (!Number.isFinite(adjustmentPct) || adjustmentPct < PRICE_ADJUSTMENT_MIN_PCT || adjustmentPct > PRICE_ADJUSTMENT_MAX_PCT))
+          throw new ApiError(400, "validation_failed", "adjustmentPct out of range");
+        const before = p.pricing?.adjustmentPct ?? null;
+        // null (or 0) removes the discount / markup
+        p.pricing = { adjustmentPct: adjustmentPct ?? 0, updatedBy: actor().uid, updatedAt: new Date().toISOString() };
+        s5.appendAudit({ action: "update_pricing", entity: "projects", entityId: projectId, projectId, before: { adjustmentPct: before }, after: { adjustmentPct: p.pricing.adjustmentPct } }, p.orgId);
+        emit();
+        return delay({ projectId, pricing: { ...p.pricing } });
+      },
+      listBoqBuilds: async (projectId) => {
+        mustGet(projectId);
+        return delay(boq.listBuilds(projectId));
+      },
+      compareBoqBuilds: async (projectId, q) => {
+        mustGet(projectId);
+        return delay(boq.compare(projectId, q));
+      },
+      exportBoqComparison: async (projectId, q) => {
+        const p = mustGet(projectId);
+        const role = orgs[0]?.role ?? "viewer";
+        if (role !== "admin" && role !== "editor") throw new ApiError(403, "forbidden", "editors only");
+        const r = boq.exportCompare(projectId, q, `תוספות ושינויים — ${p.name}`);
+        s5.appendAudit({ action: "create", entity: "exports", entityId: r.exportId, projectId, after: { purpose: "comparison", fromBuildId: r.fromBuildId, toBuildId: r.toBuildId } }, p.orgId);
+        return delay(r);
+      },
+      deleteSheetSet: async (projectId, sheetSetId) => {
+        const p = mustGet(projectId);
+        s5.assertProjectActive(projectId);
+        const role = orgs[0]?.role ?? "viewer";
+        if (role !== "admin" && role !== "editor") throw new ApiError(403, "forbidden", "editors only");
+        const list = sheetSets.get(projectId) ?? [];
+        const set = list.find((x) => x.id === sheetSetId);
+        if (!set) throw new ApiError(404, "not_found", "Sheet set not found");
+        // contracts: 409 while the set is still being processed (younger than SHEET_SET_DELETE_BUSY_MS)
+        if ((set.status === "uploaded" || set.status === "queued" || set.status === "splitting") && Date.now() - Date.parse(set.createdAt) < SHEET_SET_DELETE_BUSY_MS)
+          throw new ApiError(409, "conflict", SHEET_SET_DELETE_BUSY_HE);
+        const gone = (sheets.get(projectId) ?? []).filter((r) => r.sheet.sheetSetId === sheetSetId);
+        const goneIds = new Set(gone.map((r) => r.sheet.id));
+        const releasedBytes = bytesOf(projectId, sheetSetId);
+        sheets.set(projectId, (sheets.get(projectId) ?? []).filter((r) => r.sheet.sheetSetId !== sheetSetId));
+        sheetSets.set(projectId, list.filter((x) => x.id !== sheetSetId));
+        for (const j of jobs) if (j.sheetSetId === sheetSetId && (j.status === "queued" || j.status === "running" || j.status === "failed")) j.status = "cancelled";
+        setBytes.delete(sheetSetId);
+        p.storageBytes = Math.max(0, (p.storageBytes ?? 0) - releasedBytes);
+        const revokedShareLinks = s5.revokeLinksFor(projectId, goneIds);
+        s5.appendAudit({ action: "delete", entity: "sheetSets", entityId: sheetSetId, projectId, after: { sheets: gone.length, releasedBytes, revokedShareLinks } }, p.orgId);
+        if (gone.length) boq.markStale(projectId);
+        emit();
+        return delay({
+          sheetSetId,
+          deleted: { sheets: gone.length, versions: gone.length, docs: 0, objects: 1 + gone.length },
+          releasedBytes,
+          storageBytes: p.storageBytes,
+          storageQuotaBytes: p.storageQuotaBytes ?? s5.projectQuota(p.orgId),
+          revokedShareLinks,
+        });
+      },
+      deleteProject: async (projectId, req) => {
+        const p = mustGet(projectId);
+        requireAdmin();
+        await requireRecentAuth();
+        if (!deleteConfirmationMatches(req.confirmName ?? "", p.name)) throw new ApiError(400, "validation_failed", PROJECT_DELETE_MISMATCH_HE);
+        const releasedBytes = p.storageBytes ?? 0;
+        const revokedShareLinks = s5.revokeLinksFor(projectId);
+        const docs = (sheets.get(projectId) ?? []).length * 2 + (sheetSets.get(projectId) ?? []).length + 1;
+        projects.delete(projectId);
+        for (const x of sheetSets.get(projectId) ?? []) setBytes.delete(x.id);
+        sheetSets.delete(projectId);
+        sheets.delete(projectId);
+        for (const j of jobs) if (j.projectId === projectId && (j.status === "queued" || j.status === "running")) j.status = "cancelled";
+        boq.dropProject(projectId);
+        s5.appendAudit({ action: "delete", entity: "projects", entityId: projectId, projectId, after: { name: p.name, releasedBytes, revokedShareLinks } }, p.orgId);
+        emit();
+        return delay({ projectId, deleted: { docs, objects: docs }, releasedBytes, revokedShareLinks });
+      },
     },
 
     publicShare: {
@@ -912,7 +1055,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       boqState: (_orgId, projectId, onData) => listen(() => onData(boq.state(projectId))),
       boqBuild: (_orgId, projectId, buildId, onData) => listen(() => onData(boq.build(projectId, buildId))),
       sheetSets: (_orgId, projectId, onData) =>
-        listen(() => onData((sheetSets.get(projectId) ?? []).map((s) => ({ ...s })))),
+        listen(() => onData((sheetSets.get(projectId) ?? []).map((s) => ({ ...s, storageBytes: bytesOf(projectId, s.id) })))),
       sheets: (_orgId, projectId, onData) =>
         listen(() =>
           onData(

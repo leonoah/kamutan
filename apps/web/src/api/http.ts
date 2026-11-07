@@ -30,6 +30,10 @@ import {
   type ShareErrorKind,
   type ShareLink,
   type CreateShareLinkResponse,
+  type BoqBuildSummary,
+  type BoqCompareQuery,
+  type BoqTotals,
+  type PriceImportReport,
 } from "./types";
 
 /* ---------------- Sprint 4 adapters (contracts corrections.ts ↔ app DTOs) ---------------- */
@@ -180,7 +184,11 @@ export function toLibraryImport(v: {
   originalName?: string;
   status: string;
   jobId: string | null;
-  stats: { created?: number; updated?: number; templates?: number; chapters?: number; ambiguousCodes?: { code: string; descriptions: string[] }[]; templateName?: string } | null;
+  stats: { created?: number; updated?: number; templates?: number; chapters?: number; ambiguousCodes?: { code: string; descriptions: string[] }[]; templateName?: string; prices?: PriceImportReport | null } | null;
+  mode?: "library" | "prices";
+  overwriteManualPrices?: boolean;
+  dryRun?: boolean;
+  pricesAppliedAt?: string | null;
   error: { code: string; message: string } | null;
   job?: { progress?: number | { pct?: number } } | null;
 }): LibraryImport {
@@ -200,9 +208,15 @@ export function toLibraryImport(v: {
           chapters: st.chapters ?? 0,
           templateCreated: st.templates ? { id: "", name: st.templateName ?? "" } : null,
           ambiguousCodes: st.ambiguousCodes ?? [],
+          // Sprint 8: the price report (contracts PriceImportReport, passed as is)
+          ...(st.prices ? { prices: st.prices } : {}),
         }
       : null,
     error: v.error,
+    ...(v.mode ? { mode: v.mode } : {}),
+    ...(v.overwriteManualPrices !== undefined ? { overwriteManualPrices: v.overwriteManualPrices } : {}),
+    ...(v.dryRun !== undefined ? { dryRun: v.dryRun } : {}),
+    ...(v.pricesAppliedAt !== undefined ? { pricesAppliedAt: v.pricesAppliedAt } : {}),
   };
 }
 
@@ -248,6 +262,7 @@ export function toShareLink(v: Partial<ShareLink> & { id: string; expiresAt: str
     createdBy: v.createdBy ?? "",
     createdAt: v.createdAt,
     ...(v.sheets ? { sheets: v.sheets } : {}),
+    ...(v.showPrices ? { showPrices: true } : {}),
   };
 }
 
@@ -316,7 +331,8 @@ export function createPublicShareClient(base = env.apiBase, fetchImpl: typeof fe
       const v = await get<PublicShareBoq & { items?: PublicShareBoq["lines"] }>(path(token, "/boq"));
       // F-4: a snapshot frozen at link creation (contracts lines have no reasons / override marker).
       const lines = (v.lines ?? v.items ?? []).map((l) => ({ ...l, byFloor: l.byFloor ?? {} }));
-      return { snapshotAt: v.snapshotAt ?? null, lines, ...(v.chapters ? { chapters: v.chapters } : {}) };
+      // Sprint 8: prices only in snapshots of "הצג מחירים" links (`showPrices` + `totals`; the API strips them otherwise)
+      return { snapshotAt: v.snapshotAt ?? null, lines, ...(v.chapters ? { chapters: v.chapters } : {}), ...(v.showPrices !== undefined ? { showPrices: v.showPrices } : {}), ...(v.totals ? { totals: v.totals } : {}) };
     },
     getOverlay: async (token, sheetId) => normalizeShareOverlay(await get<Parameters<typeof normalizeShareOverlay>[0]>(path(token, `/sheets/${enc(sheetId)}/overlay`)), sheetId),
     tileUrl: (token, sheetId, z, x, y) => path(token, `/sheets/${enc(sheetId)}/tiles/${z}/${x}/${y}`),
@@ -347,6 +363,8 @@ export function normalizeShareMeta(raw: PublicShareMeta | PublicShareMetaDto): P
       allowPdfDownload: link.allowPdfDownload && pdf?.status === "ready",
       pdf: link.allowPdfDownload ? (pdf ?? null) : null,
       showConfidence: true,
+      // Sprint 8: the link carries prices only when it was created with "הצג מחירים"
+      showPrices: Boolean((link as { showPrices?: boolean }).showPrices),
       watermark: link.watermark,
       sheets: sheets.map(({ sheetId, ...x }) => ({ ...x, id: sheetId })),
     });
@@ -482,6 +500,12 @@ function mapMemberError(e: unknown): never {
   throw e;
 }
 
+/** Sprint 8: `GET …/boq/compare` query (contracts BoqCompareQuerySchema is strict: only from / to / base). */
+export function compareBody(q: BoqCompareQuery): { from?: string; to?: string; base: "previous" | "export" } {
+  return { ...(q.from ? { from: q.from } : {}), ...(q.to ? { to: q.to } : {}), base: q.base ?? "previous" };
+}
+export const compareQueryString = (q: BoqCompareQuery): string => new URLSearchParams(compareBody(q) as Record<string, string>).toString();
+
 export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetchImpl: typeof fetch = fetch): ApiClient {
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const token = await getToken();
@@ -576,6 +600,8 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
         boq: sm ? { latestBuildId: sm.latestBuildId, builtAt: sm.builtAt, stale: sm.stale } : null,
         blockExportOnRed: sm?.blockExportOnRed ?? false,
         calibration: sm?.calibration ?? sm?.build?.stats?.calibration ?? null,
+        // Sprint 8: totals over ALL lines (contracts BoqSummary.totals)
+        totals: (sm as { totals?: BoqTotals } | null)?.totals ?? null,
       };
     },
     patchBoqLine: async (projectId, lineId, req) => {
@@ -770,5 +796,16 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
       await request<unknown>(path, { method: "DELETE" }).catch(mapMemberError);
     },
     acceptInvite: (inviteId) => post(`/invites/${enc(inviteId)}/accept`, {}),
+
+    /* Sprint 8 — contracts "Sprint 8 published" (+ integration): prices.ts / compare.ts / housekeeping.ts */
+    bulkPatchPrices: (orgId, req) => post(`/library/prices`, { orgId, items: req.items }),
+    applyPriceImport: (orgId, importId, req) => post(`/library/imports/${enc(importId)}/apply-prices`, { orgId, overwriteItemIds: req.overwriteItemIds }),
+    patchProjectPricing: (projectId, adjustmentPct) =>
+      request(`/projects/${enc(projectId)}/boq/pricing`, { method: "PATCH", body: JSON.stringify({ adjustmentPct }) }),
+    listBoqBuilds: async (projectId) => (await request<{ items: BoqBuildSummary[] }>(`/projects/${enc(projectId)}/boq/builds?limit=20`)).items,
+    compareBoqBuilds: (projectId, q) => request(`/projects/${enc(projectId)}/boq/compare?${compareQueryString(q)}`),
+    exportBoqComparison: (projectId, q) => post(`/projects/${enc(projectId)}/boq/compare/export`, compareBody(q)),
+    deleteSheetSet: (projectId, sheetSetId) => request(`/projects/${enc(projectId)}/sheet-sets/${enc(sheetSetId)}`, { method: "DELETE" }),
+    deleteProject: (projectId, req) => request(`/projects/${enc(projectId)}`, { method: "DELETE", body: JSON.stringify({ confirmName: req.confirmName }) }),
   };
 }

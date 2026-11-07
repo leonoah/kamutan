@@ -1,3 +1,4 @@
+import { sprint8He } from "./he.sprint8";
 /** Hebrew UI strings (default locale). Micro-copy follows docs/spec/05_ux.md §מיקרו-קופי verbatim where it exists. */
 const he = {
   app: {
@@ -196,6 +197,9 @@ const he = {
     confirmSheetsCta_two: "2 גיליונות מחכים לאישור",
     confirmSheetsCta_other: "{{count}} גיליונות מחכים לאישור",
     errors: {
+      // Sprint 8: the 100-sheet limit when the worker finds more pages than fit (the API refuses known counts with 409)
+      sheet_limit: "בפרויקט אפשר לשמור עד 100 גיליונות. מחקו סט שרטוטים ישן או פתחו פרויקט נוסף.",
+      sheet_limit_exceeded: "בפרויקט אפשר לשמור עד 100 גיליונות. מחקו סט שרטוטים ישן או פתחו פרויקט נוסף.",
       pdf_encrypted: "הקובץ מוגן בסיסמה. שמרו אותו בלי הצפנה והעלו שוב.",
       pdf_scanned: "הקובץ נראה סרוק. ב-MVP אין עדיין ספירה מסריקות; הגיליון יוצג לעיון בלבד.",
       render_failed: "לא הצלחנו להכין את תצוגת הגיליון.",
@@ -1249,7 +1253,9 @@ const he = {
       rebuild: "חישוב מהשרטוטים",
       correction: "תיקון על השרטוט",
       description: "שינוי שם השורה",
+      price: "שינוי מחיר",
     },
+    priceRestored: "חזרה למחיר המחירון",
     descriptionRestored: "חזרה לנוסח המקורי",
     descriptionLibrary: "עודכן גם בספריית הסעיפים",
     correctionKind: {
@@ -1309,6 +1315,7 @@ const he = {
       boqTemplates: "תבניות",
       boqRules: "כללים",
       similarSearches: "חיפוש דומים",
+      boqComparisons: "השוואת גרסאות",
     },
     /** API audit vocabulary (entity + verb); shown next to the entity column. */
     actions: {
@@ -1348,6 +1355,8 @@ const he = {
       offboard: "תחילת סיום התקשרות",
       deny: "גישה נדחתה",
       login: "כניסה למערכת",
+      price: "שינוי מחיר",
+      export: "ייצוא",
     },
   },
   share: {
@@ -1702,6 +1711,8 @@ const he = {
     notFound: "העמוד לא נמצא.",
     home: "לדף הבית",
   },
+  // Sprint 8: prices, "מה השתנה", deletes, route loading (src/i18n/he.sprint8.ts)
+  ...sprint8He,
 };
 
 export default he;

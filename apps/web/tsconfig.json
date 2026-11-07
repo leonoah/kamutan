@@ -20,7 +20,7 @@
     "allowImportingTsExtensions": false,
     "types": ["vite/client", "node", "vitest/globals", "@testing-library/jest-dom"],
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": { "@/*": ["src/*"], "@kamutan/contracts": ["../../packages/contracts/src/index.ts"] }
   },
   "include": ["src", "build", "vite.config.ts", "tailwind.config.ts"]
 }

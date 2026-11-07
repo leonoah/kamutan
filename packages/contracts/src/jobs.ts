@@ -141,6 +141,19 @@ export const LibraryImportJobSchema = z
     storagePath: z.string().regex(LIBRARY_IMPORT_PATH_RE, 'invalid import path'),
     sourceKind: z.enum(LIBRARY_IMPORT_KINDS),
     traceparent: TraceparentSchema.nullable(),
+    /**
+     * Sprint 8 (optional; absent = `library`): `prices` = read the price column and fill `itemLibrary.price` of matched
+     * items only (`planPriceImport`, prices.ts); `library` = Sprint 3 behaviour + the same price plan when the file has a
+     * price column. Report in `libraryImports/{id}.stats.prices`.
+     */
+    mode: z.enum(['library', 'prices']).optional(),
+    /** Sprint 8: imported prices may replace `source: 'manual'` prices (default false → reported as conflicts). */
+    overwriteManualPrices: z.boolean().optional(),
+    /**
+     * Integration (only with `mode: 'prices'`): compute `stats.prices` (+ `planned` rows, `dryRun: true`) and write NO
+     * price; the API applies the reviewed plan (`apply-prices`).
+     */
+    dryRun: z.boolean().optional(),
   })
   .strict()
   .refine((j) => j.storagePath === `orgs/${j.orgId}/imports/${j.importId}.${j.sourceKind}`, {

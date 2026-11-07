@@ -78,6 +78,12 @@ def seed(
     }
     doc.update(job_doc)
     docs.set(f"jobs/{payload['jobId']}", doc, merge=False)
+    # the API creates the project and the sheet set before any job (Sprint 8: a job without them is dropped)
+    proj = f"orgs/{payload['orgId']}/projects/{payload['projectId']}"
+    if docs.get(proj) is None:
+        docs.set(proj, {"name": "test project"})
+    if docs.get(f"{proj}/sheetSets/{payload['sheetSetId']}") is None:
+        docs.set(f"{proj}/sheetSets/{payload['sheetSetId']}", {"status": "uploaded"})
     return IngestSheetVersionJob.model_validate(payload), blobs, docs
 
 

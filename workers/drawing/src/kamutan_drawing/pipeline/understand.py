@@ -910,6 +910,15 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
     vs = vector_sheet_from_primitives(prim)
     text = decode_text((page_dir / "text.json.gz").read_bytes())
     spans = [span_from_line(ln) for ln in text.get("lines", [])]
+    # ------------------------------------------------ Sprint 8 (Worker-LLM) — keep this block here (llm_gateway.hard_text)
+    # args.llm from the orchestrator: pass 1 collects hard-text / verify crops, pass 2 applies the gateway's readings
+    from ..llm_gateway import hard_text as llm_ht
+
+    llm_sess = llm_ht.session_from_args(args.get("llm"))
+    spans_pass1 = spans
+    spans = llm_ht.apply_span_readings(spans, llm_sess)
+    llm_tok = llm_ht.activate(llm_sess)
+    # ------------------------------------------------ end Sprint 8 block
     kind = str(args.get("kind", "pdf"))
     raster = kind in ("png", "jpg")
     render, close = _open_render(
@@ -955,7 +964,10 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             text_items=bool(args.get("textItems", True)),
             geometry=bool(args.get("geometry", True)),
         )
+        if llm_sess is not None:  # Sprint 8 (Worker-LLM) — keep: crops need the open render
+            res.update(llm_ht.finish(llm_sess, spans=spans_pass1, out_dir=out, render=render))
     finally:
+        llm_ht.deactivate(llm_tok)
         close()
     res["outDir"] = out.relative_to(wd).as_posix()
     return res

@@ -98,6 +98,13 @@ describe('OpenAPI', () => {
           // Sprint 7
           '/api/v1/projects/{projectId}/boq/document',
           '/api/v1/projects/{projectId}/sheet-sets/{sheetSetId}',
+          // Sprint 8 (prices, comparison)
+          '/api/v1/library/prices',
+          '/api/v1/library/imports/{importId}/apply-prices',
+          '/api/v1/projects/{projectId}/boq/builds',
+          '/api/v1/projects/{projectId}/boq/pricing',
+          '/api/v1/projects/{projectId}/boq/compare',
+          '/api/v1/projects/{projectId}/boq/compare/export',
           // Sprint 4
           '/api/v1/projects/{projectId}/corrections',
           '/api/v1/projects/{projectId}/corrections/batch',

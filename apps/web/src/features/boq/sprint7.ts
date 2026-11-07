@@ -155,7 +155,17 @@ export function normalizeDocument(raw: RawBoqDocument): BoqDocumentModel {
       .filter((t): t is BoqDocumentTitleRow => t !== null && Boolean(t.text.trim())),
     columns: normalizeColumns(raw.columns ?? []),
     chapters,
-    totals: { beforeVat: num(totals.beforeVat) ?? 0, vat: num(totals.vat) ?? 0, afterVat: num(totals.afterVat) ?? 0 },
+    totals: {
+      beforeVat: num(totals.beforeVat) ?? 0,
+      vat: num(totals.vat) ?? 0,
+      afterVat: num(totals.afterVat) ?? 0,
+      // Sprint 8 (contracts BoqTotals; older documents have only the three VAT totals)
+      ...(num(totals.linesTotal) !== null ? { linesTotal: num(totals.linesTotal)! } : {}),
+      adjustmentPct: num(totals.adjustmentPct) ?? 0,
+      adjustment: num(totals.adjustment) ?? 0,
+      ...(num(totals.pricedLines) !== null ? { pricedLines: num(totals.pricedLines)! } : {}),
+      ...(num(totals.unpricedLines) !== null ? { unpricedLines: num(totals.unpricedLines)! } : {}),
+    },
     warnings: (raw.warnings ?? []).filter((w) => w && w.count > 0),
     generatedAt: raw.generatedAt ?? new Date().toISOString(),
     ...(vatRate !== null ? { vatRate } : {}),
@@ -184,9 +194,8 @@ export function warningCounts(w: BoqDocumentModel["warnings"]): { kind: BoqDocum
   return order.filter((k) => by.has(k)).map((kind) => ({ kind, count: by.get(kind)! }));
 }
 
-const money = new Intl.NumberFormat("he-IL", { maximumFractionDigits: 0 });
-/** Currency like the Excel's `"₪"\ #,##0` ("₪ 1,234"); null → empty cell. */
-export const formatMoney = (n: number | null | undefined): string => (n === null || n === undefined ? "" : `₪ ${money.format(Math.round(n))}`);
+/** Sprint 8: currency is "₪ 1,234.50" (he-IL, 2 decimals) everywhere — one formatter in features/prices. */
+export { formatMoney } from "@/features/prices/model";
 
 /** Total number of line rows (per-floor rows count separately). */
 export const documentLineCount = (d: BoqDocumentModel): number => d.chapters.reduce((s, c) => s + lineRows(c).length, 0);

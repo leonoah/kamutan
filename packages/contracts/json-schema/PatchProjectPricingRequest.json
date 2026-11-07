@@ -1,0 +1,28 @@
+{
+  "$ref": "#/definitions/PatchProjectPricingRequest",
+  "definitions": {
+    "PatchProjectPricingRequest": {
+      "type": "object",
+      "properties": {
+        "adjustmentPct": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "adjustmentPct"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/PatchProjectPricingRequest.json"
+}

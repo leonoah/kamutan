@@ -136,6 +136,210 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "prices": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "rows": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "matched": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "applied": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "unchanged": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "unmatched": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "conflicts": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "skippedManual": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "overwriteManualPrices": {
+                              "type": "boolean"
+                            },
+                            "unmatchedRows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "row": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  },
+                                  "description": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  },
+                                  "amount": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "row",
+                                  "code",
+                                  "description",
+                                  "amount"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 500
+                            },
+                            "planned": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "itemId": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128,
+                                    "pattern": "^[A-Za-z0-9_-]+$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  },
+                                  "amount": {
+                                    "type": "number"
+                                  },
+                                  "current": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "currentSource": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "manual",
+                                          "import"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "itemId",
+                                  "code",
+                                  "amount",
+                                  "current",
+                                  "currentSource"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 5000
+                            },
+                            "dryRun": {
+                              "type": "boolean"
+                            },
+                            "conflictRows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "row": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  },
+                                  "itemId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128,
+                                        "pattern": "^[A-Za-z0-9_-]+$"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "enum": [
+                                      "manual_price",
+                                      "duplicate_in_file",
+                                      "ambiguous_item"
+                                    ]
+                                  },
+                                  "current": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "incoming": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "row",
+                                  "code",
+                                  "itemId",
+                                  "reason",
+                                  "current",
+                                  "incoming"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 500
+                            }
+                          },
+                          "required": [
+                            "rows",
+                            "matched",
+                            "applied",
+                            "unchanged",
+                            "unmatched",
+                            "conflicts",
+                            "skippedManual",
+                            "overwriteManualPrices",
+                            "unmatchedRows",
+                            "conflictRows"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -171,6 +375,54 @@
                     "message"
                   ],
                   "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "library",
+                "prices"
+              ]
+            },
+            "overwriteManualPrices": {
+              "type": "boolean"
+            },
+            "pricesAuditedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "dryRun": {
+              "type": "boolean"
+            },
+            "pricesAppliedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pricesAppliedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
                 },
                 {
                   "type": "null"

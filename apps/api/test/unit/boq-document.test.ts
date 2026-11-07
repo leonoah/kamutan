@@ -4,7 +4,7 @@
  */
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
-import { BoqDocumentModelSchema, BOQ_STATUS_HE, CONFIDENCE_HE, type BoqDocumentModel, type BoqLine, type BoqTemplate } from '@kamutan/contracts';
+import { BoqDocumentModelSchema, BOQ_STATUS_HE, CONFIDENCE_HE, vatLabelHe, type BoqDocumentModel, type BoqLine, type BoqTemplate } from '@kamutan/contracts';
 import { toBoqLine } from '../../src/db/boq-docs';
 import { buildBoqDocument, documentWarnings, NOTES_TITLE } from '../../src/boq/boq-document';
 import { buildBoqWorkbook, CURRENCY_FMT, documentOf, GRAND_TOTAL, GRAND_TOTAL_VAT, MAIN_SHEET, sanitizeCell, type ExcelInput } from '../../src/boq/excel';
@@ -84,9 +84,15 @@ function assertAgreement(ws: ExcelJS.Worksheet, doc: BoqDocumentModel): number {
   }
   expect(ws.getCell(r, textCol).value).toBe(GRAND_TOTAL);
   expect((cell(r, 'total').value as { result?: number }).result ?? 0).toBe(doc.totals.beforeVat);
-  expect(ws.getCell(r + 1, textCol).value).toBe(GRAND_TOTAL_VAT);
-  expect((cell(r + 1, 'total').value as { formula: string }).formula).toContain(`*(1+${doc.totals.vatRate})`);
-  expect(ws.rowCount).toBe(r + 1);
+  // Sprint 8: before VAT → "מע"מ 18%" (before × rate) → after VAT (before + VAT), formulas with the model's results.
+  const L = (cell(r, 'total') as ExcelJS.Cell).address.replace(/\d+$/, '');
+  expect(ws.getCell(r + 1, textCol).value).toBe(vatLabelHe(doc.totals.vatRate));
+  expect((cell(r + 1, 'total').value as { formula: string }).formula).toBe(`${L}${r}*${doc.totals.vatRate}`);
+  expect((cell(r + 1, 'total').value as { result?: number }).result ?? 0).toBe(doc.totals.vat);
+  expect(ws.getCell(r + 2, textCol).value).toBe(GRAND_TOTAL_VAT);
+  expect((cell(r + 2, 'total').value as { formula: string }).formula).toBe(`${L}${r}+${L}${r + 1}`);
+  expect((cell(r + 2, 'total').value as { result?: number }).result ?? 0).toBe(doc.totals.afterVat);
+  expect(ws.rowCount).toBe(r + 2);
   return lineRows;
 }
 
@@ -149,11 +155,14 @@ describe('BoqDocumentModel ↔ xlsx main sheet (row by row)', () => {
     expect(row).toMatchObject({ qty: null, cellNote: 'להשלמה ידנית', needsInput: true });
     expect(doc.warnings.map((w) => w.kind)).toEqual(expect.arrayContaining(['red', 'unapproved', 'needsInput']));
     expect(doc.exportBlocked).toBe(true);
-    expect(documentWarnings(ls)).toEqual(doc.warnings);
+    // Sprint 8: + `unpriced` over the document's lines (never blocks); the gate part is over every line.
+    const gate = (w: typeof doc.warnings) => w.filter((x) => x.kind !== 'unpriced');
+    expect(documentWarnings(ls)).toEqual(gate(doc.warnings));
+    expect(doc.warnings.find((w) => w.kind === 'unpriced')?.count).toBe(ls.length);
     expect(documentOf(input({ lines: ls, blockExportOnRed: false })).exportBlocked).toBe(false);
     // the chapter filter changes the document, not the gate
     const other = documentOf(input({ lines: ls, chapters: ['999'] }));
     expect(other.chapters).toHaveLength(0);
-    expect(other.warnings).toEqual(doc.warnings);
+    expect(gate(other.warnings)).toEqual(gate(doc.warnings));
   });
 });

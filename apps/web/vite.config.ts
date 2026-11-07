@@ -42,7 +42,11 @@ export default defineConfig(({ mode }) => {
             if (!m) return undefined;
             const pkg = m[1]!;
             if (pkg === "react" || pkg === "react-dom" || pkg === "react-router-dom" || pkg === "react-router" || pkg === "scheduler") return "react";
-            if (pkg === "firebase" || pkg.startsWith("@firebase/")) return "firebase";
+            // Sprint 8: only App + Auth are eager ("firebase"); Firestore / Storage / Analytics (+ their deps) are
+            // dynamic imports (lib/firebase.ts, api/lazyBackend.ts) and keep their own chunks.
+            if (["@firebase/firestore", "@firebase/webchannel-wrapper", "re2js", "@firebase/storage", "@firebase/analytics", "@firebase/installations"].includes(pkg)) return undefined;
+            if (pkg === "firebase") return /\/(firestore|storage|analytics|installations)\//.test(id) ? undefined : "firebase";
+            if (pkg.startsWith("@firebase/")) return "firebase";
             if (["@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-toast", "@radix-ui/react-progress"].includes(pkg)) return "radix";
             return undefined;
           },

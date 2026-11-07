@@ -203,6 +203,7 @@ export class PublicShareService {
         createdAt: r.link.createdAt,
         hideTitleBlock: r.link.hideTitleBlock !== false,
         allowPdfDownload: r.link.allowPdfDownload,
+        showPrices: r.link.showPrices === true,
         watermark: linkWatermark(r.link),
       },
       // F-3: the project name often names the client → the link label instead when hiding the title block.
@@ -231,7 +232,9 @@ export class PublicShareService {
       return { snapshotAt: null, lines: [], floors: [], counts: { lines: 0, green: 0, yellow: 0, red: 0, approved: 0 } };
     }
     const { snapshotAt, lines, floors, counts } = snap.data;
-    return { snapshotAt, lines, floors, counts };
+    // Sprint 8: prices only from a "הצג מחירים" link whose snapshot froze them (defence in depth: stripped otherwise).
+    if (r.link.showPrices === true && snap.data.showPrices === true) return { snapshotAt, lines, floors, counts, showPrices: true, totals: snap.data.totals ?? null };
+    return { snapshotAt, lines: lines.map(({ unitPrice: _p, total: _t, ...l }) => l), floors, counts };
   }
 
   async overlay(token: string, sheetId: string, ctx: ShareRequestCtx): Promise<PublicShareOverlay> {

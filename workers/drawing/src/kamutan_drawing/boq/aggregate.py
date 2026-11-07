@@ -153,6 +153,9 @@ class Line:
     origin: str = "detected"
     needs_input: bool = False
     quick_action: dict[str, str | None] | None = None
+    # Sprint 8 (cause attribution, lines snapshot only — not a boqLines field): the computed qty per sheet version,
+    # [{sheetId, versionId, qty}] sorted; sums to ``qty`` minus what no drawing produced (suggestions, templates).
+    by_version: list[dict[str, Any]] = field(default_factory=list)
 
     def computed_fields(self) -> dict[str, Any]:
         extra: dict[str, Any] = {
@@ -1107,6 +1110,34 @@ def _evidence_extra(d: Det, e: dict[str, Any]) -> None:
         e["reason"] = d.note[:200]
 
 
+def _by_version(cs: list[Contribution]) -> list[dict[str, Any]]:
+    """Sprint 8: each contribution's qty split over the sheet versions of its evidence — by the evidence quantities
+    when it has them (geometry, measured corrections), else evenly per evidence item (a composite group lives on one
+    sheet: all of it). Contributions without evidence (suggestions, templates) are attributed to no version."""
+    acc: dict[tuple[str, str], float] = defaultdict(float)
+    for c in cs:
+        if not c.qty or not c.evidence:
+            continue
+        w: dict[tuple[str, str], float] = defaultdict(float)
+        for d, _gid in c.evidence:
+            if not d.sheet_id or not d.version_id:
+                continue
+            q = c.ev_qty.get(d.key)
+            w[(d.sheet_id, d.version_id)] += abs(q) if q is not None else 1.0
+        tot = sum(w.values())
+        if tot <= 0:
+            w = defaultdict(float, {k: 1.0 for k in w})
+            tot = float(len(w))
+        for k, v in w.items():
+            acc[k] += c.qty * v / tot if tot else 0.0
+    keys = sorted(acc)
+    shares = [round(acc[k], 4) for k in keys]
+    if shares:  # shares sum exactly to the attributed qty: the rounding remainder goes to the largest share
+        big = max(range(len(keys)), key=lambda i: (shares[i], keys[i][0]))
+        shares[big] = round(shares[big] + round(round(sum(acc.values()), 4) - sum(shares), 4), 4)
+    return [{"sheetId": sid, "versionId": vid, "qty": q} for (sid, vid), q in zip(keys, shares, strict=True)]
+
+
 def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
     by_key: dict[str, list[Contribution]] = defaultdict(list)
     for c in contribs:
@@ -1216,6 +1247,7 @@ def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
                 origin,
                 needs,
                 qa,
+                [] if needs else _by_version(cs),
             )
         )
     lines.sort(key=lambda ln: (ln.chapter == UNMATCHED_CHAPTER, ln.chapter, code_key(ln.code), ln.id))

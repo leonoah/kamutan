@@ -18,6 +18,7 @@ import { DisciplineSchema, ProcessingErrorSchema } from './sheets.js';
 import { SymbolClassSchema, type SymbolClass } from './taxonomy.js';
 import { GeometryCategorySchema, GeometryMeasureKeySchema, GeometrySourceSchema, TextPatternSchema } from './takeoff.js';
 import { RoomTypeSchema, type RoomType } from './understanding.js';
+import { ItemPriceSchema, LibraryImportModeSchema, PriceAmountSchema, PriceImportReportSchema } from './prices.js';
 
 // ---------------------------------------------------------------------------
 // Item library
@@ -59,6 +60,8 @@ export const ItemLibraryItemSchema = z.object({
   updatedBy: UidSchema.nullable().optional(),
   /** Stage 10: `DEFAULT_ITEM_LIBRARY_VERSION` of a seeded default item (absent on imported / manual items). */
   defaultsVersion: z.number().int().positive().optional(),
+  /** Sprint 8: the org's unit price of the item (₪). Absent / null = no price ("ללא מחיר"). */
+  price: ItemPriceSchema.nullable().optional(),
 });
 export type ItemLibraryItem = z.infer<typeof ItemLibraryItemSchema>;
 
@@ -70,6 +73,8 @@ export const ListLibraryItemsQuerySchema = z.object({
   active: boolQuery.optional(),
   /** Case-insensitive substring of code or description. */
   q: z.string().trim().min(1).max(100).optional(),
+  /** Sprint 8: only items with (`true`) / without (`false`) a price. */
+  priced: boolQuery.optional(),
   cursor: z.string().max(512).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
@@ -98,6 +103,8 @@ export const PatchLibraryItemRequestSchema = z
     chapterTitle: z.string().trim().max(200).optional(),
     tags: TagsSchema.optional(),
     active: z.boolean().optional(),
+    /** Sprint 8 (editor+, audited): unit price in ₪ (`source: 'manual'`); null removes the price. */
+    price: PriceAmountSchema.nullable().optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'at least one field is required' });
@@ -612,6 +619,8 @@ export const LibraryImportStatsSchema = z
     ambiguousCodes: z.array(z.string().max(64)).max(1000).optional(),
     /** Name of the template created from the file's structure (null when none was created). */
     templateName: z.string().max(200).nullable().optional(),
+    /** Sprint 8 (Worker-BOQ): the price report (mode `prices`, or `library` when the file had a price column). */
+    prices: PriceImportReportSchema.nullable().optional(),
   })
   .passthrough();
 
@@ -634,6 +643,16 @@ export const LibraryImportSchema = z.object({
   finalizedAt: TimestampSchema.nullable(),
   stats: LibraryImportStatsSchema.nullable(),
   error: ProcessingErrorSchema.nullable(),
+  /** Sprint 8: `library` (absent = library) or `prices` (fill prices of existing items only). */
+  mode: LibraryImportModeSchema.optional(),
+  /** Sprint 8: an imported price may replace a MANUAL price (default false: such rows are reported as conflicts). */
+  overwriteManualPrices: z.boolean().optional(),
+  /** Sprint 8 (API): when it appended the `itemLibrary/import_prices` audit event of `stats.prices` (idempotency stamp). */
+  pricesAuditedAt: TimestampSchema.nullable().optional(),
+  /** Integration: dry-run import (nothing written by the worker) and when / by whom `apply-prices` ran. */
+  dryRun: z.boolean().optional(),
+  pricesAppliedAt: TimestampSchema.nullable().optional(),
+  pricesAppliedBy: UidSchema.nullable().optional(),
 });
 export type LibraryImport = z.infer<typeof LibraryImportSchema>;
 
@@ -650,8 +669,18 @@ export const CreateLibraryImportRequestSchema = z
     sizeBytes: z.number().int().positive().max(MAX_LIBRARY_IMPORT_BYTES),
     /** Optional project the BOQ belongs to (provenance only). */
     projectId: DocIdSchema.optional(),
+    /** Sprint 8: `prices` = take only the unit prices of a priced past BOQ (matched by item code). Default `library`. */
+    mode: LibraryImportModeSchema.optional(),
+    /** Sprint 8: explicit choice to let imported prices replace manual ones (default false). */
+    overwriteManualPrices: z.boolean().optional(),
+    /**
+     * Integration: compute the price report WITHOUT writing (only with `mode: 'prices'`); the user reviews it and calls
+     * `POST /library/imports/:id/apply-prices` with the manual prices to replace.
+     */
+    dryRun: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.dryRun !== true || v.mode === 'prices', { path: ['dryRun'], message: "dryRun needs mode 'prices'" });
 export type CreateLibraryImportRequest = z.infer<typeof CreateLibraryImportRequestSchema>;
 
 /** Upload the bytes with the Firebase JS SDK to `storagePath` (contentType as given), then call finalize. */

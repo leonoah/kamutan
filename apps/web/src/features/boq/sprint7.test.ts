@@ -148,7 +148,7 @@ describe("Sprint 7: BOQ document (preview) query + normalisation", () => {
     expect(d.chapters[0]!.notes).toEqual(["א"]);
     expect(lineRows(d.chapters[0]!)).toHaveLength(1);
     expect(chapterSubtotal(d.chapters[0]!)).toBe(12);
-    expect(d.totals).toEqual({ beforeVat: 0, vat: 0, afterVat: 0 });
+    expect(d.totals).toMatchObject({ beforeVat: 0, vat: 0, afterVat: 0 });
     expect(warningCounts(d.warnings)).toEqual([
       { kind: "unapproved", count: 3 },
       { kind: "needsInput", count: 2 },
@@ -188,8 +188,8 @@ describe("Sprint 7: BOQ document (preview) query + normalisation", () => {
   });
 
   it("money like the Excel's currency format; empty stays empty", () => {
-    expect(formatMoney(1234.4)).toBe("₪ 1,234");
-    expect(formatMoney(0)).toBe("₪ 0");
+    expect(formatMoney(1234.4)).toBe("₪ 1,234.40");
+    expect(formatMoney(0)).toBe("₪ 0.00");
     expect(formatMoney(null)).toBe("");
   });
 });
@@ -224,7 +224,7 @@ describe("Sprint 7: mock BoqDocumentModel (same rules as the API's Excel writer)
     expect(lineRows(d.chapters[0]!)[0]).toMatchObject({ qty: null, total: null, cellNote: "להשלמה ידנית", needsInput: true });
     // prices are empty → totals 0 (the Excel formula's result)
     expect(ch4.subtotal).toBe(0);
-    expect(d.totals).toEqual({ beforeVat: 0, vat: 0, afterVat: 0 });
+    expect(d.totals).toMatchObject({ beforeVat: 0, vat: 0, afterVat: 0 });
     expect(warningCounts(d.warnings)).toEqual([
       { kind: "red", count: 1 },
       { kind: "unapproved", count: 3 },
@@ -254,7 +254,7 @@ describe("Sprint 7: mock BoqDocumentModel (same rules as the API's Excel writer)
   it("prices (when the API has them): total = qty × price, subtotal, VAT", () => {
     const d = buildBoqDocument({ ...base, q: { split: "none", confidence: false, chapters: ["04"] }, prices: { "4.01": 100 }, vatRate: 0.18 });
     expect(lineRows(d.chapters[0]!)[0]!.total).toBe(600);
-    expect(d.totals).toEqual({ beforeVat: 600, vat: 108, afterVat: 708 });
+    expect(d.totals).toMatchObject({ beforeVat: 600, vat: 108, afterVat: 708 });
   });
 });
 

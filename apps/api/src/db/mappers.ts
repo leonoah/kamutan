@@ -1,4 +1,6 @@
 import {
+  PRICE_ADJUSTMENT_MAX_PCT,
+  PRICE_ADJUSTMENT_MIN_PCT,
   DetectionClassSchema,
   DetectionStatsSchema,
   LinkStatsSchema,
@@ -36,6 +38,7 @@ import {
   type VersionArtifacts,
   type VersionProgress,
 } from '@kamutan/contracts';
+import { countedBytes } from './storage-usage';
 
 /**
  * Doc → DTO mappers shared by the in-memory and Firestore repositories.
@@ -108,8 +111,20 @@ export function toProject(id: string, d: Doc): Project {
     createdAt: iso(d.createdAt),
     // Sprint 7: API-maintained storage usage of the project's source files (absent on old docs = not counted yet).
     ...(typeof d.storageBytes === 'number' && Number.isFinite(d.storageBytes) ? { storageBytes: Math.max(0, Math.round(d.storageBytes)) } : {}),
+    // Sprint 8: project discount / markup of the BOQ totals (API-written).
+    ...(d.pricing && typeof d.pricing === 'object' ? pricingOf(d.pricing as Doc) : {}),
   };
 }
+
+/** Sprint 8: tolerant `pricing` (malformed / out-of-range → absent). */
+function pricingOf(d: Doc): Pick<Project, 'pricing'> {
+  const pct = d.adjustmentPct;
+  if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < PRICE_ADJUSTMENT_MIN_PCT || pct > PRICE_ADJUSTMENT_MAX_PCT) return {};
+  return { pricing: { adjustmentPct: pct, updatedBy: str(d.updatedBy), updatedAt: anyIso(d.updatedAt) } };
+}
+
+/** Sprint 8: a project whose delete has started (tombstone `deletingAt`) is gone for every reader. */
+export const isDeleting = (d: Doc | undefined | null): boolean => !!d && d.deletingAt !== undefined && d.deletingAt !== null;
 
 /** Date | ISO string | Firestore Timestamp (nested fields are not converted by `plain()`) → ISO or null. */
 export function anyIso(v: unknown): string | null {
@@ -147,6 +162,8 @@ export function toSheetSet(orgId: string, projectId: string, id: string, d: Doc)
     ...(typeof d.name === 'string' ? { name: d.name } : {}),
     uploadedBy: String(d.uploadedBy),
     ...(typeof d.sizeBytes === 'number' ? { sizeBytes: d.sizeBytes } : {}),
+    // Sprint 8 integration: what the set holds in the project's quota (0 once released) = what deleting it frees.
+    ...(typeof d.sizeBytes === 'number' ? { storageBytes: countedBytes(d) } : {}),
     ...(typeof d.ingestJobId === 'string' ? { ingestJobId: d.ingestJobId } : {}),
     ...(typeof d.versionId === 'string' ? { versionId: d.versionId } : {}),
     ...(typeof d.pageCount === 'number' ? { pageCount: d.pageCount } : {}),
@@ -405,4 +422,4 @@ export function toSymbolMapping(signature: string, d: Doc): SymbolMapping {
   };
 }
 
-export const mappers = { toOrg, toMember, toProject, toSheetSet, toSheet, toVersion, toJob, toLegendEntry, toSymbolMapping };
+export const mappers = { toOrg, toMember, toProject, toSheetSet, toSheet, toVersion, toJob, toLegendEntry, toSymbolMapping, isDeleting };

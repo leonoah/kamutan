@@ -198,6 +198,33 @@ describe.skipIf(!HAS_FIRESTORE_EMULATOR)('firestore.rules', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Sprint 8: delete tombstones + prices stay API-written
+  describe('Sprint 8: deletes (tombstones) and prices', () => {
+    it('a project / sheet set whose delete started is no longer readable as a doc; members still list the collection', async () => {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().doc(a.project).set({ deletingAt: Timestamp.now() }, { merge: true });
+        await ctx.firestore().doc(a.sheetSet).set({ deletedAt: Timestamp.now() }, { merge: true });
+      });
+      for (const role of ['admin', 'editor', 'reviewer', 'viewer'] as const) {
+        await assertFails(db(A.users[role]).doc(a.project).get());
+        await assertFails(db(A.users[role]).doc(a.sheetSet).get());
+      }
+      await assertSucceeds(db(A.users.viewer).collection(a.project.split('/').slice(0, -1).join('/')).get());
+      await assertFails(db(A.users.admin).doc(a.project).delete());
+      await assertFails(db(A.users.admin).doc(a.sheetSet).delete());
+    });
+
+    it('library prices and line price overrides are never client-written (admin included)', async () => {
+      for (const role of ['admin', 'editor'] as const) {
+        await assertFails(db(A.users[role]).doc(a.itemLibrary).update({ price: { amount: 1, currency: 'ILS', source: 'manual' } }));
+        await assertFails(db(A.users[role]).doc(a.boqDraft).update({ priceOverride: 1 }));
+        await assertFails(db(A.users[role]).doc(a.project).update({ pricing: { adjustmentPct: -50 } }));
+      }
+      await assertSucceeds(db(A.users.viewer).doc(a.itemLibrary).get());
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Stage 10 (A-API-01): invitations admin-read, memberships + invites API-only (no self-join, no role escalation).
   describe('Stage 10: members + invites are API-only; invites admin-read', () => {
     const inviteA = `orgs/${A.org}/invites/inv1`;

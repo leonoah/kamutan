@@ -1,3 +1,4 @@
+import { computeBoqTotals } from "@kamutan/contracts";
 import {
   ApiError,
   GREEN_THRESHOLD_DEFAULT,
@@ -238,6 +239,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
     return {
       snapshot: null,
       sheets,
+      showPrices: Boolean(req.showPrices),
       id: id("sl"),
       projectId,
       token,
@@ -264,7 +266,9 @@ export function createSprint5Mock(deps: Sprint5Deps) {
     expired.viewCount = 1;
     const revoked = makeLink("p-noah", { days: 30, label: "אינסטלטור", recipient: "משה צנרת" }, "demo-revoked", new Date(t - 2 * DAY).toISOString());
     revoked.revokedAt = new Date(t - DAY).toISOString();
-    for (const l of [ok, expired, revoked]) links.set(l.id, l);
+    // Sprint 8: a link created with "הצג מחירים" (/s/demo-noah-prices) — the others carry no prices at all.
+    const priced = makeLink("p-noah", { days: 30, label: "קבלן ראשי — עם מחירים", recipient: "בנייה בע\"מ", showPrices: true }, "demo-noah-prices", new Date(t - 4 * DAY).toISOString());
+    for (const l of [ok, expired, revoked, priced]) links.set(l.id, l);
   }
 
   function resolveToken(token: string): StoredLink {
@@ -288,11 +292,24 @@ export function createSprint5Mock(deps: Sprint5Deps) {
   }
 
   /** F-4: the public BOQ as frozen at link creation (no reasons / override marker / names). */
-  async function snapshotOf(projectId: string, at: string): Promise<PublicShareBoq> {
+  async function snapshotOf(projectId: string, at: string, showPrices = false): Promise<PublicShareBoq> {
     const res = await waitForBuild(projectId);
+    // Sprint 8: prices only when the link was created with "הצג מחירים" (the default snapshot has none at all).
+    // the lines are API-priced (unitPrice / lineTotal); totals = contracts computeBoqTotals (project discount, org VAT)
+    const totals = showPrices
+      ? computeBoqTotals({
+          linesTotal: res.items.reduce((x, l) => x + (l.lineTotal ?? 0), 0),
+          adjustmentPct: deps.projects().get(projectId)?.pricing?.adjustmentPct ?? 0,
+          vatRate: settingsOf(projectOrg(projectId)).vatRate ?? 0.18,
+          pricedLines: res.items.filter((l) => l.unitPrice !== null && l.unitPrice !== undefined).length,
+          unpricedLines: res.items.filter((l) => l.unitPrice === null || l.unitPrice === undefined).length,
+        })
+      : null;
     return {
       snapshotAt: at,
+      ...(showPrices ? { showPrices: true, totals } : {}),
       lines: res.items.map((x: BoqLine) => ({
+        ...(showPrices ? { unitPrice: x.unitPrice ?? null, total: x.lineTotal ?? null } : {}),
         id: x.id,
         chapter: x.chapter,
         chapterTitle: x.chapterTitle ?? null,
@@ -304,9 +321,19 @@ export function createSprint5Mock(deps: Sprint5Deps) {
         qty: x.qtyOverride ?? x.qty,
         level: x.level,
         status: x.status,
+        // contracts PublicShareBoqLine: the line's own floor (null = several / unknown)
+        floor: (x as { floor?: string | null }).floor ?? null,
         byFloor: { ...x.byFloor },
         ...(x.order !== undefined ? { order: x.order } : {}),
       })),
+      floors: [...new Set(res.items.flatMap((x: BoqLine) => Object.keys(x.byFloor ?? {})))].sort(),
+      counts: {
+        lines: res.items.length,
+        green: res.items.filter((x: BoqLine) => x.level === "green").length,
+        yellow: res.items.filter((x: BoqLine) => x.level === "yellow").length,
+        red: res.items.filter((x: BoqLine) => x.level === "red").length,
+        approved: res.items.filter((x: BoqLine) => x.status === "approved").length,
+      },
       chapters: (res.chapters ?? []).map((c) => ({ code: c.code, title: c.title })),
     };
   }
@@ -353,6 +380,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
         hideTitleBlock: l.hideTitleBlock,
         allowPdfDownload: l.allowPdfDownload && pdfOk,
         showConfidence: true,
+        showPrices: Boolean(l.showPrices),
         watermark: watermarkOf(l),
         sheets: rows.map((r, i) => {
           const t = r.version!.artifacts!.tiles!;
@@ -371,7 +399,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
     },
     async getBoq(token): Promise<PublicShareBoq> {
       const l = resolveToken(token);
-      if (!l.snapshot) l.snapshot = await snapshotOf(l.projectId, l.createdAt);
+      if (!l.snapshot) l.snapshot = await snapshotOf(l.projectId, l.createdAt, l.showPrices);
       return structuredClone(l.snapshot);
     },
     async getOverlay(token, sheetId): Promise<PublicShareOverlay> {
@@ -439,6 +467,19 @@ export function createSprint5Mock(deps: Sprint5Deps) {
             before: { description: before.descriptionOverride ?? before.description, override: before.descriptionOverride ?? null },
             after: { description: after.descriptionOverride ?? after.description, override: after.descriptionOverride ?? null, ...(req.alsoUpdateLibrary ? { library: true } : {}) },
             meta: { kind: "description", reason: req.reason?.trim() || null },
+          },
+          org,
+        );
+      // Sprint 8: the line's own unit price / restore → before → after (effective unit price + override flag).
+      if (req.priceOverride !== undefined && (before.priceOverride ?? null) !== (after.priceOverride ?? null))
+        append(
+          {
+            ...base,
+            action: "price",
+            // API (audit.service lineHistory): before / after = the override values; null = the library price applies
+            before: before.priceOverride ?? null,
+            after: after.priceOverride ?? null,
+            meta: { kind: "price", reason: req.reason?.trim() || null },
           },
           org,
         );
@@ -561,7 +602,7 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       if (!req.label?.trim() || req.label.length > 120) throw new ApiError(400, "validation_failed", "label is required");
       const l = makeLink(projectId, req, randomToken());
       links.set(l.id, l);
-      append({ actor: actor(), action: "create", entity: "shareLinks", entityId: l.id, projectId, after: { days: req.days, label: l.label, recipient: l.recipient, hideTitleBlock: l.hideTitleBlock, allowPdfDownload: l.allowPdfDownload } }, projectOrg(projectId));
+      append({ actor: actor(), action: "create", entity: "shareLinks", entityId: l.id, projectId, after: { days: req.days, label: l.label, recipient: l.recipient, hideTitleBlock: l.hideTitleBlock, allowPdfDownload: l.allowPdfDownload, showPrices: Boolean(l.showPrices) } }, projectOrg(projectId));
       deps.emit();
       const notMasked = (l.sheets ?? []).filter((x) => l.hideTitleBlock && !x.titleBlockMasked);
       const warnings: ShareLinkWarning[] = notMasked.length
@@ -572,8 +613,20 @@ export function createSprint5Mock(deps: Sprint5Deps) {
           ]
         : [];
       // F-4: the BOQ is frozen now (before the link is usable).
-      void snapshotOf(projectId, l.createdAt).then((snap) => void (l.snapshot ??= snap));
+      void snapshotOf(projectId, l.createdAt, l.showPrices).then((snap) => void (l.snapshot ??= snap));
       return { link: publicLink(l), url: `${origin}/s/${l.token}`, warnings };
+    },
+    /** Sprint 8 (deletes): revoke the project's active links (all, or those that include one of `sheetIds`). */
+    revokeLinksFor(projectId: string, sheetIds?: ReadonlySet<string>): number {
+      let n = 0;
+      for (const l of links.values()) {
+        if (l.projectId !== projectId || l.revokedAt) continue;
+        if (sheetIds && !(l.sheets ?? []).some((x) => x.included && sheetIds.has(x.sheetId))) continue;
+        l.revokedAt = now();
+        append({ actor: actor(), action: "revoke", entity: "shareLinks", entityId: l.id, projectId, meta: { reason: sheetIds ? "sheet_set_deleted" : "project_deleted" } }, projectOrg(projectId));
+        n++;
+      }
+      return n;
     },
     listShareLinks(projectId: string): ShareLink[] {
       return [...links.values()].filter((l) => l.projectId === projectId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(publicLink);
@@ -593,9 +646,11 @@ export function createSprint5Mock(deps: Sprint5Deps) {
       requireRole(["admin"]);
       assertActive(orgId);
       const cur = settingsOf(orgId);
-      const allowed = ["greenThreshold", "blockExportOnRed", "llmEnabled", "trainingOptIn"] as const;
+      const allowed = ["greenThreshold", "blockExportOnRed", "llmEnabled", "trainingOptIn", "vatRate"] as const;
       for (const k of Object.keys(req)) if (!(allowed as readonly string[]).includes(k)) throw new ApiError(400, "validation_failed", `unknown field ${k}`);
       if (req.greenThreshold !== undefined && !(req.greenThreshold >= GREEN_THRESHOLD_MIN && req.greenThreshold <= GREEN_THRESHOLD_MAX)) throw new ApiError(400, "validation_failed", "greenThreshold out of range");
+      // Sprint 8: VAT 0–50% (contracts: rate 0..1; the UI types a percent with ≤ 2 decimals)
+      if (req.vatRate !== undefined && !(Number.isFinite(req.vatRate) && req.vatRate >= 0 && req.vatRate <= 0.5)) throw new ApiError(400, "validation_failed", "vatRate out of range");
       for (const k of allowed) {
         const v = req[k];
         if (v === undefined || v === cur[k]) continue;

@@ -1,0 +1,50 @@
+{
+  "$ref": "#/definitions/BoqCompareExportResponse",
+  "definitions": {
+    "BoqCompareExportResponse": {
+      "type": "object",
+      "properties": {
+        "exportId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fileName": {
+          "type": "string"
+        },
+        "fromBuildId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "toBuildId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "exportId",
+        "url",
+        "expiresAt",
+        "fileName",
+        "fromBuildId",
+        "toBuildId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BoqCompareExportResponse.json"
+}

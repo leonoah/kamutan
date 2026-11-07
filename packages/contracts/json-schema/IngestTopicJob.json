@@ -234,6 +234,19 @@
                   "type": "null"
                 }
               ]
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "library",
+                "prices"
+              ]
+            },
+            "overwriteManualPrices": {
+              "type": "boolean"
+            },
+            "dryRun": {
+              "type": "boolean"
             }
           },
           "required": [

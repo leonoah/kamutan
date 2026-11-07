@@ -40,6 +40,14 @@ HEADER_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("unitPrice", ("מחיר",)),
     ("total", ('סה"כ', "סהכ")),
 )
+# Sprint 8: header words of the money columns. A unit-price header names a price ("מחיר יח'", "מחיר ליחידה", "מחיר",
+# "₪ ליח'", "₪", "Unit price") and no total; a total header names a total ('סה"כ ₪', "סכום", "Total").
+_PRICE_WORDS = ("מחיר", "₪", 'ש"ח', "שח", "price", "rate")
+_TOTAL_WORDS = ('סה"כ', "סהכ", "סכום", "total", "amount")
+_QTY_WORDS = ("כמות", "qty", "quantity")
+MAX_HEADER_CELL = 30
+_MONEY_JUNK = re.compile(r"[₪\s\u00a0\u200e\u200f,']|ש\"ח|שח|ils|nis", re.IGNORECASE)
+MAX_PRICE = 100_000_000  # contracts PRICE_MAX (₪)
 
 
 # JS ``\s`` + NBSP / RLM / LRM — exactly contracts ``normalizeDescription`` (the item id hashes this text)
@@ -83,6 +91,23 @@ class _RawItem:
     qty: float | None
     code: str = ""
     flags: list[str] = field(default_factory=list)
+    price: float | None = None
+    price_from: str | None = None  # unitPrice | total
+
+
+def header_kind(text: str) -> str | None:
+    """Sprint 8: the money / quantity kind of a header cell — ``qty`` ('כמות סה"כ' is a quantity), ``unitPrice``
+    (a price word, no total word: "מחיר יח'", "מחיר", "₪ ליח'", "₪"), ``total`` ('סה"כ ₪', "סכום", 'סה"כ מחיר')
+    or None. Long cells (a note row) are never headers."""
+    t = _k(norm(text)).lower()
+    if not t or len(t) > MAX_HEADER_CELL:
+        return None
+    if any(w in t for w in _QTY_WORDS):
+        return "qty"
+    total = any(w in t for w in _TOTAL_WORDS)
+    if any(w in t for w in _PRICE_WORDS) and not total:
+        return "unitPrice"
+    return "total" if total else None
 
 
 def _find_header(sheet: Sheet) -> tuple[int, dict[str, int]] | None:
@@ -93,12 +118,34 @@ def _find_header(sheet: Sheet) -> tuple[int, dict[str, int]] | None:
             for i, t in enumerate(texts):
                 if i in cols.values():
                     continue
-                if any(t.startswith(w) or (w in t and len(t) <= 20) for w in words):
+                if key in ("unitPrice", "total"):
+                    hit = header_kind(t) == key
+                elif key == "unit":
+                    hit = header_kind(t) is None and any(t.startswith(w) or (w in t and len(t) <= 20) for w in words)
+                else:
+                    hit = any(t.startswith(w) or (w in t and len(t) <= 20) for w in words)
+                if hit:
                     cols[key] = i
                     break
         if {"code", "description"} <= set(cols) and ("unit" in cols or "qty" in cols):
             return r, cols
     return None
+
+
+def money(c: Cell) -> float | None:
+    """A positive amount in a price / total cell: a number, or text such as "₪ 1,250.00" / '85 ש"ח' — as written
+    (contracts: amounts are stored as given). Empty, 0, negative, non-numeric or > PRICE_MAX values are no price (an
+    unpriced BOQ has 0 / empty cells)."""
+    v: float | None = None
+    if c.kind == "number" and isinstance(c.value, float):
+        v = c.value
+    elif c.kind == "text" and isinstance(c.value, str):
+        t = _MONEY_JUNK.sub("", _k(norm(c.value)))
+        if re.fullmatch(r"\d+(\.\d+)?", t):
+            v = float(t)
+    if v is None or not (0 < v <= MAX_PRICE):  # NaN fails the comparison too
+        return None
+    return v
 
 
 def _num(c: Cell) -> float | None:
@@ -177,7 +224,9 @@ def _parse_sheet(sheet: Sheet) -> dict[str, Any] | None:
         code_txt = _cell_text(code_c)
         if code_txt and desc and CODE_RE.match(code_txt):
             unit = _cell_text(_get(row, cols.get("unit")))[:32]
-            items.append(_RawItem(r, chapter_index(), code_c, desc[:2000], unit, qty))
+            it = _RawItem(r, chapter_index(), code_c, desc[:2000], unit, qty)
+            it.price, it.price_from = _row_price(row, cols, qty)
+            items.append(it)
             continue
         if desc and qty is None:
             if desc.rstrip(": ") in ("הערות", "הערה"):
@@ -193,7 +242,7 @@ def _parse_sheet(sheet: Sheet) -> dict[str, Any] | None:
     used = {it.chapter for it in items}
     flags: list[str] = []
     out_items: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen: dict[str, dict[str, Any]] = {}
     for it in items:
         ch = chapters[it.chapter]
         if not ch["code"]:
@@ -203,20 +252,31 @@ def _parse_sheet(sheet: Sheet) -> dict[str, Any] | None:
             it.flags.append("duplicate_code")
             flags.append(f"duplicate_code:{it.code}")
             continue
-        seen.add(it.code)
-        out_items.append(
-            {
-                "code": it.code,
-                "rawCode": it.raw.value,
-                "chapter": ch["code"],
-                "chapterTitle": ch["title"] or ch["heading"],
-                "description": it.description,
-                "unit": it.unit,
-                "qty": it.qty,
-                "row": it.row,
-                "flags": it.flags,
-            }
-        )
+        out = {
+            "code": it.code,
+            "rawCode": it.raw.value,
+            "chapter": ch["code"],
+            "chapterTitle": ch["title"] or ch["heading"],
+            "description": it.description,
+            "unit": it.unit,
+            "qty": it.qty,
+            "price": it.price,
+            "priceFrom": it.price_from,
+            "row": it.row,
+            "flags": it.flags,
+        }
+        seen[it.code] = out
+        out_items.append(out)
+    for out in out_items:
+        if out["priceFrom"] == "total":
+            out["flags"].append("price_from_total")
+    # Sprint 8: every priced item row in file order, duplicates of a code included (contracts PriceImportRow: 1-based
+    # sheet row, TEXT code) — the price plan reports a code priced twice differently as `duplicate_in_file`
+    price_rows = [
+        {"row": it.row + 1, "code": it.code, "description": it.description, "amount": it.price}
+        for it in items
+        if it.price is not None
+    ]
     out_chapters = [
         {"code": c["code"], "title": c["title"] or c["heading"], "heading": c["heading"], "notes": c["notes"]}
         for i, c in enumerate(chapters)
@@ -228,15 +288,30 @@ def _parse_sheet(sheet: Sheet) -> dict[str, Any] | None:
         "columns": [{"key": k, "title": header_titles[k], "col": cols[k]} for k, _ in HEADER_KEYS if k in cols],
         "chapters": out_chapters,
         "items": out_items,
+        "priceRows": price_rows,
+        "priceColumn": next((k for k in ("unitPrice", "total") if k in cols), None),
         "totals": {"chapter": chapter_total_label, "grand": grand},
         "flags": flags,
         "stats": {
             "items": len(out_items),
+            "priced": sum(1 for i in out_items if i["price"] is not None),
             "chapters": len(out_chapters),
             "droppedTitleTexts": dropped_titles,
             "otherRows": other_rows,
         },
     }
+
+
+def _row_price(row: list[Cell], cols: dict[str, int], qty: float | None) -> tuple[float | None, str | None]:
+    """Unit price of an item row: the unit-price cell; else, when only the row total is filled, total / qty."""
+    p = money(_get(row, cols.get("unitPrice")))
+    if p is not None:
+        return p, "unitPrice"
+    total = money(_get(row, cols.get("total")))
+    if total is not None and qty is not None and qty > 0:
+        p = round(total / qty, 6)  # contracts roundMoney: float noise only
+        return (p, "total") if p <= MAX_PRICE else (None, None)
+    return None, None
 
 
 def _parts(code: str) -> tuple[int, int] | None:

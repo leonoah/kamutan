@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ApiErrorSchema, CreateLibraryImportResponseSchema, CreateUploadResponseSchema, FinalizeUploadResponseSchema, fsPaths, MAX_UPLOAD_BYTES, SheetSetStatusResponseSchema, storagePaths } from '@kamutan/contracts';
+import { ApiErrorSchema, CreateLibraryImportResponseSchema, CreateUploadResponseSchema, FinalizeUploadResponseSchema, fsPaths, MAX_SHEETS_PER_PROJECT, MAX_UPLOAD_BYTES, SheetSetStatusResponseSchema, sheetLimitMessageHe, storagePaths, UPLOAD_ERROR_MESSAGES_HE } from '@kamutan/contracts';
 import { UploadTokenSigner } from '../../src/uploads/upload-token';
 import { SAMPLE, UPLOAD_SECRET } from '../support/helpers';
 import { xlsxBytes } from '../support/spreadsheets';
@@ -193,7 +193,44 @@ describe('Stage 10 API/Sec — uploads: size, type, magic bytes, filename, token
     expect(r.body.error.message).toMatch(/אין מספיק מקום בפרויקט/);
     w.t.repo.docs.set(op, org);
   });
-  it.todo('A-API-13b: SEC-14 — ≤ 100 sheets per project is not enforced (the page count is known only after the worker splits the file)');
+  it('A-API-13b (Sprint 8): SEC-14 — ≤ 100 sheets per project → 409 sheet_limit (Hebrew) on reserve and finalize; a revision frees its set; the worker\'s split refusal releases the bytes', async () => {
+    const sheetsCol = fsPaths.sheets(w.A.orgId, w.A.projectId);
+    const current = () => [...w.t.repo.docs.entries()].filter(([k, d]) => k.startsWith(`${sheetsCol}/`) && k.split('/').length === 6 && (d as { superseded?: boolean }).superseded !== true).length;
+    const early = await reserve('before-full.pdf', SAMPLE.pdf.length); // reserved while there is still room
+    const rev = await reserve('rev.pdf', SAMPLE.pdf.length + 5);
+    const fill = MAX_SHEETS_PER_PROJECT - current();
+    const seeded: string[] = [];
+    for (let i = 0; i < fill; i++) {
+      const id = `full${String(i).padStart(3, '0')}-p0`;
+      w.t.repo.docs.set(fsPaths.sheet(w.A.orgId, w.A.projectId, id), { sheetSetId: `full${i}`, pageIndex: 0, title: `גיליון ${i}`, currentVersionId: null, updatedAt: new Date() });
+      seeded.push(id);
+    }
+    expect(current()).toBe(MAX_SHEETS_PER_PROJECT);
+    const r1 = await w.http.post(`${P()}/uploads`).set(ed()).send({ filename: 'a.pdf', sizeBytes: 1000 });
+    ev.sheetLimit = r1.body;
+    expect([r1.status, r1.body.error.code]).toEqual([409, 'sheet_limit']);
+    expect(r1.body.error.message).toBe(sheetLimitMessageHe(MAX_SHEETS_PER_PROJECT));
+    w.t.storage.objects.set(early.storagePath, { data: SAMPLE.pdf, contentType: early.contentType });
+    const r2 = await w.http.post(`${P()}/sheet-sets`).set(ed()).send({ uploadToken: early.uploadToken });
+    expect([r2.status, r2.body.error.code, w.t.storage.objects.has(early.storagePath)]).toEqual([409, 'sheet_limit', false]);
+    // a revision of a set that holds sheets fits (its old sheets become superseded)
+    w.t.storage.objects.set(rev.storagePath, { data: Buffer.concat([SAMPLE.pdf, Buffer.from('%rev\n')]), contentType: rev.contentType });
+    w.t.repo.docs.set(fsPaths.sheetSet(w.A.orgId, w.A.projectId, 'full0'), { fileKind: 'pdf', sha256: 'full0', storagePath: storagePaths.projectUpload(w.A.orgId, w.A.projectId, 'full0', 'pdf'), status: 'ready', name: 'full0.pdf', createdAt: new Date() });
+    const r4 = await w.http.post(`${P()}/sheet-sets`).set(ed()).send({ uploadToken: rev.uploadToken, replacesSheetSetId: 'full0' });
+    expect(r4.status, JSON.stringify(r4.body)).toBe(201);
+    // the worker refused a split (would exceed 100): the set's bytes are released like an infected file's
+    const fin = FinalizeUploadResponseSchema.parse(r4.body);
+    const proj = () => (w.t.repo.docs.get(fsPaths.project(w.A.orgId, w.A.projectId)) as Record<string, unknown>).storageBytes as number;
+    const before = proj();
+    const sp = fsPaths.sheetSet(w.A.orgId, w.A.projectId, fin.sheetSet.id);
+    w.t.repo.docs.set(sp, { ...(w.t.repo.docs.get(sp) as Record<string, unknown>), status: 'failed', error: { code: 'sheet_limit', message: 'project would exceed 100 sheets' } });
+    const st = SheetSetStatusResponseSchema.parse((await w.http.get(`${P()}/sheet-sets/${fin.sheetSet.id}`).set(ed())).body);
+    expect(st.error).toMatchObject({ code: 'sheet_limit', messageHe: UPLOAD_ERROR_MESSAGES_HE.sheet_limit });
+    expect(proj()).toBe(before - (fin.sheetSet.sizeBytes ?? 0));
+    // clean up: the revision link + the seeded sheets
+    w.t.repo.docs.delete(fsPaths.sheetSet(w.A.orgId, w.A.projectId, 'full0'));
+    for (const id of seeded) w.t.repo.docs.delete(fsPaths.sheet(w.A.orgId, w.A.projectId, id));
+  });
 
   describe('rate limits (SEC-42) with small production-like limits', () => {
     let w2: World;

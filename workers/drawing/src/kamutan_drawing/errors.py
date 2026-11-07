@@ -36,6 +36,8 @@ STORAGE_UNAVAILABLE = "storage_unavailable"
 INTERNAL = "internal"
 # Sprint 7: no antivirus verdict (engine missing / not answering / timeout) — fail closed, Pub/Sub retries
 SCAN_UNAVAILABLE = "scan_unavailable"
+# Sprint 8: splitting the file would push the project past MAX_SHEETS_PER_PROJECT (contracts SHEET_LIMIT_ERROR)
+SHEET_LIMIT = "sheet_limit"
 
 NON_RETRYABLE = frozenset(
     {
@@ -59,6 +61,7 @@ NON_RETRYABLE = frozenset(
         PARSE_OUTPUT_TOO_LARGE,
         TOO_MANY_ATTEMPTS,
         FILE_INFECTED,
+        SHEET_LIMIT,
     }
 )
 

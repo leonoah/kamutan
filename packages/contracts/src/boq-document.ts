@@ -16,6 +16,7 @@ import { BoqCountsSchema, BoqLineStatusSchema, ChapterCodeSchema, ExportSplitSch
 import { TimestampSchema } from './common.js';
 import { DocIdSchema } from './org.js';
 import { ConfidenceLevelSchema } from './review.js';
+import { BoqTotalsSchema, LinePriceSourceSchema, NO_PRICE_HE } from './prices.js';
 
 export const BOQ_DOCUMENT_SCHEMA = 'kamutan.boq-document/1' as const;
 
@@ -59,6 +60,8 @@ export const BoqDocumentQuerySchema = z
       }),
     templateId: DocIdSchema.optional(),
     markDraft: qbool(false),
+    /** Sprint 8: `1` (default) fills the unit-price column with the effective prices; `0` = empty price column. */
+    prices: qbool(true),
   })
   .strict();
 export type BoqDocumentQuery = z.infer<typeof BoqDocumentQuerySchema>;
@@ -71,6 +74,8 @@ export const BoqDocumentOptionsSchema = z.object({
   /** Requested chapter codes; null = all. */
   chapters: z.array(ChapterCodeSchema).nullable(),
   markDraft: z.boolean(),
+  /** Sprint 8 (default true; optional for older consumers). */
+  includePrices: z.boolean().optional(),
 });
 export type BoqDocumentOptions = z.infer<typeof BoqDocumentOptionsSchema>;
 
@@ -101,10 +106,16 @@ export const BoqDocumentRowSchema = z.object({
   /** Effective quantity of the row; null = empty cell ("להשלמה ידנית" line without an override). */
   qty: z.number().finite().nullable(),
   qtyFormat: z.enum(QTY_FORMATS).optional(),
-  /** Unit price — empty in every export today (the client prices the BOQ); null = empty cell. */
+  /**
+   * Sprint 8: effective unit price (`priceOverride ?? library price`) when `options.includePrices`; null = empty cell
+   * (no price → `unpriced: true`, "ללא מחיר").
+   */
   price: z.number().finite().nullable(),
   /** Row total = qty × price (the xlsx cell is that formula; 0 while the price is empty); subtotal row = chapter SUM. */
   total: z.number().finite().nullable(),
+  /** Sprint 8 (line rows with includePrices): where the price comes from; `unpriced` = the line has no price. */
+  priceSource: LinePriceSourceSchema.nullable().optional(),
+  unpriced: z.boolean().optional(),
   /** Only with `options.includeConfidence`. */
   level: ConfidenceLevelSchema.optional(),
   /** Effective status (`effectiveStatus`: approved lines needing re-approval show "נבדק"); only with includeConfidence. */
@@ -137,9 +148,10 @@ export type BoqDocumentChapter = z.infer<typeof BoqDocumentChapterSchema>;
 /**
  * Banner of the preview = the export gate (`exportBlockingLines`, org `blockExportOnRed`), over ALL project lines:
  * `red` = red lines not approved, `reapproval` = approved lines whose qty changed since approval, `unapproved` = lines
- * not (effectively) approved, `needsInput` = lines still "להשלמה ידנית" (no override). Only kinds with count > 0.
+ * not (effectively) approved, `needsInput` = lines still "להשלמה ידנית" (no override), Sprint 8 `unpriced` = lines of
+ * the DOCUMENT without a price ("ללא מחיר"; only with includePrices; never blocks the export). Only kinds with count > 0.
  */
-export const BOQ_DOCUMENT_WARNING_KINDS = ['red', 'reapproval', 'unapproved', 'needsInput'] as const;
+export const BOQ_DOCUMENT_WARNING_KINDS = ['red', 'reapproval', 'unapproved', 'needsInput', 'unpriced'] as const;
 export const BoqDocumentWarningSchema = z.object({ kind: z.enum(BOQ_DOCUMENT_WARNING_KINDS), count: z.number().int().positive() });
 export type BoqDocumentWarning = z.infer<typeof BoqDocumentWarningSchema>;
 
@@ -154,7 +166,11 @@ export const BoqDocumentModelSchema = z.object({
   columns: z.array(BoqDocumentColumnSchema),
   /** Chapters in template order; empty chapters omitted (as in the xlsx). */
   chapters: z.array(BoqDocumentChapterSchema),
-  totals: z.object({ beforeVat: z.number().finite(), vat: z.number().finite(), afterVat: z.number().finite(), vatRate: z.number().min(0).max(1) }),
+  /**
+   * Sprint 8: `BoqTotalsSchema` (lines total → discount / markup → before VAT → VAT → after VAT) over the document's
+   * rows. The xlsx grand-total rows are formulas over the chapter subtotals with these cached results.
+   */
+  totals: BoqTotalsSchema,
   warnings: z.array(BoqDocumentWarningSchema),
   /** True when POST …/boq/export would answer 409 `export_blocked` right now. */
   exportBlocked: z.boolean(),
@@ -171,4 +187,5 @@ export const BOQ_DOCUMENT_WARNING_HE: Readonly<Record<z.infer<typeof BoqDocument
   reapproval: (n: number) => `${n} שורות שהכמות שלהן השתנתה מאז האישור`,
   unapproved: (n: number) => `${n} שורות שעדיין לא אושרו`,
   needsInput: (n: number) => `${n} שורות להשלמה ידנית`,
+  unpriced: (n: number) => `${n} שורות ${NO_PRICE_HE}`,
 });

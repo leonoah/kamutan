@@ -293,3 +293,40 @@ describe("REST client", () => {
     ]);
   });
 });
+
+describe("REST client: Sprint 8 routes (contracts prices / compare / housekeeping)", () => {
+  it("calls the published routes with bodies the contracts' request schemas accept", async () => {
+    const { ApplyImportPricesRequestSchema, BoqCompareExportRequestSchema, BoqCompareQuerySchema, BulkLibraryPriceRequestSchema, DeleteProjectRequestSchema, PatchProjectPricingRequestSchema } = await import("@kamutan/contracts");
+    const fetchImpl = vi.fn(async () => json({ items: [] }));
+    const api = createHttpClient(async () => "t", "/api/v1", fetchImpl as unknown as typeof fetch);
+    await api.bulkPatchPrices("org1", { items: [{ itemId: "it1", amount: 12.5 }, { itemId: "it2", amount: null }] });
+    await api.applyPriceImport("org1", "imp1", { overwriteItemIds: ["it1"] });
+    await api.patchProjectPricing("p1", -5);
+    await api.listBoqBuilds("p1");
+    await api.compareBoqBuilds("p1", {});
+    await api.compareBoqBuilds("p1", { from: "b1", to: "b2" });
+    await api.compareBoqBuilds("p1", { base: "export" });
+    await api.exportBoqComparison("p1", { base: "export" });
+    await api.deleteSheetSet("p1", "set1");
+    await api.deleteProject("p1", { confirmName: "בית" });
+    const calls = (fetchImpl.mock.calls as unknown as [string, RequestInit][]).map(([u, i]) => ({ url: u, method: i.method ?? "GET", body: i.body ? JSON.parse(i.body as string) : undefined }));
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      "POST /api/v1/library/prices",
+      "POST /api/v1/library/imports/imp1/apply-prices",
+      "PATCH /api/v1/projects/p1/boq/pricing",
+      "GET /api/v1/projects/p1/boq/builds?limit=20",
+      "GET /api/v1/projects/p1/boq/compare?base=previous",
+      "GET /api/v1/projects/p1/boq/compare?from=b1&to=b2&base=previous",
+      "GET /api/v1/projects/p1/boq/compare?base=export",
+      "POST /api/v1/projects/p1/boq/compare/export",
+      "DELETE /api/v1/projects/p1/sheet-sets/set1",
+      "DELETE /api/v1/projects/p1",
+    ]);
+    expect(BulkLibraryPriceRequestSchema.parse(calls[0]!.body)).toMatchObject({ orgId: "org1" });
+    expect(ApplyImportPricesRequestSchema.parse(calls[1]!.body).overwriteItemIds).toEqual(["it1"]);
+    expect(PatchProjectPricingRequestSchema.parse(calls[2]!.body)).toEqual({ adjustmentPct: -5 });
+    for (const c of calls.slice(4, 7)) BoqCompareQuerySchema.parse(Object.fromEntries(new URL(c.url, "http://x").searchParams));
+    expect(BoqCompareExportRequestSchema.parse(calls[7]!.body)).toEqual({ base: "export" });
+    expect(DeleteProjectRequestSchema.parse(calls[9]!.body)).toEqual({ confirmName: "בית" });
+  });
+});

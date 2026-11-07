@@ -1,0 +1,68 @@
+{
+  "$ref": "#/definitions/ApplyImportPricesResponse",
+  "definitions": {
+    "ApplyImportPricesResponse": {
+      "type": "object",
+      "properties": {
+        "importId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "applied": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "overwritten": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "kept": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "itemId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "not_found",
+                  "unchanged",
+                  "manual_kept"
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "appliedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "importId",
+        "applied",
+        "overwritten",
+        "kept",
+        "skipped",
+        "appliedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ApplyImportPricesResponse.json"
+}

@@ -1,0 +1,51 @@
+{
+  "$ref": "#/definitions/DeleteProjectResponse",
+  "definitions": {
+    "DeleteProjectResponse": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "deleted": {
+          "type": "object",
+          "properties": {
+            "docs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "objects": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "docs",
+            "objects"
+          ],
+          "additionalProperties": false
+        },
+        "releasedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revokedShareLinks": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "projectId",
+        "deleted",
+        "releasedBytes",
+        "revokedShareLinks"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/DeleteProjectResponse.json"
+}

@@ -30,6 +30,11 @@ export interface GovernanceStorage {
   signZip(path: string, fileName: string, ttlSeconds: number): Promise<SignedUrl>;
   /** Deletes every object under `orgs/{orgId}/`; returns the deleted object names. */
   deleteOrgObjects(orgId: string): Promise<string[]>;
+  /**
+   * Sprint 8 deletes: every object under each prefix — only project-scoped prefixes (`PROJECT_DELETE_PREFIX_RE`: the
+   * project, or one sheet / upload / infected set / export directory of it). Returns the number of objects deleted.
+   */
+  deletePrefixes(prefixes: readonly string[]): Promise<number>;
   /** F-4: BOQ snapshot of a share link (gzip JSON, written once at creation). */
   writeShareSnapshot(path: string, value: unknown): Promise<void>;
   readShareSnapshot(path: string): Promise<unknown | null>;
@@ -39,6 +44,9 @@ const assert = (re: RegExp, path: string, what: string) => {
   if (!re.test(path)) throw new Error(`refusing to touch a non-${what} path`);
 };
 const ORG_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+const PID = '[A-Za-z0-9_-]{1,128}';
+/** Sprint 8: the prefixes a delete may remove (trailing slash required: never a sibling with the same id prefix). */
+export const PROJECT_DELETE_PREFIX_RE = new RegExp(`^orgs/${PID}/projects/${PID}/(?:(?:sheets|uploads|infected|exports)/${PID}/)?$`);
 
 export class FirebaseGovernanceStorage implements GovernanceStorage {
   constructor(
@@ -146,6 +154,21 @@ export class FirebaseGovernanceStorage implements GovernanceStorage {
     await this.bucket().deleteFiles({ prefix, force: true });
     return names.sort();
   }
+
+  async deletePrefixes(prefixes: readonly string[]): Promise<number> {
+    let n = 0;
+    for (const prefix of prefixes) {
+      assert(PROJECT_DELETE_PREFIX_RE, prefix, 'project delete prefix');
+      let pageToken: string | undefined;
+      do {
+        const [files, next] = await this.bucket().getFiles({ prefix, autoPaginate: false, maxResults: 1000, ...(pageToken ? { pageToken } : {}) });
+        n += files.length;
+        pageToken = (next as { pageToken?: string } | undefined)?.pageToken;
+      } while (pageToken);
+      await this.bucket().deleteFiles({ prefix, force: true });
+    }
+    return n;
+  }
 }
 
 /** Something holding objects by full path (the other in-memory stores in tests / offline dev). */
@@ -246,5 +269,21 @@ export class InMemoryGovernanceStorage implements GovernanceStorage {
       }
     }
     return names.sort();
+  }
+
+  async deletePrefixes(prefixes: readonly string[]): Promise<number> {
+    let n = 0;
+    for (const prefix of prefixes) {
+      assert(PROJECT_DELETE_PREFIX_RE, prefix, 'project delete prefix');
+      for (const m of [this.objects as ObjectMap, ...this.linked]) {
+        for (const k of [...m.keys()]) {
+          if (k.startsWith(prefix)) {
+            m.delete(k);
+            n++;
+          }
+        }
+      }
+    }
+    return n;
   }
 }

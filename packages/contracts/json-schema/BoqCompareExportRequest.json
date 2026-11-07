@@ -1,0 +1,33 @@
+{
+  "$ref": "#/definitions/BoqCompareExportRequest",
+  "definitions": {
+    "BoqCompareExportRequest": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "previous",
+            "export"
+          ],
+          "default": "previous"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BoqCompareExportRequest.json"
+}

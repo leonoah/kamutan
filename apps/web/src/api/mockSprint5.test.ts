@@ -159,7 +159,9 @@ describe("Sprint 5 mock: org settings + offboarding", () => {
   it("PATCH settings: validated, only known fields, each change audited, reflected in /me", async () => {
     const b = await built();
     await expect(b.api.patchOrgSettings(ORG, { greenThreshold: 0.5 })).rejects.toMatchObject({ status: 400 });
-    await expect(b.api.patchOrgSettings(ORG, { vatRate: 0.2 } as never)).rejects.toMatchObject({ status: 400 });
+    // Sprint 8: vatRate is editable (0–50%); unknown fields and out-of-range values are still refused
+    await expect(b.api.patchOrgSettings(ORG, { vatRate: 0.9 })).rejects.toMatchObject({ status: 400 });
+    await expect(b.api.patchOrgSettings(ORG, { projectQuotaBytes: 1 } as never)).rejects.toMatchObject({ status: 400 });
     const s = await b.api.patchOrgSettings(ORG, { greenThreshold: 0.99, llmEnabled: true });
     expect(s).toMatchObject({ greenThreshold: 0.99, llmEnabled: true });
     expect((await b.api.getMe()).orgs[0]!.settings).toMatchObject({ greenThreshold: 0.99, llmEnabled: true });

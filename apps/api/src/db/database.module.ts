@@ -20,6 +20,9 @@ import { REPOSITORY, type Repository } from './repository';
 import { FirestoreReviewRepository } from './review-firestore.repository';
 import { InMemoryReviewRepository } from './review-memory.repository';
 import { REVIEW_REPOSITORY, type ReviewRepository } from './review-repository';
+import { HOUSEKEEPING_REPOSITORY, type HousekeepingRepository } from './housekeeping-repository';
+import { InMemoryHousekeepingRepository } from './housekeeping-memory.repository';
+import { FirestoreHousekeepingRepository } from './housekeeping-firestore.repository';
 
 export function createRepository(cfg: AppConfig): Repository {
   if (cfg.DATA_DRIVER === 'memory') return new InMemoryRepository();
@@ -62,6 +65,13 @@ export function createProjectStateRepository(core: Repository): ProjectStateRepo
   throw new Error('unsupported repository for the project state repository');
 }
 
+/** Sprint 8: sheet-set / project deletes. */
+export function createHousekeepingRepository(core: Repository): HousekeepingRepository {
+  if (core instanceof InMemoryRepository) return new InMemoryHousekeepingRepository(core);
+  if (core instanceof FirestoreRepository) return new FirestoreHousekeepingRepository(core.db, core);
+  throw new Error('unsupported repository for the housekeeping repository');
+}
+
 @Global()
 @Module({
   providers: [
@@ -71,7 +81,8 @@ export function createProjectStateRepository(core: Repository): ProjectStateRepo
     { provide: GOVERNANCE_REPOSITORY, inject: [REPOSITORY], useFactory: createGovernanceRepository },
     { provide: MEMBERS_REPOSITORY, inject: [REPOSITORY], useFactory: createMembersRepository },
     { provide: PROJECT_STATE_REPOSITORY, inject: [REPOSITORY], useFactory: createProjectStateRepository },
+    { provide: HOUSEKEEPING_REPOSITORY, inject: [REPOSITORY], useFactory: createHousekeepingRepository },
   ],
-  exports: [REPOSITORY, BOQ_REPOSITORY, REVIEW_REPOSITORY, GOVERNANCE_REPOSITORY, MEMBERS_REPOSITORY, PROJECT_STATE_REPOSITORY],
+  exports: [REPOSITORY, BOQ_REPOSITORY, REVIEW_REPOSITORY, GOVERNANCE_REPOSITORY, MEMBERS_REPOSITORY, PROJECT_STATE_REPOSITORY, HOUSEKEEPING_REPOSITORY],
 })
 export class DatabaseModule {}

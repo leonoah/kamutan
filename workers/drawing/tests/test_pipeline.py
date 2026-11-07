@@ -232,13 +232,15 @@ def test_job_document_must_exist_and_belong_to_the_org():
     data = multipage_pdf(1)
     job, blobs, docs = seed(data, job_payload(data))
     docs.docs.pop("jobs/job1")
+    seeded = dict(docs.docs)  # project + sheet set (the API's docs; Sprint 8 seed)
     with pytest.raises(IngestError) as e:
         process_sheet_version(job, blobs, docs, FAST)
-    assert e.value.code == "invalid_payload" and docs.docs == {}
+    assert e.value.code == "invalid_payload" and docs.docs == seeded
     job, blobs, docs = seed(data, job_payload(data), orgId="someone-else")
+    seeded = dict(docs.docs)
     with pytest.raises(IngestError) as e:
         process_sheet_version(job, blobs, docs, FAST)
-    assert e.value.code == "invalid_payload" and list(docs.docs) == ["jobs/job1"] and docs.get("jobs/job1")["status"] == "queued"
+    assert e.value.code == "invalid_payload" and docs.docs == seeded and docs.get("jobs/job1")["status"] == "queued"
 
 
 @pytest.mark.parametrize(

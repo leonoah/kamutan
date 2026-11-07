@@ -71,6 +71,26 @@
               },
               "descriptionManual": {
                 "type": "boolean"
+              },
+              "unitPrice": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "total": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
@@ -121,6 +141,71 @@
             "approved"
           ],
           "additionalProperties": false
+        },
+        "showPrices": {
+          "type": "boolean"
+        },
+        "totals": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "currency": {
+                  "type": "string",
+                  "enum": [
+                    "ILS"
+                  ]
+                },
+                "linesTotal": {
+                  "type": "number"
+                },
+                "adjustmentPct": {
+                  "type": "number"
+                },
+                "adjustment": {
+                  "type": "number"
+                },
+                "beforeVat": {
+                  "type": "number"
+                },
+                "vat": {
+                  "type": "number"
+                },
+                "afterVat": {
+                  "type": "number"
+                },
+                "vatRate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "pricedLines": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unpricedLines": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "currency",
+                "linesTotal",
+                "adjustmentPct",
+                "adjustment",
+                "beforeVat",
+                "vat",
+                "afterVat",
+                "vatRate",
+                "pricedLines",
+                "unpricedLines"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

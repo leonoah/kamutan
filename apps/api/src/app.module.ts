@@ -14,6 +14,7 @@ import { ConfigModule } from './config/config.module';
 import { DatabaseModule } from './db/database.module';
 import { GovernanceModule } from './governance/governance.module';
 import { HealthModule } from './health/health.module';
+import { HousekeepingModule } from './housekeeping/housekeeping.module';
 import { JobsModule } from './jobs/jobs.module';
 import { MembersModule } from './members/members.module';
 import { OrgsModule } from './orgs/orgs.module';
@@ -49,6 +50,7 @@ export class AppModule {
         BoqModule,
         ReviewModule,
         GovernanceModule,
+        HousekeepingModule,
         JobsModule,
       ],
       providers: [

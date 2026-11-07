@@ -37,6 +37,10 @@
         "includeUnmaskedSheets": {
           "type": "boolean",
           "default": false
+        },
+        "showPrices": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [

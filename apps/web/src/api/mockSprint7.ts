@@ -12,6 +12,8 @@ import {
 } from "./types";
 import { chapterLabel, effectiveQty, groupByChapter } from "@/features/boq/model";
 import { cleanDescription, normalizeColumns } from "@/features/boq/sprint7";
+import { effectivePrice, round2 } from "@/features/prices/model";
+import { computeBoqTotals } from "@kamutan/contracts";
 
 /**
  * Sprint 7 mock — stand-in for the API's `BoqDocumentModel` (GET …/boq/document): the SAME layout rules as the API's
@@ -60,8 +62,10 @@ export interface DocumentInput {
   q: BoqDocumentQuery;
   vatRate?: number;
   blockOnRed?: boolean;
-  /** Unit prices by code (none in the product yet: the Excel's price column is empty). */
+  /** Unit prices by code; default (Sprint 8): each line's effective price (override ?? price list). */
   prices?: Readonly<Record<string, number>>;
+  /** Sprint 8: project discount (−) / markup (+) %, applied before VAT. */
+  adjustmentPct?: number | null;
   now?: Date;
 }
 
@@ -87,7 +91,7 @@ export function buildBoqDocument(input: DocumentInput): BoqDocumentModel {
       const awaiting = Boolean(l.needsInput) && (l.qtyOverride === null || l.qtyOverride === undefined);
       const parts = input.q.split === "floor" && !awaiting ? floorRows(l) : [{ floor: null, qty: effectiveQty(l) }];
       for (const part of parts) {
-        const price = input.prices?.[l.code] ?? null;
+        const price = input.prices?.[l.code] ?? effectivePrice(l);
         const qty = awaiting ? null : part.qty;
         rows.push({
           lineId: l.id,
@@ -97,16 +101,19 @@ export function buildBoqDocument(input: DocumentInput): BoqDocumentModel {
           qty,
           price,
           // Excel formula qty × price (an empty price counts 0); an empty qty leaves the total empty too.
-          total: qty === null ? null : qty * (price ?? 0),
+          total: qty === null ? null : round2(qty * (price ?? 0)),
           kind: "line",
           ...(input.q.confidence ? { level: l.level, status: needsReapproval(l) ? "reviewed" : l.status } : {}),
           floor: part.floor,
           ...(awaiting ? { needsInput: true, cellNote: NEEDS_INPUT_NOTE } : {}),
           ...(l.descriptionOverride?.trim() ? { descriptionOverridden: true } : {}),
+          // contracts BoqDocumentRow: `priceSource` + `unpriced`
+          priceSource: input.prices?.[l.code] !== undefined ? "library" : (l.unitPriceSource ?? (typeof l.priceOverride === "number" ? "override" : price === null ? null : "library")),
+          ...(price === null ? { unpriced: true } : {}),
         });
       }
     }
-    const subtotal = rows.reduce((s, r) => s + (r.total ?? 0), 0);
+    const subtotal = round2(rows.reduce((s, r) => s + (r.total ?? 0), 0));
     const notes = g.notes.map((n) => n.replace(/^\s*\d+[.)]\s*/, ""));
     // contracts row order: note rows ("הערות:" + one per note) → line rows → one subtotal row
     const note = (description: string): BoqDocumentRow => ({ kind: "note", lineId: null, code: "", description, unit: "", qty: null, price: null, total: null });
@@ -114,8 +121,8 @@ export function buildBoqDocument(input: DocumentInput): BoqDocumentModel {
     const sub: BoqDocumentRow = { kind: "subtotal", lineId: null, code: "", description: 'סה"כ', unit: "", qty: null, price: null, total: subtotal };
     return { code: g.code, title: chapterLabel(g.code, g.title), notes, rows: [...noteRows, ...rows, sub], subtotal };
   });
-  const beforeVat = chapters.reduce((s, c) => s + (c.subtotal ?? 0), 0);
-  const vat = Math.round(beforeVat * vatRate * 100) / 100;
+  // contracts computeBoqTotals: linesTotal = Σ chapter subtotals → discount / markup → before VAT → VAT → after VAT
+  const linesTotal = chapters.reduce((s, c) => s + (c.subtotal ?? 0), 0);
 
   // Same rules as the export gate (contracts exportBlockingLines) over the lines in the document.
   const inDoc = groups.flatMap((g) => g.lines);
@@ -123,6 +130,7 @@ export function buildBoqDocument(input: DocumentInput): BoqDocumentModel {
   const reapproval = inDoc.filter((l) => needsReapproval(l)).length;
   const unapproved = inDoc.filter((l) => l.status !== "approved" || needsReapproval(l)).length;
   const needsInput = inDoc.filter((l) => l.needsInput && (l.qtyOverride === null || l.qtyOverride === undefined)).length;
+  const unpriced = inDoc.filter((l) => (input.prices?.[l.code] ?? effectivePrice(l)) === null).length;
   return {
     titleRows: [
       // the xlsx warning row (red / yellow lines in the document)
@@ -133,12 +141,13 @@ export function buildBoqDocument(input: DocumentInput): BoqDocumentModel {
     ],
     columns,
     chapters,
-    totals: { beforeVat, vat, afterVat: beforeVat + vat },
+    totals: computeBoqTotals({ linesTotal, adjustmentPct: input.adjustmentPct ?? 0, vatRate, pricedLines: inDoc.length - unpriced, unpricedLines: unpriced }),
     warnings: [
       { kind: "red" as const, count: red },
       { kind: "reapproval" as const, count: reapproval },
       { kind: "unapproved" as const, count: unapproved },
       { kind: "needsInput" as const, count: needsInput },
+      { kind: "unpriced" as const, count: unpriced },
     ].filter((w) => w.count > 0),
     generatedAt: now.toISOString(),
     vatRate,

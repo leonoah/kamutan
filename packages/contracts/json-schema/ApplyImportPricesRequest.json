@@ -1,0 +1,33 @@
+{
+  "$ref": "#/definitions/ApplyImportPricesRequest",
+  "definitions": {
+    "ApplyImportPricesRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "overwriteItemIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "maxItems": 5000,
+          "default": []
+        }
+      },
+      "required": [
+        "orgId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/ApplyImportPricesRequest.json"
+}

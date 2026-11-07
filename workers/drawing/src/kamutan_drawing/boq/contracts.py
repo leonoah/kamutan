@@ -64,11 +64,19 @@ class LibraryImportJob(BaseModel):
     storagePath: str = Field(pattern=IMPORT_PATH_PATTERN)
     sourceKind: Literal["xls", "xlsx"]
     traceparent: Traceparent
+    # Sprint 8 (contracts jobs.ts, optional): `prices` = only the price column → itemLibrary.price of matched items;
+    # absent = `library`. `overwriteManualPrices`: imported prices may replace manual ones (default false).
+    mode: Literal["library", "prices"] | None = None
+    overwriteManualPrices: bool | None = None
+    # Sprint 8 integration: plan + report (`planned`, `dryRun: true`) only, no price write; only with mode `prices`
+    dryRun: bool | None = None
 
     @model_validator(mode="after")
     def _check(self) -> LibraryImportJob:
         if self.storagePath != f"orgs/{self.orgId}/imports/{self.importId}.{self.sourceKind}":
             raise ValueError("storagePath must be the import object of the job org/importId/sourceKind")
+        if self.dryRun is True and self.mode != "prices":
+            raise ValueError("dryRun needs mode 'prices'")  # a dry run must never fall back to writing prices
         return self
 
 

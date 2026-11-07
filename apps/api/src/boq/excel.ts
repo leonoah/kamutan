@@ -11,6 +11,9 @@ import {
   lineOrigin,
   LINE_ORIGIN_HE,
   NEEDS_INPUT_HE,
+  adjustmentLabelHe,
+  NO_PRICE_HE,
+  vatLabelHe,
 } from '@kamutan/contracts';
 import ExcelJS from 'exceljs';
 import {
@@ -57,6 +60,8 @@ export const NO_ROOM = '—';
 export const OUTSIDE_ROOMS = 'מחוץ לחדרים';
 export const GRAND_TOTAL = 'סה"כ כללי לא כולל מע"מ';
 export const GRAND_TOTAL_VAT = 'סה"כ כללי כולל מע"מ';
+/** Sprint 8: first total row when the project has a discount / markup. */
+export const LINES_TOTAL = 'סה"כ לפני הנחה / תוספת';
 export const NO_FLOOR = 'ללא קומה';
 /** Currency format of the client's sample (price / total columns). */
 export const CURRENCY_FMT = '"₪"\\ #,##0';
@@ -103,6 +108,9 @@ export interface ExcelInput {
   projectId?: string;
   buildId?: string | null;
   blockExportOnRed?: boolean;
+  /** Sprint 8: price column (default true) + project discount / markup. Lines carry `unitPrice` (pricing.ts). */
+  includePrices?: boolean;
+  adjustmentPct?: number;
 }
 
 const floorName = (input: ExcelInput, f: string) => floorNameOf(input.floorNames, f);
@@ -147,6 +155,8 @@ export function documentOf(input: ExcelInput): BoqDocumentModel {
     ...(input.floorNames ? { floorNames: input.floorNames } : {}),
     buildId: input.buildId ?? null,
     ...(input.blockExportOnRed !== undefined ? { blockExportOnRed: input.blockExportOnRed } : {}),
+    ...(input.includePrices !== undefined ? { includePrices: input.includePrices } : {}),
+    ...(input.adjustmentPct !== undefined ? { adjustmentPct: input.adjustmentPct } : {}),
   });
 }
 
@@ -255,17 +265,29 @@ export function writeMainSheet(wb: ExcelJS.Workbook, doc: BoqDocumentModel): Exc
   }
 
   if (totalCol) {
+    // Sprint 8 grand totals (formulas over the chapter subtotals, cached results = the model's totals):
+    //   [with a project discount / markup] "סה"כ לפני הנחה|תוספת" = SUM(chapters), "הנחה X%" = that × pct
+    //   "סה"כ כללי לא כולל מע"מ" = SUM(chapters) (+ adjustment), "מע"מ 18%" = before × rate, "סה"כ כללי כולל מע"מ" = before + VAT.
     const L = colLetter(totalCol);
-    ws.getCell(r, textCol).value = GRAND_TOTAL;
-    ws.getCell(r, textCol).style = { font: { bold: true } };
-    ws.getCell(r, totalCol).value = { formula: chapterTotals.length ? `SUM(${chapterTotals.join(',')})` : '0', result: doc.totals.beforeVat };
-    ws.getCell(r, totalCol).style = { font: { bold: true }, numFmt: CURRENCY_FMT };
-    const before = `${L}${r}`;
-    r++;
-    ws.getCell(r, textCol).value = GRAND_TOTAL_VAT;
-    ws.getCell(r, textCol).style = { font: { bold: true } };
-    ws.getCell(r, totalCol).value = { formula: `${before}*(1+${doc.totals.vatRate})`, result: doc.totals.afterVat };
-    ws.getCell(r, totalCol).style = { font: { bold: true }, numFmt: CURRENCY_FMT };
+    const t = doc.totals;
+    const totalRow = (label: string, formula: string, result: number) => {
+      ws.getCell(r, textCol).value = sanitizeCell(label);
+      ws.getCell(r, textCol).style = { font: { bold: true } };
+      ws.getCell(r, totalCol).value = { formula, result };
+      ws.getCell(r, totalCol).style = { font: { bold: true }, numFmt: CURRENCY_FMT };
+      return `${L}${r++}`;
+    };
+    const sum = chapterTotals.length ? `SUM(${chapterTotals.join(',')})` : '0';
+    let before: string;
+    if (t.adjustmentPct !== 0) {
+      const lines = totalRow(LINES_TOTAL, sum, t.linesTotal);
+      const adj = totalRow(adjustmentLabelHe(t.adjustmentPct), `${lines}*${Number((t.adjustmentPct / 100).toPrecision(12))}`, t.adjustment);
+      before = totalRow(GRAND_TOTAL, `${lines}+${adj}`, t.beforeVat);
+    } else {
+      before = totalRow(GRAND_TOTAL, sum, t.beforeVat);
+    }
+    const vat = totalRow(vatLabelHe(t.vatRate), `${before}*${t.vatRate}`, t.vat);
+    totalRow(GRAND_TOTAL_VAT, `${before}+${vat}`, t.afterVat);
   }
   return ws;
 }
@@ -294,6 +316,8 @@ function writeLineRow(
   set('qty', row.qty, { numFmt: row.qtyFormat === 'decimal2' ? '0.00' : 'General', alignment: { horizontal: 'center', vertical: 'top' } });
   if (row.cellNote) ws.getCell(r, qtyCol).note = sanitizeCell(row.cellNote);
   set('unitPrice', row.price, { numFmt: CURRENCY_FMT });
+  // Sprint 8: a line without a price keeps an empty price cell with the note "ללא מחיר" (the total formula yields 0).
+  if (row.unpriced && priceCol) ws.getCell(r, priceCol).note = NO_PRICE_HE;
   if (totalCol) {
     const Q = colLetter(qtyCol);
     const formula = priceCol ? `${Q}${r}*${colLetter(priceCol)}${r}` : '0';

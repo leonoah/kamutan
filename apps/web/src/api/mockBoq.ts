@@ -40,6 +40,9 @@ import { computeBoq, synthesizeLinks, type EngineSheet } from "./mockBoqEngine";
 import { applyCorrectionDeltas, applyRoomSettingsDeltas, computePlumbing, computeTiling, type S4Sheet } from "./mockSprint4Engine";
 import { applySprint6, finalizeSprint6 } from "./mockSprint6";
 import { upsertLibraryWording, validateDescriptionPatch } from "./mockSprint7";
+import { compareSnapshots, comparisonSpreadsheet, demoPriceFile, libraryPriceOf, priceLine, runPriceImport, seedLibraryPrices, seedPreviousSnapshot, snapshotOf } from "./mockSprint8";
+import { COMPARE_NO_EXPORT_HE, COMPARE_NO_PREVIOUS_HE, PRICE_MAX, computeBoqTotals, type BoqLinesSnapshot } from "@kamutan/contracts";
+import type { ApplyPriceImportResponse, BoqBuildSummary, BoqComparison, BoqCompareExportResponse, BoqCompareQuery, BoqTotals, BulkPriceRequest, BulkPriceResponse, ItemPrice } from "./types";
 import { applyCorrections, applyLinkCorrections } from "@/features/corrections/model";
 import { fetchArtifact } from "@/features/understanding/artifacts";
 import { allowedTransitions } from "@/features/boq/model";
@@ -89,6 +92,12 @@ export interface BoqMockDeps {
   onApprovalInvalidated?(projectId: string, line: BoqLine, from: number, to: number): void;
   /** Sprint 6: add the text / geometry / suggested lines (default on; off reproduces the Sprint-5 BOQ). */
   sprint6?: boolean;
+  /** Sprint 8: seed the org price list (imported library only; default on). */
+  seedPrices?: boolean;
+  /** Sprint 8: a library price changed (audit `itemLibrary · price`). */
+  onLibraryPrice?(item: LibraryItem, before: ItemPrice | null, after: ItemPrice | null, batchId?: string): void;
+  /** Sprint 8: signed-in user's uid (price `by`). */
+  actorUid?(): string;
 }
 
 const COMPOSITE = new Set(["4.09", "4.10", "4.11", "4.12", "4.14", "4.15", "4.16"]);
@@ -103,6 +112,8 @@ interface ProjectBoq {
   base: { lines: BoqLine[]; evidence: Record<string, BoqEvidenceItem[]> } | null;
   /** Sprint 6: quantities confirmed through a line's `confirm` quick action (lineId → qty). */
   confirmed: Map<string, number>;
+  /** Sprint 8: `kamutan.boq-lines/1` per succeeded build (oldest first) + when a BOQ Excel was exported from it. */
+  snapshots: Map<string, { snap: BoqLinesSnapshot; at: string; exportedAt: string | null }>;
 }
 
 type DevBoq = { lines: BoqLine[]; evidence: Record<string, BoqEvidenceItem[]>; sig: string };
@@ -156,6 +167,10 @@ export function createBoqMock(deps: BoqMockDeps) {
       ? []
       : libraryItems().map((i) => [i.id, libraryMode === "default" ? { ...i, source: "default" as const, defaultsVersion: 1, sourceRef: null } : i]),
   );
+  // Sprint 8: the imported library carries the org's prices (the shipped default library has none — contracts).
+  if (libraryMode === "imported" && deps.seedPrices !== false) seedLibraryPrices(library.values(), "2026-10-20T09:00:00.000Z");
+  else for (const i of library.values()) i.price ??= null;
+  const priceOf = (code: string): number | null => libraryPriceOf(code, library.values());
   const templates = new Map<string, BoqTemplate>([DEFAULT_TEMPLATE, SECOND_TEMPLATE].map((t) => [t.id, structuredClone(t)]));
   const rules = new Map(defaultRules().map((r) => [r.id, r]));
   const imports = new Map<string, LibraryImport & { token: string; uploaded: boolean; orgId: string }>();
@@ -166,7 +181,7 @@ export function createBoqMock(deps: BoqMockDeps) {
   const proj = (projectId: string): ProjectBoq => {
     let p = projects.get(projectId);
     if (!p) {
-      p = { state: null, builds: new Map(), lines: new Map(), evidence: {}, links: new Map(), base: null, confirmed: new Map() };
+      p = { state: null, builds: new Map(), lines: new Map(), evidence: {}, links: new Map(), base: null, confirmed: new Map(), snapshots: new Map() };
       projects.set(projectId, p);
     }
     return p;
@@ -262,6 +277,11 @@ export function createBoqMock(deps: BoqMockDeps) {
           descriptionOverrideBy: o.descriptionOverrideBy ?? null,
           descriptionOverrideAt: o.descriptionOverrideAt ?? null,
           descriptionOverrideReason: o.descriptionOverrideReason ?? null,
+          // Sprint 8: the project's own price survives rebuilds too (Worker-BOQ preserves `priceOverride*`).
+          priceOverride: o.priceOverride ?? null,
+          priceOverrideBy: o.priceOverrideBy ?? null,
+          priceOverrideAt: o.priceOverrideAt ?? null,
+          priceOverrideReason: o.priceOverrideReason ?? null,
         };
         const ownReasons = (l.reasons ?? []).filter((r) => !isQtyChangedReason(r));
         // the chip of an earlier drop stays until a human re-approves (or the qty goes back)
@@ -357,6 +377,9 @@ export function createBoqMock(deps: BoqMockDeps) {
           stats: { lines: p.lines.size, evidence: Object.values(p.evidence).reduce((s, e) => s + e.length, 0), sheets: deps.rows(projectId).length, groups: [...p.links.values()].reduce((s, l) => s + l.groups.length, 0), calibration: { ...MOCK_CALIBRATION } },
         });
         p.state = { latestBuildId: build.id, builtAt: build.finishedAt, stale: false };
+        // Sprint 8 (Worker-BOQ: boq/{buildId}/lines.json.gz): the lines of this build; the first build also gets a
+        // mock "previous, exported" build so the comparison has something to show.
+        takeSnapshot(projectId, p, build.id, build.finishedAt!);
       } catch (e) {
         Object.assign(build, { status: "failed", finishedAt: now(), error: { code: "build_failed", message: String(e) } });
       }
@@ -428,13 +451,55 @@ export function createBoqMock(deps: BoqMockDeps) {
       await attachLinks("p-noah", p);
       await derive("p-noah", p);
       const bid = (raw as { buildId?: unknown }).buildId;
-      p.state = { latestBuildId: typeof bid === "string" ? bid : `dev-${sig.length}`, builtAt: now(), stale: false };
+      const nextId = typeof bid === "string" ? bid : `dev-${sig.length}`;
+      // Sprint 8: Worker-BOQ's lines replace the latest build's — its snapshot is re-taken under the new id
+      const old = p.state?.latestBuildId;
+      if (old && old !== nextId) p.snapshots.delete(old);
+      p.state = { latestBuildId: nextId, builtAt: now(), stale: false };
+      takeSnapshot("p-noah", p, nextId, p.state.builtAt!);
       deps.emit();
     } catch {
       /* no dev server / malformed file → keep the mock engine */
     }
   }
   let polling = false;
+  /** GET boq line DTOs: the API derives `unitPrice` / `unitPriceSource` / `lineTotal` on read (never stored). */
+  function pricedLines(p: ProjectBoq): BoqLine[] {
+    return [...p.lines.values()].map((l) => priceLine({ ...l, byFloor: { ...l.byFloor }, reasons: withConservative(l) }, priceOf(l.code)));
+  }
+  /**
+   * Worker-BOQ writes `lines.json.gz` for every succeeded build (effective qty / price AT BUILD TIME). The first build of
+   * a project also gets a mock "previous build, exported to Excel" so "מה השתנה" has something to show.
+   */
+  function takeSnapshot(projectId: string, p: ProjectBoq, buildId: string, at: string) {
+    const snap = snapshotOf(projectId, buildId, at, pricedLines(p), deps.rows(projectId));
+    if (p.snapshots.size === 0) {
+      const prevAt = new Date(Date.parse(at) - 3 * 86_400_000).toISOString();
+      p.snapshots.set("b0-history", { snap: seedPreviousSnapshot(snap, "b0-history", prevAt), at: prevAt, exportedAt: new Date(Date.parse(prevAt) + 3_600_000).toISOString() });
+    }
+    p.snapshots.set(buildId, { snap, at, exportedAt: null });
+  }
+  /** API semantics: `to` = latest build; `from` explicit, else the build before `to` (base previous) or of the latest export. */
+  function resolveCompare(projectId: string, p: ProjectBoq, q: BoqCompareQuery): { from: string; to: string; base: BoqComparison["base"] } {
+    const latest = p.state?.latestBuildId ?? null;
+    if (latest && !p.snapshots.has(latest)) takeSnapshot(projectId, p, latest, p.state?.builtAt ?? now());
+    const ids = [...p.snapshots.keys()];
+    const to = q.to ?? latest ?? "";
+    if (!to) throw new ApiError(409, "not_ready", COMPARE_NO_PREVIOUS_HE);
+    if (!p.snapshots.has(to)) throw new ApiError(404, "not_found", "Build not found");
+    if (q.from) {
+      if (!p.snapshots.has(q.from)) throw new ApiError(404, "not_found", "Build not found");
+      return { from: q.from, to, base: "explicit" };
+    }
+    if (q.base === "export") {
+      const ex = [...p.snapshots.entries()].filter(([, v]) => v.exportedAt).sort(([, a], [, b]) => (a.exportedAt ?? "").localeCompare(b.exportedAt ?? "")).pop();
+      if (!ex) throw new ApiError(409, "not_ready", COMPARE_NO_EXPORT_HE);
+      return { from: ex[0], to, base: "export" };
+    }
+    const prev = ids[ids.indexOf(to) - 1];
+    if (!prev) throw new ApiError(409, "not_ready", COMPARE_NO_PREVIOUS_HE);
+    return { from: prev, to, base: "previous" };
+  }
   function markStaleLocal(projectId: string) {
     const p = projects.get(projectId);
     if (p?.state) p.state = { ...p.state, stale: true };
@@ -503,7 +568,7 @@ export function createBoqMock(deps: BoqMockDeps) {
     listLines(projectId: string): BoqLinesResponse {
       const p = proj(projectId);
       return {
-        items: [...p.lines.values()].map((l) => ({ ...l, byFloor: { ...l.byFloor }, reasons: withConservative(l) })),
+        items: pricedLines(p),
         boq: p.state ? { ...p.state } : null,
         chapters: (templates.get([...templates.values()].find((t) => t.default)?.id ?? "") ?? DEFAULT_TEMPLATE).chapters,
         blockExportOnRed: blockOnRed(),
@@ -533,7 +598,7 @@ export function createBoqMock(deps: BoqMockDeps) {
         // Sprint-3 decision (kept in Sprint 5): an override on an approved line re-opens it as "נבדק".
         if (l.status === "approved") Object.assign(l, { status: "reviewed", approvedBy: null, approvedAt: null });
         Object.assign(l, req.qtyOverride === null ? { qtyOverrideReason: null, qtyOverrideBy: null, qtyOverrideAt: null } : { qtyOverrideReason: req.reason!.trim(), qtyOverrideBy: uid, qtyOverrideAt: now() });
-      } else if (req.reason !== undefined && req.description === undefined) throw new ApiError(400, "validation_failed", "reason is only allowed with qtyOverride or description");
+      } else if (req.reason !== undefined && req.description === undefined && req.priceOverride === undefined) throw new ApiError(400, "validation_failed", "reason is only allowed with qtyOverride, priceOverride or description");
       if (req.description !== undefined) {
         // Sprint 7: rename (editor+); `null` restores the original wording. Never touched by a rebuild.
         if (role !== "admin" && role !== "editor") throw new ApiError(403, "forbidden", "editors only");
@@ -547,9 +612,22 @@ export function createBoqMock(deps: BoqMockDeps) {
         );
         if (req.alsoUpdateLibrary) upsertLibraryWording(library, l, value ?? l.description, now());
       }
+      if (req.priceOverride !== undefined) {
+        // Sprint 8 (contracts PriceAmountSchema): the line's own unit price (editor+); null restores the library price.
+        if (role !== "admin" && role !== "editor") throw new ApiError(403, "forbidden", "editors only");
+        if (req.priceOverride !== null && (!Number.isFinite(req.priceOverride) || req.priceOverride < 0 || req.priceOverride > PRICE_MAX))
+          throw new ApiError(400, "validation_failed", "priceOverride must be within 0..PRICE_MAX");
+        Object.assign(
+          l,
+          req.priceOverride === null
+            ? { priceOverride: null, priceOverrideBy: null, priceOverrideAt: null, priceOverrideReason: null }
+            : { priceOverride: req.priceOverride, priceOverrideBy: uid, priceOverrideAt: now(), priceOverrideReason: req.reason?.trim() || null },
+        );
+      }
       if (req.note !== undefined) l.note = req.note;
       deps.emit();
-      return { ...l };
+      // the PATCH answer is a priced line (API: "Response line is priced")
+      return priceLine({ ...l }, priceOf(l.code));
     },
     /**
      * Sprint 6 (owner feedback): one status for many lines. Walks the legal path of the state machine (draft → reviewed
@@ -624,6 +702,11 @@ export function createBoqMock(deps: BoqMockDeps) {
       const reds = [...p.lines.values()].filter((l) => needsReapproval(l) || (l.level === "red" && l.status !== "approved")).length;
       if (blockOnRed() && reds > 0) throw new ApiError(409, "export_blocked", `${reds} red lines`);
       const filename = `boq-${projectId}-${req.split}.xlsx`;
+      // Sprint 8: "since last export" (base=export) compares against the build this Excel was made from.
+      const latest = p.state.latestBuildId;
+      if (latest && !p.snapshots.has(latest)) takeSnapshot(projectId, p, latest, p.state.builtAt ?? now());
+      const s8 = latest ? p.snapshots.get(latest) : undefined;
+      if (s8) s8.exportedAt = now();
       return { url: `mock://exports/${filename}`, filename, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
     },
 
@@ -639,15 +722,137 @@ export function createBoqMock(deps: BoqMockDeps) {
       const i = library.get(itemId);
       if (!i) throw new ApiError(404, "not_found", "Item not found");
       if (deps.role() === "viewer" || deps.role() === "reviewer") throw new ApiError(403, "forbidden", "editors only");
-      Object.assign(i, req, { source: i.source, updatedAt: now() });
+      const { price, ...rest } = req;
+      Object.assign(i, rest, { source: i.source, updatedAt: now() });
+      if (price !== undefined) this.setPrice(i, price, "manual");
       return { ...i };
     },
-    createImport(orgId: string, filename: string): CreateLibraryImportResponse {
+    /** Sprint 8: one item's price (contracts ItemPrice, validated, audited). Returns whether it changed. */
+    setPrice(i: LibraryItem, amount: number | null, source: "manual" | "import", batchId?: string, importId?: string): boolean {
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0 || amount > PRICE_MAX)) throw new ApiError(400, "validation_failed", "price must be within 0..PRICE_MAX");
+      const before = i.price ?? null;
+      if ((before?.amount ?? null) === amount && (amount === null || before?.source === source)) return false;
+      i.price = amount === null ? null : { amount, currency: "ILS", updatedAt: now(), by: deps.actorUid?.() ?? "mock-user", source, importId: importId ?? null };
+      i.updatedAt = now();
+      deps.onLibraryPrice?.(i, before, i.price, batchId);
+      // prices are resolved on read (`pricedLines`): every BOQ shows the new price at once
+      deps.emit();
+      return true;
+    },
+    /** POST /library/prices (contracts BulkLibraryPrice*): ≤ 500 unique items; `updated` / `skipped` in request order. */
+    bulkPrices(req: BulkPriceRequest): BulkPriceResponse {
+      if (deps.role() === "viewer" || deps.role() === "reviewer") throw new ApiError(403, "forbidden", "editors only");
+      if (!req.items.length || req.items.length > 500 || new Set(req.items.map((x) => x.itemId)).size !== req.items.length) throw new ApiError(400, "validation_failed", "1..500 unique items");
+      for (const x of req.items) if (x.amount !== null && (!Number.isFinite(x.amount) || x.amount < 0 || x.amount > PRICE_MAX)) throw new ApiError(400, "validation_failed", "amount within 0..PRICE_MAX");
+      const batchId = `bp_${(++seq).toString(36)}${Date.now().toString(36)}`;
+      const res: BulkPriceResponse = { batchId, updated: [], skipped: [] };
+      for (const x of req.items) {
+        const i = library.get(x.itemId);
+        if (!i) {
+          res.skipped.push({ itemId: x.itemId, reason: "not_found" });
+          continue;
+        }
+        const from = i.price?.amount ?? null;
+        if (from === x.amount) {
+          res.skipped.push({ itemId: x.itemId, reason: "unchanged" });
+          continue;
+        }
+        this.setPrice(i, x.amount, "manual", batchId);
+        res.updated.push({ itemId: i.id, code: i.code, from, to: x.amount });
+      }
+      return res;
+    },
+
+    /**
+     * Integration: POST /library/imports/:id/apply-prices — a SUCCEEDED dry run, once: writes every `planned` item +
+     * the `manual_price` conflicts listed in `overwriteItemIds`; each item re-checked (gone → not_found, same → unchanged,
+     * became manual and not listed → manual_kept).
+     */
+    applyPriceImport(importId: string, overwriteItemIds: readonly string[]): ApplyPriceImportResponse {
+      if (deps.role() === "viewer" || deps.role() === "reviewer") throw new ApiError(403, "forbidden", "editors only");
+      const im = imports.get(importId);
+      if (!im) throw new ApiError(404, "not_found", "Import not found");
+      const rep = im.result?.prices;
+      if (im.status !== "succeeded" || !im.dryRun || !rep?.planned || im.pricesAppliedAt) throw new ApiError(409, "conflict", "not an unapplied dry-run price import");
+      const over = new Set(overwriteItemIds);
+      const res: ApplyPriceImportResponse = { importId: im.id, applied: 0, overwritten: 0, kept: 0, skipped: [], appliedAt: now() };
+      const write = (itemId: string, amount: number, overwrite: boolean) => {
+        const it = library.get(itemId);
+        if (!it || !it.active) return void res.skipped.push({ itemId, reason: "not_found" });
+        if (it.price?.amount === amount) return void res.skipped.push({ itemId, reason: "unchanged" });
+        if (it.price?.source === "manual" && !over.has(itemId)) return void res.skipped.push({ itemId, reason: "manual_kept" });
+        this.setPrice(it, amount, "import", undefined, im.id);
+        res.applied++;
+        if (overwrite) res.overwritten++;
+      };
+      for (const w of rep.planned) write(w.itemId, w.amount, false);
+      for (const c of rep.conflictRows)
+        if (c.reason === "manual_price" && c.itemId) {
+          if (over.has(c.itemId)) write(c.itemId, c.incoming, true);
+          else res.kept++;
+        }
+      im.pricesAppliedAt = res.appliedAt;
+      return res;
+    },
+
+    /* ---------- Sprint 8: comparison (contracts compare.ts) ---------- */
+    /** Integration: GET …/boq/builds (newest first, the compare picker). */
+    listBuilds(projectId: string): BoqBuildSummary[] {
+      const p = proj(projectId);
+      const latest = p.state?.latestBuildId ?? null;
+      if (latest && !p.snapshots.has(latest)) takeSnapshot(projectId, p, latest, p.state?.builtAt ?? now());
+      return [...p.snapshots.entries()]
+        .map(([id, v]): BoqBuildSummary => ({
+          buildId: id,
+          status: "succeeded",
+          trigger: "manual",
+          createdAt: v.at,
+          finishedAt: v.at,
+          lineCount: v.snap.lines.length,
+          hasSnapshot: true,
+          exportedAt: v.exportedAt,
+          exportId: v.exportedAt ? `x_${id}` : null,
+          latest: id === latest,
+        }))
+        .reverse();
+    },
+    compare(projectId: string, q: BoqCompareQuery): BoqComparison {
+      const p = proj(projectId);
+      const { from, to, base } = resolveCompare(projectId, p, q);
+      const a = p.snapshots.get(from)!;
+      // Integration: without an explicit `to` the "to" side is LIVE (today's lines and prices), `live: true`
+      const live = !q.to;
+      const b = live ? { snap: snapshotOf(projectId, to, now(), pricedLines(p), deps.rows(projectId)), at: p.snapshots.get(to)?.at ?? now() } : p.snapshots.get(to)!;
+      const c = compareSnapshots(a.snap, b.snap, base, { fromAt: a.at, toAt: b.at, exportedAt: a.exportedAt });
+      return live ? { ...c, to: { ...c.to, live: true } } : c;
+    },
+    exportCompare(projectId: string, q: BoqCompareQuery, title: string): BoqCompareExportResponse {
+      const c = this.compare(projectId, q);
+      const fileName = `boq-changes-${projectId}.xls`;
+      const body = comparisonSpreadsheet(c, title);
+      const url =
+        typeof URL !== "undefined" && typeof URL.createObjectURL === "function" && typeof Blob !== "undefined"
+          ? URL.createObjectURL(new Blob([body], { type: "application/vnd.ms-excel" }))
+          : `https://mock.invalid/exports/${fileName}`;
+      return { exportId: `xc${(++seq).toString(36)}`, url, expiresAt: new Date(Date.now() + 2 * 60_000).toISOString(), fileName, fromBuildId: c.from.buildId, toBuildId: c.to.buildId };
+    },
+    /** Sprint 8: contracts BoqTotals over ALL lines (effective prices, project discount, org VAT). */
+    totals(projectId: string, vatRate: number, adjustmentPct: number | null): BoqTotals {
+      const ls = pricedLines(proj(projectId));
+      return computeBoqTotals({ linesTotal: ls.reduce((x, l) => x + (l.lineTotal ?? 0), 0), adjustmentPct, vatRate, pricedLines: ls.filter((l) => l.unitPrice !== null).length, unpricedLines: ls.filter((l) => l.unitPrice === null).length });
+    },
+    /** Sprint 8 (deletes): drop a project's BOQ state (project deleted). */
+    dropProject(projectId: string) {
+      projects.delete(projectId);
+    },
+    createImport(orgId: string, filename: string, mode: "library" | "prices" = "library", overwriteManualPrices = false, dryRun = false): CreateLibraryImportResponse {
+      if (dryRun && mode !== "prices") throw new ApiError(400, "validation_failed", "dryRun needs mode 'prices'");
       const ext = filename.toLowerCase().endsWith(".xlsx") ? "xlsx" : filename.toLowerCase().endsWith(".xls") ? "xls" : null;
       if (!ext) throw new ApiError(400, "unsupported_file", "xls/xlsx only");
-      const id = `imp${++seq}`;
+      // API: randomUUID (contracts ItemPrice.importId is a uuid)
+      const id = `00000000-0000-4000-8000-${(++seq).toString(16).padStart(12, "0")}`;
       const token = `tok-${id}`;
-      imports.set(id, { id, filename, status: "uploaded", progress: 0, jobId: null, result: null, error: null, token, uploaded: false, orgId });
+      imports.set(id, { id, filename, mode, overwriteManualPrices, dryRun, pricesAppliedAt: null, status: "uploaded", progress: 0, jobId: null, result: null, error: null, token, uploaded: false, orgId });
       return {
         importId: id,
         storagePath: `orgs/${orgId}/imports/${id}.${ext}`,
@@ -670,6 +875,28 @@ export function createBoqMock(deps: BoqMockDeps) {
         }
         if (pct < 100) return void Object.assign(im, { status: "running", progress: pct });
         clearInterval(timer);
+        if (im.mode === "prices") {
+          // Sprint 8 (Worker-BOQ, contracts planPriceImport): prices only; a MANUAL price is kept unless
+          // `overwriteManualPrices` (reported as a `manual_price` conflict); `stats.prices` = the report.
+          const lib = [...library.values()];
+          const { writes, report } = runPriceImport(lib, /noprice/i.test(im.filename) ? [] : demoPriceFile(lib), Boolean(im.overwriteManualPrices));
+          if (im.dryRun) {
+            // Integration: the report only — `planned` = what apply-prices will write (with each item's current price)
+            report.dryRun = true;
+            report.planned = writes.map((w) => {
+              const it = library.get(w.itemId)!;
+              return { itemId: w.itemId, code: it.code, amount: w.amount, current: it.price?.amount ?? null, currentSource: it.price?.source ?? null };
+            });
+          } else {
+            report.dryRun = false; // contracts: a direct report says so and has no `planned`
+            for (const w of writes) {
+              const it = library.get(w.itemId);
+              if (it) this.setPrice(it, w.amount, "import", undefined, im.id);
+            }
+          }
+          Object.assign(im, { status: "succeeded", progress: 100, result: { itemsAdded: 0, itemsUpdated: 0, chapters: 0, templateCreated: null, ambiguousCodes: [], prices: report } });
+          return;
+        }
         const hadDefault = [...templates.values()].some((t) => t.default);
         const added = ["4.25", "4.26", "4.27"].filter((c) => ![...library.values()].some((i) => i.code === c));
         const desc: Record<string, string> = { "4.25": "אספקה והתקנת לוח תקשורת ביחידת דיור", "4.26": "החלפת מפסק דוד קיים למפסק טיימר", "4.27": "צינור קוברה 50 מ\"מ למקרן תקרה" };

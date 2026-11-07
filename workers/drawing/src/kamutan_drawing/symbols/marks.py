@@ -47,6 +47,7 @@ class GlyphLibrary:
         self._all: np.ndarray | None = None
         self._offsets: np.ndarray = np.zeros(0, dtype=np.intp)
         self.sheet_cache: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+        self.colour_cache: dict[int, np.ndarray] = {}
         self.pair_memo: dict[tuple[bytes, bytes], tuple[float, str, str, float, float] | None] = {}
 
     def add(self, label: str, pts: np.ndarray) -> None:
@@ -115,10 +116,29 @@ class GlyphLibrary:
             self.sheet_cache = {key: got}
         return got
 
+    def sheet_colours(self, vs: VectorSheet) -> np.ndarray:
+        """One int per segment: its stroke RGB packed, computed once per sheet."""
+        key = id(vs.segs)
+        got = self.colour_cache.get(key)
+        if got is None:
+            rgb = vs.seg_rgb().astype(np.int64)
+            got = rgb[:, 0] * 65536 + rgb[:, 1] * 256 + rgb[:, 2] if len(rgb) else np.zeros(0, dtype=np.int64)
+            self.colour_cache = {key: got}
+        return got
 
-def _local_groups(segs: np.ndarray, idx: np.ndarray) -> list[Group]:
+
+def _local_groups(segs: np.ndarray, idx: np.ndarray, colour: np.ndarray | None = None) -> list[Group]:
+    """Glyph-sized stroke groups among ``idx``. With ``colour`` (one int per sheet segment) strokes of different
+    colours never join one group: a hatch pattern's crosses drawn over a word are not part of its glyphs (Sprint 8:
+    the green patio hatch merged into "2X" and the word read as "X6")."""
     if len(idx) == 0:
         return []
+    if colour is not None:
+        cols = colour[idx]
+        out: list[Group] = []
+        for c in np.unique(cols):
+            out.extend(_local_groups(segs, idx[cols == c]))
+        return out
     lab = segment_components(segs[idx], tol=0.08)
     return [g for g in groups_of(segs, lab, idx) if max(g.w, g.h) <= MAX_GLYPH_MM]
 
@@ -182,7 +202,7 @@ def read_marks_near(
     if exclude is not None:
         sel &= ~((mx >= exclude[0]) & (mx <= exclude[2]) & (my >= exclude[1]) & (my <= exclude[3]))
     idx = np.where(sel)[0]
-    gs = [g for g in _local_groups(s, idx) if max(g.w, g.h) >= 0.6]
+    gs = [g for g in _local_groups(s, idx, lib.sheet_colours(vs)) if max(g.w, g.h) >= 0.6]
     if len(gs) < 2:
         return []
     found: list[tuple[int, float, tuple[float, float]]] = []
@@ -195,6 +215,8 @@ def read_marks_near(
             dx, dy = b.cx - a.cx, b.cy - a.cy
             if math.hypot(dx, dy) > 1.9 * h:
                 continue
+            if _glyph_between(gs, a, b, h):
+                continue  # not a two-letter word: "2" and "0" of "H=240" with the "4" between them read as "3X"
             # the word's baseline may be at any angle (walls at 45°): read along it, both directions,
             # keep the better reading of the two (memoised: neighbouring sockets see the same glyph pairs)
             mkey = (a.segs.tobytes(), b.segs.tobytes())
@@ -213,6 +235,23 @@ def read_marks_near(
             elif "X" in word and dmin <= 0.6 * ACCEPT:
                 found.append((0, d, centre))  # n = 0: an X next to an unreadable glyph
     return found
+
+
+def _glyph_between(gs: list[Group], a: Group, b: Group, h: float) -> bool:
+    """Another glyph sits on the baseline between ``a`` and ``b`` (Sprint 8): the two are not one word."""
+    dx, dy = b.cx - a.cx, b.cy - a.cy
+    n2 = dx * dx + dy * dy
+    if n2 <= 1e-9:
+        return False
+    n = math.sqrt(n2)
+    for g in gs:
+        if g is a or g is b:
+            continue
+        ux, uy = g.cx - a.cx, g.cy - a.cy
+        t = (ux * dx + uy * dy) / n2
+        if 0.15 < t < 0.85 and abs(ux * dy - uy * dx) / n < 0.5 * h:
+            return True
+    return False
 
 
 def _read_pair(

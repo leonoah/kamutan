@@ -458,3 +458,40 @@ describe('firestore.indexes.json', () => {
     for (const i of idx.indexes) expect(COLLECTIONS as readonly string[]).toContain(i.collectionGroup);
   });
 });
+
+describe('Sprint 8 — deletes, prices, lines snapshots (static)', () => {
+  const PRJ_DOC = `${DOCS}/orgs/{orgId}/projects/{projectId}`;
+
+  it.each([
+    [PRJ_DOC, 'deletingAt'],
+    [`${PRJ_DOC}/sheetSets/{setId}`, 'deletedAt'],
+  ])('%s: get hides the delete tombstone, list = membership, every client write denied', (p, field) => {
+    const allows = fs.allows.filter((a) => a.path === p);
+    expect(allows.find((a) => a.methods.includes('get'))?.condition).toBe(`isMember(orgId) && !('${field}' in resource.data)`);
+    expect(allows.find((a) => a.methods.includes('list'))?.condition).toBe('isMember(orgId)');
+    expect(allows.some((a) => a.methods.includes('read'))).toBe(false);
+    const writes = allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)));
+    expect(writes.length).toBeGreaterThan(0);
+    for (const w of writes) expect(isDenyAll(w.condition), `${p} line ${w.line}`).toBe(true);
+  });
+
+  it('itemLibrary (prices) and shareLinks stay API-only for writes', () => {
+    for (const p of [`${DOCS}/orgs/{orgId}/itemLibrary/{itemId}`, `${PRJ_DOC}/shareLinks/{linkId}`]) {
+      const writes = fs.allows.filter((a) => a.path === p && a.methods.some((m) => WRITE_METHODS.has(m)));
+      expect(writes.length, p).toBeGreaterThan(0);
+      for (const w of writes) expect(isDenyAll(w.condition), p).toBe(true);
+    }
+  });
+
+  it('the per-build lines snapshot (carries prices) lands in exactly one deny-all storage match; model mirrors the API fields', () => {
+    const obj = paths.boqLinesSnapshot('o', 'p', 'b1');
+    expect(obj).toBe('orgs/o/projects/p/boq/b1/lines.json.gz');
+    const target = `/b/{bucket}/o/${obj}`;
+    const hits = st.matchPaths.filter((m) => m !== '/b/{bucket}/o/{allPaths=**}' && matchPathToRegExp(m).test(target));
+    expect(hits).toEqual([`${PROJ}/boq/{rest=**}`]);
+    for (const a of st.allows.filter((x) => x.path === hits[0])) expect(isDenyAll(a.condition)).toBe(true);
+    expect(BOQ_LINE_API_FIELDS).toEqual(expect.arrayContaining(['priceOverride', 'priceOverrideBy', 'priceOverrideAt', 'priceOverrideReason', 'descriptionOverride']));
+    // no storage rule allows a client delete anywhere (deletes are admin-SDK only)
+    expect(st.allows.filter((a) => a.methods.includes('delete') && !isDenyAll(a.condition))).toEqual([]);
+  });
+});

@@ -61,7 +61,8 @@
                   "note",
                   "rebuild",
                   "correction",
-                  "description"
+                  "description",
+                  "price"
                 ]
               },
               "before": {},

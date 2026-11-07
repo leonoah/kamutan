@@ -377,6 +377,17 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "linesRef": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -453,6 +464,61 @@
             },
             "blockExportOnRed": {
               "type": "boolean"
+            },
+            "totals": {
+              "type": "object",
+              "properties": {
+                "currency": {
+                  "type": "string",
+                  "enum": [
+                    "ILS"
+                  ]
+                },
+                "linesTotal": {
+                  "type": "number"
+                },
+                "adjustmentPct": {
+                  "type": "number"
+                },
+                "adjustment": {
+                  "type": "number"
+                },
+                "beforeVat": {
+                  "type": "number"
+                },
+                "vat": {
+                  "type": "number"
+                },
+                "afterVat": {
+                  "type": "number"
+                },
+                "vatRate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "pricedLines": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unpricedLines": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "currency",
+                "linesTotal",
+                "adjustmentPct",
+                "adjustment",
+                "beforeVat",
+                "vat",
+                "afterVat",
+                "vatRate",
+                "pricedLines",
+                "unpricedLines"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -1037,6 +1103,87 @@
                   {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priceOverride": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priceOverrideBy": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priceOverrideAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priceOverrideReason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "unitPrice": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "unitPriceSource": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "override",
+                      "library"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lineTotal": {
+                "anyOf": [
+                  {
+                    "type": "number"
                   },
                   {
                     "type": "null"

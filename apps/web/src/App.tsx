@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "@/api/types";
 import { RouterProvider } from "react-router-dom";
-import { BackendContext, createBackend } from "@/api/client";
+import { BackendContext } from "@/api/client";
 import type { Backend } from "@/api/types";
 import { Toaster } from "@/components/ui/toast";
 import { createRouter } from "@/routes/router";
@@ -35,8 +35,8 @@ export function Providers({ backend, queryClient, children }: { backend: Backend
   );
 }
 
-export function App() {
-  const [backend] = useState(createBackend);
+/** `backend` is created before the first render (main.tsx: the mock is a lazy chunk, see api/client.ts). */
+export function App({ backend }: { backend: Backend }) {
   const [qc] = useState(makeQueryClient);
   const [router] = useState(createRouter);
   return (

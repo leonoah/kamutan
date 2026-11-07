@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { BookMarked, FileSpreadsheet, Pencil, Search, Star, Upload } from "lucide-react";
+import { BadgeDollarSign, BookMarked, FileSpreadsheet, Pencil, Search, Star, Upload, X } from "lucide-react";
 import type { BoqRule, BoqTemplate, LibraryItem, Role } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import { className } from "@/features/understanding/taxonomy";
 import { useLibraryItems, usePatchLibraryItem, usePatchRule, useRules, useSetDefaultTemplate, useTemplates } from "@/features/boq/queries";
 import { ImportDialog } from "./ImportDialog";
 import { useReauthGate } from "@/features/auth/reauth";
+import { BulkPriceDialog, InlinePrice, PriceImportDialog } from "@/features/prices/LibraryPrices";
+import { canEditPrices } from "@/features/prices/model";
 
 type Tab = "items" | "templates" | "rules";
 
@@ -108,8 +110,27 @@ function ItemsTab({ orgId, role }: { orgId: string; role: Role }) {
     for (const i of items.data?.items ?? []) if (!m.has(i.chapter)) m.set(i.chapter, i.chapterTitle ?? i.chapter);
     return [...m.entries()].sort(([a], [b]) => compareCodes(a, b));
   }, [templates.data, items.data]);
-  const rows = useMemo(() => [...(items.data?.items ?? [])].sort((a, b) => compareCodes(a.code, b.code)), [items.data]);
+  // Sprint 8: prices — unpriced filter, selection for the bulk edit, price import
+  const [onlyUnpriced, setOnlyUnpriced] = useState(false);
+  const [priceImportOpen, setPriceImportOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const all = useMemo(() => [...(items.data?.items ?? [])].sort((a, b) => compareCodes(a.code, b.code)), [items.data]);
+  const unpricedCount = useMemo(() => all.filter((i) => i.active && !i.price).length, [all]);
+  const rows = useMemo(() => (onlyUnpriced ? all.filter((i) => !i.price) : all), [all, onlyUnpriced]);
   const canEdit = role === "admin" || role === "editor";
+  const canPrice = canEditPrices(role);
+  const checkedItems = useMemo(() => all.filter((i) => checked.has(i.id)), [all, checked]);
+  const allOn = rows.length > 0 && rows.every((i) => checked.has(i.id));
+  const toggle = (ids: string[], on: boolean) =>
+    setChecked((s) => {
+      const n = new Set(s);
+      for (const id of ids) {
+        if (on) n.add(id);
+        else n.delete(id);
+      }
+      return n;
+    });
 
   return (
     <div className="flex flex-col gap-4">
@@ -143,7 +164,39 @@ function ItemsTab({ orgId, role }: { orgId: string; role: Role }) {
             {t("library.import")}
           </Button>
         ) : null}
+        {canPrice ? (
+          <Button variant="secondary" onClick={() => setPriceImportOpen(true)}>
+            <BadgeDollarSign aria-hidden />
+            {t("prices.import.open")}
+          </Button>
+        ) : null}
       </div>
+      {unpricedCount || onlyUnpriced ? (
+        <div className="flex flex-wrap items-center gap-2 text-dense">
+          <span className="text-muted-foreground" data-library-unpriced>{t("prices.library.unpricedCount", { count: unpricedCount })}</span>
+          <button
+            type="button"
+            aria-pressed={onlyUnpriced}
+            onClick={() => setOnlyUnpriced((v) => !v)}
+            className={cn("inline-flex h-7 items-center rounded-sm border border-dashed border-muted-foreground/60 px-2 text-meta text-foreground hover:bg-muted", onlyUnpriced && "border-solid bg-muted font-medium")}
+          >
+            {t("prices.library.unpricedFilter")}
+          </button>
+        </div>
+      ) : null}
+      {canPrice && checked.size ? (
+        <div role="region" aria-label={t("prices.library.bulkTitle")} className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/[0.05] px-3 py-2 text-dense" data-library-bulk>
+          <span className="font-medium text-foreground">{t("prices.library.selected", { count: checked.size })}</span>
+          <Button size="sm" onClick={() => setBulkOpen(true)}>
+            <BadgeDollarSign aria-hidden />
+            {t("prices.library.bulkOpen")}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setChecked(new Set())}>
+            <X aria-hidden />
+            {t("prices.library.bulkClearSelection")}
+          </Button>
+        </div>
+      ) : null}
 
       {items.isError ? (
         <p role="alert" className="text-body text-destructive">{t("library.loadError")}</p>
@@ -165,9 +218,24 @@ function ItemsTab({ orgId, role }: { orgId: string; role: Role }) {
             <caption className="sr-only">{t("library.title")}</caption>
             <thead>
               <tr className="h-9 border-b border-border bg-surface-sunken text-meta text-muted-foreground">
+                {canPrice ? (
+                  <th scope="col" className="w-8 ps-3">
+                    <input
+                      type="checkbox"
+                      aria-label={t("prices.library.selectAll", { count: rows.length })}
+                      checked={allOn}
+                      ref={(el) => {
+                        if (el) el.indeterminate = !allOn && rows.some((i) => checked.has(i.id));
+                      }}
+                      onChange={() => toggle(rows.map((i) => i.id), !allOn)}
+                      className="size-3.5 accent-[rgb(var(--primary))]"
+                    />
+                  </th>
+                ) : null}
                 <th scope="col" className="w-20 px-3 text-start font-medium">{t("library.columns.code")}</th>
                 <th scope="col" className="px-3 text-start font-medium">{t("library.columns.desc")}</th>
                 <th scope="col" className="w-20 px-3 text-start font-medium">{t("library.columns.unit")}</th>
+                <th scope="col" className="w-36 px-3 text-end font-medium">{t("prices.library.column")}</th>
                 <th scope="col" className="hidden w-56 px-3 text-start font-medium md:table-cell">{t("library.columns.chapter")}</th>
                 <th scope="col" className="w-24 px-3 text-start font-medium">{t("library.columns.source")}</th>
                 <th scope="col" className="w-16 px-3 text-end font-medium">
@@ -177,7 +245,18 @@ function ItemsTab({ orgId, role }: { orgId: string; role: Role }) {
             </thead>
             <tbody>
               {rows.map((i) => (
-                <tr key={i.id} className={cn("border-b border-border last:border-0 hover:bg-surface-sunken/60", !i.active && "text-muted-foreground")}>
+                <tr key={i.id} data-item={i.code} data-checked={checked.has(i.id) || undefined} className={cn("border-b border-border last:border-0 hover:bg-surface-sunken/60", !i.active && "text-muted-foreground", checked.has(i.id) && "bg-primary/[0.05]")}>
+                  {canPrice ? (
+                    <td className="ps-3">
+                      <input
+                        type="checkbox"
+                        aria-label={t("prices.library.selectItem", { code: i.code })}
+                        checked={checked.has(i.id)}
+                        onChange={(e) => toggle([i.id], e.target.checked)}
+                        className="size-3.5 accent-[rgb(var(--primary))]"
+                      />
+                    </td>
+                  ) : null}
                   <td className="px-3 py-2 font-mono text-meta text-foreground">
                     <Ltr>{i.code}</Ltr>
                   </td>
@@ -186,6 +265,9 @@ function ItemsTab({ orgId, role }: { orgId: string; role: Role }) {
                     {!i.active ? <Badge className="ms-2">{t("library.inactive")}</Badge> : null}
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{i.unit}</td>
+                  <td className="px-3 py-1.5 text-end">
+                    <InlinePrice orgId={orgId} item={i} canEdit={canPrice} />
+                  </td>
                   <td className="hidden truncate px-3 py-2 text-muted-foreground md:table-cell">{i.chapterTitle ?? i.chapter}</td>
                   <td className="px-3 py-2">
                     <Badge variant={i.source === "import" ? "neutral" : "primary"}>
@@ -208,6 +290,8 @@ function ItemsTab({ orgId, role }: { orgId: string; role: Role }) {
       {rows.length ? <p className="text-meta text-muted-foreground">{t("library.count", { count: rows.length })}</p> : null}
       <EditItemDialog orgId={orgId} item={editing} onClose={() => setEditing(null)} />
       <ImportDialog orgId={orgId} open={importOpen} onOpenChange={setImportOpen} />
+      <PriceImportDialog orgId={orgId} open={priceImportOpen} onOpenChange={setPriceImportOpen} />
+      <BulkPriceDialog orgId={orgId} items={checkedItems} open={bulkOpen} onOpenChange={setBulkOpen} onDone={() => setChecked(new Set())} />
     </div>
   );
 }

@@ -97,3 +97,10 @@
     text-decoration: none;
   }
 }
+
+/* Sprint 8: navigation progress (code-split routes). Direction-neutral: the bar sweeps across in both RTL and LTR. */
+@keyframes nav-progress {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+[dir="rtl"] [data-nav-progress] > div { animation-direction: reverse; }

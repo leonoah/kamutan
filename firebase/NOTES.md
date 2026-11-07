@@ -198,3 +198,13 @@ storage write surface, index coverage.
 
 ## Sprint 7 (API agent)
 - `storage.rules`: explicit deny for `orgs/{o}/projects/{p}/infected/**` and `orgs/{o}/infected/**` (worker-moved ClamAV hits; the catch-all already denied them). No Firestore rule / index change: `sheetSets` `error.code` equality query uses the automatic single-field index.
+
+## Sprint 8 (API agent) — delete tombstones, prices, lines snapshots
+- `firestore.rules`: `projects/{p}` and `projects/{p}/sheetSets/{s}`: `get` = membership AND no delete tombstone
+  (`deletingAt` / `deletedAt`, written by the API's DELETE in its first transaction); `list` = membership (list rules
+  cannot depend on unfiltered `resource.data` fields; the docs are removed within the same request). Writes unchanged
+  (API-only). `itemLibrary.price`, `boqLines.priceOverride*`, `project.pricing` are API / worker-written only.
+- `storage.rules`: comment only — `projects/{p}/boq/**` also holds the per-build lines snapshots (`lines.json.gz`, carry
+  prices), deny-all; deletes use the admin SDK.
+- `model.ts`: Sprint 8 fields + `paths.boqLinesSnapshot`. Tests: `rules.lint.test.ts` "Sprint 8" (static) and
+  `firestore.rules.test.ts` "Sprint 8" (emulator / CI). No index change.

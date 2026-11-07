@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Eye, Hammer, Loader2, RefreshCw, X } from "lucide-react";
+import { ChevronLeft, Eye, GitCompareArrows, Hammer, Loader2, RefreshCw, X } from "lucide-react";
 import type { BoqLine, SheetRow } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { ConfidenceShape, levelFromDb } from "@/components/ConfidenceBadge";
@@ -18,6 +18,9 @@ import { LibraryNotice } from "@/features/boq/LibraryNotice";
 import { useCurrentOrg } from "@/features/org/useCurrentOrg";
 import { LineDescription } from "@/features/boq/LineDescription";
 import { canRenameLine, lineDescription } from "@/features/boq/sprint7";
+import { canEditPrices, effectivePrice, formatMoney, isPriceOverridden, isUnpriced, lineTotal, sumTotals, totalsOf } from "@/features/prices/model";
+import { ManualPriceMarker, PriceOverrideDialog, TotalsSummary, UnpricedChip } from "@/features/prices/PriceParts";
+import { usePricing } from "@/features/prices/queries";
 
 /**
  * Project hub — the BOQ column. One bill of quantities per project (that is how builds work), optionally
@@ -50,12 +53,24 @@ export function ProjectBoqSummary({
   const all = linesQ.data?.items ?? [];
   // Sprint 6: "להשלמה ידנית" filter (suggested lines waiting for a measure / count / confirm)
   const [onlyNeeds, setOnlyNeeds] = useState(false);
+  // Sprint 8: "ללא מחיר" filter + totals (the whole BOQ, or the sheet filter's lines)
+  const [onlyUnpriced, setOnlyUnpriced] = useState(false);
+  const [priceLine, setPriceLine] = useState<BoqLine | null>(null);
+  const pricing = usePricing(projectId);
+  const canPrice = canEditPrices(role);
   const bySheet = useMemo<BoqLine[]>(
     () => (filterSheet ? all.filter((l) => l.sourceVersions.some((s) => s.sheetId === filterSheet.sheet.id)) : all),
     [all, filterSheet],
   );
   const needsCount = useMemo(() => bySheet.filter(lineNeedsInput).length, [bySheet]);
-  const lines = useMemo(() => (onlyNeeds && needsCount ? bySheet.filter(lineNeedsInput) : bySheet), [bySheet, onlyNeeds, needsCount]);
+  const unpricedCount = useMemo(() => bySheet.filter(isUnpriced).length, [bySheet]);
+  const lines = useMemo(() => {
+    let out = onlyNeeds && needsCount ? bySheet.filter(lineNeedsInput) : bySheet;
+    if (onlyUnpriced && unpricedCount) out = out.filter(isUnpriced);
+    return out;
+  }, [bySheet, onlyNeeds, needsCount, onlyUnpriced, unpricedCount]);
+  // the API's totals over ALL lines; a sheet filter totals its own lines (same rules, contracts computeBoqTotals)
+  const totals = useMemo(() => (!filterSheet && linesQ.data?.totals ? linesQ.data.totals : totalsOf(bySheet, pricing)), [filterSheet, linesQ.data?.totals, bySheet, pricing]);
   const canQuick = canEditQty(role);
   const canRename = canRenameLine(role);
   const chapters = useMemo(() => groupByChapter(lines, linesQ.data?.chapters ?? []), [lines, linesQ.data?.chapters]);
@@ -90,6 +105,29 @@ export function ProjectBoqSummary({
           >
             {t("hub.needsInputOnly", { count: needsCount })}
           </button>
+        ) : null}
+        {buildId && unpricedCount ? (
+          <button
+            type="button"
+            aria-pressed={onlyUnpriced}
+            data-filter-unpriced
+            title={t("prices.noPriceFilter")}
+            onClick={() => setOnlyUnpriced((v) => !v)}
+            className={cn(
+              "inline-flex h-7 shrink-0 items-center whitespace-nowrap rounded-sm border border-dashed border-muted-foreground/60 px-2 text-meta text-foreground hover:bg-muted",
+              onlyUnpriced && "border-solid bg-muted font-medium",
+            )}
+          >
+            {t("prices.noPriceChip", { count: unpricedCount })}
+          </button>
+        ) : null}
+        {buildId ? (
+          <Button size="sm" variant="ghost" asChild>
+            <Link to={`/projects/${projectId}/boq/compare`} data-compare-link aria-label={t("compare.openFull")} title={t("compare.openFull")}>
+              <GitCompareArrows aria-hidden />
+              <span className="max-sm:sr-only">{t("compare.open")}</span>
+            </Link>
+          </Button>
         ) : null}
         {buildId ? (
           <Button size="sm" variant="ghost" asChild>
@@ -153,6 +191,10 @@ export function ProjectBoqSummary({
                   <span className="ms-auto text-meta text-muted-foreground">
                     <Ltr>{`${c.stats.pct}%`}</Ltr> · {t("hub.linesCount", { count: c.lines.length })}
                   </span>
+                  <span className="sr-only">{t("prices.chapterSubtotal")}</span>
+                  <span className="min-w-[5.5rem] text-end text-meta font-medium tabular text-foreground" data-chapter-subtotal={c.code}>
+                    <Ltr>{formatMoney(sumTotals(c.lines))}</Ltr>
+                  </span>
                 </summary>
                 <CoverageText c={coverageOf(c.lines)} className="block px-4 pb-1.5" />
                 <table className="w-full table-fixed text-dense">
@@ -163,6 +205,8 @@ export function ProjectBoqSummary({
                     <col />
                     <col className="w-14" />
                     <col className="w-16" />
+                    {/* phones: no total column (the description needs the width) — the total sits under it instead */}
+                    <col className="w-0 sm:w-[5.75rem]" />
                   </colgroup>
                   <thead className="sr-only">
                     <tr>
@@ -171,6 +215,7 @@ export function ProjectBoqSummary({
                       <th>{t("boq.columns.desc")}</th>
                       <th>{t("boq.columns.unit")}</th>
                       <th>{t("boq.columns.qty")}</th>
+                      <th className="max-sm:hidden">{t("prices.columnTotal")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -178,7 +223,7 @@ export function ProjectBoqSummary({
                       const waiting = lineNeedsInput(l);
                       const qa = waiting && canQuick ? quickActionOf(l) : null;
                       return (
-                      <tr key={l.id} data-code={l.code} data-line={l.id} data-needs-input={waiting || undefined} className="group/line h-8 border-t border-border/60 align-top hover:bg-surface-sunken/50">
+                      <tr key={l.id} data-code={l.code} data-line={l.id} data-needs-input={waiting || undefined} data-unpriced={isUnpriced(l) || undefined} className="group/line h-8 border-t border-border/60 align-top hover:bg-surface-sunken/50">
                         <td className="w-6 ps-4 pt-2.5">
                           <ConfidenceShape level={levelFromDb(l.level)} className="size-2.5" />
                         </td>
@@ -188,6 +233,7 @@ export function ProjectBoqSummary({
                         {/* Two lines, not one: lines like 3.02 / 3.03 / 3.11 differ only after the shared prefix (A-UI-17). */}
                         <td className="py-1.5 pe-2 text-foreground" title={lineDescription(l)}>
                           <LineDescription projectId={projectId} line={l} canEdit={canRename} variant="hub" />
+                          <HubPrice line={l} canEdit={canPrice} onEdit={setPriceLine} />
                           {waiting ? (
                             <span className="mt-1 flex flex-wrap items-center gap-1">
                               <NeedsInputChip />
@@ -217,6 +263,9 @@ export function ProjectBoqSummary({
                             <Ltr>{formatQuantity(effectiveQty(l), l.unit)}</Ltr>
                           )}
                         </td>
+                        <td className="py-1.5 pe-4 text-end tabular-nums text-foreground max-sm:hidden" data-line-total={l.id}>
+                          {lineTotal(l) === null ? <span aria-hidden className="text-muted-foreground">·</span> : <Ltr>{formatMoney(lineTotal(l))}</Ltr>}
+                        </td>
                       </tr>
                       );
                     })}
@@ -225,6 +274,7 @@ export function ProjectBoqSummary({
               </details>
             ))}
           </div>
+          <TotalsSummary totals={totals} compact className="border-t border-border px-4 py-2" />
           {state.data?.stale && canBuild ? (
             <footer className="flex items-center gap-2 border-t border-border px-4 py-2 text-meta text-muted-foreground">
               <span className="flex-1">{t("hub.boqStaleHint")}</span>
@@ -236,7 +286,48 @@ export function ProjectBoqSummary({
           ) : null}
         </>
       )}
+      <PriceOverrideDialog projectId={projectId} line={priceLine} onClose={() => setPriceLine(null)} />
     </section>
+  );
+}
+
+/** Unit price under the description: "× ₪ 120.00" (+ "✎ ידני") or "ללא מחיר"; editors click it to set the line's own. */
+function HubPrice({ line: l, canEdit, onEdit }: { line: BoqLine; canEdit: boolean; onEdit: (l: BoqLine) => void }) {
+  const { t } = useTranslation();
+  const p = effectivePrice(l);
+  const body = (
+    <>
+      {p === null ? (
+        <UnpricedChip />
+      ) : (
+        <span className="tabular">
+          <span aria-hidden>× </span>
+          <Ltr>{formatMoney(p)}</Ltr>
+        </span>
+      )}
+      {isPriceOverridden(l) ? <ManualPriceMarker /> : null}
+      {lineTotal(l) !== null ? (
+        <span className="font-medium text-foreground sm:hidden" data-line-total-mobile>
+          <span aria-hidden>= </span>
+          <Ltr>{formatMoney(lineTotal(l))}</Ltr>
+        </span>
+      ) : null}
+    </>
+  );
+  return (
+    <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground" data-hub-price={l.id}>
+      {canEdit ? (
+        <button type="button" onClick={() => onEdit(l)} className="inline-flex items-center gap-1.5 rounded-sm px-0.5 hover:bg-primary/10 hover:text-foreground">
+          {body}
+          <span className="sr-only"> — {t("prices.editPriceFor", { code: l.code })}</span>
+        </button>
+      ) : (
+        <>
+          {body}
+          <span className="sr-only">{p === null ? t("prices.noPriceOf", { code: l.code }) : t("prices.priceOf", { code: l.code, price: formatMoney(p) })}</span>
+        </>
+      )}
+    </span>
   );
 }
 

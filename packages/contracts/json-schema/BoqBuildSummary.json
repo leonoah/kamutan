@@ -1,0 +1,117 @@
+{
+  "$ref": "#/definitions/BoqBuildSummary",
+  "definitions": {
+    "BoqBuildSummary": {
+      "type": "object",
+      "properties": {
+        "buildId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed"
+          ]
+        },
+        "trigger": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "manual",
+                "auto"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lineCount": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasSnapshot": {
+          "type": "boolean"
+        },
+        "exportedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exportId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latest": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "buildId",
+        "status",
+        "trigger",
+        "createdAt",
+        "finishedAt",
+        "lineCount",
+        "hasSnapshot",
+        "exportedAt",
+        "exportId",
+        "latest"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BoqBuildSummary.json"
+}

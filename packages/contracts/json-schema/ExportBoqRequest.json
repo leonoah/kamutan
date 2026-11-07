@@ -35,6 +35,10 @@
           },
           "minItems": 1,
           "maxItems": 64
+        },
+        "includePrices": {
+          "type": "boolean",
+          "default": true
         }
       },
       "additionalProperties": false

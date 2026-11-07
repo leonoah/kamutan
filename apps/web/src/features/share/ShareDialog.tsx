@@ -37,13 +37,15 @@ export function ShareDialog({
   const links = useShareLinks(projectId, open);
   const create = useCreateShareLink(projectId);
   const revoke = useRevokeShareLink(projectId);
-  const ids = { label: useId(), recipient: useId(), days: useId(), tb: useId(), pdf: useId(), url: useId(), unm: useId() };
+  const ids = { label: useId(), recipient: useId(), days: useId(), tb: useId(), pdf: useId(), url: useId(), unm: useId(), prices: useId() };
   const [label, setLabel] = useState("");
   const [recipient, setRecipient] = useState("");
   const [days, setDays] = useState(String(SHARE_LINK_DEFAULT_DAYS));
   const [hideTitleBlock, setHideTitleBlock] = useState(true);
   const [allowPdf, setAllowPdf] = useState(false);
   const [includeUnmasked, setIncludeUnmasked] = useState(false);
+  // Sprint 8: prices are hidden from a shared BOQ unless the editor ticks "הצג מחירים" for this link.
+  const [showPrices, setShowPrices] = useState(false);
   const [touched, setTouched] = useState(false);
   const [created, setCreated] = useState<CreateShareLinkResponse | null>(null);
   const [confirm, setConfirm] = useState<ShareLink | null>(null);
@@ -56,6 +58,7 @@ export function ShareDialog({
     setHideTitleBlock(true);
     setAllowPdf(false);
     setIncludeUnmasked(false);
+    setShowPrices(false);
     setTouched(false);
     setCreated(null);
   };
@@ -81,6 +84,7 @@ export function ShareDialog({
         allowPdfDownload: allowPdf,
         // F-3: explicit opt-in only (sheets without a detected title block cannot be masked).
         ...(hideTitleBlock && includeUnmasked ? { includeUnmaskedSheets: true } : {}),
+        ...(showPrices ? { showPrices: true } : {}),
       });
       setCreated(r);
     } catch {
@@ -255,6 +259,13 @@ export function ShareDialog({
                 <input id={ids.pdf} type="checkbox" checked={allowPdf} onChange={(e) => setAllowPdf(e.target.checked)} className="size-4 accent-[rgb(var(--primary))]" />
                 {t("share.allowPdf")}
               </label>
+              <div className="flex flex-col gap-1">
+                <label htmlFor={ids.prices} className="inline-flex cursor-pointer items-center gap-2 text-dense text-foreground">
+                  <input id={ids.prices} type="checkbox" checked={showPrices} onChange={(e) => setShowPrices(e.target.checked)} aria-describedby={`${ids.prices}-h`} className="size-4 accent-[rgb(var(--primary))]" />
+                  {t("prices.share.showPrices")}
+                </label>
+                <p id={`${ids.prices}-h`} className="ps-6 text-meta text-muted-foreground">{t("prices.share.showPricesHint")}</p>
+              </div>
               <div>
                 <Button type="submit" disabled={create.isPending}>
                   <Link2 aria-hidden />
@@ -322,6 +333,7 @@ function ShareLinkRow({ link: l, canManage, onRevoke }: { link: ShareLink; canMa
           </span>
           {l.hideTitleBlock ? <span className="text-meta text-muted-foreground">· {t("share.noTitleBlock")}</span> : null}
           {l.allowPdfDownload ? <span className="text-meta text-muted-foreground">· {t("share.pdfAllowed")}</span> : null}
+          {l.showPrices ? <span className="text-meta text-muted-foreground" data-link-prices>· {t("prices.share.listBadge")}</span> : null}
         </div>
         {l.recipient ? (
           <bdi dir="auto" className="text-dense text-muted-foreground">

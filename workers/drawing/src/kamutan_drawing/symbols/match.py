@@ -11,7 +11,10 @@ For every template (one per distinct legend drawing):
    that land on ink (``coverage``);
 3. **reverse chamfer** — the drawing's ink inside the posed template box (strokes longer than
    the symbol excluded: walls, leaders) is mapped back into the template frame: extra ink
-   (a filled half circle where the template is hollow, a cross through a circle) costs;
+   (a filled half circle where the template is hollow, a cross through a circle) costs. Not
+   counted (Sprint 8): leader terminators (tiny filled dots / arrowheads — fill is compared by
+   area in :func:`fill_difference`) and the last leg of a leader that ends on such a dot inside
+   the symbol (a straight-line path that runs on well beyond the symbol: the note's leader);
 4. **non-maximum suppression** across all templates; the runner-up template at the same place
    is kept for the *margin*.
 
@@ -36,6 +39,8 @@ CAP_MM = 0.6
 MAX_POSES = 60_000
 CHUNK_POINTS = 1_500_000
 MIN_FWD_COV = 0.72
+TERMINATOR_MM = 0.8  # a filled path this small is a leader's dot / arrowhead, not symbol ink
+RUN_ON_MM = 1.0  # a leader's path reaches at least this far past the posed symbol box
 
 
 @dataclass
@@ -51,6 +56,11 @@ class Scene:
     fill_xy: np.ndarray = field(default_factory=lambda: np.zeros((0, 2)))  # centroids of filled paths
     fill_area: np.ndarray = field(default_factory=lambda: np.zeros(0))
     fill_tree: cKDTree | None = None
+    # Sprint 8: per kept segment — part of a leader terminator (tiny filled path); a straight segment of a
+    # straight-line path that ends on a terminator (a leader's last leg); its path's bbox. None = every ink counts
+    seg_terminator: np.ndarray | None = None
+    seg_leader_end: np.ndarray | None = None
+    seg_path_box: np.ndarray | None = None
 
     @property
     def n(self) -> int:
@@ -76,6 +86,22 @@ def build_scene(vs: VectorSheet, exclude: list[BBox], *, keep_mask: np.ndarray |
     fp = fp[areas[fp] < 50.0]  # walls are filled too; symbols are small
     pb = vs.path_bbox[fp].astype(np.float64)
     fxy = np.column_stack([(pb[:, 0] + pb[:, 2]) / 2, (pb[:, 1] + pb[:, 3]) / 2]) if len(fp) else np.zeros((0, 2))
+    # leader terminators / straight polylines (Sprint 8, see :func:`reverse`)
+    box = vs.path_bbox.astype(np.float64)
+    dim = np.maximum(box[:, 2] - box[:, 0], box[:, 3] - box[:, 1])
+    terminator = (vs.path_fill_mode > 0) & (dim <= TERMINATOR_MM)
+    curved = np.zeros(vs.n_paths, bool)
+    if len(vs.seg_kind):
+        curved[np.unique(vs.seg_path[vs.seg_kind != 0])] = True
+    sp = vs.seg_path[ids] if len(ids) else np.zeros(0, dtype=np.int64)
+    leader_end = np.zeros(len(ids), bool)
+    tp = np.where(terminator)[0]
+    if len(tp) and len(ids):
+        tt = cKDTree(np.column_stack([(box[tp, 0] + box[tp, 2]) / 2, (box[tp, 1] + box[tp, 3]) / 2]))
+        cand = ~curved[sp] & ~terminator[sp]
+        d0, _ = tt.query(segs[:, :2], k=1, distance_upper_bound=TERMINATOR_MM)
+        d1, _ = tt.query(segs[:, 2:], k=1, distance_upper_bound=TERMINATOR_MM)
+        leader_end = cand & (np.isfinite(d0) | np.isfinite(d1))
     return Scene(
         segs,
         ids,
@@ -88,6 +114,9 @@ def build_scene(vs: VectorSheet, exclude: list[BBox], *, keep_mask: np.ndarray |
         fill_xy=fxy,
         fill_area=areas[fp],
         fill_tree=cKDTree(fxy) if len(fp) else None,
+        seg_terminator=terminator[sp],
+        seg_leader_end=leader_end,
+        seg_path_box=box[sp],
     )
 
 
@@ -238,6 +267,15 @@ def reverse(tpl: Template, scene: Scene, center: np.ndarray, mat: np.ndarray, sc
         return CAP_MM, 0.0
     long_ = scene.seg_len[scene.pt_seg[idx]] > 1.6 * tpl.size * scale + 0.5
     idx = idx[~long_]
+    if len(idx) and scene.seg_terminator is not None and scene.seg_leader_end is not None and scene.seg_path_box is not None:
+        ps = scene.pt_seg[idx]
+        corners = np.array([[-tpl.w / 2, -tpl.h / 2], [tpl.w / 2, -tpl.h / 2], [tpl.w / 2, tpl.h / 2], [-tpl.w / 2, tpl.h / 2]])
+        q = corners @ mat.T + center
+        x0, y0 = q.min(axis=0) - RUN_ON_MM
+        x1, y1 = q.max(axis=0) + RUN_ON_MM
+        pb = scene.seg_path_box[ps]
+        runs_on = scene.seg_leader_end[ps] & ((pb[:, 0] < x0) | (pb[:, 1] < y0) | (pb[:, 2] > x1) | (pb[:, 3] > y1))
+        idx = idx[~(scene.seg_terminator[ps] | runs_on)]
     if len(idx) == 0:
         return 0.0, 1.0
     inv = np.linalg.inv(mat)

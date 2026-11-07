@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Ban, Check, FileImage, FileText, FileX2, Pause, Play, RotateCcw, UploadCloud, X } from "lucide-react";
 import { useBackend } from "@/api/client";
-import { DEFAULT_PROJECT_QUOTA_BYTES, type Backend, type FileKind, type Job } from "@/api/types";
+import { DEFAULT_PROJECT_QUOTA_BYTES, MAX_SHEETS_PER_PROJECT, type Backend, type FileKind, type Job } from "@/api/types";
 import { useProject } from "@/features/projects/queries";
 import { useCurrentOrg } from "@/features/org/useCurrentOrg";
 import { useLiveJobs } from "@/features/realtime/hooks";
@@ -248,6 +248,8 @@ function FileRow({
     switch (entry.errorCode) {
       case "quota":
         return entry.errorMessage ?? (quotaText ? t("upload.errorQuota", quotaText) : t("upload.errorQuotaShort"));
+      case "sheetLimit":
+        return entry.errorMessage ?? t("deletes.limitUpload", { max: MAX_SHEETS_PER_PROJECT });
       case "unsupported":
         return t("upload.errorUnsupported", { name: iso });
       case "too_large":

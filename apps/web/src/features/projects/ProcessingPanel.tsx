@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Trash2 } from "lucide-react";
 import { isSupersededSet, type Job, type SheetRow, type SheetSet } from "@/api/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -29,7 +29,7 @@ const KNOWN_STAGES = new Set([
  * Live processing view (S09-lite): Firestore listeners on jobs (orgId == X, projectId == Y),
  * the project's sheetSets and sheets/{id}/versions/{currentVersionId}.
  */
-export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId: string }) {
+export function ProcessingPanel({ orgId, projectId, onDeleteSet }: { orgId: string; projectId: string; onDeleteSet?: ((setId: string) => void) | undefined }) {
   const { t } = useTranslation();
   const jobs = useLiveJobs(orgId, projectId);
   const sets = useLiveSheetSets(orgId, projectId);
@@ -90,7 +90,7 @@ export function ProcessingPanel({ orgId, projectId }: { orgId: string; projectId
         {sets.data && sets.data.length > 0 ? (
           <ul className="divide-y divide-border" aria-label={t("project.sheetSets")}>
             {sets.data.map((s) => (
-              <SetRow key={s.id} set={s} replacesName={s.replacesSheetSetId ? (sets.data?.find((x) => x.id === s.replacesSheetSetId)?.name ?? null) : null} />
+              <SetRow key={s.id} set={s} replacesName={s.replacesSheetSetId ? (sets.data?.find((x) => x.id === s.replacesSheetSetId)?.name ?? null) : null} onDelete={onDeleteSet} />
             ))}
           </ul>
         ) : sets.isLoading ? (
@@ -140,7 +140,7 @@ function JobRow({ job, name, projectId }: { job: Job; name: string | null; proje
   );
 }
 
-function SetRow({ set, replacesName }: { set: SheetSet; replacesName: string | null }) {
+function SetRow({ set, replacesName, onDelete }: { set: SheetSet; replacesName: string | null; onDelete?: ((setId: string) => void) | undefined }) {
   const { t } = useTranslation();
   const superseded = isSupersededSet(set);
   const icon = superseded ? (
@@ -164,8 +164,20 @@ function SetRow({ set, replacesName }: { set: SheetSet; replacesName: string | n
           </span>
         ) : null}
       </span>
-      <span className="shrink-0 text-muted-foreground">
+      <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
         {t(`project.setStatus.${superseded ? "superseded" : set.status}`, { defaultValue: set.status })} · <Ltr>{formatDate(set.createdAt)}</Ltr>
+        {onDelete ? (
+          <button
+            type="button"
+            data-delete-set={set.id}
+            onClick={() => onDelete(set.id)}
+            aria-label={t("deletes.deleteSetFor", { name: set.name ?? set.id })}
+            title={t("deletes.deleteSet")}
+            className="ms-1 inline-flex size-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-4" aria-hidden />
+          </button>
+        ) : null}
       </span>
     </li>
   );

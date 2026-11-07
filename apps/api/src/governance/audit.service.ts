@@ -224,7 +224,7 @@ export function correctionSummaryHe(kind: string, cls: string | null, itemCode: 
 }
 
 /** Later step of ONE change first (an override that re-opened an approved line is listed above that status change). */
-const ACTION_RANK: Readonly<Record<string, number>> = { description: 5, qtyOverride: 4, note: 3, status: 2, rebuild: 1, correction: 0 };
+const ACTION_RANK: Readonly<Record<string, number>> = { price: 6, description: 5, qtyOverride: 4, note: 3, status: 2, rebuild: 1, correction: 0 };
 
 /**
  * Stage 10 (A-UI-06): total, stable order — newest first; equal timestamps: the later step of one change first
@@ -270,6 +270,17 @@ export function historyItemsOf(e: AuditEvent, by: (uid: string | null) => LineHi
       const summary = d.to === null ? `שחזור לנוסח המקורי · ${q(before)} → ${q(after)}${lib}` : `שינוי שם השורה · ${q(before)} → ${q(after)}${lib}`;
       const reason = !('qtyOverride' in a) && typeof a.reason === 'string' ? a.reason.slice(0, 500) : null;
       out.push({ at: e.at, by: who, action: 'description', before, after, reason, summary: summary.slice(0, 500), sourceId: src });
+    }
+    // Sprint 8: project unit price — before / after = the override values (null = the library price applies).
+    if (a.price && typeof a.price === 'object') {
+      const p = a.price as { from?: unknown; to?: unknown };
+      const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+      const m = (v: number | null) => (v === null ? 'מחיר הספרייה' : `₪${String(Math.round(v * 100) / 100)}`);
+      const before = num(p.from);
+      const after = num(p.to);
+      const summary = after === null ? `ביטול מחיר ידני · ${m(before)} → ${m(null)}` : `מחיר ידני · ${m(before)} → ${m(after)}`;
+      const reason = !('qtyOverride' in a) && !a.description && typeof a.reason === 'string' ? a.reason.slice(0, 500) : null;
+      out.push({ at: e.at, by: who, action: 'price', before, after, reason, summary, sourceId: src });
     }
   } else if (e.action === APPROVAL_INVALIDATED_ACTION) {
     // Stage 10 (A-API-06): the rebuild dropped an approved line to "נבדק" because its quantity changed.

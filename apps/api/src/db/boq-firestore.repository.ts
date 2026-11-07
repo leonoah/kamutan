@@ -19,12 +19,31 @@ import {
   type PatchBoqTemplateRequest,
   type PatchLibraryItemRequest,
   type ProcessingError,
+  type ProjectPricing,
   type StaleReason,
 } from '@kamutan/contracts';
 import { FieldPath, FieldValue, Timestamp, type DocumentData, type DocumentReference, type Firestore, type Query } from 'firebase-admin/firestore';
-import { approvalInvalidatedAudit, approvalsInvalidatedOf, planBatchStatus, planLinePatch, toBoqBuild, toBoqLine, toLibraryImport, toLibraryItem, toRule, toTemplate } from './boq-docs';
+import {
+  approvalInvalidatedAudit,
+  approvalsInvalidatedOf,
+  importPricesAudit,
+  importedPriceSkip,
+  isBoqExportDoc,
+  priceApplyBlocker,
+  planBatchStatus,
+  planLibraryItemPatch,
+  planLinePatch,
+  samePrice,
+  toBoqBuild,
+  toBoqExport,
+  toBoqLine,
+  toLibraryImport,
+  toLibraryItem,
+  toRule,
+  toTemplate,
+} from './boq-docs';
 import { isActive, ruleAudit } from './boq-memory.repository';
-import { BATCH_STATUS_CHUNK, MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BatchStatusResult, type BoqRepository } from './boq-repository';
+import { BATCH_STATUS_CHUNK, MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BatchStatusResult, type BoqRepository, type BulkPriceResult, type ImportedPriceResult } from './boq-repository';
 import type { FirestoreRepository } from './firestore.repository';
 import type { Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -77,12 +96,100 @@ export class FirestoreBoqRepository implements BoqRepository {
     return this.db.runTransaction(async (tx) => {
       const cur = await tx.get(ref);
       if (!cur.exists) return null;
+      const item = toLibraryItem(itemId, cur.data() as Doc);
+      if (!item) return null;
       const head = await this.core.auditHead(tx, orgId);
-      const upd = { ...patch, updatedAt: Timestamp.now(), updatedBy: actorUid };
+      const { upd, audit } = planLibraryItemPatch(item, patch, actorUid, Timestamp.now());
       tx.update(ref, upd);
-      this.core.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'itemLibrary', entityId: itemId, action: 'update', after: { fields: Object.keys(patch).sort(), active: patch.active ?? null } });
+      this.core.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'itemLibrary', entityId: itemId, action: 'update', after: audit });
       return toLibraryItem(itemId, { ...cur.data(), ...upd });
     });
+  }
+
+  async bulkSetLibraryPrices(orgId: string, entries: ReadonlyArray<{ itemId: string; amount: number | null }>, actorUid: string, batchId: string): Promise<BulkPriceResult> {
+    const out: BulkPriceResult = { updated: [], skipped: [] };
+    for (let i = 0; i < entries.length; i += BATCH_STATUS_CHUNK) {
+      const chunk = entries.slice(i, i + BATCH_STATUS_CHUNK);
+      const refs = chunk.map((e) => this.db.doc(fsPaths.libraryItem(orgId, e.itemId)));
+      // Retries re-run the closure: the chunk's result is collected locally and merged after the commit.
+      const part = await this.db.runTransaction(async (tx) => {
+        const res: BulkPriceResult = { updated: [], skipped: [] };
+        const snaps = await tx.getAll(...refs);
+        const head = await this.core.auditHead(tx, orgId);
+        const now = Timestamp.now();
+        snaps.forEach((snap, j) => {
+          const e = chunk[j] as { itemId: string; amount: number | null };
+          const cur = snap.exists ? toLibraryItem(e.itemId, snap.data() as Doc) : null;
+          if (!cur) return void res.skipped.push({ itemId: e.itemId, reason: 'not_found' });
+          if (samePrice(cur, e.amount)) return void res.skipped.push({ itemId: e.itemId, reason: 'unchanged' });
+          const { upd, audit } = planLibraryItemPatch(cur, { price: e.amount }, actorUid, now, batchId);
+          tx.update(refs[j] as DocumentReference, upd);
+          this.core.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'itemLibrary', entityId: e.itemId, action: 'update', after: audit });
+          res.updated.push({ itemId: e.itemId, code: cur.code, from: cur.price?.amount ?? null, to: e.amount });
+        });
+        return res;
+      });
+      out.updated.push(...part.updated);
+      out.skipped.push(...part.skipped);
+    }
+    return out;
+  }
+
+  async auditImportPrices(orgId: string, importId: string): Promise<boolean> {
+    const ref = this.db.doc(fsPaths.libraryImport(orgId, importId));
+    return this.db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const d = plain(snap.data());
+      if (!d || d.pricesAuditedAt) return false;
+      const ev = importPricesAudit(importId, toLibraryImport(importId, d));
+      if (!ev) return false;
+      const head = await this.core.auditHead(tx, orgId);
+      tx.update(ref, { pricesAuditedAt: Timestamp.now() });
+      this.core.writeAudit(tx, orgId, head, ev);
+      return true;
+    });
+  }
+
+  async claimPriceApply(orgId: string, importId: string, actorUid: string): Promise<LibraryImport | null> {
+    const ref = this.db.doc(fsPaths.libraryImport(orgId, importId));
+    return this.db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const d = plain(snap.data());
+      if (!d) return null;
+      const blocker = priceApplyBlocker(toLibraryImport(importId, d));
+      if (blocker) throw new RepoConflictError(blocker);
+      const now = Timestamp.now();
+      tx.update(ref, { pricesAppliedAt: now, pricesAppliedBy: actorUid });
+      return toLibraryImport(importId, { ...d, pricesAppliedAt: now, pricesAppliedBy: actorUid });
+    });
+  }
+
+  async writeImportedPrices(orgId: string, importId: string, entries: ReadonlyArray<{ itemId: string; amount: number; allowManual: boolean }>, actorUid: string): Promise<ImportedPriceResult> {
+    const out: ImportedPriceResult = { written: [], skipped: [] };
+    for (let i = 0; i < entries.length; i += BATCH_STATUS_CHUNK) {
+      const chunk = entries.slice(i, i + BATCH_STATUS_CHUNK);
+      const refs = chunk.map((e) => this.db.doc(fsPaths.libraryItem(orgId, e.itemId)));
+      const part = await this.db.runTransaction(async (tx) => {
+        const res: ImportedPriceResult = { written: [], skipped: [] };
+        const snaps = await tx.getAll(...refs);
+        const head = await this.core.auditHead(tx, orgId);
+        const now = Timestamp.now();
+        snaps.forEach((snap, j) => {
+          const e = chunk[j] as { itemId: string; amount: number; allowManual: boolean };
+          const cur = snap.exists ? toLibraryItem(e.itemId, snap.data() as Doc) : null;
+          const skip = importedPriceSkip(cur, e.amount, e.allowManual);
+          if (skip || !cur) return void res.skipped.push({ itemId: e.itemId, reason: skip ?? 'not_found' });
+          const { upd, audit } = planLibraryItemPatch(cur, { price: e.amount }, actorUid, now, undefined, importId);
+          tx.update(refs[j] as DocumentReference, upd);
+          this.core.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'itemLibrary', entityId: e.itemId, action: 'update', after: audit });
+          res.written.push({ itemId: e.itemId, overwroteManual: cur.price?.source === 'manual' });
+        });
+        return res;
+      });
+      out.written.push(...part.written);
+      out.skipped.push(...part.skipped);
+    }
+    return out;
   }
 
   // --- imports ---------------------------------------------------------------
@@ -341,6 +448,25 @@ export class FirestoreBoqRepository implements BoqRepository {
     }
   }
 
+  async listBuilds(orgId: string, projectId: string, limit: number) {
+    const snap = await this.db.collection(`orgs/${orgId}/projects/${projectId}/boqBuilds`).orderBy('createdAt', 'desc').limit(limit).get();
+    return snap.docs.map((d) => toBoqBuild(d.id, d.data() as Doc));
+  }
+
+  async setProjectPricing(orgId: string, projectId: string, adjustmentPct: number, actorUid: string): Promise<ProjectPricing | null> {
+    const ref = this.db.doc(fsPaths.project(orgId, projectId));
+    return this.db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists || (snap.data() as Doc).deletingAt) return null;
+      const from = ((snap.data() as Doc).pricing as Doc | undefined)?.adjustmentPct ?? 0;
+      const head = await this.core.auditHead(tx, orgId);
+      const now = Timestamp.now();
+      tx.update(ref, { pricing: { adjustmentPct, updatedBy: actorUid, updatedAt: now } });
+      this.core.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'projects', entityId: projectId, action: 'update_pricing', after: { projectId, from, to: adjustmentPct } });
+      return { adjustmentPct, updatedBy: actorUid, updatedAt: now.toDate().toISOString() };
+    });
+  }
+
   async markOrgStale(orgId: string, reason: StaleReason): Promise<number> {
     const snap = await this.db.collection(`orgs/${orgId}/projects`).select().get();
     for (let i = 0; i < snap.docs.length; i += 400) {
@@ -406,6 +532,20 @@ export class FirestoreBoqRepository implements BoqRepository {
   }
 
   // --- exports ---------------------------------------------------------------------
+  async latestBoqExport(orgId: string, projectId: string): Promise<BoqExport | null> {
+    return (await this.listBoqExports(orgId, projectId, 1))[0] ?? null;
+  }
+
+  async listBoqExports(orgId: string, projectId: string, limit: number): Promise<BoqExport[]> {
+    // Newest first; marked PDFs / comparison exports are skipped in code (≤ 200 recent records looked at).
+    const snap = await this.db.collection(`orgs/${orgId}/projects/${projectId}/exports`).orderBy('createdAt', 'desc').limit(200).get();
+    return snap.docs
+      .filter((d) => isBoqExportDoc(d.data() as Doc))
+      .slice(0, limit)
+      .map((d) => toBoqExport(d.id, d.data() as Doc))
+      .filter((x): x is BoqExport => x !== null);
+  }
+
   async createExport(orgId: string, projectId: string, doc: BoqExport): Promise<BoqExport> {
     const ref = this.db.doc(fsPaths.boqExport(orgId, projectId, doc.id));
     await this.db.runTransaction(async (tx) => {

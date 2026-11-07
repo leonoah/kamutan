@@ -31,6 +31,8 @@ import {
   normalizeDescriptionInput,
   type BatchLineStatusRequest,
   type BatchLineStatusResponse,
+  type PatchProjectPricingRequest,
+  type PatchProjectPricingResponse,
 } from '@kamutan/contracts';
 import { z } from 'zod';
 import { AccessService } from '../access/access.service';
@@ -47,6 +49,7 @@ import { assertExportAllowed } from './export-gate';
 import { ProjectStateService } from '../project-state/project-state.service';
 import { buildBoqDocument } from './boq-document';
 import { buildBoqWorkbook, floorsOf, type EvidenceGroup } from './excel';
+import { priceLines, totalsOf } from './pricing';
 
 const validId = (s: string) => DocIdSchema.safeParse(s).success;
 /** Sprint 7: role of a line rename / library rewrite = the role of a library item edit (LibraryService.patchItem). */
@@ -149,7 +152,8 @@ export class BoqService {
     const [project, org, all] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
     if (!project) throw notFound('project');
     await this.syncApprovalAudits(orgId, projectId, project);
-    const lines = all.sort(compareLines);
+    // Sprint 8: effective prices (override ?? library) + totals over ALL lines; library prices are read live.
+    const lines = priceLines(all, await this.boq.listLibraryItems(orgId, { active: true })).sort(compareLines);
     const filtered = lines.filter(
       (l) => (!q.chapter || chapterKey(l.chapter) === chapterKey(q.chapter)) && (!q.level || l.level === q.level) && (!q.status || l.status === q.status),
     );
@@ -172,6 +176,7 @@ export class BoqService {
         counts: countLines(lines),
         floors: floorsOf(lines),
         blockExportOnRed: org?.settings.blockExportOnRed ?? true,
+        totals: totalsOf(lines, project, org?.settings),
       },
       items,
       nextCursor: filtered.length > start + q.limit && items.length ? (items.at(-1) as BoqLine).id : null,
@@ -188,6 +193,10 @@ export class BoqService {
     if (req.qtyOverride !== undefined) {
       const role = await this.access.roleIn(user, orgId);
       if (!role || !['admin', 'editor'].includes(role)) throw forbidden('overriding a quantity requires the editor role');
+    }
+    if (req.priceOverride !== undefined) {
+      // Sprint 8: a project unit price is money → editor+ (same role as a library price edit).
+      await this.access.requireRole(user, orgId, LIBRARY_EDIT_ROLE);
     }
     if (req.description !== undefined || req.alsoUpdateLibrary !== undefined) {
       // Sprint 7: renaming a line (and the library item, "עדכן גם בספריית הסעיפים") is editor+ — the same role and MFA
@@ -208,9 +217,22 @@ export class BoqService {
     if (!line) throw notFound('line');
     if (req.alsoUpdateLibrary === true && typeof req.description === 'string') {
       const library = await this.renameLibraryItem(orgId, line, req.description, user.uid);
-      return { line, library };
+      return { line: await this.priced(orgId, line), library };
     }
-    return { line };
+    return { line: await this.priced(orgId, line) };
+  }
+
+  /** Sprint 8: one line with its effective price (response of PATCH / quick-measure). */
+  async priced(orgId: string, line: BoqLine): Promise<BoqLine> {
+    return priceLines([line], await this.boq.listLibraryItems(orgId, { active: true }))[0] as BoqLine;
+  }
+
+  /** Sprint 8: PATCH …/boq/pricing (editor+) — project discount (< 0) / markup (> 0) % of the BOQ totals; audited. */
+  async setPricing(user: AuthContext, projectId: string, req: PatchProjectPricingRequest): Promise<PatchProjectPricingResponse> {
+    const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
+    const pricing = await this.boq.setProjectPricing(orgId, projectId, req.adjustmentPct ?? 0, user.uid);
+    if (!pricing) throw notFound('project');
+    return { projectId, pricing };
   }
 
   /**
@@ -427,11 +449,13 @@ export class BoqService {
    * The ONE layout of the export (`BoqDocumentModel`) for the given options: the preview endpoint returns it, the xlsx
    * export writes its main sheet from it. Lines = all project lines (≤ 5000), sorted like everywhere else.
    */
-  private async prepareDocument(orgId: string, projectId: string, opts: { templateId?: string | undefined; split: 'summed' | 'byFloor'; markDraft: boolean; includeConfidence: boolean; chapters?: readonly string[] | null | undefined }) {
-    const [project, org, all] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
+  private async prepareDocument(orgId: string, projectId: string, opts: { templateId?: string | undefined; split: 'summed' | 'byFloor'; markDraft: boolean; includeConfidence: boolean; chapters?: readonly string[] | null | undefined; includePrices?: boolean }) {
+    const [project, org, all, items] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId), this.boq.listLibraryItems(orgId, { active: true })]);
     if (!project) throw notFound('project');
     await this.syncApprovalAudits(orgId, projectId, project);
-    const lines = all.sort(compareLines);
+    const lines = priceLines(all, items).sort(compareLines);
+    const includePrices = opts.includePrices ?? true;
+    const adjustmentPct = project.pricing?.adjustmentPct ?? 0;
     const template = await this.templateFor(orgId, opts.templateId);
     const latest = project.boq?.latestBuildId ?? null;
     const floorNames = Object.fromEntries(project.floors.map((f) => [f.code, f.name]));
@@ -452,22 +476,24 @@ export class BoqService {
       floorNames,
       buildId: latest,
       blockExportOnRed: org?.settings.blockExportOnRed ?? true,
+      includePrices,
+      adjustmentPct,
     });
-    return { project, org, lines, template, latest, floorNames, vatRate, date, doc };
+    return { project, org, lines, template, latest, floorNames, vatRate, date, doc, includePrices, adjustmentPct };
   }
 
   /** GET …/boq/document (viewer+): the export's layout for the preview, with the gate warnings (never 409). */
   async document(user: AuthContext, projectId: string, q: BoqDocumentQuery): Promise<BoqDocumentModel> {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'viewer');
-    const { doc } = await this.prepareDocument(orgId, projectId, { templateId: q.templateId, split: q.split, markDraft: q.markDraft, includeConfidence: q.confidence, chapters: q.chapters });
+    const { doc } = await this.prepareDocument(orgId, projectId, { templateId: q.templateId, split: q.split, markDraft: q.markDraft, includeConfidence: q.confidence, chapters: q.chapters, includePrices: q.prices });
     return doc;
   }
 
   // ------------------------------------------------------------------ export
   async export(user: AuthContext, projectId: string, req0: ExportBoqRequestInput): Promise<ExportBoqResponse> {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'editor');
-    const req = { split: req0.split ?? 'summed', markDraft: req0.markDraft ?? false, includeConfidence: req0.includeConfidence ?? true, templateId: req0.templateId, chapters: req0.chapters };
-    const { project, org, lines, template, latest, floorNames, vatRate, date, doc } = await this.prepareDocument(orgId, projectId, req);
+    const req = { split: req0.split ?? 'summed', markDraft: req0.markDraft ?? false, includeConfidence: req0.includeConfidence ?? true, templateId: req0.templateId, chapters: req0.chapters, includePrices: req0.includePrices ?? true };
+    const { project, org, lines, template, latest, floorNames, vatRate, date, doc, includePrices, adjustmentPct } = await this.prepareDocument(orgId, projectId, req);
     if (lines.length === 0) throw new ApiException(HttpStatus.CONFLICT, 'not_ready', 'the project has no BOQ lines yet; build the BOQ first');
     const counts = countLines(lines);
     // A red line a human has approved is handled (spec: "לבדיקה" = still needs a person); unapproved red lines and
@@ -491,6 +517,8 @@ export class BoqService {
         vatRate,
         floorNames,
         buildId: latest,
+        includePrices,
+        adjustmentPct,
       },
       doc,
     );
@@ -510,6 +538,7 @@ export class BoqService {
       sizeBytes: data.length,
       createdBy: user.uid,
       createdAt: date.toISOString(),
+      purpose: 'boq',
     });
     const signed = await this.storage.signExport(path, fileName, EXPORT_URL_TTL_SECONDS);
     this.logger.log({ orgId, projectId, exportId, lines: counts.lines, red: counts.red, yellow: counts.yellow }, 'boq exported');

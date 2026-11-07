@@ -975,6 +975,87 @@
                   "type": "null"
                 }
               ]
+            },
+            "priceOverride": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100000000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priceOverrideBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priceOverrideAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priceOverrideReason": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unitPrice": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unitPriceSource": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "override",
+                    "library"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lineTotal": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [

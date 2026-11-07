@@ -33,6 +33,14 @@ import {
   type PatchBoqRuleRequest,
   type PatchBoqTemplateRequest,
   type PatchLibraryItemRequest,
+  ApplyImportPricesRequestSchema,
+  ApplyImportPricesResponseSchema,
+  type ApplyImportPricesRequest,
+  type ApplyImportPricesResponse,
+  BulkLibraryPriceRequestSchema,
+  BulkLibraryPriceResponseSchema,
+  type BulkLibraryPriceRequest,
+  type BulkLibraryPriceResponse,
 } from '@kamutan/contracts';
 import type { Request } from 'express';
 import type { AuthContext } from '../auth/auth-context';
@@ -88,6 +96,18 @@ export class LibraryController {
     return this.svc.patchItem(user, q.orgId, itemId, body);
   }
 
+  /** Sprint 8: set / clear the price of up to 500 items at once (editor+). One audit event per changed item. */
+  @Post('prices')
+  @HttpCode(200)
+  @StrictRateLimit()
+  @RequireRole('editor', orgBody)
+  @ApiZodBody(BulkLibraryPriceRequestSchema)
+  @ApiZodResponse(200, BulkLibraryPriceResponseSchema)
+  @ApiErrors(400, 401, 403, 404, 429)
+  bulkPrices(@Body(zodPipe(BulkLibraryPriceRequestSchema)) body: BulkLibraryPriceRequest, @CurrentUser() user: AuthContext): Promise<BulkLibraryPriceResponse> {
+    return this.svc.bulkPrices(user, body);
+  }
+
   /** Reserve orgs/{orgId}/imports/{uuid}.{xls|xlsx}; upload there, then finalize. */
   @Post('imports')
   @StrictRateLimit()
@@ -114,6 +134,18 @@ export class LibraryController {
     @Req() req: Request,
   ): Promise<LibraryImportView> {
     return this.svc.finalizeImport(user, body.orgId, importId, traceparentFrom(req.headers.traceparent));
+  }
+
+  /** Sprint 8 integration: write a reviewed dry-run price import (planned + chosen manual overwrites). Audited. */
+  @Post('imports/:importId/apply-prices')
+  @HttpCode(200)
+  @StrictRateLimit()
+  @RequireRole('editor', orgBody)
+  @ApiZodBody(ApplyImportPricesRequestSchema)
+  @ApiZodResponse(200, ApplyImportPricesResponseSchema)
+  @ApiErrors(400, 401, 403, 404, 409, 429)
+  applyPrices(@Param('importId') importId: string, @Body(zodPipe(ApplyImportPricesRequestSchema)) body: ApplyImportPricesRequest, @CurrentUser() user: AuthContext): Promise<ApplyImportPricesResponse> {
+    return this.svc.applyPrices(user, importId, body);
   }
 
   @Get('imports/:importId')

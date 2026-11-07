@@ -28,6 +28,8 @@ export const API_ERROR_CODES = [
   'quota_exceeded',
   /** Sprint 7: the antivirus scan (worker, ClamAV) found malware in the upload — quarantined, never processed. */
   'file_infected',
+  /** Sprint 8 (SEC-14): ≤ 100 sheets per project (409, Hebrew `message` = `sheetLimitMessageHe`). */
+  'sheet_limit',
   'internal_error',
   'service_unavailable',
 ] as const;

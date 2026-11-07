@@ -132,8 +132,12 @@ describe('buildBoqWorkbook — client format (sample BOQ chapter 04 + 9.01)', ()
     expect(tot04.getCell(6).formula).toBe(`SUM(F${first04}:F${last04})`);
     const grand = rowWithText(ws, GRAND_TOTAL) as ExcelJS.Row;
     expect(grand.getCell(6).formula).toMatch(/^SUM\(F\d+,F\d+\)$/);
+    // Sprint 8: "מע"מ 18%" row between the totals; after VAT = before + VAT.
+    const vatRow = ws.getRow(grand.number + 1);
+    expect(vatRow.getCell(2).value).toBe('מע"מ 18%');
+    expect(vatRow.getCell(6).formula).toBe(`F${grand.number}*0.18`);
     const vat = rowWithText(ws, GRAND_TOTAL_VAT) as ExcelJS.Row;
-    expect(vat.getCell(6).formula).toBe(`F${grand.number}*(1+0.18)`);
+    expect(vat.getCell(6).formula).toBe(`F${grand.number}+F${grand.number + 1}`);
     // currency format of the sample on price / total cells and totals
     // written as `"₪"\ #,##0` (styles.xml); exceljs drops the escape when reading back
     for (const c of [r410.getCell(5), r410.getCell(6), vat.getCell(6)]) expect(c.numFmt).toMatch(/^"₪"\\? #,##0$/);
@@ -197,7 +201,7 @@ describe('buildBoqWorkbook — client format (sample BOQ chapter 04 + 9.01)', ()
       await buildBoqWorkbook({ projectName: 'P', date: new Date(), template, lines: ls, split: 'byFloor', markDraft: false, evidence: new Map(), vatRate: 0.17, floorNames: { first: 'קומת מגורים' } }),
     );
     const ws = wb.getWorksheet(MAIN_SHEET) as ExcelJS.Worksheet;
-    expect((rowWithText(ws, GRAND_TOTAL_VAT) as ExcelJS.Row).getCell(6).formula).toMatch(/\*\(1\+0\.17\)$/);
+    expect((rowWithText(ws, 'מע"מ 17%') as ExcelJS.Row).getCell(6).formula).toMatch(/\*0\.17$/);
     expect(rowWithText(ws, 'שקע בודד – מרתף')).toBeDefined();
     expect(rowWithText(ws, 'שקע בודד – קומת מגורים')).toBeDefined();
     const fh = rowsOf(wb.getWorksheet(FLOOR_SHEET) as ExcelJS.Worksheet)[0] as unknown[];
@@ -257,7 +261,7 @@ describe('buildBoqWorkbook — client format (sample BOQ chapter 04 + 9.01)', ()
     // the only formulas are ours (totals)
     const ws = wb.getWorksheet(MAIN_SHEET) as ExcelJS.Worksheet;
     ws.eachRow((r) => r.eachCell((c) => {
-      if (c.type === ExcelJS.ValueType.Formula) expect(c.formula).toMatch(/^(SUM\(|[A-Z]+\d+\*)/);
+      if (c.type === ExcelJS.ValueType.Formula) expect(c.formula).toMatch(/^(SUM\(|[A-Z]+\d+[*+][A-Z0-9.]+$)/);
     }));
   });
 });

@@ -1,4 +1,4 @@
-import { FILE_INFECTED_ERROR } from '@kamutan/contracts';
+import { FILE_INFECTED_ERROR, SHEET_LIMIT_ERROR } from '@kamutan/contracts';
 import type { Doc } from './mappers';
 
 /**
@@ -9,4 +9,9 @@ import type { Doc } from './mappers';
  */
 export const releasableBytes = (d: Doc): number => (typeof d.sizeBytes === 'number' && Number.isFinite(d.sizeBytes) && d.sizeBytes > 0 ? Math.round(d.sizeBytes) : 0);
 export const countedBytes = (d: Doc): number => (d.storageReleasedAt ? 0 : releasableBytes(d));
-export const isInfected = (d: Doc): boolean => !!d.error && typeof d.error === 'object' && (d.error as Doc).code === FILE_INFECTED_ERROR;
+/**
+ * Sets whose bytes are released without a delete: infected uploads (Sprint 7) and Sprint 8 sets the worker refused
+ * because the split would exceed 100 sheets per project (`sheet_limit`: never processed, nothing to keep).
+ */
+export const RELEASED_ERROR_CODES: readonly string[] = [FILE_INFECTED_ERROR, SHEET_LIMIT_ERROR];
+export const isInfected = (d: Doc): boolean => !!d.error && typeof d.error === 'object' && RELEASED_ERROR_CODES.includes(String((d.error as Doc).code));

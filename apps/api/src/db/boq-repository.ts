@@ -11,6 +11,7 @@ import type {
   PatchBoqTemplateRequest,
   PatchLibraryItemRequest,
   ProcessingError,
+  ProjectPricing,
   StaleReason,
 } from '@kamutan/contracts';
 
@@ -33,6 +34,29 @@ export interface BoqRepository {
   /** Transaction: RepoConflictError('exists') when the id is taken; audit `itemLibrary/create`. */
   createLibraryItem(orgId: string, item: Omit<ItemLibraryItem, 'updatedAt' | 'updatedBy'>, actorUid: string): Promise<ItemLibraryItem>;
   patchLibraryItem(orgId: string, itemId: string, patch: PatchLibraryItemRequest, actorUid: string): Promise<ItemLibraryItem | null>;
+  /**
+   * Sprint 8 bulk price edit: chunks of `BATCH_STATUS_CHUNK` items, one transaction each (items re-read inside it);
+   * one `itemLibrary/update {price, batchId}` audit event per changed item. Missing → `not_found`, same price → `unchanged`.
+   */
+  bulkSetLibraryPrices(orgId: string, entries: ReadonlyArray<{ itemId: string; amount: number | null }>, actorUid: string, batchId: string): Promise<BulkPriceResult>;
+  /**
+   * Sprint 8: once per succeeded import with `stats.prices` — appends `itemLibrary/import_prices {importId, mode, rows,
+   * applied, unchanged, unmatched, conflicts, skippedManual, overwriteManualPrices}` (actor = the uploader) and stamps
+   * `pricesAuditedAt` (transaction, idempotent). Returns true when it wrote the event.
+   */
+  auditImportPrices(orgId: string, importId: string): Promise<boolean>;
+  /**
+   * Integration (apply-prices): transaction — the import must be `succeeded`, `dryRun`, carry `stats.prices.planned`
+   * and not be applied yet (else RepoConflictError 'not_dry_run' | 'not_ready' | 'already_applied'); stamps
+   * `pricesAppliedAt/By`. null when the import does not exist.
+   */
+  claimPriceApply(orgId: string, importId: string, actorUid: string): Promise<LibraryImport | null>;
+  /**
+   * Integration: writes imported prices (`source: 'import'`, `importId`, by = the applying user), chunked transactions,
+   * every item re-read: missing / inactive → not_found; same amount → unchanged; manual price and not `allowManual` →
+   * manual_kept. One `itemLibrary/update {code, price {from, to, source}, importId}` audit event per write.
+   */
+  writeImportedPrices(orgId: string, importId: string, entries: ReadonlyArray<{ itemId: string; amount: number; allowManual: boolean }>, actorUid: string): Promise<ImportedPriceResult>;
 
   // --- imports ---------------------------------------------------------------
   createLibraryImport(orgId: string, doc: Omit<LibraryImport, 'id'> & { id: string }): Promise<LibraryImport>;
@@ -79,6 +103,13 @@ export interface BoqRepository {
   markStale(orgId: string, projectId: string, reason: StaleReason): Promise<void>;
   /** markStale for every project of the org (rule changes). */
   markOrgStale(orgId: string, reason: StaleReason): Promise<number>;
+  /** Sprint 8: the project's builds, newest first (createdAt desc), ≤ limit. */
+  listBuilds(orgId: string, projectId: string, limit: number): Promise<BoqBuild[]>;
+  /**
+   * Sprint 8: project `pricing.adjustmentPct` (null / 0 → 0) + stale-free audit `projects/update_pricing {from, to}`
+   * (transaction). null when the project is gone.
+   */
+  setProjectPricing(orgId: string, projectId: string, adjustmentPct: number, actorUid: string): Promise<ProjectPricing | null>;
 
   // --- lines ------------------------------------------------------------------
   /** All lines of the project (≤ MAX_BOQ_LINES), unsorted. */
@@ -105,6 +136,20 @@ export interface BoqRepository {
   // --- exports ----------------------------------------------------------------
   /** exports/{id} record + audit `exports/create` (one transaction). */
   createExport(orgId: string, projectId: string, doc: BoqExport): Promise<BoqExport>;
+  /** Sprint 8: the newest BOQ Excel export of the project (not marked PDFs, not comparison exports), or null. */
+  latestBoqExport(orgId: string, projectId: string): Promise<BoqExport | null>;
+  /** Integration: BOQ Excel exports of the project, newest first (≤ limit; no marked PDFs / comparisons). */
+  listBoqExports(orgId: string, projectId: string, limit: number): Promise<BoqExport[]>;
+}
+
+export interface ImportedPriceResult {
+  written: Array<{ itemId: string; overwroteManual: boolean }>;
+  skipped: Array<{ itemId: string; reason: 'not_found' | 'unchanged' | 'manual_kept' }>;
+}
+
+export interface BulkPriceResult {
+  updated: Array<{ itemId: string; code: string; from: number | null; to: number | null }>;
+  skipped: Array<{ itemId: string; reason: 'not_found' | 'unchanged' }>;
 }
 
 /** Lines per transaction of a bulk status change (each moved line = 1 update + 1 audit event + the audit head). */

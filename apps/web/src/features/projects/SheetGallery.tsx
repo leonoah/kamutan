@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { AlertCircle, ChevronLeft, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronLeft, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { SheetRow } from "@/api/types";
 import { Progress } from "@/components/ui/progress";
 import { SectionProgress } from "@/components/SectionProgress";
@@ -27,26 +28,46 @@ export function SheetGallery({
   rows,
   selectedId,
   onSelect,
+  setName,
+  onDeleteSet,
 }: {
   projectId: string;
   rows: SheetRow[];
   /** Sheet currently used to filter the BOQ column (hub ↔ BOQ coupling). */
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** Sprint 8: name of a sheet set (the file) — the tile menu deletes the whole set. */
+  setName?: (setId: string) => string;
+  /** Sprint 8 (editor+): delete the sheet set this sheet belongs to. */
+  onDeleteSet?: ((setId: string) => void) | undefined;
 }) {
   const { t } = useTranslation();
   return (
     <ul className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3" aria-label={t("hub.sheets")}>
       {rows.map((r) => (
         <li key={r.sheet.id}>
-          <SheetTile projectId={projectId} row={r} selected={selectedId === r.sheet.id} onSelect={onSelect} />
+          <SheetTile projectId={projectId} row={r} selected={selectedId === r.sheet.id} onSelect={onSelect} setName={setName?.(r.sheet.sheetSetId) ?? r.sheet.sheetSetId} onDeleteSet={onDeleteSet} />
         </li>
       ))}
     </ul>
   );
 }
 
-function SheetTile({ projectId, row, selected, onSelect }: { projectId: string; row: SheetRow; selected: boolean; onSelect: (id: string | null) => void }) {
+function SheetTile({
+  projectId,
+  row,
+  selected,
+  onSelect,
+  setName,
+  onDeleteSet,
+}: {
+  projectId: string;
+  row: SheetRow;
+  selected: boolean;
+  onSelect: (id: string | null) => void;
+  setName: string;
+  onDeleteSet?: ((setId: string) => void) | undefined;
+}) {
   const { t } = useTranslation();
   const name = sheetName(row);
   const state = sheetState(row);
@@ -109,8 +130,29 @@ function SheetTile({ projectId, row, selected, onSelect }: { projectId: string; 
         </span>
       </button>
 
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <h3 className="min-w-0 text-body font-medium text-foreground">
+      <div className="relative flex flex-1 flex-col gap-2 p-3">
+        {onDeleteSet ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-tile-menu={row.sheet.id}
+                aria-label={t("deletes.setMenu", { name })}
+                className="absolute end-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <MoreHorizontal className="size-4" aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onDeleteSet(row.sheet.sheetSetId)} className="text-destructive" data-delete-set={row.sheet.sheetSetId}>
+                <Trash2 className="size-4" aria-hidden />
+                {t("deletes.deleteSet")}
+                <span className="sr-only"> · {setName}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+        <h3 className={cn("min-w-0 text-body font-medium text-foreground", onDeleteSet && "pe-7")}>
           {openable ? (
             <Link to={analyzeHref} className="rounded outline-none hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-primary">
               <bdi className="line-clamp-2">{name}</bdi>

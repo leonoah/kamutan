@@ -18,6 +18,16 @@ Orchestrator side (holds the identity, never parses): the workbook is parsed onl
   org has no template (the API normally seeds the sample's template at bootstrap).
 * ``libraryImports/{importId}`` (API-created) gets ``status`` / ``stats {items, created, updated, templates}`` /
   ``error``; ``jobs/{jobId}`` gets status / progress / result.
+* **Sprint 8 — prices** (contracts ``prices.ts``). Unit prices of the file (parser: the "מחיר יח'" / "מחיר" / "₪"
+  column, else row total / qty) are planned against the library *after* the upsert with :mod:`.prices` (mirror of
+  ``planPriceImport``) and the planned ``itemLibrary/{id}.price`` written (``source: 'import'``, ``importId``, ``by`` =
+  the import's ``createdBy``); a ``manual`` price is never replaced unless the job's ``overwriteManualPrices``.
+  Report = ``stats.prices`` (``PriceImportReport``: rows / matched / applied / unchanged / unmatched / conflicts /
+  skippedManual + the unmatched and conflict rows, ≤ 500 each; ``priceColumn`` extra). Job ``mode: 'prices'`` = prices
+  only: no item / template / default-deactivation writes. Mode ``library`` reports only when the file has a price
+  column (``stats.prices: null`` otherwise). ``dryRun`` (only with mode ``prices``; job, else the import doc): the
+  full report + ``planned`` (the plan's writes with each item's current price) and ``dryRun: true``, no price write;
+  the API applies it (``POST /v1/library/imports/:id/apply-prices``).
 """
 
 from __future__ import annotations
@@ -37,7 +47,9 @@ from ..errors import IngestError
 from ..sandbox.runner import Limits, run_task
 from ..service.scan import Scanner, infected_error, infected_mark, quarantine, scan_upload, scanner_from_env
 from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
+from .ids import item_id
 from .parse import norm
+from .prices import PLANNED_MAX, clean_rows, plan_price_import
 from .readers import sniff
 
 log = logging.getLogger(__name__)
@@ -50,6 +62,7 @@ DEFAULT_TEMPLATE_NAME = "תבנית ברירת מחדל (לפי כתב הכמו�
 DEFAULT_VAT = 0.18
 DEFAULT_UNIT = "יחידה"
 COLUMN_KEYS = ("code", "description", "unit", "qty", "unitPrice", "total")
+IMPORT_MODES = ("library", "prices")
 _CODE_RE = re.compile(r"^[0-9A-Za-z.\-/]{1,32}$")
 
 
@@ -67,6 +80,8 @@ class ImportOutcome:
     sha256: str | None = None
     parsed: dict[str, Any] | None = None
     defaults_deactivated: int = 0
+    mode: str = "library"
+    price_report: dict[str, Any] | None = None  # contracts PriceImportReport (None: no price column, mode library)
 
     def stats(self) -> dict[str, Any]:
         return {
@@ -78,14 +93,9 @@ class ImportOutcome:
             "ambiguousCodes": self.ambiguous_codes[:1000],
             "defaultsDeactivated": self.defaults_deactivated,
             "templateName": self.template_name,
+            "mode": self.mode,
+            "prices": self.price_report,
         }
-
-
-def item_id(code: str, description: str) -> str:
-    """contracts ``itemIdFor`` (byte-identical; tested against the TS implementation's output)."""
-    slug = re.sub(r"[^A-Za-z0-9_-]", "-", code.strip())
-    h = hashlib.sha256(f"{code.strip()}\n{norm(description)}".encode()).hexdigest()[:16]
-    return f"it_{slug}_{h}"
 
 
 def _list(docs: DocStore, collection: str) -> list[tuple[str, dict[str, Any]]]:
@@ -170,6 +180,15 @@ def infected_import_path(job: LibraryImportJob, sha256: str) -> str:
     return f"orgs/{job.orgId}/infected/imports/{job.importId}/{sha256}.bin"
 
 
+def import_mode(*docs_: dict[str, Any] | None) -> str:
+    """``mode`` of the import doc when the job does not carry one (contracts: the job's ``mode`` wins); else ``library``."""
+    for d in docs_:
+        m = (d or {}).get("mode")
+        if m in IMPORT_MODES:
+            return str(m)
+    return "library"
+
+
 def _run(
     job: LibraryImportJob,
     blobs: BlobStore,
@@ -212,9 +231,45 @@ def _run(
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
-    out = write_library(job.orgId, job.importId, parsed, docs)
+    imp_doc = docs.get(mark_paths[-1]) if len(mark_paths) > 1 else None
+    mode = job.mode or import_mode(imp_doc)
+    overwrite = (
+        job.overwriteManualPrices
+        if job.overwriteManualPrices is not None
+        else bool((imp_doc or {}).get("overwriteManualPrices") is True)
+    )
+    if mode == "prices":
+        out = ImportOutcome("succeeded", parsed=parsed)
+    else:
+        out = write_library(job.orgId, job.importId, parsed, docs)
+    out.mode = mode
     out.sha256 = sha
+    # dryRun only with mode `prices` (contracts): the job validator rejects it otherwise; the import doc's flag counts
+    # only for a `prices` import
+    dry = job.dryRun if job.dryRun is not None else (mode == "prices" and (imp_doc or {}).get("dryRun") is True)
+    if mode == "prices" or parsed.get("priceColumn"):
+        by = (imp_doc or {}).get("createdBy")
+        apply_prices(out, job.orgId, job.importId, parsed, docs, overwrite=overwrite,
+                     by=by if isinstance(by, str) else None, dry_run=dry)  # fmt: skip
     return out
+
+
+def apply_prices(out: ImportOutcome, org_id: str, import_id: str, parsed: dict[str, Any], docs: DocStore, *,
+                 overwrite: bool, by: str | None, dry_run: bool = False) -> None:  # fmt: skip
+    """Sprint 8: plan the file's prices against the library as it is now (contracts ``planPriceImport``) and write the
+    planned ``itemLibrary/{id}.price {amount, currency: ILS, updatedAt, by: the uploader, source: import, importId}``
+    (merge: nothing else of the item changes). Report → ``stats.prices``. ``dry_run``: the same report (``dryRun:
+    true``, entries with ``status: 'apply'`` = what would be written), no price write — the API applies it later."""
+    base = f"orgs/{org_id}/itemLibrary"
+    plan = plan_price_import(_list(docs, base), clean_rows(parsed.get("priceRows")), overwrite_manual=overwrite)
+    for iid, amount in [] if dry_run else plan.writes:
+        price = {"amount": amount, "currency": "ILS", "updatedAt": SERVER_TIMESTAMP, "by": by, "source": "import",
+                 "importId": import_id}  # fmt: skip
+        docs.set(f"{base}/{iid}", {"price": price, "updatedAt": SERVER_TIMESTAMP})
+    pc = parsed.get("priceColumn")
+    out.price_report = {**plan.report, "dryRun": dry_run, "priceColumn": pc if pc in ("unitPrice", "total") else None}
+    if dry_run:  # what apply-prices writes (contracts `planned`)
+        out.price_report["planned"] = plan.planned[:PLANNED_MAX]
 
 
 def _mark(doc: dict[str, Any] | None) -> dict[str, object] | None:

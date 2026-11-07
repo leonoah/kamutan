@@ -261,7 +261,7 @@ describe('Sprint 5 e2e — line history, audit log + verify, marked PDF, org set
     });
 
     it('validates ranges and keys: greenThreshold 0.9–0.995, strict body, at least one field', async () => {
-      for (const body of [{ greenThreshold: 0.5 }, { greenThreshold: 0.999 }, { greenThreshold: 'x' }, { vatRate: 0.2 }, {}, { llmEnabled: 'yes' }]) {
+      for (const body of [{ greenThreshold: 0.5 }, { greenThreshold: 0.999 }, { greenThreshold: 'x' }, { vatRate: 0.6 }, { vatRate: -0.1 }, {}, { llmEnabled: 'yes' }]) {
         const r = await http.patch(`${O()}/settings`).set(auth('admin')).send(body);
         expect(r.status, JSON.stringify(body)).toBe(400);
       }

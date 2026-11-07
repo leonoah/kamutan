@@ -141,4 +141,21 @@ def read_marks(
                 log.warning("height-mark OCR failed", exc_info=True)
                 return out
         out[k] = parse_marks("\n".join(texts))
+        if out[k].empty:  # Sprint 8 (Worker-LLM) hook — keep: unparsed box → llm_gateway.hard_text (no-op when off)
+            out[k] = _llm_mark(s, box) or out[k]
     return out
+
+
+def _llm_mark(s: np.ndarray, box: tuple[float, float, float, float]) -> Marks | None:
+    """The page's LLM session (``llm_gateway.hard_text``): pass 1 records the stroke render as a ``mark`` crop,
+    pass 2 returns its reading. None when no session is active (the default) or nothing usable was read."""
+    from ..llm_gateway import hard_text
+
+    sess = hard_text.current()
+    if sess is None:
+        return None
+    txt = sess.mark(box, _render(s, box, 0))
+    if not txt:
+        return None
+    mk = parse_marks(txt)
+    return None if mk.empty else mk

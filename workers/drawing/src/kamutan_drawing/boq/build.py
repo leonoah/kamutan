@@ -9,8 +9,11 @@ it), ``legendEntries`` (confirmed classes / item codes win, ignored entries drop
 
 Outputs:
 * ``orgs/{o}/projects/{p}/boq/{buildId}/evidence.json.gz`` (``kamutan.boq-evidence/1``);
+* Sprint 8: ``orgs/{o}/projects/{p}/boq/{buildId}/lines.json.gz`` (``kamutan.boq-lines/1``, :mod:`.snapshot`): the
+  lines as the build left them (effective description / qty, price when known, byFloor, per-version attribution);
+  path in the build doc's ``linesRef``;
 * ``boqLines/{lineId}`` upserted. Fields in :data:`PRESERVED` (status + review / approval stamps, qtyOverride +
-  reason/by/at, descriptionOverride + by/at/reason, note, locked) are never overwritten, and re-read right before
+  reason/by/at, descriptionOverride + by/at/reason, priceOverride + by/at/reason, note, locked) are never overwritten, and re-read right before
   each line is written (a PATCH landing during the build survives). A line whose computed qty differs from the qty it had when
   it was approved keeps its status but gets the chip ``הכמות השתנתה מאז האישור`` and level red (worker
   bookkeeping ``approvedQty`` / ``approvedQtyAt``; cleared on re-approval or when the qty returns).
@@ -36,12 +39,14 @@ from ..calibration import RASTER_REASONS, clean_green_threshold, default_table
 from ..errors import IngestError
 from ..pipeline.artifacts import version_prefix
 from ..pipeline.ceiling import cap_document
+from ..service.gone import JobDropped, ensure_alive, log_dropped
 from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
 from .aggregate import Line, Result, SheetInput, aggregate
 from .contracts import EVIDENCE_SCHEMA, BoqBuildJob, parse_links
 from .corrections import Correction, OldDetections, parse_corrections
 from .coverage import coverage
 from .rules import FIXTURE_CLASSES, LABEL_RECLASS, R_OBSOLETE, R_QTY_CHANGED, Library, Rule, load_rules, seed_rules
+from .snapshot import build_snapshot, lines_path, snapshot_bytes
 from .textitems import legend_boxes, parse_text_items
 
 log = logging.getLogger(__name__)
@@ -72,8 +77,16 @@ PRESERVED = (
     "descriptionOverrideBy",
     "descriptionOverrideAt",
     "descriptionOverrideReason",
+    # Sprint 8: the project's unit price of the line (API PATCH, editor+). Never written or cleared by the worker.
+    "priceOverride",
+    "priceOverrideBy",
+    "priceOverrideAt",
+    "priceOverrideReason",
     "locked",
 )
+# Sprint 8: preserved fields the published contracts (BOQ_LINE_PRESERVED_FIELDS) may not list yet — the mirror test
+# tolerates exactly these until packages/contracts publishes them (then it is strict again).
+PENDING_CONTRACT_FIELDS = ("priceOverride", "priceOverrideBy", "priceOverrideAt", "priceOverrideReason")
 MAX_ATTEMPTS = 5
 TEXT_ITEMS_FILE = "text_items.json.gz"  # Worker-Text (Sprint 6), under the version prefix
 GEOMETRY_FILE = "geometry.json.gz"  # Worker-Geometry (Sprint 6), under the version prefix
@@ -92,6 +105,7 @@ class Inputs:
     room_settings: dict[str, dict[str, Any]] = field(default_factory=dict)
     old_detections: OldDetections | None = None
     capped: dict[str, int] = field(default_factory=dict)  # stored greens lowered by the current calibration table
+    library_rows: list[tuple[str, dict[str, Any]]] = field(default_factory=list)  # Sprint 8: raw docs (prices)
 
 
 @dataclass
@@ -101,6 +115,8 @@ class BuildOutcome:
     stats: dict[str, Any] = field(default_factory=dict)
     evidence_ref: str | None = None
     lines: dict[str, dict[str, Any]] = field(default_factory=dict)
+    lines_ref: str | None = None  # Sprint 8: boq/{buildId}/lines.json.gz
+    snapshot: dict[str, Any] | None = None
 
 
 def _list(docs: DocStore, collection: str) -> list[tuple[str, dict[str, Any]]]:
@@ -123,7 +139,8 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
     if seed:
         seed_rules(docs, org_id)
     rules = load_rules(docs, org_id)
-    library = Library.from_docs(_list(docs, f"orgs/{org_id}/itemLibrary"))
+    library_rows = _list(docs, f"orgs/{org_id}/itemLibrary")
+    library = Library.from_docs(library_rows)
     entries = {eid: e for eid, e in _list(docs, f"{proj}/legendEntries") if isinstance(e, dict)}
     mappings = {sig: m for sig, m in _list(docs, f"orgs/{org_id}/symbolMappings") if isinstance(m, dict)}
     sheets: list[SheetInput] = []
@@ -258,7 +275,8 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
             )
         return cache[(sheet_id, version_id)]
 
-    return Inputs(sheets, rules, library, entries, mappings, skipped, corrections, ccounts, settings, old_detections, capped)
+    return Inputs(sheets, rules, library, entries, mappings, skipped, corrections, ccounts, settings, old_detections, capped,
+                  library_rows)  # fmt: skip
 
 
 def retarget_superseded(corrections: list[Correction], superseded: dict[str, str | None], loaded: set[str]) -> list[Correction]:
@@ -391,10 +409,11 @@ def upsert_lines(docs: DocStore, proj: str, lines: list[Line], build_id: str, ev
 
 def has_human_marks(line: dict[str, Any]) -> bool:
     """Human work on a line (an obsolete line with any of it is kept at qty 0, red — never deleted): a qty override
-    (0 is a valid override), a renamed description, a note or a lock."""
+    (0 is a valid override), a renamed description, a price override (Sprint 8), a note or a lock."""
     return (
         line.get("qtyOverride") is not None
         or line.get("descriptionOverride") is not None
+        or line.get("priceOverride") is not None
         or bool(line.get("note"))
         or bool(line.get("locked"))
     )
@@ -491,6 +510,7 @@ def build_project(org_id: str, project_id: str, build_id: str, blobs: BlobStore,
     )
     corr = res.stats.get("corrections") or {}
     corr_ev = {"applied": list(corr.get("appliedIds") or []), "unmatched": list(corr.get("unmatchedList") or [])}
+    ensure_alive(docs, proj)  # Sprint 8: a project deleted while aggregating gets no evidence / snapshot / lines
     ev_path = evidence_path(org_id, project_id, build_id)
     blobs.write(
         ev_path,
@@ -498,8 +518,13 @@ def build_project(org_id: str, project_id: str, build_id: str, blobs: BlobStore,
         "application/gzip",
         cache_control="private, max-age=31536000, immutable",
     )
+    ensure_alive(docs, proj)
     up = upsert_lines(docs, proj, res.lines, build_id, ev_path)
     written, counts = up.written, up.counts
+    snap = build_snapshot(project_id, build_id, up.all_lines, res.lines, inp.library_rows, inp.sheets, inp.skipped_sheets)
+    snap_raw = snapshot_bytes(snap)
+    ln_path = lines_path(org_id, project_id, build_id)
+    blobs.write(ln_path, snap_raw, "application/gzip", cache_control="private, max-age=31536000, immutable")
     stats = {
         "lines": len(res.lines),
         "green": sum(1 for d in written.values() if d.get("level") == "green"),
@@ -536,8 +561,9 @@ def build_project(org_id: str, project_id: str, build_id: str, blobs: BlobStore,
         "durationMs": int((time.monotonic() - t0) * 1000),
         "calibration": default_table().stats(),
         "projectStats": project_line_stats(up.all_lines),
+        "linesSnapshot": {"lines": len(snap["lines"]), "bytes": len(snap_raw)},
     }
-    return BuildOutcome("succeeded", res, stats, ev_path, written)
+    return BuildOutcome("succeeded", res, stats, ev_path, written, ln_path, snap)
 
 
 def project_line_stats(lines: dict[str, dict[str, Any]]) -> dict[str, int]:
@@ -619,10 +645,21 @@ def run_boq_build(job: BoqBuildJob, blobs: BlobStore, docs: DocStore) -> BuildOu
     bd = docs.get(build_path)
     if bd is None:
         raise IngestError(E.INVALID_PAYLOAD, "build document not found", retryable=False)
+    try:
+        ensure_alive(docs, job.project_path)  # Sprint 8: deleted project → dropped quietly (no write at all)
+    except JobDropped as e:
+        log_dropped("boq.build", e)
+        raise
     if bd.get("status") == "succeeded":
         docs.set(job_path, {"status": "succeeded", "progress": {"stage": "done", "pct": 100}, "updatedAt": SERVER_TIMESTAMP})
-        return BuildOutcome("skipped", stats=dict(bd.get("stats") or {}), evidence_ref=bd.get("evidenceRef"))
+        return BuildOutcome("skipped", stats=dict(bd.get("stats") or {}), evidence_ref=bd.get("evidenceRef"),
+                            lines_ref=bd.get("linesRef"))  # fmt: skip
     bd = wait_until_ready(docs, job, bd)
+    try:
+        ensure_alive(docs, job.project_path)  # the debounce wait can last a minute
+    except JobDropped as e:
+        log_dropped("boq.build", e)
+        raise
     attempts = int(jd.get("attempts") or 0) + 1
     docs.set(
         job_path,
@@ -638,6 +675,10 @@ def run_boq_build(job: BoqBuildJob, blobs: BlobStore, docs: DocStore) -> BuildOu
     stale_mark = _stale_mark(docs, job.project_path)
     try:
         out = build_project(job.orgId, job.projectId, job.buildId, blobs, docs)
+        ensure_alive(docs, job.project_path, written=len(out.lines))
+    except JobDropped as e:  # deleted meanwhile: no failed build / job doc, no project summary
+        log_dropped("boq.build", e)
+        raise
     except Exception as e:
         if isinstance(e, IngestError):
             err = e
@@ -669,6 +710,8 @@ def run_boq_build(job: BoqBuildJob, blobs: BlobStore, docs: DocStore) -> BuildOu
             "stats": stats,
             "error": None,
             "evidenceRef": out.evidence_ref,
+            # Sprint 8: the build's lines snapshot (version comparison "מה השתנה")
+            "linesRef": out.lines_ref,
             # review queue: "תיקון לא הותאם" (also in the evidence file, contracts `corrections.unmatched`)
             "unmatchedCorrections": out.stats.get("unmatchedCorrections", []),
             # approvals this build invalidated (A-pipeline-08): the API audits them (NOTES Stage 10 request 1c)

@@ -1,0 +1,85 @@
+{
+  "$ref": "#/definitions/BulkLibraryPriceResponse",
+  "definitions": {
+    "BulkLibraryPriceResponse": {
+      "type": "object",
+      "properties": {
+        "batchId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "updated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "itemId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "code": {
+                "type": "string"
+              },
+              "from": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "to": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "code",
+              "from",
+              "to"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "itemId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "not_found",
+                  "unchanged"
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "batchId",
+        "updated",
+        "skipped"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BulkLibraryPriceResponse.json"
+}

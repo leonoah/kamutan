@@ -32,7 +32,7 @@ from scipy.spatial import cKDTree
 
 from ..calibration import CalibrationTable, default_table
 from ..ingest.pdf_vector import SEG_BEZIER, VectorSheet
-from ..legend.classes import apply_multiplicity, multiplicity
+from ..legend.classes import apply_multiplicity, multiplicity, norm_label
 from ..legend.classes import suggest_class as _suggest_class
 from ..legend.parse import LegendEntry, LegendResult, clean_qualifier
 from ..ocr.dictionary import TextSpan
@@ -596,6 +596,9 @@ def detect_symbols(
     tags: list[Tag] = []
     if any(e.kind == "type" for e in entries):
         tags = find_tags(vs, scene.arcs, entries, exclude)
+        # a type tag's own circle + digit is not a fixture (Sprint 8: tag "1" next to the kitchen LED strip matched
+        # the recessed-wall-light glyph and was counted as a second fixture; the real symbol lost its tag)
+        dets = [d for d in dets if not (d.source == "vector" and _on_tag(d, tags))]
         _apply_tags(dets, tags, mappings)
 
     # ---- "see note" marks named by the text next to them; panels named by their label
@@ -644,6 +647,11 @@ def detect_symbols(
     if res.blocks:
         res.stats["blocks"] = res.blocks
     return res
+
+
+def _on_tag(d: Detection, tags: list[Tag]) -> bool:
+    """The detection is centred on a fixture type tag (its circle and number)."""
+    return any(math.hypot(d.center[0] - g.cx, d.center[1] - g.cy) <= 0.5 * g.r for g in tags)
 
 
 def _apply_tags(dets: list[Detection], tags: list[Tag], mappings: dict[str, dict[str, Any]]) -> None:
@@ -711,7 +719,7 @@ def _note_items(markers: list[tuple[Candidate, LegendEntry]], tix: TextIndex, de
         for i, gap in tix.near(c.bbox(), NOTE_REACH_MM):
             s = tix.spans[i]
             cls, conf = suggest_class(s.text, s.conf) if len(s.text) <= 40 else (None, 0.0)
-            if cls and cls not in TEXT_ANCHOR_CLASSES and cls != "panel":
+            if cls and cls not in TEXT_ANCHOR_CLASSES and cls != "panel" and not _hub_note(i, tix):
                 pairs.append((gap, ci, i, cls, conf))
     out: list[Detection] = []
     used_c: set[int] = set()
@@ -730,6 +738,15 @@ def _note_items(markers: list[tuple[Candidate, LegendEntry]], tix: TextIndex, de
             )
         )  # fmt: skip
     return out
+
+
+HUB_WORDS = ("ריכוז",)  # "ריכוז רמקולים" = where the speaker lines meet (a box), not a speaker point
+
+
+def _hub_note(si: int, tix: TextIndex) -> bool:
+    """The span is (part of) a note naming a hub of items — "ריכוז" on it or on a line touching it (Sprint 8: the
+    "see note" cross of "ריכוז / רמקולים" on the ground electrical plan was counted as a fourth speaker)."""
+    return any(any(w in norm_label(tix.spans[j].text) for w in HUB_WORDS) for j, _ in tix.near(tix.spans[si].bbox, 1.0))
 
 
 def _panels_from_labels(vs: VectorSheet, exclude: list[BBox], tix: TextIndex, dets: list[Detection]) -> list[Detection]:

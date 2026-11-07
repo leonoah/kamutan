@@ -13,7 +13,7 @@ export type UploadStatus =
   | "canceled"
   | "rejected"; // failed client-side validation
 
-export type UploadErrorCode = FileErrorCode | "network" | "expired" | "server" | "quota" | "infected";
+export type UploadErrorCode = FileErrorCode | "network" | "expired" | "server" | "quota" | "infected" | "sheetLimit";
 
 export interface UploadEntry {
   id: string;
@@ -58,6 +58,8 @@ export function mapError(err: unknown): UploadErrorCode {
     // Sprint 7: per-project storage quota (413) and `file_infected` (if the API refuses it synchronously).
     if (err.code === "quota_exceeded") return "quota";
     if (err.code === "file_infected") return "infected";
+    // Sprint 8: at most 100 sheets per project (409)
+    if (err.code === "sheet_limit" || err.code === "sheet_limit_exceeded" || err.code === "too_many_sheets") return "sheetLimit";
     if (err.code === "unsupported_file_type") return "unsupported";
     if (err.code === "payload_too_large") return "too_large";
     if (err.code === "upload_expired" || err.code === "upload_missing") return "expired";
@@ -98,7 +100,7 @@ export const useUploadStore = create<UploadState>((set, get) => {
       if (err instanceof UploadCanceledError) patch(entry.id, { status: "canceled", errorCode: null });
       else {
         const code = mapError(err);
-        patch(entry.id, { status: "error", errorCode: code, errorMessage: code === "quota" && err instanceof ApiError && HEBREW.test(err.message) ? err.message : null });
+        patch(entry.id, { status: "error", errorCode: code, errorMessage: (code === "quota" || code === "sheetLimit") && err instanceof ApiError && HEBREW.test(err.message) ? err.message : null });
       }
     }
   }

@@ -30,6 +30,7 @@
                 "method_not_allowed",
                 "quota_exceeded",
                 "file_infected",
+                "sheet_limit",
                 "internal_error",
                 "service_unavailable"
               ]

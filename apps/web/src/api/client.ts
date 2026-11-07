@@ -1,9 +1,9 @@
 import { createContext, useContext } from "react";
 import { env } from "@/lib/env";
-import { getFirebase } from "@/lib/firebase";
+import { loadFirestore, loadStorage } from "@/lib/firebase";
 import { createHttpClient, createPublicShareClient } from "./http";
-import { createMockBackend } from "./mock";
-import { createFirebaseUploads, createFirestoreRealtime } from "./firebaseBackend";
+import { createLazyRealtime, createLazyUploads } from "./lazyBackend";
+import type { MockOptions } from "./mock";
 import type { ApiClient, Backend } from "./types";
 import { getIdToken } from "@/features/auth/authService";
 
@@ -30,18 +30,35 @@ export function createPublicOnlyBackend(publicShare = createPublicShareClient())
   return { api: refuse("api"), uploads: refuse("uploads"), realtime: refuse("realtime"), publicShare };
 }
 
-/** Mock backend when VITE_USE_MOCKS=true; otherwise REST API + Firebase Storage + Firestore listeners. */
-export function createBackend(): Backend {
+/**
+ * Mock backend when VITE_USE_MOCKS=true; otherwise REST API + Firebase Storage + Firestore listeners.
+ * Sprint 8: async so the mock (and its fixtures) is its own chunk — a real-mode build never downloads it — and the
+ * Firestore / Storage SDKs load on first use (lazyBackend.ts).
+ */
+export async function createBackend(): Promise<Backend> {
   const path = typeof location !== "undefined" ? location.pathname : "/";
   if (!env.useMocks && isShareViewerPath(path)) return createPublicOnlyBackend();
   if (env.useMocks) {
-    // Dev/demo: ?mockDetections=2000 on the first page load sizes the synthetic overlay (performance checks).
+    const { createMockBackend } = await import("./mock");
+    return createMockBackend(mockOptionsFromUrl(path));
+  }
+  return {
+    api: createHttpClient(getIdToken),
+    uploads: createLazyUploads(async () => (await import("./firebaseBackend")).createFirebaseUploads(await loadStorage())),
+    realtime: createLazyRealtime(async () => (await import("./firebaseBackend")).createFirestoreRealtime(await loadFirestore())),
+    publicShare: createPublicShareClient(),
+  };
+}
+
+/** Dev / demo URL flags of the mock backend (first page load). */
+export function mockOptionsFromUrl(path: string): MockOptions {
+  // Dev/demo: ?mockDetections=2000 on the first page load sizes the synthetic overlay (performance checks).
     // Sprint 3: ?mockBlockExport=1 (org blocks export with red lines), ?mockBoq=built (start with a built BOQ),
     // ?mockRole=editor|reviewer|viewer (role of the demo user).
     const q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
     const n = Number(q.get("mockDetections"));
     const role = q.get("mockRole");
-    return createMockBackend({
+    return {
       ...(n > 0 ? { fixtureDetections: Math.min(n, 20_000), devIndex: false } : {}),
       ...(q.get("mockBlockExport") === "1" ? { blockExportOnRed: true } : {}),
       // The share viewer demo needs lines (the mock seeds demo links: /s/demo-noah, /s/demo-expired, /s/demo-revoked).
@@ -51,18 +68,12 @@ export function createBackend(): Backend {
       ...(q.get("mockLibrary") === "default" || q.get("mockLibrary") === "none" ? { libraryMode: q.get("mockLibrary") as "default" | "none" } : {}),
       // Sprint 7: ?mockQuotaMb=50 (per-project storage quota of the demo org; p-noah already stores ~46 MB).
       ...(Number(q.get("mockQuotaMb")) > 0 ? { projectQuotaBytes: Number(q.get("mockQuotaMb")) * 1024 * 1024 } : {}),
+      // Sprint 8: ?mockSheetLimit=16 (the 100-sheet limit, small enough to reach in a demo / e2e).
+      ...(Number(q.get("mockSheetLimit")) > 0 ? { sheetLimit: Number(q.get("mockSheetLimit")) } : {}),
       ...(role === "editor" || role === "reviewer" || role === "viewer" || role === "admin"
         ? { orgs: [{ id: "org-demo", name: "סטודיו נח לעיצוב פנים", role }] }
         : {}),
-    });
-  }
-  const fb = getFirebase();
-  return {
-    api: createHttpClient(getIdToken),
-    uploads: createFirebaseUploads(fb.storage),
-    realtime: createFirestoreRealtime(fb.db),
-    publicShare: createPublicShareClient(),
-  };
+    };
 }
 
 export const BackendContext = createContext<Backend | null>(null);

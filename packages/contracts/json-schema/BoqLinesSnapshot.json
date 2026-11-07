@@ -1,0 +1,212 @@
+{
+  "$ref": "#/definitions/BoqLinesSnapshot",
+  "definitions": {
+    "BoqLinesSnapshot": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "kamutan.boq-lines/1"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "buildId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sheetVersions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "sheetTitles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "propertyNames": {
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "chapter": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "qty": {
+                "type": "number"
+              },
+              "computedQty": {
+                "type": "number"
+              },
+              "qtyOverride": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "price": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priceSource": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "override",
+                      "library"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priceOverride": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "byFloor": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "propertyNames": {
+                  "maxLength": 32
+                }
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "green",
+                  "yellow",
+                  "red"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "reviewed",
+                  "approved"
+                ]
+              },
+              "needsInput": {
+                "type": "boolean"
+              },
+              "sourceVersions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sheetId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "versionId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    }
+                  },
+                  "required": [
+                    "sheetId",
+                    "versionId"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 500
+              }
+            },
+            "required": [
+              "lineId",
+              "chapter",
+              "code",
+              "description",
+              "unit",
+              "qty",
+              "price"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 5000
+        }
+      },
+      "required": [
+        "schema",
+        "projectId",
+        "buildId",
+        "createdAt",
+        "lines"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BoqLinesSnapshot.json"
+}

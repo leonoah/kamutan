@@ -67,12 +67,17 @@ def test_library_import_job_mirror():
     ref = definition("LibraryImportJob")
     ours = LibraryImportJob.model_json_schema()
     assert set(ref["required"]) == set(ours["required"])
-    assert set(ref["properties"]) == set(ours["properties"])
+    assert set(ref["properties"]) == set(ours["properties"])  # strict (Sprint 8: mode, overwriteManualPrices, dryRun)
+    assert ref["properties"]["dryRun"]["type"] == "boolean"
+    assert set(ref["properties"]["mode"]["enum"]) == {"library", "prices"}  # Sprint 8, published
     assert _strip(ref["properties"]["storagePath"]["pattern"]) == ours["properties"]["storagePath"]["pattern"]
     assert ref["properties"]["importId"]["format"] == ours["properties"]["importId"]["format"] == "uuid"
     assert set(ref["properties"]["sourceKind"]["enum"]) == set(ours["properties"]["sourceKind"]["enum"])
     job, _, _ = _job(synth_xlsx())
-    jsonschema.validate(job.model_dump(mode="json"), schema("LibraryImportJob"))
+    jsonschema.validate(job.model_dump(mode="json", exclude_unset=True), schema("LibraryImportJob"))
+    priced = LibraryImportJob.model_validate({**job.model_dump(mode="json", exclude_unset=True), "mode": "prices",
+                                              "overwriteManualPrices": False})  # fmt: skip
+    assert priced.mode == "prices" and priced.overwriteManualPrices is False
 
 
 def test_ingest_topic_union_accepts_our_payloads():
@@ -90,7 +95,7 @@ def test_ingest_topic_union_accepts_our_payloads():
         s,
     )
     job, _, _ = _job(synth_xlsx())
-    jsonschema.validate(job.model_dump(mode="json"), s)
+    jsonschema.validate(job.model_dump(mode="json", exclude_unset=True), s)
 
 
 def test_link_group_mirror():

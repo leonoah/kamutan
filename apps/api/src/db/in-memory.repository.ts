@@ -23,7 +23,7 @@ import {
 import { auditHash, logAuditEvent } from './audit-chain';
 import { countedBytes, isInfected, releasableBytes } from './storage-usage';
 import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
-import { toJob, toLegendEntry, toMember, toOrg, toProject, toSheet, toSheetSet, toSymbolMapping, toVersion, versionSummary, type Doc } from './mappers';
+import { isDeleting, toJob, toLegendEntry, toMember, toOrg, toProject, toSheet, toSheetSet, toSymbolMapping, toVersion, versionSummary, type Doc } from './mappers';
 import {
   RepoConflictError,
   type AuditInput,
@@ -137,17 +137,18 @@ export class InMemoryRepository implements Repository {
 
   // --- projects -------------------------------------------------------------
   async findProjectOrgId(projectId: string): Promise<string | null> {
-    const hit = this.group('projects').find(([, d]) => d.projectId === projectId);
+    const hit = this.group('projects').find(([, d]) => d.projectId === projectId && !isDeleting(d));
     return hit ? (hit[0].split('/')[1] as string) : null;
   }
 
   async getProject(orgId: string, projectId: string): Promise<Project | null> {
     const d = this.docs.get(fsPaths.project(orgId, projectId));
-    return d ? toProject(projectId, d) : null;
+    return d && !isDeleting(d) ? toProject(projectId, d) : null;
   }
 
   async listProjects(orgId: string, opts: { limit: number; cursor?: string }) {
     const all = this.children(`orgs/${orgId}/projects`)
+      .filter(([, d]) => !isDeleting(d))
       .map(([k, d]) => toProject(k.split('/').at(-1) as string, d))
       .sort((a, b) => (a.createdAt === b.createdAt ? b.id.localeCompare(a.id) : b.createdAt.localeCompare(a.createdAt)));
     let start = 0;
@@ -321,6 +322,10 @@ export class InMemoryRepository implements Repository {
     });
     const more = all.length > start + opts.limit;
     return { items, nextCursor: more && items.length ? (items.at(-1) as SheetSummary).id : null };
+  }
+
+  async countCurrentSheets(orgId: string, projectId: string, opts: { excludeSheetSetId?: string } = {}): Promise<number> {
+    return this.children(fsPaths.sheets(orgId, projectId)).filter(([, d]) => d.superseded !== true && (!opts.excludeSheetSetId || d.sheetSetId !== opts.excludeSheetSetId)).length;
   }
 
   async getSheet(orgId: string, projectId: string, sheetId: string): Promise<Sheet | null> {

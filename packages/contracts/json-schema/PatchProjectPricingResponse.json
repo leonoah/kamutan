@@ -1,0 +1,63 @@
+{
+  "$ref": "#/definitions/PatchProjectPricingResponse",
+  "definitions": {
+    "PatchProjectPricingResponse": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "pricing": {
+          "type": "object",
+          "properties": {
+            "adjustmentPct": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 200
+            },
+            "updatedBy": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "adjustmentPct",
+            "updatedBy",
+            "updatedAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "projectId",
+        "pricing"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/PatchProjectPricingResponse.json"
+}

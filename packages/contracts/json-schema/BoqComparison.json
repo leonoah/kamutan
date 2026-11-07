@@ -1,0 +1,499 @@
+{
+  "$ref": "#/definitions/BoqComparison",
+  "definitions": {
+    "BoqComparison": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string",
+          "const": "kamutan.boq-compare/1"
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "previous",
+            "export",
+            "explicit"
+          ]
+        },
+        "from": {
+          "type": "object",
+          "properties": {
+            "buildId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exportId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exportedAt": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "buildId",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        "to": {
+          "type": "object",
+          "properties": {
+            "buildId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "at": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "live": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "buildId",
+            "at"
+          ],
+          "additionalProperties": false
+        },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "added": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "removed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "changed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unchanged": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fromTotal": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "toTotal": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "deltaTotal": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "added",
+            "removed",
+            "changed",
+            "unchanged",
+            "fromTotal",
+            "toTotal",
+            "deltaTotal"
+          ],
+          "additionalProperties": false
+        },
+        "sheetChanges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sheetId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "added",
+                  "removed",
+                  "revised"
+                ]
+              },
+              "fromVersionId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "toVersionId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "sheetId",
+              "title",
+              "kind",
+              "fromVersionId",
+              "toVersionId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "added",
+                  "removed",
+                  "changed"
+                ]
+              },
+              "lineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "chapter": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "fromQty": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "toQty": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "deltaQty": {
+                "type": "number"
+              },
+              "fromPrice": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "toPrice": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "fromTotal": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "toTotal": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "deltaTotal": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "qty",
+                    "price",
+                    "description",
+                    "unit"
+                  ]
+                }
+              },
+              "byFloor": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "floor": {
+                      "type": "string"
+                    },
+                    "fromQty": {
+                      "type": "number"
+                    },
+                    "toQty": {
+                      "type": "number"
+                    },
+                    "deltaQty": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "floor",
+                    "fromQty",
+                    "toQty",
+                    "deltaQty"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "causes": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "sheet"
+                        },
+                        "sheetId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "title": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "fromVersionId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "toVersionId": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "sheetId",
+                        "title",
+                        "fromVersionId",
+                        "toVersionId"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "qty_override"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "price_override"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "library_price"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "other"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "lineId",
+              "chapter",
+              "code",
+              "description",
+              "unit",
+              "fromQty",
+              "toQty",
+              "deltaQty",
+              "fromPrice",
+              "toPrice",
+              "fromTotal",
+              "toTotal",
+              "deltaTotal",
+              "changes",
+              "causes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "schema",
+        "projectId",
+        "base",
+        "from",
+        "to",
+        "summary",
+        "sheetChanges",
+        "items",
+        "generatedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BoqComparison.json"
+}

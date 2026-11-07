@@ -64,6 +64,10 @@
           "type": "integer",
           "minimum": 0
         },
+        "storageBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
         "ingestJobId": {
           "type": "string",
           "minLength": 1,

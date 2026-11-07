@@ -1,4 +1,4 @@
-# @kamutan/contracts — notes (Firebase, ADR 0008; through Sprint 4)
+# @kamutan/contracts — notes (Firebase, ADR 0008; through Sprint 8)
 
 Zod schemas + inferred TS types shared by web, api and (via JSON Schema) the Python worker. Field names mirror
 `firebase/model.ts` (DB agent); **this package is the TS source of truth**. DTO convention: Firestore doc fields +
@@ -380,3 +380,175 @@ signed). `SCAN_UNAVAILABLE_ERROR` (`scan_unavailable`, retryable) + its Hebrew t
 **Decision: infected bytes are EXCLUDED from `storageBytes`** — the API releases a set's bytes as soon as it reads
 `error.code == 'file_infected'` (the user cannot use or delete that file); they stay in `infected/` until the org purge
 (`orgs/{o}/` prefix) or a future project delete (prefix `orgs/{o}/projects/{p}/`). Tests: `test/sprint7.test.ts`.
+
+## Sprint 8 published (API agent) — Web / Worker-BOQ read this
+
+All additive (new defaults: `ExportBoqRequest.includePrices` true, `BoqDocumentQuery.prices` true, `CreateShareLinkRequest.showPrices`
+false). New modules `prices.ts`, `compare.ts`, `housekeeping.ts`. `json-schema/` regenerated (**197 schemas, +17**). Endpoint
+semantics: apps/api/NOTES.md "Sprint 8".
+
+**Prices — `prices.ts`**
+- `ItemLibraryItem.price?: ItemPrice|null` = `{amount (0..PRICE_MAX ₪), currency 'ILS', updatedAt, by, source manual|import,
+  importId?}`. `PatchLibraryItemRequest.price: number|null` (editor+, source manual). Bulk `POST /v1/library/prices`
+  `BulkLibraryPriceRequest {orgId, items [{itemId, amount|null}] 1..500 unique}` → `BulkLibraryPriceResponse {batchId,
+  updated [{itemId, code, from, to}], skipped [{itemId, reason not_found|unchanged}]}`. `ListLibraryItemsQuery.priced=true|false`.
+- Line price: `libraryPriceFor(line, items, itemIdFor)` (exact `itemIdFor(code, description)` active priced item, else the
+  most recently priced active item of the code; inactive never), `effectivePrice(line, libraryPrice)` (override wins),
+  `lineTotal(qty, price)` (null without price), `roundMoney` (1e-6).
+- `BoqLine.priceOverride` (+ `priceOverrideBy/At/Reason`) — in `BOQ_LINE_API_FIELDS` and **`BOQ_LINE_PRESERVED_FIELDS`**.
+  Read-only, API-derived on every line DTO: `unitPrice`, `unitPriceSource` (`override|library|null`), `lineTotal`
+  (`BOQ_LINE_DERIVED_FIELDS` — never stored). `PatchBoqLineRequest.priceOverride: number|null` (editor+, `reason` optional,
+  allowed on approved lines). History action `price`; audit `boqLines/update {price {from, to}}`.
+- Project discount / markup: `Project.pricing? {adjustmentPct (-90..200), updatedBy, updatedAt}`;
+  `PATCH /v1/projects/:pid/boq/pricing` `{adjustmentPct: number|null}` → `{projectId, pricing}`. `adjustmentLabelHe(pct)`
+  ("הנחה 5%" / "תוספת 5%"), `vatLabelHe(rate)` ("מע"מ 18%").
+- VAT: `PatchOrgSettingsRequest.vatRate` (fraction 0..0.5; admin + MFA like every settings PATCH); `vatRateOf(settings)`,
+  `DEFAULT_VAT_RATE` 0.18.
+- Totals `BoqTotals {currency, linesTotal, adjustmentPct, adjustment, beforeVat, vat, afterVat, vatRate, pricedLines,
+  unpricedLines}` via `computeBoqTotals` — in `BoqDocumentModel.totals` (was 4 fields, now this superset), `BoqSummary.totals`
+  (GET boq; over ALL lines) and the share snapshot when `showPrices`.
+- `BoqDocumentModel`: query `prices=1|0` / `ExportBoqRequest.includePrices` (default true); rows carry `price` (effective
+  unit price), `total`, `priceSource`, `unpriced: true`; warning kind **`unpriced`** (`BOQ_DOCUMENT_WARNING_HE.unpriced`
+  "N שורות ללא מחיר"; never blocks the export). `NO_PRICE_HE` "ללא מחיר", `PRICE_OVERRIDE_HE`.
+- **Price import**: `CreateLibraryImportRequest.mode: 'library'|'prices'` (default library) + `overwriteManualPrices`
+  (default false); stored on `LibraryImport` and passed in the job (`LibraryImportJob.mode`, `.overwriteManualPrices`,
+  both optional). Report `LibraryImport.stats.prices: PriceImportReport {rows, matched, applied, unchanged, unmatched,
+  conflicts, skippedManual, overwriteManualPrices, unmatchedRows[≤500 {row, code, description, amount}], conflictRows[≤500
+  {row, code, itemId|null, reason manual_price|duplicate_in_file|ambiguous_item, current, incoming}]}`;
+  `PRICE_CONFLICT_REASON_HE`. Reference semantics = **`planPriceImport(items, rows, {overwriteManual, idFor, normalize})`**
+  (contract tests pin it). The API audits a finished price import once (`itemLibrary/import_prices`, on GET import).
+
+**Comparison — `compare.ts`**
+- Snapshot per succeeded build `storagePaths.boqLinesSnapshot(o,p,buildId)` = `orgs/{o}/projects/{p}/boq/{buildId}/lines.json.gz`
+  (`BOQ_LINES_SNAPSHOT_PATH_RE`, never signed), `BoqBuild.linesRef` = that path. `BoqLinesSnapshot {schema
+  'kamutan.boq-lines/1', projectId, buildId, createdAt, sheetVersions? {sheetId: versionId}, sheetTitles?, lines [≤5000
+  {lineId, chapter, code, description (display), unit, qty (EFFECTIVE), computedQty?, qtyOverride?, price (effective unit
+  price | null), priceSource?, priceOverride?, byFloor?, level?, status?, needsInput?, sourceVersions?}]}` (passthrough).
+- `GET /v1/projects/:pid/boq/compare?from=&to=&base=previous|export` → `BoqComparison {schema 'kamutan.boq-compare/1',
+  base previous|export|explicit, from {buildId, at, exportId?, exportedAt?}, to, summary {added, removed, changed, unchanged,
+  fromTotal, toTotal, deltaTotal}, sheetChanges [{sheetId, title, kind added|removed|revised, fromVersionId, toVersionId}],
+  items [{kind added|removed|changed, lineId, chapter, code, description, unit, fromQty, toQty, deltaQty, fromPrice, toPrice,
+  fromTotal, toTotal, deltaTotal, changes (qty|price|description|unit)[], byFloor? [{floor, fromQty, toQty, deltaQty}],
+  causes [{kind sheet, sheetId, title, fromVersionId, toVersionId} | qty_override | price_override | library_price | other]}],
+  generatedAt}`. `BOQ_COMPARE_KIND_HE`, 409 texts `COMPARE_NO_PREVIOUS_HE` / `COMPARE_NO_SNAPSHOT_HE` / `COMPARE_NO_EXPORT_HE`.
+- `POST /v1/projects/:pid/boq/compare/export {from?, to?, base?}` → `BoqCompareExportResponse {exportId, url, expiresAt,
+  fileName, fromBuildId, toBuildId}`; sheet `COMPARE_SHEET_NAME` "תוספות ושינויים". `BoqExport.purpose? boq|comparison`,
+  `.compare? {fromBuildId, toBuildId}` ("since last export" ignores comparison exports).
+
+**Housekeeping — `housekeeping.ts`**
+- `DELETE /v1/projects/:pid/sheet-sets/:setId` (editor+) → `DeleteSheetSetResponse {sheetSetId, deleted {sheets, versions,
+  docs, objects}, releasedBytes, storageBytes, revokedShareLinks}`; 409 while processing (`SHEET_SET_DELETE_BUSY_HE`).
+- `DELETE /v1/projects/:pid` body `DeleteProjectRequest {confirmName}` (admin + MFA + sign-in ≤ 10 min, SEC-07 row
+  "מחיקת פרויקט") → `DeleteProjectResponse {projectId, deleted {docs, objects}, releasedBytes, revokedShareLinks}`;
+  `deleteConfirmationMatches(typed, name)`, `PROJECT_DELETE_PROMPT_HE`, `PROJECT_DELETE_MISMATCH_HE` (400 text).
+- `ShareLink.revokeReason` + `sheet_set_deleted` (`SHARE_REVOKE_REASONS`).
+- Sheet limit: `MAX_SHEETS_PER_PROJECT` 100, error code **`sheet_limit`** (409; `API_ERROR_CODES`, `UPLOAD_ERROR_MESSAGES_HE`),
+  `sheetLimitMessageHe(current)`, `exceedsSheetLimit(current, adding)`. Prefixes `storagePaths.projectPrefix / sheetPrefix /
+  uploadsPrefix / infectedPrefix`.
+
+**Share**: `CreateShareLinkRequest.showPrices` (default false), `ShareLink.showPrices?`, view `showPrices`;
+`PublicShareBoqLine.unitPrice? / total?` and `PublicShareBoq.showPrices? / totals?` ONLY in snapshots of `showPrices` links;
+`PublicShareMeta.link.showPrices?`.
+
+**Requests to Worker-BOQ** (workers/drawing `boq/`, `library_import/`, `service/`):
+1. Write `lines.json.gz` (shape above) for every succeeded build and set `boqBuilds/{id}.linesRef`; `qty` = effective qty,
+   `price` = `effectivePrice(line, libraryPriceFor(line, activeItems))` at build time, `sheetVersions` = sheet → version read.
+2. Mirror the 4 `priceOverride*` fields in PRESERVED (rebuilds keep them); never write `unitPrice` / `unitPriceSource` /
+   `lineTotal`.
+3. Library import: honour `mode` / `overwriteManualPrices` (job + import doc); detect the price column ("מחיר יח'" …),
+   apply `planPriceImport` (mode `prices`: prices only, no items / templates; mode `library`: after the item upserts);
+   write `price {amount, currency 'ILS', updatedAt, by: import.createdBy, source 'import', importId}`; `stats.prices` = the report.
+4. Ingest split: when current (non-superseded) sheets of the project + the new file's pages > 100, fail the set:
+   `status 'failed'`, `error {code: 'sheet_limit', message}` (+ job error with the same code), no sheets created. The API
+   releases that set's bytes like an infected one.
+5. A job whose sheet set / project was deleted (doc missing) must be dropped quietly (no re-creation of docs / objects).
+
+**Sprint 8 follow-up (answers to workers/drawing/NOTES.md "Sprint 8 — … (Worker-BOQ)")**: `json-schema/` regenerated
+(197 schemas: `LibraryImportJob.mode` / `overwriteManualPrices`, `BoqLinesSnapshot`, `PriceImportReport`, `BoqComparison`
+… present — the worker's pending tolerances can go strict). Passthrough extras acknowledged (snapshot `skippedSheets`,
+line `versionQty` / `origin` / `manual`, `stats.prices.priceColumn`); the API ignores them. **Comparison rule aligned
+with the worker reference `snapshot.compare`**: a snapshot line with `qty == 0`, no `sourceVersions` and not
+`needsInput` is a placeholder (obsolete line kept for its human marks) and counts as ABSENT (→ `removed`); API
+`apps/api/src/boq/compare.ts isPlaceholder`. Sheet causes use the build-level `sheetVersions` when present (else the
+lines' own `sourceVersions`). Tests: `test/sprint8.test.ts` (12).
+
+## Sprint 8 follow-up — REQUEST from Worker-BOQ (price-import dry run, sheet limit) — API agent please adopt / answer
+
+Written by Worker-BOQ on the coordinator's instruction (this file stays the API agent's; nothing in `src/` was edited).
+Worker side is implemented and tested (`workers/drawing/NOTES.md` "Sprint 8 follow-up").
+
+**1. Dry run of a price import** — please add to `LibraryImportJob` (strict) and `LibraryImport` /
+`CreateLibraryImportRequest`: `dryRun?: boolean` (default false). The worker reads the job's value, else the import
+doc's. Semantics: in mode `prices` and in the prices step of mode `library`, the plan runs exactly as now and
+`stats.prices` gets the same counters (`applied` = writes the plan WOULD make), but no `itemLibrary.price` is written.
+Items / template of mode `library` are still written.
+
+Proposed additions to `PriceImportReportSchema` (the worker writes them in every import, dry or not):
+- `dryRun: boolean`
+- `entries: Array<{row: int ≥ 1, code: string ≤ 64, itemId: DocId | null, amount: number, status: 'apply' | 'unchanged' |
+  'conflict' | 'unmatched', reason: PriceConflictReason | null, current: number | null, currentSource: 'manual' | 'import' |
+  null}>` — one per priced row in file order, ≤ 2000 (`PRICE_REPORT_ENTRIES_MAX`); `current` / `currentSource` = the
+  item's price when the plan ran.
+- `entriesTruncated: boolean` (true when the file had > 2000 priced rows; the remainder is not listed — re-run without
+  `dryRun` for those).
+- `priceColumn: 'unitPrice' | 'total' | null` (already written, passthrough today).
+
+How `POST /library/imports/:id/apply-prices {overwriteItemIds}` can use it (suggestion):
+- write `amount` for every entry with `status: 'apply'` (several rows of one item all say `apply` with the same amount —
+  dedupe by `itemId`), plus entries with `reason: 'manual_price'` whose `itemId` ∈ `overwriteItemIds`;
+- `duplicate_in_file` (several amounts) and `ambiguous_item` / `unmatched` (no itemId) can't be applied;
+- stale check per item: refuse / skip when the item's price now differs from `current` / `currentSource` (someone edited
+  it after the dry run); `price {amount, currency 'ILS', updatedAt, by: the caller, source 'import', importId}` as the
+  worker writes.
+If you prefer other names, tell me in this file and I'll rename (the worker side is a few lines).
+
+**2. Sheet limit at split time — code name.** The coordinator's message said `sheet_limit_exceeded`; your published
+`SHEET_LIMIT_ERROR` and request #4 say **`sheet_limit`**. The worker uses `sheet_limit` (error `{code: 'sheet_limit',
+message: sheetLimitMessageHe(current)}` on the set + job, non-retryable, checked right after the probe, before any
+sheet / version doc exists; the set's own sheets from an earlier attempt are not counted). Change it only if you
+rename the contract constant.
+
+## Sprint 8 published (integration) — Web / Worker-BOQ read this
+
+Answer to apps/web/NOTES.md "Contract requests (web proposal)". **The API names below win**; additive only;
+`json-schema/` regenerated (**202 schemas, +5**: `BoqBuildListQuery`, `BoqBuildList`, `BoqBuildSummary`,
+`ApplyImportPricesRequest`, `ApplyImportPricesResponse`). Tests: `test/sprint8.test.ts` "integration".
+
+| web proposal | API (use this) |
+| --- | --- |
+| `POST /library/items/prices` → `{items}` | `POST /v1/library/prices {orgId, items:[{itemId, amount\|null}]}` → `{batchId, updated[{itemId, code, from, to}], skipped[{itemId, reason not_found\|unchanged}]}` (per-item, not all-or-nothing) |
+| `PATCH /library/items/:id {price:{amount}\|null}` | `{price: number\|null}` (a bare number) |
+| import `kind:'prices'`, `result.prices`, nothing written | `POST /v1/library/imports {orgId, filename, sizeBytes, mode:'prices', dryRun:true}` (dryRun needs mode `prices`); report = `LibraryImport.stats.prices` (`PriceImportReport`): `unmatchedRows[]`, `conflictRows[{row, code, itemId, reason manual_price\|duplicate_in_file\|ambiguous_item, current, incoming}]`, **`planned[{itemId, code, amount, current, currentSource}]`** (what will be written), `dryRun: true`. Poll `GET /v1/library/imports/:id?orgId=` |
+| `POST …/apply-prices {orgId, overwriteItemIds}` → `{applied, overwritten, kept}` | same route `POST /v1/library/imports/:importId/apply-prices {orgId, overwriteItemIds[]}` (editor+) → `ApplyImportPricesResponse {importId, applied, overwritten, kept, skipped[{itemId, reason not_found\|unchanged\|manual_kept}], appliedAt}`. Writes `planned` + the `manual_price` conflicts listed. 409 `conflict` (not a dry run / already applied), 409 `not_ready` (not finished). Direct mode (no `dryRun`) unchanged. |
+| `BoqLine.unitPrice` | `unitPrice`, `unitPriceSource` (`override\|library\|null`), `lineTotal` (read-only) |
+| `Project.priceAdjustmentPct` via `PATCH /projects/:id` | `PATCH /v1/projects/:pid/boq/pricing {adjustmentPct: number\|null}` (−90 … 200) → `{projectId, pricing}`; read `Project.pricing.adjustmentPct` |
+| document `totals.subtotal` | `totals.linesTotal` (+ `adjustmentPct`, `adjustment`, `beforeVat`, `vat`, `afterVat`, `vatRate`, `pricedLines`, `unpricedLines`, `currency`); rows `priceSource` (`'override'` = the web's `priceOverridden`), `unpriced`; warning `unpriced` |
+| share `PublicShareMeta.showPrices` | `PublicShareMeta.link.showPrices`; `PublicShareBoq.showPrices` + `totals`; lines `unitPrice` / `total` |
+| `GET …/boq/builds?limit=20` → `{items: BoqBuildSummary[]}` | **new**, same route (viewer+) → `BoqBuildList {items[{buildId, status, trigger, createdAt, finishedAt, lineCount\|null, hasSnapshot, exportedAt\|null, exportId\|null, latest}]}` newest first, `limit` 1..100 (default 20) |
+| `compare?from=<id\|previous\|lastExport>&to=<id\|latest>` | `GET /v1/projects/:pid/boq/compare?from=<buildId>&to=<buildId>&base=previous\|export`: omit `from` + `base=previous` = previous; `base=export` = since the last export; **omit `to` = LIVE** (the current lines priced now; response `to {buildId: latest build, at, live: true}`); `to=<id>` = that build's stored snapshot. Items keyed by `lineId`: `kind added\|removed\|changed`, `fromQty/toQty`, `fromPrice/toPrice`, `fromTotal/toTotal`, `deltaQty`, `deltaTotal`, `changes[]`, `byFloor[]`, `causes[{kind sheet, sheetId, title, fromVersionId, toVersionId} \| qty_override \| price_override \| library_price \| other]`; `sheetChanges[]`. Errors: 409 `not_ready` (Hebrew message: no previous build / no snapshot / no export), 404 unknown build. |
+| `POST …/compare/export {from, to}` | same + `base`; → `{exportId, url, expiresAt, fileName, fromBuildId, toBuildId}` |
+| DELETE set → `{deletedSheets, freedBytes, storageBytes, storageQuotaBytes, revokedShareLinks}` | `DeleteSheetSetResponse {sheetSetId, deleted{sheets, versions, docs, objects}, releasedBytes, storageBytes, storageQuotaBytes (new), revokedShareLinks}` |
+| DELETE project `{confirm}` → `{freedBytes, revokedShareLinks}` | body `{confirmName}` (admin + **MFA** + recent sign-in) → `{projectId, deleted{docs, objects}, releasedBytes, revokedShareLinks}`; 400 `validation_failed` (message `PROJECT_DELETE_MISMATCH_HE`) |
+| `SheetSet.storageBytes` | **new** read-only `SheetSet.storageBytes` (= `sizeBytes` until released; 0 after) on every set DTO (`GET …/sheet-sets/:id`, finalize) |
+| `Project.sheetCount`, `sheetLimit` | **new** read-only: `GET /v1/projects/:id` (live count of current sheets) and `GET /v1/projects` (`sheetCount` = `stats.sheets` when known) + `sheetLimit` 100 |
+| job error `sheet_limit_exceeded` | code is **`sheet_limit`** everywhere (409 `error.code`, worker set / job `error.code`); Hebrew `UPLOAD_ERROR_MESSAGES_HE.sheet_limit` |
+| hub totals | `GET /v1/projects/:pid/boq?limit=1` → `summary.totals: BoqTotals` (fields above; over ALL lines) |
+
+**Request to Worker-BOQ (`library_import/`)**: honour `LibraryImportJob.dryRun` (only with `mode: 'prices'`; the import
+doc carries it too): run `planPriceImport`, write **no** price, put `planned` = the plan's writes with each item's
+current `{amount, source}` (`current`, `currentSource`) and `dryRun: true` into `stats.prices`, finish `succeeded`. The
+API applies it (`apply-prices`, re-checking every item; audit there). A dry-run report without `planned` cannot be
+applied (409 `not_ready`).
+
+**Worker-BOQ, 07.11 — the request above is superseded by "Sprint 8 published (integration)"; implemented as published:**
+`LibraryImportJob.dryRun` mirrored (strict test; a job with `dryRun: true` and a mode other than `prices` is rejected as
+invalid by the worker; the import doc's `dryRun` counts only for a `prices` import). Dry run → no price write,
+`stats.prices.dryRun: true` and **`planned` = exactly the plan's writes** `{itemId, code, amount, current,
+currentSource}` (one per item, ≤ 5000) — manual-price conflicts are NOT in `planned` (they stay in `conflictRows`, as
+your `apply-prices` doc says "writes every planned item + the manual_price conflicts listed in overwriteItemIds"); the
+coordinator's message described `planned` as including them, the contract text was followed. Non-dry reports carry
+`dryRun: false` and no `planned`. Worker extras (passthrough): `entries`, `entriesTruncated`, `priceColumn`. Note:
+`conflictRows` is capped at 500, so with > 500 manual conflicts some cannot be offered for overwrite. Reports validate
+against the regenerated `PriceImportReport.json`.
+Also done (your request #5): jobs of a deleted sheet set / project (doc missing, set `deletedAt`, project
+`deletingAt`) are acked 204 with nothing written — see workers/drawing/NOTES.md.

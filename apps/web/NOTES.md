@@ -812,3 +812,151 @@ end of the sprint; app DTOs stay hand-kept in `src/api/types.ts`.
 - Prices do not exist yet: unit price is empty and totals are ₪ 0 (exactly as the Excel's formulas show it).
 - The "✎ ידני" marker is hidden in print (client-facing paper); say if the owner wants it printed.
 - The hub card's header wraps to two rows on narrow desktop columns (preview + review buttons).
+
+# Sprint 8 (web + viewer): prices & totals, "מה השתנה", deletes + 100-sheet limit, code-splitting
+
+Brief: `docs/agents/SPRINT8_BRIEF.md` §1–§3 (row "Web"). `packages/viewer` needed no change. **Integrated with the
+API's "Sprint 8 published" + "Sprint 8 published (integration)"** (packages/contracts/NOTES.md, apps/api/NOTES.md): the
+API names won. `src/api/types.ts` imports the Sprint 8 types from `@kamutan/contracts` (type-only in app code; the
+contracts' runtime helpers are used only by the lazy mock chunk), `src/api/http.ts` calls the published routes, and the
+mock implements the same shapes (checked by `src/api/contracts.test.ts`, which parses every Sprint 8 mock response with the
+contracts' Zod schemas, and `http.test.ts`, which parses every request body / query with the request schemas). The web's
+earlier proposal (`kind:'prices'`, `priceAdjustmentPct`, `from=lastExport`, `{confirm}`, `freedBytes`, …) is gone.
+`@kamutan/contracts` is a web devDependency (`workspace:^`); `tsconfig.json` maps it to the contracts source so `lint`
+(`tsc`, which turbo runs without `^build`) never races the contracts `dist` rebuild.
+
+## Contracts used (final route list)
+| feature | route → response (contracts) |
+| --- | --- |
+| library price (inline) | `PATCH /library/items/:id?orgId= {price: number\|null}` → item with `price: ItemPrice {amount, currency, updatedAt, by, source manual\|import, importId}` |
+| bulk prices | `POST /library/prices {orgId, items[{itemId, amount\|null}]}` → `{batchId, updated[{itemId, code, from, to}], skipped[{itemId, reason}]}` (toast counts `updated`) |
+| price import | `POST /library/imports {orgId, filename, sizeBytes, mode:'prices', overwriteManualPrices:false, dryRun:true}` → upload → `POST /library/imports/:id/finalize {orgId}` → poll `GET /library/imports/:id?orgId=`; report = `stats.prices` (`PriceImportReport`: `planned`, `conflictRows`, `unmatchedRows`, counts, `dryRun`) |
+| apply import | `POST /library/imports/:id/apply-prices {orgId, overwriteItemIds}` → `{importId, applied, overwritten, kept, skipped, appliedAt}` (409 shown with the API's text) |
+| line prices | `GET /projects/:p/boq` lines carry `unitPrice` (effective), `unitPriceSource`, `lineTotal`; `summary.totals: BoqTotals`; `PATCH …/boq/lines/:id {priceOverride: number\|null, reason?}`; history `price` before/after = override (null = מחיר הספרייה) |
+| discount / markup | `PATCH /projects/:p/boq/pricing {adjustmentPct: number\|null}` (−90…200) → `{projectId, pricing}`; read `Project.pricing.adjustmentPct` |
+| VAT | `PATCH /orgs/:o/settings {vatRate}` (fraction 0–0.5) |
+| document / preview | `totals {linesTotal, adjustmentPct, adjustment, beforeVat, vat, afterVat, vatRate, pricedLines, unpricedLines}`, rows `priceSource`, `unpriced`, warning `unpriced` |
+| share | `CreateShareLinkRequest.showPrices`; `PublicShareMeta.link.showPrices`; `PublicShareBoq.showPrices` + `totals`; lines `unitPrice` / `total` |
+| builds | `GET /projects/:p/boq/builds?limit=20` → `{items: BoqBuildSummary[]}` (picker: `buildId`, `lineCount`, `hasSnapshot`, `exportedAt`, `latest`) |
+| compare | `GET /projects/:p/boq/compare?base=previous\|export[&from=&to=]` → `BoqComparison` (`items` keyed by `lineId`, `kind`, from/to qty & price & total, `changes`, `causes` union, `sheetChanges`, `to.live` when `to` is omitted); 409 `not_ready` → the API's Hebrew text |
+| compare export | `POST /projects/:p/boq/compare/export {from?, to?, base}` → `{exportId, url, expiresAt, fileName, fromBuildId, toBuildId}` |
+| delete set | `DELETE /projects/:p/sheet-sets/:id` → `{sheetSetId, deleted{sheets, versions, docs, objects}, releasedBytes, storageBytes, storageQuotaBytes, revokedShareLinks}`; 409 `conflict` (busy) → API text |
+| delete project | `DELETE /projects/:p {confirmName}` (admin + recent sign-in / MFA gate) → `{projectId, deleted{docs, objects}, releasedBytes, revokedShareLinks}`; 400 mismatch → API text (`PROJECT_DELETE_MISMATCH_HE`); client match = contracts `deleteConfirmationMatches` (NFC, collapsed spaces) |
+| sheet limit | `Project.sheetCount` / `sheetLimit` (hub banner); finalize 409 `sheet_limit` with `sheetLimitMessageHe` shown as is in the upload row |
+
+Fallbacks: the compare picker only offers builds with `hasSnapshot`; with one build it hides "גרסה מסוימת"; a report
+without `planned` / `dryRun` (direct import) shows the counts with no apply button.
+
+## Screens
+- **Library** (`features/prices/LibraryPrices.tsx`): "מחיר יח'" column — click to edit in place (Enter saves, Esc cancels,
+  empty clears; "₪", commas tolerated; ≤ 2 decimals), source "✎ ידני" / "מיובא" + date tooltip; "N סעיפים בספרייה ללא מחיר"
+  + "רק ללא מחיר" filter; row checkboxes + select-all → bulk bar → dialog (set price / change by % / clear, preview
+  count, items without a price skipped for %); "ייבוא מחירים" → upload (dry run) → progress → **review** of the report
+  (summary + tabs מתאימים = `planned` / התנגשויות = `conflictRows` / לא נמצאו = `unmatchedRows`; a manual-price conflict
+  has the choice "השאר את המחיר הידני" (default) / "החלף במחיר מהקובץ" or "החלף הכל"; duplicate / ambiguous rows show the
+  reason, read-only) → "שמירת מחירים ל-N סעיפים" (`apply-prices`) → result `applied / overwritten / kept`. Viewers / reviewers: read-only, no selection, no import.
+- **BOQ panel**: toggle "מחירים" (per viewer, localStorage, default on). The pane is narrow, so ONE column "סה"כ ₪": the
+  line total, with "× ₪ unit price" (button for editors → `PriceOverrideDialog`) under it, "✎ ידני" for an override,
+  dashed "₪? ללא מחיר" chip otherwise. Chapter header "סה"כ פרק". Footer `<details>` "סה"כ כולל מע"מ" (closed) / full
+  breakdown (open): subtotal → הנחה/תוספת → לפני מע"מ → מע"מ X% → כולל מע"מ + "N שורות ללא מחיר נספרות 0". Totals and
+  subtotals are always of the whole BOQ (not the filter). Chip / status option "ללא מחיר (N)" filters. Link "מה השתנה".
+- **Price dialog**: list price, current override (date + reason), amount (validated), optional reason, live "qty × price =
+  total", "חזרה למחיר המחירון", "היסטוריית השורה". History entries "שינוי מחיר" before → after (+ "חזרה למחיר המחירון").
+- **Hub card**: "× ₪ price" under each description (editable for editors), "סה"כ ₪" column (phones: "= ₪ total" under the description instead), chapter subtotal in the
+  summary row, totals block, "ללא מחיר (N)" filter, "מה השתנה" link; header "הגדרות" → project settings.
+- **Preview**: unit price cell shows "ללא מחיר" (screen only; print / Excel cell empty) and "✎ ידני"; totals get סה"כ →
+  הנחה X% rows when set; VAT label uses the real rate (17.5% ok); a quiet "N שורות ללא מחיר" note (not a gate).
+- **Project settings** `/projects/:id/settings` (`ProjectSettingsPage`): details (the existing edit dialog), discount /
+  markup % (editor+), **אזור מסוכן** (admin): AlertDialog with the size freed, typed project name + "הבנתי…", recent
+  sign-in gate (`useReauthGate`), then `/projects` + toast "פונו X".
+- **Org settings**: "שיעור מע"מ (%)" (0–50, validated, saved with the other fields, audited).
+- **Share dialog**: "הצג מחירים" (off by default, with the hint), list badge "כולל מחירים". **Viewer**: price columns and the
+  totals block ONLY when `meta.showPrices` and the snapshot lines carry prices.
+- **מה השתנה** `/projects/:id/boq/compare` (`features/compare/ComparePage.tsx`): "להשוות מול" הגרסה הקודמת / מאז הייצוא
+  האחרון / גרסה מסוימת (two build selects; "to" defaults to "המצב הנוכחי" = live), URL state (`base`, `from`,
+  `to`), date range + "מול המצב הנוכחי…" note when `to.live`, "גיליונות שהשתנו" (`sheetChanges`), summary chips (+ נוספו / − הוסרו / ⇄
+  השתנו / ללא שינוי / Δ ₪), filter, table (badge icon+word, code, description → `/review?line=`, before / after qty × price,
+  Δ כמות, Δ ₪, changed fields, causes: sheet versions with links to the sheet analysis, מחיר ידני / כמות ידנית / מחיר
+  הספרייה; removed lines have no review link); phone = cards; "ייצוא לאקסל" downloads the API file (mock: a real
+  SpreadsheetML `.xls` blob, RTL sheet, Δ₪ as a formula). Query keyed by the latest build id (refreshes after a rebuild).
+- **Deletes**: hub tile "⋯" menu "מחיקת סט השרטוטים" and a trash button per set in "העלאות ועיבוד" (editor+) →
+  AlertDialog (what goes, BOQ goes stale, links holding its sheets are revoked, "יתפנו כ-X") → toast "X נמחק. פונו Y ·
+  אחסון: a מתוך b (· N קישורי צפייה בוטלו)"; the hub meter updates from the answer at once.
+- **100-sheet limit**: hub banner (≥ 90%: "N מתוך 100", at the limit: what to do) + the upload row shows the API's Hebrew
+  409 (fallback `deletes.limitUpload`); job error codes mapped.
+- Money everywhere: `formatMoney` = "₪ 1,234.50" (he-IL, 2 decimals), deltas "+₪ / −₪" (true minus), in `<bdi dir=ltr>`.
+
+## Code-splitting (report)
+Every screen is a lazy route (`routes/router.tsx`): HydrateFallback `RouteLoading` (skeleton, `role=status`, "טוען את
+המסך…", reduced-motion safe) on a first load, top progress bar (`NavigationProgress`, `useNavigation`) on in-app
+navigations. Plus: the mock backend is a dynamic import (`createBackend()` is async; `main.tsx` renders after it) so
+real-mode bundles never download it; Firestore + Storage are loaded on first use (`api/lazyBackend.ts`:
+`createLazyRealtime` / `createLazyUploads` keep the sync contracts, a cancel before load never starts the upload); the
+`manualChunks` rule no longer merges Firestore / Storage / Analytics into the eager "firebase" chunk (Analytics was eager
+by accident). Scripts: `scripts/route-bundles-static.mjs <dist>` (manifest closure: entry + route chunk static imports, any
+mode) and `scripts/route-bundles.mjs <dist>` (runtime, mock build, signs in, records every JS response).
+
+JS a route needs on a cold load — **real-mode production build**, gzip (raw), from the manifest:
+| route | before (HEAD) | after |
+| --- | ---: | ---: |
+| landing `/` | 450.1 kB (1473 kB) | **237.5 kB** (741 kB) |
+| projects | 450.1 (1473) | **243.6** (753) |
+| hub | 450.1 (1473) | **275.8** (847) |
+| library | 450.1 (1473) | **253.1** (791) |
+| preview | 459.3 (1504) | **255.5** (791) |
+| compare (new) | — | 241.0 (749) |
+| review (+ deck.gl chunk 252 kB gzip when the canvas mounts) | 499.2 (1644) | 318.4 (988) |
+deck.gl (`DrawingViewer`, 877 kB raw) and the review workspace (`ReviewPage`) are loaded by NO route except review /
+sheet analysis — before and after (verified at runtime by e2e "code-splitting"). Firestore (~1.3 MB source) now loads
+after first paint, when a signed-in screen subscribes to live data. Mock-mode runtime (before → after, gzip): landing
+450 → 426, hub 450 → 463 (hub now also loads its price / delete chunks; firebase is still eager in mock mode because
+`authService` imports `firebase/auth` statically).
+
+## Mock (`src/api/mockSprint8.ts`, wired in `mockBoq.ts` / `mock.ts` / `mockSprint5.ts` / `mockSprint7.ts`)
+Seeded price list (deterministic per code; 4.17 / 4.18 / 9.03 / 8.04 / 7.07 unpriced; 4.01 a manual, negotiated price →
+a price import shows a conflict; the shipped default library has no prices). Prices are joined to lines at read. Build
+snapshots per build; the first build also gets a mock "previous, exported" build (2 lines added since, 4.99 removed,
+every 4th sheet-sourced line on an older sheet version, one price change). Price import review (`*noprice*` → empty).
+Share link `/s/demo-noah-prices` (with prices). Per-set bytes (finalize; dev-index sets share the rest evenly). Flags:
+`?mockSheetLimit=N`.
+
+## Tests
+- Integration (contracts): `src/api/contracts.test.ts` 5 (every Sprint 8 mock response parsed with the contracts' Zod
+  schemas: ItemPrice, bulk, pricing, BoqTotals + line price fields, dry-run PriceImportReport + apply, builds list,
+  comparison previous / export / explicit, compare export, PublicShareBoq with / without prices, both deletes);
+  `http.test.ts` +1 (route list + request bodies / queries parsed with the request schemas). Unit total now: web 369,
+  viewer 62.
+- Integration run (07.11): gates 9/9 (`--force`); Playwright full suite `pnpm test:e2e` 111 passed / 1 skipped (Noah
+  data) and `KAMUTAN_DEV_ARTIFACTS=/nonexistent E2E_PORT=4318 pnpm test:e2e` 94 passed / 18 skipped (Noah-only and
+  device-tagged specs), both re-run in full after the last change. e2e updated for the contracts: discount range (250
+  invalid, 150 valid), `base=export`, live note + sheet changes, the API's sheet-limit text, panel link → "מאז הייצוא
+  האחרון" (a review session can rebuild the BOQ, and "previous" vs live is then legitimately empty).
+- Unit (first pass): web 371 (was 344; + `features/prices/sprint8.test.ts` 12: model, totals, formatting / parsing, bulk plan, filter,
+  comparison + causes, mock API (builds / previous / lastExport / export / live latest), library ↔ line prices +
+  override across rebuild + history + audit, price import review / apply / conflict kept, share with and without prices,
+  discount + VAT in document / share, deletes + quota + revoked links + typed name + 409 limit, lazy Firestore / Storage
+  wrappers; `sprint8.ui.test.tsx` 6: library inline + bulk + axe, compare + axe, compare before a build, project settings
+  discount + delete + axe, hub limit banner + set delete + axe, viewer role). Updated: `sprint7.test.ts` (₪ 2 decimals,
+  totals superset), `mockSprint5.test.ts` (vatRate now editable), `share.test.tsx` (4 seeded links). Viewer 62 unchanged.
+- Playwright `e2e/sprint8.e2e.ts` (both modes): library inline / filter / bulk + axe; price import review → overwrite →
+  applied + axe; panel prices, override dialog validation + axe, ✎ ידני, total = qty × price, restore, history, ללא מחיר
+  filter, hide column; hub totals → project settings discount (validation) → hub + preview discount rows → VAT 17%;
+  phone hub (no x-scroll); share option off by default → link with prices → viewer (same mock) + seeded with / without;
+  compare from hub (chips, removed 4.99, causes, filter, since last export, pick, Excel download content, cause link) +
+  from the panel + phone; set delete from gallery + history (axe), project delete typed confirmation, roles, sheet limit
+  banner + 409 in the upload row; code-splitting (no DrawingViewer / ReviewPage on landing / projects / hub; review loads
+  them; slow chunk → skeleton).
+- Commands: `pnpm turbo run lint typecheck test build --filter=@kamutan/web --filter=@kamutan/viewer --concurrency=2
+  --force` 8/8; `pnpm test:e2e` and `KAMUTAN_DEV_ARTIFACTS=/nonexistent E2E_PORT=4318 pnpm test:e2e`.
+- Screenshots (checked by hand): `/home/claude/kamutan-data/acceptance/ui/screens/{desktop,mobile}/s8-*.png`.
+
+## Known gaps / open
+- Mock-only conveniences: build ids are readable strings (`b0-history`), comparison export URL is a blob; the API's MFA
+  requirement for project deletion is the reauth gate's job (no MFA in the mock).
+- With > 500 manual conflicts the API caps `conflictRows`, so some cannot be offered for overwrite (they stay manual).
+- The Excel itself (prices, formulas, discount row) is the API's; the preview only renders the document model.
+- Library price history is in the audit log only (entity "ספריית סעיפים", `itemLibrary/update {price {from, to, source}}`
+  as the API writes it), no per-item timeline.
+- Firebase Auth (~450 kB source) is still in the entry chunk (needed by every signed-in route and by `/login`); Firestore is
+  deferred. Lazy-loading Auth would need an async `AuthService`.
+- Price columns in the panel are one merged column (narrow pane); the full unit-price column exists in the preview.

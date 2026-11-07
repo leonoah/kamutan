@@ -43,6 +43,8 @@ export interface OrgWorld {
   extraMemberUid: string;
   invites: Record<Role, string>;
   revokeInviteId: string;
+  /** Sprint 8: an empty sheet set per role (DELETE …/sheet-sets/:id is destructive: each role deletes its own). */
+  delSets: Record<Role, string>;
   uid: (r: Role) => string;
 }
 
@@ -114,6 +116,23 @@ async function seedOrgWorld(t: TestApp, http: Http, tok: Record<string, string>,
   });
   const pp = fsPaths.project(orgId, projectId);
   t.repo.docs.set(pp, { ...(t.repo.docs.get(pp) as Doc), boq: { latestBuildId: 'b1', builtAt: new Date(), stale: false } });
+  // Sprint 8: two succeeded builds with lines snapshots (comparison routes).
+  for (const [i, b] of ['b0', 'b1'].entries()) {
+    t.repo.docs.set(fsPaths.boqBuild(orgId, projectId, b), { status: 'succeeded', jobId: null, requestedBy: uid('editor'), createdAt: new Date(Date.now() - (2 - i) * 60_000), finishedAt: new Date(Date.now() - (2 - i) * 60_000 + 1000), stats: null, error: null });
+    t.boqStorage.putLinesSnapshot(storagePaths.boqLinesSnapshot(orgId, projectId, b), {
+      schema: 'kamutan.boq-lines/1',
+      projectId,
+      buildId: b,
+      createdAt: new Date().toISOString(),
+      sheetVersions: { [sheet.sheetId]: i === 0 ? 'v_old' : sheet.versionId },
+      lines: [{ lineId: lines.status, chapter: '04', code: '4.01', description: 'שקע כפול', unit: "יח'", qty: i === 0 ? 1 : 2, price: 100, sourceVersions: [{ sheetId: sheet.sheetId, versionId: i === 0 ? 'v_old' : sheet.versionId }] }],
+    });
+  }
+  const delSets = {} as Record<Role, string>;
+  for (const r of ROLES) {
+    delSets[r] = `del_${key}_${r}`;
+    t.repo.docs.set(fsPaths.sheetSet(orgId, projectId, delSets[r]), { fileKind: 'pdf', sha256: delSets[r], storagePath: storagePaths.projectUpload(orgId, projectId, delSets[r], 'pdf'), status: 'ready', name: `del-${r}.pdf`, sizeBytes: 10, createdAt: new Date(0) });
+  }
 
   const P = `/api/v1/projects/${projectId}`;
   const base = { sheetId: sheet.sheetId, versionId: sheet.versionId, anchorMm: { x: 50, y: 50 } };
@@ -187,6 +206,7 @@ async function seedOrgWorld(t: TestApp, http: Http, tok: Record<string, string>,
     extraMemberUid,
     invites,
     revokeInviteId,
+    delSets,
     uid,
   };
 }

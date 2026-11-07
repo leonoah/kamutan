@@ -13,12 +13,16 @@ import "./styles/index.css";
 import { applyDocumentDirection } from "./i18n";
 import { applyTheme, useThemeStore } from "./stores/themeStore";
 import { App } from "./App";
+import { createBackend } from "./api/client";
 
 applyDocumentDirection();
 applyTheme(useThemeStore.getState().pref);
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+// Sprint 8: the backend module is chosen before the first render (mock mode loads the mock chunk; real mode never does).
+void createBackend().then((backend) =>
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App backend={backend} />
+    </StrictMode>,
+  ),
 );

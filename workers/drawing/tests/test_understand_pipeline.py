@@ -136,7 +136,9 @@ def test_low_confidence_labels_go_to_the_llm_gateway(monkeypatch):
     gw = LlmGateway(provider=fake, org_settings_reader=docstore_settings_reader(docs), blobs=InMemoryBlobStore(), max_tokens=256)
     monkeypatch.setattr(P, "LLM_LABEL_BELOW", 1.01)  # every label counts as unsure
     process_sheet_version(job, blobs, docs, replace(FAST, llm=gw, llm_max_labels=2))
-    assert len(fake.calls) == 2 and all(len(c["images"]) == 1 for c in fake.calls)
+    # Sprint 8: the same org gateway also gets the batch purposes (read_hard_text / verify_symbol); count legend_label
+    label_calls = [c for c in fake.calls if "legend (מקרא) of an Israeli" in c["system"] and not c["cache"]]
+    assert len(label_calls) == 2 and all(len(c["images"]) == 1 for c in label_calls)
     entries = [e for _, e in docs.list_docs(f"{BASE}/legendEntries")]
     refined = [e for e in entries if e["label"] == "שקע כפול"]
     assert len(refined) == 2 and all(e["suggestedClass"] == "socket_double" and e["labelConfidence"] <= 0.84 for e in refined)

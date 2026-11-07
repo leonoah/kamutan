@@ -1,5 +1,6 @@
 import {
   EXPORT_STATUSES,
+  SHARE_REVOKE_REASONS,
   MarkedPdfOptionsSchema,
   OFFBOARDING_EXPORT_STATUSES,
   ProcessingErrorSchema,
@@ -91,7 +92,7 @@ export function toShareLink(id: string, d: Doc): ShareLink {
     viewCount: intOrNull(d.viewCount) ?? 0,
     lastViewedAt: d.lastViewedAt ? anyIso(d.lastViewedAt) : null,
     revokedBy: str(d.revokedBy),
-    revokeReason: d.revokeReason === 'user' || d.revokeReason === 'offboarding' || d.revokeReason === 'project_deleted' ? d.revokeReason : null,
+    revokeReason: (SHARE_REVOKE_REASONS as readonly unknown[]).includes(d.revokeReason) ? (d.revokeReason as ShareLink['revokeReason']) : null,
     pdfExportId: str(d.pdfExportId),
     ...(d.titleBlockMaskedBySheet && typeof d.titleBlockMaskedBySheet === 'object'
       ? { titleBlockMaskedBySheet: Object.fromEntries(Object.entries(d.titleBlockMaskedBySheet as Doc).filter(([k, v]) => /^[A-Za-z0-9_-]{1,128}$/.test(k) && typeof v === 'boolean')) as Record<string, boolean> }
@@ -101,6 +102,8 @@ export function toShareLink(id: string, d: Doc): ShareLink {
     boqSnapshotPath: str(d.boqSnapshotPath),
     // Stage 10 (A-API-09): absent on older links (key omitted → the overlay falls back to the snapshot's buildId).
     ...('boqBuildId' in d ? { boqBuildId: typeof d.boqBuildId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(d.boqBuildId) ? d.boqBuildId : null } : {}),
+    // Sprint 8: "הצג מחירים" (absent = false).
+    ...(d.showPrices === true ? { showPrices: true } : {}),
   };
 }
 
@@ -168,7 +171,7 @@ export function settingsDiff(before: Partial<OrgSettings>, patch: PatchOrgSettin
 }
 
 /** Audit payload of a share link (no token, no hash, no recipient text — only ids and flags). */
-export function shareLinkAudit(projectId: string, link: Pick<ShareLink, 'expiresAt' | 'allowPdfDownload' | 'versionLock'> & { hideTitleBlock?: boolean; recipient?: string | null }): Record<string, unknown> {
+export function shareLinkAudit(projectId: string, link: Pick<ShareLink, 'expiresAt' | 'allowPdfDownload' | 'versionLock'> & { hideTitleBlock?: boolean; recipient?: string | null; showPrices?: boolean }): Record<string, unknown> {
   return {
     projectId,
     expiresAt: link.expiresAt,
@@ -176,6 +179,8 @@ export function shareLinkAudit(projectId: string, link: Pick<ShareLink, 'expires
     hideTitleBlock: link.hideTitleBlock !== false,
     hasRecipient: !!link.recipient,
     sheets: link.versionLock.length,
+    // Sprint 8: whether the snapshot carries prices.
+    showPrices: link.showPrices === true,
   };
 }
 

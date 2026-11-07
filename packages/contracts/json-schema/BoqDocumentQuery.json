@@ -40,6 +40,15 @@
             "true",
             "false"
           ]
+        },
+        "prices": {
+          "type": "string",
+          "enum": [
+            "1",
+            "0",
+            "true",
+            "false"
+          ]
         }
       },
       "additionalProperties": false

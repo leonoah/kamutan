@@ -10,12 +10,15 @@ import {
   ProcessingErrorSchema,
   BOQ_LINE_STATUSES,
   type BoqBuild,
+  type BoqExport,
+  BoqExportSchema,
   type BoqLine,
   type BoqRule,
   type BoqTemplate,
   type ItemLibraryItem,
   type LibraryImport,
   type PatchBoqLineRequest,
+  type PatchLibraryItemRequest,
   type ProcessingError,
   OVERRIDE_REASON,
   isQtyChangedReason,
@@ -26,6 +29,7 @@ import {
   displayDescription,
   normalizeDescriptionInput,
   itemIdFor,
+  PRICE_MAX,
 } from '@kamutan/contracts';
 import { anyIso, type Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -109,6 +113,19 @@ export function toBoqLine(id: string, d: Doc): BoqLine {
     ...(d.quickAction !== undefined ? { quickAction: quickActionOf(d.quickAction) } : {}),
     // Sprint 7 (API-written): the project's rename of the line; malformed / empty → not renamed.
     ...descriptionOverrideOf(d),
+    // Sprint 8 (API-written): the project's unit price of the line.
+    ...priceOverrideOf(d),
+  };
+}
+
+function priceOverrideOf(d: Doc): Partial<BoqLine> {
+  const v = typeof d.priceOverride === 'number' && Number.isFinite(d.priceOverride) && d.priceOverride >= 0 && d.priceOverride <= PRICE_MAX ? d.priceOverride : null;
+  if (v === null && d.priceOverride === undefined) return {};
+  return {
+    priceOverride: v,
+    priceOverrideBy: v !== null ? str(d.priceOverrideBy) : null,
+    priceOverrideAt: v !== null ? anyIso(d.priceOverrideAt) : null,
+    priceOverrideReason: v !== null ? (str(d.priceOverrideReason)?.slice(0, 500) ?? null) : null,
   };
 }
 
@@ -176,6 +193,8 @@ export function toBoqBuild(id: string, d: Doc): BoqBuild {
     ...(d.afterBuildId !== undefined ? { afterBuildId: str(d.afterBuildId) } : {}),
     ...(Array.isArray(d.approvalsInvalidated) ? { approvalsInvalidated: approvalsInvalidatedOf(d.approvalsInvalidated) } : {}),
     ...(d.approvalsAuditedAt !== undefined ? { approvalsAuditedAt: anyIso(d.approvalsAuditedAt) } : {}),
+    // Sprint 8 (worker): the build's lines snapshot (comparison).
+    ...(d.linesRef !== undefined ? { linesRef: str(d.linesRef) } : {}),
   };
 }
 
@@ -240,6 +259,71 @@ export function toLibraryImport(id: string, d: Doc): LibraryImport {
 }
 
 // ---------------------------------------------------------------------------
+// Sprint 8: library item patch (incl. `price`) — shared by both drivers
+// ---------------------------------------------------------------------------
+
+/**
+ * Field updates + audit payload of a library item PATCH. `price` (number) → `{amount, currency 'ILS', updatedAt, by,
+ * source 'manual', importId null}`; null → no price. Audit `itemLibrary/update {fields, active, code, price? {from, to,
+ * source}, batchId?}` (amounts only — prices are org data, not personal data).
+ */
+export function planLibraryItemPatch(cur: ItemLibraryItem, patch: PatchLibraryItemRequest, actorUid: string, now: unknown, batchId?: string, importId?: string): { upd: Doc; audit: Record<string, unknown> } {
+  const { price, ...rest } = patch;
+  const upd: Doc = { ...rest, updatedAt: now, updatedBy: actorUid };
+  const audit: Record<string, unknown> = { fields: Object.keys(patch).sort(), active: patch.active ?? null, code: cur.code };
+  const source = importId ? 'import' : 'manual';
+  if (price !== undefined) {
+    upd.price = price === null ? null : { amount: price, currency: 'ILS', updatedAt: now, by: actorUid, source, importId: importId ?? null };
+    audit.price = { from: cur.price?.amount ?? null, to: price, source };
+  }
+  if (batchId) audit.batchId = batchId;
+  if (importId) audit.importId = importId;
+  return { upd, audit };
+}
+
+/** Integration: outcome of one imported price at apply time (null = write it). */
+export function importedPriceSkip(cur: ItemLibraryItem | null, amount: number, allowManual: boolean): 'not_found' | 'unchanged' | 'manual_kept' | null {
+  if (!cur || !cur.active) return 'not_found';
+  if (cur.price?.amount === amount) return 'unchanged';
+  if (cur.price?.source === 'manual' && !allowManual) return 'manual_kept';
+  return null;
+}
+
+/** Integration: precondition of apply-prices (null = OK). */
+export function priceApplyBlocker(imp: LibraryImport): 'not_dry_run' | 'not_ready' | 'already_applied' | null {
+  if (imp.dryRun !== true) return 'not_dry_run';
+  if (imp.pricesAppliedAt) return 'already_applied';
+  if (imp.status !== 'succeeded' || !imp.stats?.prices?.planned) return 'not_ready';
+  return null;
+}
+
+/** Sprint 8: audit event of a finished price import (null when there is nothing to audit). */
+export function importPricesAudit(importId: string, imp: LibraryImport) {
+  const p = imp.stats?.prices;
+  // Integration: a dry run wrote nothing — its prices are audited when (and if) they are applied.
+  if (imp.status !== 'succeeded' || !p || imp.dryRun === true || p.dryRun === true) return null;
+  return {
+    actorId: imp.createdBy,
+    entity: 'itemLibrary',
+    entityId: null,
+    action: 'import_prices',
+    after: { importId, mode: imp.mode ?? 'library', rows: p.rows, applied: p.applied, unchanged: p.unchanged, unmatched: p.unmatched, conflicts: p.conflicts, skippedManual: p.skippedManual, overwriteManualPrices: p.overwriteManualPrices },
+  };
+}
+
+/** Sprint 8: an xlsx BOQ export doc (not a marked PDF / comparison export). */
+export const isBoqExportDoc = (d: Doc): boolean => d.kind !== 'marked_pdf' && d.purpose !== 'comparison' && typeof d.storagePath === 'string' && /\.xlsx$/.test(d.storagePath);
+
+/** Sprint 8: tolerant BoqExport (only what "since last export" needs is required). */
+export function toBoqExport(id: string, d: Doc): BoqExport | null {
+  const r = BoqExportSchema.safeParse({ templateId: null, split: 'summed', markDraft: false, buildId: null, counts: { lines: 0, green: 0, yellow: 0, red: 0, draft: 0, reviewed: 0, approved: 0, overridden: 0 }, sha256: '', sizeBytes: 0, ...(isoDeep(d) as Doc), id });
+  return r.success ? r.data : null;
+}
+
+/** True when a bulk price entry would change nothing. */
+export const samePrice = (cur: ItemLibraryItem, amount: number | null): boolean => (amount === null ? !cur.price : cur.price?.amount === amount);
+
+// ---------------------------------------------------------------------------
 // PATCH line planning (validated against the CURRENT doc inside the transaction)
 // ---------------------------------------------------------------------------
 
@@ -262,7 +346,8 @@ export function planLinePatch(projectId: string, cur: BoqLine, req0: PatchBoqLin
   // (re-approval required); on draft/reviewed lines the status is kept. Notes alone stay locked on approved lines.
   const overrideOnApproved = cur.status === 'approved' && req.qtyOverride !== undefined;
   // Sprint 7: renaming an approved line is allowed (wording only — the approval and the quantity stay).
-  const renameOnly = req.description !== undefined && req.status === undefined && req.qtyOverride === undefined && req.note === undefined;
+  // Sprint 8: so is its project unit price (money, not quantity).
+  const renameOnly = (req.description !== undefined || req.priceOverride !== undefined) && req.status === undefined && req.qtyOverride === undefined && req.note === undefined;
   if (cur.status === 'approved' && !overrideOnApproved && !renameOnly) {
     if (nextStatus !== 'reviewed') throw new RepoConflictError('approved_locked');
   }
@@ -318,6 +403,17 @@ export function planLinePatch(projectId: string, cur: BoqLine, req0: PatchBoqLin
       audit.alsoUpdateLibrary = true;
       audit.libraryItemId = itemIdFor(cur.code, text);
     }
+  }
+  if (req.priceOverride !== undefined) {
+    const prev = typeof cur.priceOverride === 'number' ? cur.priceOverride : null;
+    if (req.priceOverride === null) {
+      Object.assign(patch, { priceOverride: null, priceOverrideBy: null, priceOverrideAt: null, priceOverrideReason: null });
+    } else {
+      Object.assign(patch, { priceOverride: req.priceOverride, priceOverrideBy: actorUid, priceOverrideAt: now, priceOverrideReason: req.reason ?? null });
+    }
+    // History "before → after" = the override values (null = the library price applies).
+    audit.price = { from: prev, to: req.priceOverride };
+    if (req.qtyOverride === undefined && typeof req.description !== 'string') audit.reason = req.priceOverride !== null ? (req.reason ?? null) : null;
   }
   patch.updatedAt = now;
   return { patch, audit };

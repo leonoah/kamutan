@@ -41,7 +41,7 @@ import shutil
 import tempfile
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -51,6 +51,7 @@ from .. import errors as E
 from ..calibration import clean_green_threshold, default_table
 from ..errors import IngestError
 from ..formats import CONTENT_TYPES, compatible, detect_kind
+from ..llm_gateway import hooks as llm_hooks
 from ..ocr.shapes import GlyphStore, StoreDelta
 from ..pipeline.artifacts import glyph_store_path, version_prefix
 from ..pipeline.ceiling import cap_gz_json, detection_counts
@@ -58,6 +59,7 @@ from ..pipeline.floor_check import flag_floor_contradiction
 from ..sandbox.runner import Limits, run_task, safe_output_path
 from ..stores.base import SERVER_TIMESTAMP, BlobNotFound, BlobStore, DocStore
 from .contracts import IngestSheetVersionJob
+from .gone import AliveCache, JobDropped, ensure_alive, log_dropped
 from .scan import Scanner, infected_error, infected_mark, quarantine, scan_upload, scanner_from_env
 
 log = logging.getLogger(__name__)
@@ -155,10 +157,11 @@ def _scale(v: Any) -> int | None:
 class _Progress:
     """Throttled progress writes (version + job docs). Never moves backwards."""
 
-    def __init__(self, docs: DocStore, paths: _Paths, n_pages: int) -> None:
+    def __init__(self, docs: DocStore, paths: _Paths, n_pages: int, alive: AliveCache | None = None) -> None:
         self.docs, self.paths, self.n = docs, paths, max(1, n_pages)
         self.last: dict[str, tuple[str, int]] = {}
         self.last_t = 0.0
+        self.alive = alive  # Sprint 8: a deleted set / project gets no progress write (it would re-create docs)
 
     def page(self, done_before: int, sid: str, stage: str, pct: int) -> None:
         stage = stage if stage in STAGES else "ingest"
@@ -170,6 +173,8 @@ class _Progress:
             return
         self.last[sid] = (stage, pct)
         self.last_t = time.monotonic()
+        if self.alive is not None and not self.alive.alive():
+            return
         self.docs.set(
             self.paths.version(sid),
             {"status": "processing", "progress": {"stage": stage, "pct": pct}, "updatedAt": SERVER_TIMESTAMP},
@@ -200,6 +205,11 @@ def process_sheet_version(
     done = jd.get("result") if isinstance(jd.get("result"), dict) else None
     if jd.get("status") == "succeeded" and done and done.get("sha256") == job.sha256 and done.get("versionId") == job.versionId:
         return _reassert_ready(job, docs, paths, done)
+    try:
+        ensure_alive(docs, job.project_path, paths.sheet_set)  # Sprint 8: deleted set / project → dropped quietly
+    except JobDropped as e:
+        log_dropped("ingest", e)
+        raise
 
     attempts = int(jd.get("attempts") or 0) + 1
     docs.set(
@@ -217,7 +227,7 @@ def process_sheet_version(
     try:
         try:
             return _run(job, blobs, docs, opts, paths, workdir, known_pages, on_page)
-        except IngestError:
+        except (IngestError, JobDropped):
             raise
         except BlobNotFound as e:
             raise IngestError(E.STORAGE_UNAVAILABLE, "artifact storage object vanished") from e
@@ -226,6 +236,9 @@ def process_sheet_version(
             raise IngestError(E.INTERNAL, f"internal error ({type(e).__name__})", retryable=True) from e
     except _Recorded as e:
         raise IngestError(e.code, e.message, retryable=False) from None
+    except JobDropped as e:  # nothing more is written: no error doc, no failed version / set
+        log_dropped("ingest", e)
+        raise
     except IngestError as e:
         if e.retryable and attempts >= opts.max_attempts:
             e = IngestError(e.code, f"{e.message} (gave up after {attempts} attempts)", retryable=False)
@@ -375,6 +388,9 @@ def _run(
         todo = [job.pageIndex]
     else:
         todo = list(range(len(pages)))
+        ensure_alive(docs, job.project_path, paths.sheet_set)
+        if not job.is_reprocess:
+            check_sheet_limit(docs, job, len(pages))  # before any sheet / version doc exists: no partial set
         known_pages[:] = todo
         docs.set(paths.sheet_set, {"pageCount": len(pages), "updatedAt": SERVER_TIMESTAMP})
 
@@ -384,10 +400,11 @@ def _run(
             return None
         return {"widthMm": p["widthMm"], "heightMm": p["heightMm"], "rotation": int(p.get("rotation", 0)) % 360}
 
+    ensure_alive(docs, job.project_path, paths.sheet_set)  # (reprocess: the set may have gone during the probe)
     for i in todo:
         _ensure_docs(job, docs, paths, i, geometry(i))
 
-    prog = _Progress(docs, paths, len(todo))
+    prog = _Progress(docs, paths, len(todo), AliveCache(docs, job.project_path, paths.sheet_set))
     outcomes: list[PageOutcome] = []
     for n_done, i in enumerate(todo):
         sid = job.sheet_id(i)
@@ -396,6 +413,7 @@ def _run(
         if v.get("status") == "ready" and v.get("sourceSha256") == job.sha256 and v.get("workerVersion") == WORKER_VERSION:
             outcomes.append(PageOutcome(i, sid, "skipped"))
             continue
+        ensure_alive(docs, job.project_path, paths.sheet_set, written=sum(o.status == "ready" for o in outcomes))
         try:
             out = _process_page(job, blobs, docs, opts, paths, workdir, page_kind, page_path, i, sid, prog, n_done, v)
             out.seconds = round(time.monotonic() - t0, 2)
@@ -413,6 +431,7 @@ def _run(
 
     ok = [o for o in outcomes if o.status in ("ready", "skipped")]
     failed = [o for o in outcomes if o.status == "failed"]
+    ensure_alive(docs, job.project_path, paths.sheet_set, written=sum(o.status == "ready" for o in outcomes))
     _update_project_sheet_count(job, docs)
     if not job.is_reprocess:
         docs.set(paths.sheet_set, {"status": "ready" if ok else "failed", "pageCount": len(pages), "updatedAt": SERVER_TIMESTAMP})
@@ -462,6 +481,33 @@ def project_sheet_count(docs: DocStore, project_path: str) -> int:
         for _, s in _list_docs(docs, f"{project_path}/sheets")
         if isinstance(s, dict) and s.get("currentVersionId") and s.get("superseded") is not True
     )
+
+
+MAX_SHEETS_PER_PROJECT = 100  # contracts housekeeping.ts
+
+
+def sheet_limit_message(current: int, max_sheets: int = MAX_SHEETS_PER_PROJECT) -> str:
+    """contracts ``sheetLimitMessageHe`` (same text)."""
+    return (
+        f"בפרויקט יש כבר {current} גיליונות — המגבלה היא {max_sheets} גיליונות לפרויקט. "
+        "מחקו סט גיליונות שאינו בשימוש או פתחו פרויקט חדש."
+    )
+
+
+def check_sheet_limit(docs: DocStore, job: IngestSheetVersionJob, adding: int) -> None:
+    """Sprint 8: a new sheet set whose pages would push the project's current sheets past 100 fails as a whole
+    (``sheet_limit``, non-retryable: the set and the job get the error, no sheet is created). Sheets of this set already
+    created by an earlier attempt are not counted twice."""
+    current = sum(
+        1
+        for _, s in _list_docs(docs, f"{job.project_path}/sheets")
+        if isinstance(s, dict)
+        and s.get("currentVersionId")
+        and s.get("superseded") is not True
+        and s.get("sheetSetId") != job.sheetSetId
+    )
+    if current + max(adding, 1) > MAX_SHEETS_PER_PROJECT:
+        raise IngestError(E.SHEET_LIMIT, sheet_limit_message(current), retryable=False)
 
 
 def _update_project_sheet_count(job: IngestSheetVersionJob, docs: DocStore) -> None:
@@ -547,6 +593,7 @@ def _process_page(
     files.append((f"{out_dir}/{res['thumbnail']}", pre + "thumbnail.webp", "image/webp"))
     files.append((f"{out_dir}/primitives.msgpack.gz", pre + "primitives.msgpack.gz", "application/gzip"))
     files.append((f"{out_dir}/text.json.gz", pre + "text.json.gz", "application/gzip"))
+    ensure_alive(docs, job.project_path, paths.sheet_set)  # the page took a while: the set may be gone now
     t_upload = time.monotonic()
     for rel, dest, ctype in files:
         if not (dest.startswith(pre) and dest.endswith((".webp", ".gz"))):
@@ -742,6 +789,11 @@ def _understand(
         # area items red
         "scaleConflict": (not sheet.get("confirmed")) and R_SCALE_CONFLICT in (cls.get("reasons") or []),
     }
+    # Sprint 8 (Worker-LLM) — keep: the org's gateway is on → pass 1 also prepares hard-text / verify crops
+    llm_gw = _gateway(opts, blobs, docs)
+    llm_args = llm_hooks.prepare(llm_gw, job.orgId, _clean_title_block(page_res.get("titleBlockMm"), page_res.get("page")))
+    if llm_args is not None:
+        args["llm"] = llm_args
     try:
         res = run_task(
             "understand", args, workdir=workdir, limits=opts.limits, on_progress=lambda st, pct: prog.page(n_done, sid, st, pct)
@@ -751,6 +803,9 @@ def _understand(
             raise
         log.warning("job %s page %d: understanding failed (%s); page kept without it", job.jobId, index, e.code)
         return None
+    llm_rep: Any = None
+    if llm_args is not None:  # Sprint 8 (Worker-LLM) — keep: read_hard_text (+ pass 2) and verify_symbol
+        res, llm_rep = _llm_pass(job, opts, llm_gw, llm_args, args, res, workdir, prog, n_done, sid, kind)
     pre = paths.artifacts(sid)
     out_dir = str(res["outDir"])
     t_up = time.monotonic()
@@ -778,6 +833,7 @@ def _understand(
                 capped_lists[kind_] = list(json.loads(gzip.decompress(out)).get(key) or [])
         return out
 
+    ensure_alive(docs, job.project_path, paths.sheet_set)
     for f in res.get("files") or []:
         rel = str(f.get("path", ""))
         if not _UNDERSTAND_FILE.match(rel):
@@ -786,6 +842,9 @@ def _understand(
         blobs.write(
             pre + rel, cap(rel, Path(safe_output_path(workdir, f"{out_dir}/{rel}")).read_bytes()), ctype, cache_control=IMMUTABLE
         )
+    if llm_rep is not None:  # Sprint 8 (Worker-LLM): counts / tokens / USD of this page (no text, no images)
+        blobs.write(pre + LLM_FILE, json.dumps(llm_hooks.report_json(llm_rep, str(llm_gw.provider.model))).encode(),
+                    "application/json", cache_control=IMMUTABLE)  # fmt: skip
     legend = res.get("legend") or {}
     if _refine_labels(job, blobs, docs, opts, pre, legend):
         blobs.write(pre + "legend.json.gz", _gz_json(legend), "application/gzip", cache_control=IMMUTABLE)
@@ -901,6 +960,55 @@ def _gateway(opts: Options, blobs: BlobStore, docs: DocStore) -> Any:
     except ImportError:  # pragma: no cover
         return None
     return from_env(docstore_settings_reader(docs), blobs=blobs)
+
+
+LLM_FILE = "llm.json"  # Sprint 8 (Worker-LLM): kamutan.llm/1, per version, only when the org's gateway was on
+
+
+def _llm_pass(
+    job: IngestSheetVersionJob,
+    opts: Options,
+    gw: Any,
+    llm_args: dict[str, Any],
+    args: dict[str, Any],
+    res: dict[str, Any],
+    workdir: str,
+    prog: _Progress,
+    n_done: int,
+    sid: str,
+    kind: str,
+) -> tuple[dict[str, Any], Any]:
+    """Sprint 8 (Worker-LLM): :func:`kamutan_drawing.llm_gateway.hooks.after_understand` around the sandbox task.
+    Pass 2 runs into its own outDir; a failed pass 2 keeps pass 1. Never fails the page."""
+    out1 = str(res["outDir"])
+
+    def read_file(rel: str) -> bytes:
+        return Path(safe_output_path(workdir, f"{out1}/{rel}")).read_bytes()
+
+    def rerun(llm2: dict[str, Any]) -> dict[str, Any] | None:
+        a2 = {**args, "llm": llm2, "outDir": f"{args['outDir']}-llm"}
+        try:
+            return run_task("understand", a2, workdir=workdir, limits=opts.limits,
+                            on_progress=lambda st, pct: prog.page(n_done, sid, st, pct))  # fmt: skip
+        except IngestError as e:
+            log.warning("job %s: LLM second understanding pass failed (%s); pass 1 kept", job.jobId, e.code)
+            return None
+
+    def out_path(r: Mapping[str, Any]) -> Path:  # a child-reported directory, confined to the workdir like files
+        base = os.path.realpath(workdir)
+        d = os.path.realpath(os.path.join(base, str(r["outDir"])))
+        if os.path.commonpath([base, d]) != base or d == base or not os.path.isdir(d):
+            raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid output directory")
+        return Path(d)
+
+    try:
+        return llm_hooks.after_understand(
+            gw, job.orgId, res, llm_args=llm_args, read_file=read_file, rerun=rerun, out_path=out_path,
+            green_threshold=args.get("greenThreshold"), raster=kind in ("png", "jpg"),
+        )  # fmt: skip
+    except Exception:  # the LLM is optional: any failure keeps the page as pass 1 produced it
+        log.warning("job %s: LLM hooks failed; page kept without them", job.jobId, exc_info=True)
+        return res, None
 
 
 def _refine_labels(

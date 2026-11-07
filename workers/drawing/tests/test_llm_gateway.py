@@ -96,11 +96,15 @@ def test_settings_reader_failure_fails_closed():
     assert r.status == "disabled" and fake.calls == []
 
 
-def test_from_env_defaults_to_disabled_and_needs_key_and_model():
+def test_from_env_defaults_to_disabled_and_needs_key_model_defaults():
     s = Settings(o1={"llmEnabled": True})
     assert call(from_env(s, env={})).status == "disabled"
     assert call(from_env(s, env={"KAMUTAN_LLM_PROVIDER": "anthropic", "KAMUTAN_LLM_MODEL": "m"})).status == "disabled"
-    assert call(from_env(s, env={"KAMUTAN_LLM_PROVIDER": "anthropic", "KAMUTAN_LLM_API_KEY": "k"})).status == "disabled"
+    # Sprint 8: the model id is configurable and defaults to claude-sonnet-5-5
+    g0 = from_env(s, env={"KAMUTAN_LLM_PROVIDER": "anthropic", "KAMUTAN_LLM_API_KEY": "k"})
+    assert isinstance(g0.provider, AnthropicProvider) and g0.provider.model == "claude-sonnet-5-5"
+    g1 = from_env(s, env={"KAMUTAN_LLM_PROVIDER": "anthropic", "KAMUTAN_LLM_API_KEY": "k", "KAMUTAN_LLM_MODEL": "claude-x"})
+    assert g1.provider.model == "claude-x"
     g = from_env(s, env={"KAMUTAN_LLM_PROVIDER": "fake"}, fake=FakeProvider(replies=[GOOD]))
     assert call(g).status == "ok"
 

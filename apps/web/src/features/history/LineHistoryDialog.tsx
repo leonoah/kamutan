@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { fmtQty } from "@/features/boq/model";
 import { lineDescription } from "@/features/boq/sprint7";
+import { formatMoney } from "@/features/prices/model";
 
 export function useLineHistory(projectId: string, lineId: string | null) {
   const api = useApi();
@@ -58,6 +59,11 @@ export function describeChange(item: LineHistoryItem, t: TFunction): { before: s
         after: after ?? (restored ? t("history.descriptionRestored") : null),
         note: [restored && after ? t("history.descriptionRestored") : null, a.library === true ? t("history.descriptionLibrary") : null].filter(Boolean).join(" · ") || null,
       };
+    }
+    case "price": {
+      // Sprint 8 (contracts): before / after are the line's price OVERRIDE (number | null); null = the library price.
+      const money = (raw: unknown) => (typeof raw === "number" ? formatMoney(raw) : raw === null || raw === undefined ? t("prices.history.library") : null);
+      return { before: money(item.before), after: money(item.after), note: item.after === null ? t("history.priceRestored") : null };
     }
     case "rebuild":
       return { before: qty(b), after: qty(a), note: null };

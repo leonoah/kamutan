@@ -5,6 +5,8 @@ import { AlertTriangle, ChevronDown, ChevronRight, FileSpreadsheet, Printer } fr
 import type { BoqDocumentChapter, BoqDocumentColumn, BoqDocumentModel, BoqDocumentQuery, BoqDocumentRow, BoqLine } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { ConfidenceShape, levelFromDb } from "@/components/ConfidenceBadge";
+import { ManualPriceMarker, UnpricedChip } from "@/features/prices/PriceParts";
+import { formatMoneyDelta, formatPct, round2 } from "@/features/prices/model";
 import { Ltr } from "@/components/Ltr";
 import { formatDateTime, formatQuantity } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -258,6 +260,19 @@ export function PreviewWarning({ doc }: { doc: BoqDocumentModel }) {
   );
 }
 
+/** Sprint 8: lines without a price are not a gate (the export still works) — one quiet line, screen only. */
+function UnpricedNote({ doc }: { doc: BoqDocumentModel }) {
+  const { t } = useTranslation();
+  const n = doc.warnings.find((w) => w.kind === "unpriced")?.count ?? 0;
+  if (!n) return null;
+  return (
+    <p data-preview-unpriced className="mb-3 flex items-center gap-2 text-dense text-foreground print:hidden">
+      <UnpricedChip />
+      {t("prices.totals.unpricedNote", { count: n })}
+    </p>
+  );
+}
+
 function BoqDocumentView({
   doc,
   lines,
@@ -281,6 +296,7 @@ function BoqDocumentView({
       className="boq-doc rounded-lg border border-border bg-surface p-4 shadow-sm sm:p-6 print:rounded-none print:border-0 print:p-0 print:shadow-none"
     >
       <PreviewWarning doc={doc} />
+      <UnpricedNote doc={doc} />
       {/* Title rows (merged + centred in the Excel; the first one larger) */}
       <header className="mb-3 flex flex-col items-center gap-0.5 text-center" data-title-rows>
         {doc.titleRows.map((r, i) =>
@@ -374,7 +390,17 @@ function cellOf(col: BoqDocumentColumn, row: BoqDocumentRow, line: BoqLine | und
     case "qty":
       return <Qty row={row} />;
     case "unitPrice":
-      return <Ltr>{formatMoney(row.price)}</Ltr>;
+      // Sprint 8: "ללא מחיר" (screen only; the printed / Excel cell stays empty) and "✎ ידני" for the line's own price
+      return row.unpriced || row.price === null ? (
+        <span className="print:hidden">
+          <UnpricedChip />
+        </span>
+      ) : (
+        <span className="inline-flex flex-col items-end">
+          <Ltr>{formatMoney(row.price)}</Ltr>
+          {row.priceSource === "override" ? <ManualPriceMarker className="print:hidden" /> : null}
+        </span>
+      );
     case "total":
       return <Ltr>{formatMoney(row.total)}</Ltr>;
     case "confidence":
@@ -477,8 +503,22 @@ function DocTable({ doc, lines, onOpenLine, projectId }: { doc: BoqDocumentModel
           <tr aria-hidden>
             <td colSpan={n} className="h-3 border-0" />
           </tr>
+          {doc.totals.adjustmentPct && doc.totals.linesTotal !== undefined ? sumRow("subtotal", t("prices.totals.subtotal"), doc.totals.linesTotal, { data: "data-doc-subtotal" }) : null}
+          {doc.totals.adjustmentPct ? (
+            <tr className="break-inside-avoid" data-adjustment>
+              {cols.map((c, i) => (
+                <td key={c.key} className={cn(cell, "border-x-0", i === descIdx && "font-bold", i === totalIdx && "text-end font-bold tabular")}>
+                  {i === descIdx
+                    ? t(doc.totals.adjustmentPct! < 0 ? "prices.totals.discount" : "prices.totals.markup", { pct: formatPct(Math.abs(doc.totals.adjustmentPct!)) })
+                    : i === totalIdx
+                      ? <Ltr>{formatMoneyDelta(doc.totals.adjustment ?? 0)}</Ltr>
+                      : null}
+                </td>
+              ))}
+            </tr>
+          ) : null}
           {sumRow("grand", t("boq.preview.grandTotal"), doc.totals.beforeVat, { strong: true })}
-          {doc.vatRate !== undefined ? sumRow("vat", t("boq.preview.vat", { pct: Math.round(doc.vatRate * 100) }), doc.totals.vat) : null}
+          {doc.vatRate !== undefined ? sumRow("vat", t("boq.preview.vat", { pct: round2(doc.vatRate * 100) }), doc.totals.vat) : null}
           {sumRow("grand-vat", t("boq.preview.grandTotalVat"), doc.totals.afterVat, { strong: true })}
         </tbody>
       </table>
@@ -558,6 +598,22 @@ function DocList({ doc, lines, projectId }: { doc: BoqDocumentModel; lines: Read
         </section>
       ))}
       <dl className="flex flex-col gap-1 border-t border-border pt-3 text-dense text-foreground" data-grand-totals>
+        {doc.totals.adjustmentPct ? (
+          <>
+            <div className="flex justify-between">
+              <dt>{t("prices.totals.subtotal")}</dt>
+              <dd>
+                <Ltr>{formatMoney(doc.totals.linesTotal ?? 0)}</Ltr>
+              </dd>
+            </div>
+            <div className="flex justify-between" data-adjustment>
+              <dt>{t(doc.totals.adjustmentPct < 0 ? "prices.totals.discount" : "prices.totals.markup", { pct: formatPct(Math.abs(doc.totals.adjustmentPct)) })}</dt>
+              <dd>
+                <Ltr>{formatMoneyDelta(doc.totals.adjustment ?? 0)}</Ltr>
+              </dd>
+            </div>
+          </>
+        ) : null}
         <div className="flex justify-between font-bold">
           <dt>{t("boq.preview.grandTotal")}</dt>
           <dd>
@@ -566,7 +622,7 @@ function DocList({ doc, lines, projectId }: { doc: BoqDocumentModel; lines: Read
         </div>
         {doc.vatRate !== undefined ? (
           <div className="flex justify-between">
-            <dt>{t("boq.preview.vat", { pct: Math.round(doc.vatRate * 100) })}</dt>
+            <dt>{t("boq.preview.vat", { pct: round2(doc.vatRate * 100) })}</dt>
             <dd>
               <Ltr>{formatMoney(doc.totals.vat)}</Ltr>
             </dd>

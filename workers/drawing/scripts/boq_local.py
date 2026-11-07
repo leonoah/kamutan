@@ -146,6 +146,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     proj = f"orgs/{ORG}/projects/{PROJECT}"
+    if docs.get(proj) is None:  # as the API would (Sprint 8: a build of a missing project is dropped)
+        docs.set(proj, {"orgId": ORG, "name": PROJECT})
     # 1b. room settings + synthetic corrections (replaced on every run)
     rs = json.loads(Path(a.room_settings).read_text()) if a.room_settings else SAMPLE_ROOM_SETTINGS
     for doc_id, d in rs.items():

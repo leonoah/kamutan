@@ -1,0 +1,71 @@
+{
+  "$ref": "#/definitions/DeleteSheetSetResponse",
+  "definitions": {
+    "DeleteSheetSetResponse": {
+      "type": "object",
+      "properties": {
+        "sheetSetId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "deleted": {
+          "type": "object",
+          "properties": {
+            "sheets": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "versions": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "docs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "objects": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "sheets",
+            "versions",
+            "docs",
+            "objects"
+          ],
+          "additionalProperties": false
+        },
+        "releasedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "storageBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "storageQuotaBytes": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "revokedShareLinks": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sheetSetId",
+        "deleted",
+        "releasedBytes",
+        "storageBytes",
+        "storageQuotaBytes",
+        "revokedShareLinks"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/DeleteSheetSetResponse.json"
+}

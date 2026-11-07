@@ -39,6 +39,13 @@ export const PROJECT_QUOTA_MAX_BYTES = 1024 ** 4;
 export const projectQuotaOf = (settings: { projectQuotaBytes?: number | undefined } | null | undefined): number =>
   typeof settings?.projectQuotaBytes === 'number' && settings.projectQuotaBytes > 0 ? settings.projectQuotaBytes : DEFAULT_PROJECT_QUOTA_BYTES;
 
+/** Sprint 8: default VAT (18%) and the highest rate an admin may set. */
+export const DEFAULT_VAT_RATE = 0.18;
+export const VAT_RATE_MAX = 0.5;
+/** Effective VAT of an org (setting, else 18%). */
+export const vatRateOf = (settings: { vatRate?: number | undefined } | null | undefined): number =>
+  typeof settings?.vatRate === 'number' && Number.isFinite(settings.vatRate) && settings.vatRate >= 0 && settings.vatRate <= 1 ? settings.vatRate : DEFAULT_VAT_RATE;
+
 export const DEFAULT_ORG_SETTINGS: Readonly<OrgSettings> = Object.freeze({
   llmEnabled: false,
   blockExportOnRed: true,
@@ -65,6 +72,8 @@ export const PatchOrgSettingsRequestSchema = z
     trainingOptIn: z.boolean().optional(),
     /** Sprint 7: per-project storage quota in bytes (100 MB … 1 TB). Lowering it below a project's usage blocks new uploads only. */
     projectQuotaBytes: z.number().int().min(PROJECT_QUOTA_MIN_BYTES).max(PROJECT_QUOTA_MAX_BYTES).optional(),
+    /** Sprint 8: VAT of every BOQ total (fraction: 0.18 = 18%; 0 … 0.5). */
+    vatRate: z.number().finite().min(0).max(VAT_RATE_MAX).optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'at least one setting is required' });

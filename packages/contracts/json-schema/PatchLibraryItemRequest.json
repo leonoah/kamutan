@@ -24,6 +24,18 @@
         },
         "active": {
           "type": "boolean"
+        },
+        "price": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000000
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false

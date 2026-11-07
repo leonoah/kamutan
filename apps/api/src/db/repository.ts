@@ -98,6 +98,11 @@ export interface Repository {
     opts: { limit: number; cursor?: string; sheetSetId?: string; includeSuperseded?: boolean },
   ): Promise<{ items: SheetSummary[]; nextCursor: string | null }>;
   getSheet(orgId: string, projectId: string, sheetId: string): Promise<Sheet | null>;
+  /**
+   * Sprint 8 (≤ 100 sheets per project): current sheets = sheets not `superseded`; `excludeSheetSetId` leaves out the
+   * sheets of one set (the set a revision replaces). count() aggregations on Firestore.
+   */
+  countCurrentSheets(orgId: string, projectId: string, opts?: { excludeSheetSetId?: string }): Promise<number>;
   getVersion(orgId: string, projectId: string, sheetId: string, versionId: string): Promise<SheetVersion | null>;
   /**
    * Transaction: requires sheet.currentVersionId == expectedVersionId (else RepoConflictError), writes the

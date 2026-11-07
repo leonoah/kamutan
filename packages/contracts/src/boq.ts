@@ -18,6 +18,7 @@ import { pageOf, TimestampSchema } from './common.js';
 import { DocIdSchema, UidSchema } from './org.js';
 import { ConfidenceLevelSchema, type ConfidenceLevel } from './review.js';
 import { FloorSchema, ProcessingErrorSchema } from './sheets.js';
+import { BoqTotalsSchema, LinePriceSourceSchema, PriceAmountSchema } from './prices.js';
 
 export const BOQ_LINE_STATUSES = ['draft', 'reviewed', 'approved'] as const;
 export const BoqLineStatusSchema = z.enum(BOQ_LINE_STATUSES);
@@ -250,8 +251,23 @@ export const BoqLineSchema = z.object({
   descriptionOverrideBy: UidSchema.nullable().optional(),
   descriptionOverrideAt: TimestampSchema.nullable().optional(),
   descriptionOverrideReason: z.string().max(500).nullable().optional(),
+  // --- Sprint 8 (API-written, PATCH `priceOverride`, editor+; preserved by every rebuild like qtyOverride) ---
+  /** The project's own unit price of the line (₪); wins over the org library price (`effectivePrice`). */
+  priceOverride: PriceAmountSchema.nullable().optional(),
+  priceOverrideBy: UidSchema.nullable().optional(),
+  priceOverrideAt: TimestampSchema.nullable().optional(),
+  priceOverrideReason: z.string().max(500).nullable().optional(),
+  // --- Sprint 8 (API-DERIVED on read — GET boq / PATCH line responses; never stored, the worker must not write them) ---
+  /** Effective unit price (override ?? library price); null = "ללא מחיר". */
+  unitPrice: z.number().finite().nullable().optional(),
+  unitPriceSource: LinePriceSourceSchema.nullable().optional(),
+  /** Effective qty × unitPrice (null without a price). */
+  lineTotal: z.number().finite().nullable().optional(),
 });
 export type BoqLine = z.infer<typeof BoqLineSchema>;
+
+/** Sprint 8: fields the API derives on read (stripped before any write). */
+export const BOQ_LINE_DERIVED_FIELDS = ['unitPrice', 'unitPriceSource', 'lineTotal'] as const;
 
 /** Sprint 7: the description every surface shows (the project's rename wins). */
 export const displayDescription = (l: Pick<BoqLine, 'description'> & { descriptionOverride?: string | null | undefined }): string =>
@@ -317,6 +333,11 @@ export const BOQ_LINE_API_FIELDS = [
   'descriptionOverrideBy',
   'descriptionOverrideAt',
   'descriptionOverrideReason',
+  // Sprint 8: the project's unit price of the line.
+  'priceOverride',
+  'priceOverrideBy',
+  'priceOverrideAt',
+  'priceOverrideReason',
   'updatedAt',
 ] as const;
 
@@ -337,6 +358,11 @@ export const BOQ_LINE_PRESERVED_FIELDS = [
   'descriptionOverrideBy',
   'descriptionOverrideAt',
   'descriptionOverrideReason',
+  // Sprint 8: the project's unit price of the line (worker mirrors it in boq/build.py PRESERVED).
+  'priceOverride',
+  'priceOverrideBy',
+  'priceOverrideAt',
+  'priceOverrideReason',
   'locked',
 ] as const;
 
@@ -454,6 +480,11 @@ export const BoqBuildSchema = z.object({
     .optional(),
   /** API: when it appended the `boqLines/approval_invalidated` audit events of `approvalsInvalidated` (idempotency stamp). */
   approvalsAuditedAt: TimestampSchema.nullable().optional(),
+  /**
+   * Sprint 8 (Worker-BOQ, on success): path of the build's lines snapshot `orgs/{o}/projects/{p}/boq/{buildId}/lines.json.gz`
+   * (`kamutan.boq-lines/1`, compare.ts). Absent on older builds (they cannot be compared).
+   */
+  linesRef: z.string().max(1024).nullable().optional(),
 });
 export type BoqBuild = z.infer<typeof BoqBuildSchema>;
 
@@ -531,6 +562,8 @@ export const BoqSummarySchema = z.object({
   floors: z.array(z.string()),
   /** Org setting: export refused (409) while red lines exist. */
   blockExportOnRed: z.boolean(),
+  /** Sprint 8: totals over ALL lines (effective prices, project discount / markup, org VAT). */
+  totals: BoqTotalsSchema.optional(),
 });
 export type BoqSummary = z.infer<typeof BoqSummarySchema>;
 
@@ -558,8 +591,10 @@ export type BoqView = z.infer<typeof BoqViewSchema>;
  * - Sprint 7 `alsoUpdateLibrary` (only with a string `description`): also rewrites the org library item of the line's
  *   code (editor+, same rules as library item edits): a new item `itemIdFor(code, text)` with `source: 'manual'`
  *   (chapter / unit / tags copied), the code's previous active items are deactivated — future builds use the new text.
- * `reason` belongs to `qtyOverride` and/or `description` (when both are set it is stored for both).
- * An approved line only accepts `status: 'reviewed'` (un-approve) / `description` — anything else → 409.
+ * - Sprint 8 `priceOverride` (editor+): number (0..PRICE_MAX ₪) sets the project unit price (+ By / At / Reason, `reason`
+ *   optional); `null` clears it. Allowed on approved lines (price only; approval and quantity untouched).
+ * `reason` belongs to `qtyOverride`, `description` and/or `priceOverride` (stored for each that is set).
+ * An approved line only accepts `status: 'reviewed'` (un-approve) / `description` / `priceOverride` — anything else → 409.
  */
 export const PatchBoqLineRequestSchema = z
   .object({
@@ -575,17 +610,19 @@ export const PatchBoqLineRequestSchema = z
       .nullable()
       .optional(),
     alsoUpdateLibrary: z.boolean().optional(),
+    /** Sprint 8 (editor+): the line's unit price in the project (₪); null clears it (the library price applies again). */
+    priceOverride: PriceAmountSchema.nullable().optional(),
   })
   .strict()
   .superRefine((v, ctx) => {
-    if (v.status === undefined && v.qtyOverride === undefined && v.note === undefined && v.description === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message: 'one of status, qtyOverride, note, description is required' });
+    if (v.status === undefined && v.qtyOverride === undefined && v.note === undefined && v.description === undefined && v.priceOverride === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message: 'one of status, qtyOverride, note, description, priceOverride is required' });
     }
     if (typeof v.qtyOverride === 'number' && !v.reason) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'a reason is required to override a quantity' });
     }
-    if (v.reason !== undefined && v.qtyOverride === undefined && typeof v.description !== 'string') {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'reason is only allowed with qtyOverride or description' });
+    if (v.reason !== undefined && v.qtyOverride === undefined && typeof v.description !== 'string' && typeof v.priceOverride !== 'number') {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'reason is only allowed with qtyOverride, description or priceOverride' });
     }
     if (v.alsoUpdateLibrary === true && typeof v.description !== 'string') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['alsoUpdateLibrary'], message: 'alsoUpdateLibrary needs a new description' });
@@ -894,6 +931,8 @@ export const ExportBoqRequestSchema = z
     includeConfidence: z.boolean().default(true),
     /** Sprint 7: only these chapters (codes compared with `chapterKey`: "04" ≡ "4"); absent = every chapter with lines. */
     chapters: z.array(ChapterCodeSchema).min(1).max(64).optional(),
+    /** Sprint 8: fill the unit-price column with the effective prices (default true; false = empty price column as before). */
+    includePrices: z.boolean().default(true),
   })
   .strict();
 export type ExportBoqRequest = z.infer<typeof ExportBoqRequestSchema>;
@@ -932,6 +971,10 @@ export const BoqExportSchema = z.object({
   sizeBytes: z.number().int().nonnegative(),
   createdBy: UidSchema,
   createdAt: TimestampSchema,
+  /** Sprint 8: `boq` (absent = boq) or `comparison` ("תוספות ושינויים"; not a BOQ export for "since last export"). */
+  purpose: z.enum(['boq', 'comparison']).optional(),
+  /** Sprint 8: the builds a comparison export compared. */
+  compare: z.object({ fromBuildId: DocIdSchema, toBuildId: DocIdSchema }).nullable().optional(),
 });
 export type BoqExport = z.infer<typeof BoqExportSchema>;
 

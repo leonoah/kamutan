@@ -145,6 +145,13 @@ export interface Project {
   status: 'active' | 'archived';
   createdBy: string;
   createdAt: FsTimestamp;
+  /** Sprint 7: API-maintained storage usage (bytes). */
+  storageBytes?: number;
+  /** Sprint 8: project discount (< 0) / markup (> 0) % of the BOQ totals (API, PATCH …/boq/pricing). */
+  pricing?: { adjustmentPct: number; updatedBy: string | null; updatedAt: FsTimestamp | null };
+  /** Sprint 8: tombstone of a project delete in progress (API). firestore.rules deny `get` of such a doc. */
+  deletingAt?: FsTimestamp | null;
+  deletingBy?: string | null;
 }
 
 /** orgs/{orgId}/projects/{projectId}/sheetSets/{setId} — server-written. */
@@ -156,6 +163,12 @@ export interface SheetSet {
   name?: string;
   uploadedBy: string;
   createdAt: FsTimestamp;
+  /** Sprint 7: bytes counted in `project.storageBytes` until `storageReleasedAt`. */
+  sizeBytes?: number;
+  storageReleasedAt?: FsTimestamp | null;
+  /** Sprint 8: tombstone of a sheet-set delete in progress (API). firestore.rules deny `get` of such a doc. */
+  deletedAt?: FsTimestamp | null;
+  deletedBy?: string | null;
 }
 
 /** A floor/scale region of a sheet (decision #10). Polygon in paper mm, y down. */
@@ -419,7 +432,11 @@ export interface BoqLine {
 export const BOQ_LINE_CLIENT_FIELDS = ['status', 'reviewedBy', 'reviewedAt', 'approvedBy', 'approvedAt', 'note'] as const;
 /** Sprint 3: fields the API PATCH may change (role-checked + audited). Mirrors packages/contracts BOQ_LINE_API_FIELDS. */
 export const BOQ_LINE_API_FIELDS = [
-  'status', 'reviewedBy', 'reviewedAt', 'approvedBy', 'approvedAt', 'note', 'qtyOverride', 'qtyOverrideReason', 'qtyOverrideBy', 'qtyOverrideAt', 'updatedAt',
+  'status', 'reviewedBy', 'reviewedAt', 'approvedBy', 'approvedAt', 'note', 'qtyOverride', 'qtyOverrideReason', 'qtyOverrideBy', 'qtyOverrideAt',
+  // Sprint 7 rename, Sprint 8 project unit price (preserved by every rebuild).
+  'descriptionOverride', 'descriptionOverrideBy', 'descriptionOverrideAt', 'descriptionOverrideReason',
+  'priceOverride', 'priceOverrideBy', 'priceOverrideAt', 'priceOverrideReason',
+  'updatedAt',
 ] as const;
 
 /** orgs/{orgId}/projects/{projectId}/boqBuilds/{buildId} — API creates `queued`, worker runs it. No client write. */
@@ -499,8 +516,10 @@ export interface ShareLink {
   viewCount?: number;
   lastViewedAt?: FsTimestamp | null;
   revokedBy?: string | null;
-  revokeReason?: 'user' | 'offboarding' | 'project_deleted' | null;
+  revokeReason?: 'user' | 'offboarding' | 'project_deleted' | 'sheet_set_deleted' | null;
   pdfExportId?: string | null;
+  /** Sprint 8: "הצג מחירים" — the BOQ snapshot carries prices. */
+  showPrices?: boolean;
 }
 
 /** orgs/{orgId}/itemLibrary/{itemId} — API (manual) / worker (library.import). itemId = itemIdFor(code, description). */
@@ -516,6 +535,8 @@ export interface ItemLibraryEntry {
   active: boolean;
   updatedAt: FsTimestamp | null;
   updatedBy?: string | null;
+  /** Sprint 8: the org's unit price (₪); API (PATCH / bulk) or worker (price import). Members read it like the item. */
+  price?: { amount: number; currency: 'ILS'; updatedAt: FsTimestamp | null; by: string | null; source: 'manual' | 'import'; importId?: string | null } | null;
 }
 
 /** orgs/{orgId}/boqTemplates/{id} — API (seed `tpl_default`, admin PATCH) / worker (import). */
@@ -632,6 +653,8 @@ export const paths = {
   /** Sprint 3 Storage objects — none client-readable. */
   linksArtifact: (o: string, p: string, s: string, v: string) => `orgs/${o}/projects/${p}/sheets/${s}/versions/${v}/links.json.gz`,
   boqEvidence: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/evidence.json.gz`,
+  /** Sprint 8: compact lines snapshot per build (`kamutan.boq-lines/1`, worker writes; API reads for comparisons). */
+  boqLinesSnapshot: (o: string, p: string, buildId: string) => `orgs/${o}/projects/${p}/boq/${buildId}/lines.json.gz`,
   boqExportFile: (o: string, p: string, exportId: string) => `orgs/${o}/projects/${p}/exports/${exportId}.xlsx`,
   /** Client create-only upload slot for past BOQs (editor/admin, ≤ 20 MB, spreadsheet types); API verifies magic bytes. */
   libraryImportObject: (o: string, uuid: string, ext: 'xls' | 'xlsx') => `orgs/${o}/imports/${uuid}.${ext}`,

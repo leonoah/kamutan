@@ -26,6 +26,7 @@ import { LibraryNotice } from "@/features/boq/LibraryNotice";
 import { CalibrationBadge, cappedLines, resolveCalibration } from "@/features/calibration/CalibrationBadge";
 import { LineHistoryDialog } from "@/features/history/LineHistoryDialog";
 import { ShareDialog } from "@/features/share/ShareDialog";
+import { canEditPrices } from "@/features/prices/model";
 import {
   bulkPlan,
   canEditQty,
@@ -1839,6 +1840,8 @@ export function ReviewPage() {
           projectId={projectId}
           canRename={canRenameLine(role)}
           previewHref={`/projects/${projectId}/boq/preview${split ? "?split=floor" : ""}`}
+          compareHref={`/projects/${projectId}/boq/compare`}
+          canEditPrice={canEditPrices(role)}
         />
         <section id="drawing-panel" tabIndex={-1} aria-label={t("review.drawingPanel")} className="flex min-h-0 flex-col border-x border-border">
           <h2 className="sr-only">{t("review.drawingPanel")}</h2>

@@ -11,7 +11,8 @@ The job is routed on its ``type``: ``boq.build`` → :func:`kamutan_drawing.boq.
 (``ingest.sheet_version``) → :func:`process_sheet_version` exactly as before.
 
 Response semantics (Pub/Sub retries on any non-2xx):
-  * 204 - processed (or an idempotent redelivery of a processed job)
+  * 204 - processed (or an idempotent redelivery of a processed job, or a job dropped because its sheet set / project
+    was deleted — Sprint 8, :mod:`.gone`)
   * 200 {"status": "rejected", "reason": code} - permanently bad message (bad envelope/payload,
     foreign job, unsupported kind, sha mismatch, missing source, hostile file …): acknowledged so
     it is not redelivered forever; the job doc carries the error
@@ -44,6 +45,7 @@ from ..export.job import run_marked_pdf  # Sprint 5 (Worker-Export)
 from ..library_import.importer import run_library_import
 from ..stores.base import BlobStore, DocStore
 from .contracts import IngestSheetVersionJob
+from .gone import JobDropped, gone, log_dropped
 from .pipeline import Options, process_sheet_version
 from .scan import describe, scan_mode, scanner_from_env
 from .similar import FIND_SIMILAR_TYPE, FindSimilarJob, run_find_similar
@@ -99,6 +101,12 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
         except ValidationError as e:
             log.warning("rejecting invalid job payload: %d errors", len(e.errors()))
             return JSONResponse({"status": "rejected", "reason": "invalid_payload", "errors": len(e.errors())}, status_code=200)
+        if isinstance(job, MarkedPdfJob | FindSimilarJob):
+            # Sprint 8: project deleted (missing / tombstoned) → ack quietly (ingest and boq.build check inside)
+            what = gone(docs, f"orgs/{job.orgId}/projects/{job.projectId}")
+            if what is not None:
+                log_dropped(str(jtype), JobDropped(what))
+                return Response(status_code=204)
         try:
             # CPU-bound and long: run outside the event loop
             from starlette.concurrency import run_in_threadpool
@@ -124,6 +132,8 @@ def create_app(blobs: BlobStore, docs: DocStore, options: Options | None = None)
                 )
             else:
                 await run_in_threadpool(process_sheet_version, job, blobs, docs, opts)
+        except JobDropped:  # sheet set / project deleted: ack (no retry), nothing written, logged by the job
+            return Response(status_code=204)
         except IngestError as e:
             if e.retryable:
                 return JSONResponse({"status": "error", "code": e.code}, status_code=500)

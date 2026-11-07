@@ -33,6 +33,9 @@
             "allowPdfDownload": {
               "type": "boolean"
             },
+            "showPrices": {
+              "type": "boolean"
+            },
             "watermark": {
               "type": "string"
             }

@@ -1,6 +1,5 @@
 import {
   DEFAULT_ORG_SETTINGS,
-  FILE_INFECTED_ERROR,
   fsPaths,
   type Job,
   type LegendEntry,
@@ -23,7 +22,7 @@ import { auditHash, logAuditEvent } from './audit-chain';
 import { confirmAudit, newVersionDoc, regionsAudit } from './in-memory.repository';
 import { clusterLegendEntryDoc, decisionLabel, legendDecisionAudit, legendDecisionPatch, mappingDoc, resolveClusterAudit } from './legend-docs';
 import { mappers, versionSummary } from './mappers';
-import { countedBytes, isInfected, releasableBytes } from './storage-usage';
+import { countedBytes, isInfected, releasableBytes, RELEASED_ERROR_CODES } from './storage-usage';
 import {
   RepoConflictError,
   type AuditInput,
@@ -96,14 +95,15 @@ export class FirestoreRepository implements Repository {
   async findProjectOrgId(projectId: string): Promise<string | null> {
     // Needs a collection-group field override on projects.projectId.
     const snap = await this.db.collectionGroup('projects').where('projectId', '==', projectId).limit(2).get();
-    const docs = snap.docs.filter((d) => d.ref.parent.parent?.parent.id === 'orgs');
+    // Sprint 8: a project being deleted (tombstone `deletingAt`) no longer resolves.
+    const docs = snap.docs.filter((d) => d.ref.parent.parent?.parent.id === 'orgs' && !mappers.isDeleting(d.data()));
     if (docs.length !== 1) return null;
     return docs[0]?.ref.parent.parent?.id ?? null;
   }
 
   async getProject(orgId: string, projectId: string): Promise<Project | null> {
     const d = plain((await this.db.doc(fsPaths.project(orgId, projectId)).get()).data());
-    return d ? mappers.toProject(projectId, d) : null;
+    return d && !mappers.isDeleting(d) ? mappers.toProject(projectId, d) : null;
   }
 
   async listProjects(orgId: string, opts: { limit: number; cursor?: string }) {
@@ -114,7 +114,10 @@ export class FirestoreRepository implements Repository {
       q = q.startAfter(cur);
     }
     const snap = await q.get();
-    const items = snap.docs.slice(0, opts.limit).map((d) => mappers.toProject(d.id, plain(d.data()) ?? {}));
+    const items = snap.docs
+      .slice(0, opts.limit)
+      .filter((d) => !mappers.isDeleting(d.data()))
+      .map((d) => mappers.toProject(d.id, plain(d.data()) ?? {}));
     return { items, nextCursor: snap.docs.length > opts.limit && items.length ? (items.at(-1) as Project).id : null };
   }
 
@@ -254,7 +257,7 @@ export class FirestoreRepository implements Repository {
 
   async releaseInfectedStorage(orgId: string, projectId: string, sheetSetId?: string): Promise<number> {
     const col = this.db.collection(`orgs/${orgId}/projects/${projectId}/sheetSets`);
-    const ids = sheetSetId ? [sheetSetId] : (await col.where('error.code', '==', FILE_INFECTED_ERROR).limit(200).get()).docs.map((d) => d.id);
+    const ids = sheetSetId ? [sheetSetId] : (await col.where('error.code', 'in', [...RELEASED_ERROR_CODES]).limit(200).get()).docs.map((d) => d.id);
     let n = 0;
     for (const id of ids) {
       const released = await this.db.runTransaction(async (tx) => {
@@ -302,6 +305,17 @@ export class FirestoreRepository implements Repository {
       currentVersion: versionSummary(sh.currentVersionId ? (versions.get(`${sh.id}/${sh.currentVersionId}`) ?? null) : null),
     }));
     return { items, nextCursor: snap.docs.length > opts.limit && lastRawId ? lastRawId : null };
+  }
+
+  async countCurrentSheets(orgId: string, projectId: string, opts: { excludeSheetSetId?: string } = {}): Promise<number> {
+    const col = this.db.collection(fsPaths.sheets(orgId, projectId));
+    const n = async (q: Query) => (await q.count().get()).data().count;
+    const [all, superseded, excluded] = await Promise.all([
+      n(col),
+      n(col.where('superseded', '==', true)),
+      opts.excludeSheetSetId ? n(col.where('sheetSetId', '==', opts.excludeSheetSetId)) : Promise.resolve(0),
+    ]);
+    return Math.max(0, all - superseded - excluded);
   }
 
   async getSheet(orgId: string, projectId: string, sheetId: string): Promise<Sheet | null> {

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { BookOpenCheck, ChevronRight, ClipboardCheck, HardDrive, Layers, MapPin, Pencil, UploadCloud } from "lucide-react";
-import { DEFAULT_PROJECT_QUOTA_BYTES, isSupersededSet, type SheetRow } from "@/api/types";
+import { AlertTriangle, BookOpenCheck, ChevronRight, ClipboardCheck, HardDrive, Layers, MapPin, Pencil, Settings, UploadCloud } from "lucide-react";
+import { DEFAULT_PROJECT_QUOTA_BYTES, MAX_SHEETS_PER_PROJECT, isSupersededSet, type SheetRow } from "@/api/types";
+import { DeleteSetDialog, canDeleteSets, type SetToDelete } from "@/features/deletes/DeleteParts";
 import { formatStorage, quotaPct } from "@/features/boq/sprint7";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -55,6 +56,8 @@ export function ProjectPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [filterSheetId, setFilterSheetId] = useState<string | null>(null);
+  // Sprint 8: delete a sheet set (editor+) from the gallery tile menu or the upload history
+  const [deleting, setDeleting] = useState<SetToDelete | null>(null);
   // A project opened with no drawings keeps its inline dropzone for the whole visit, so an upload in progress
   // does not jump into a dialog the moment the first sheet appears.
   const [inlineUpload, setInlineUpload] = useState<boolean | null>(null);
@@ -98,6 +101,17 @@ export function ProjectPage() {
   }
 
   const p = project.data;
+  const setName = (id: string) => sets.data?.find((x) => x.id === id)?.name ?? id;
+  const askDelete = canDeleteSets(org?.role)
+    ? (setId: string) => {
+        const n = rows.filter((r) => r.sheet.sheetSetId === setId).length;
+        setDeleting({ id: setId, name: setName(setId), sheets: n, bytes: sets.data?.find((x) => x.id === setId)?.storageBytes ?? null });
+      }
+    : undefined;
+  const sheetLimit = p.sheetLimit ?? MAX_SHEETS_PER_PROJECT;
+  const sheetCount = Math.max(rows.length, p.sheetCount ?? 0);
+  const atLimit = sheetCount >= sheetLimit;
+  const nearLimit = !atLimit && sheetCount >= Math.floor(sheetLimit * 0.9);
   const phase = projectPhase(p, jobs.data ?? []);
   const live = activeProgress(p.id, jobs.data ?? []);
   const liveLines = boqState.data?.latestBuildId ? (boqLines.data?.items ?? []) : [];
@@ -146,6 +160,12 @@ export function ProjectPage() {
             <Pencil aria-hidden />
             {t("hub.edit")}
           </Button>
+          <Button variant="ghost" asChild>
+            <Link to={`/projects/${p.id}/settings`} aria-label={t("projectSettings.openFull")} title={t("projectSettings.openFull")}>
+              <Settings aria-hidden />
+              <span className="max-sm:sr-only">{t("projectSettings.open")}</span>
+            </Link>
+          </Button>
           {!empty ? (
             <Button variant="secondary" onClick={() => setUploadOpen(true)}>
               <UploadCloud aria-hidden />
@@ -154,6 +174,14 @@ export function ProjectPage() {
           ) : null}
         </div>
       </div>
+
+      {/* Sprint 8: the 100-sheet limit (the API refuses more with 409 sheet_limit) */}
+      {atLimit || nearLimit ? (
+        <p role={atLimit ? "alert" : "status"} data-sheet-limit={atLimit ? "reached" : "near"} className={cn("mb-4 flex items-start gap-2 rounded-lg border px-3 py-2 text-dense text-foreground", atLimit ? "border-destructive/40 bg-destructive/[0.05]" : "border-conf-mid/40 bg-conf-mid/[0.06]")}>
+          <AlertTriangle className={cn("mt-0.5 size-4 shrink-0", atLimit ? "text-destructive" : "text-conf-mid")} aria-hidden />
+          {atLimit ? t("deletes.limitReached", { max: sheetLimit }) : t("deletes.limitNear", { count: sheetCount, max: sheetLimit })}
+        </p>
+      ) : null}
 
       {/* Setup strip: what still blocks a full BOQ */}
       {toConfirm.length > 0 || withLegend.length > 0 ? (
@@ -208,7 +236,7 @@ export function ProjectPage() {
                 {sheets.isLoading ? t("common.loading") : t("hub.sheetsIncoming")}
               </p>
             ) : (
-              <SheetGallery projectId={p.id} rows={rows} selectedId={filterSheetId} onSelect={setFilterSheetId} />
+              <SheetGallery projectId={p.id} rows={rows} selectedId={filterSheetId} onSelect={setFilterSheetId} setName={setName} onDeleteSet={askDelete} />
             )}
             {orgId ? (
               <details open={hasActivity} className="group">
@@ -216,7 +244,7 @@ export function ProjectPage() {
                   {t("hub.activity")}
                   {hasActivity ? <span className="ms-2 inline-block size-2 animate-pulse rounded-full bg-primary align-middle" aria-hidden /> : null}
                 </summary>
-                <ProcessingPanel orgId={orgId} projectId={p.id} />
+                <ProcessingPanel orgId={orgId} projectId={p.id} onDeleteSet={askDelete} />
               </details>
             ) : null}
           </section>
@@ -246,6 +274,14 @@ export function ProjectPage() {
       </Dialog>
 
       <EditProjectDialog open={editOpen} onOpenChange={setEditOpen} project={p} />
+      <DeleteSetDialog
+        projectId={p.id}
+        set={deleting}
+        onClose={() => {
+          if (deleting && filterSheet?.sheet.sheetSetId === deleting.id) setFilterSheetId(null);
+          setDeleting(null);
+        }}
+      />
     </div>
   );
 }

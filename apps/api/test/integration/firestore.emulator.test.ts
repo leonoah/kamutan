@@ -18,6 +18,7 @@ import { FirestoreRepository } from '../../src/db/firestore.repository';
 import { FirestoreBoqRepository } from '../../src/db/boq-firestore.repository';
 import { FirestoreReviewRepository } from '../../src/db/review-firestore.repository';
 import { FirestoreGovernanceRepository } from '../../src/db/governance-firestore.repository';
+import { FirestoreHousekeepingRepository } from '../../src/db/housekeeping-firestore.repository';
 import { verifyChain } from '../../src/governance/audit.service';
 import { RepoConflictError } from '../../src/db/repository';
 import { JobsService } from '../../src/jobs/jobs.service';
@@ -455,6 +456,64 @@ describe.skipIf(!hasFirestore)('FirestoreRepository + services on the Firestore 
       expect((await db.collection(`orgs/${orgC}/auditLog`).get()).size).toBe(0);
       expect((await db.collection('jobs').where('orgId', '==', orgC).get()).size).toBe(0);
       expect((await db.doc(fsPaths.org(orgA)).get()).exists).toBe(true);
+    });
+  });
+
+  describe('Sprint 8: prices, builds list, deletes (housekeeping repository)', () => {
+    let boq: FirestoreBoqRepository;
+    let hk: FirestoreHousekeepingRepository;
+    let pid: string;
+    beforeAll(async () => {
+      boq = new FirestoreBoqRepository(repo);
+      hk = new FirestoreHousekeepingRepository(db, repo);
+      pid = (await repo.createProject(orgA, { name: 'S8' }, uid('aEditor'))).id;
+    });
+
+    it('library price patch + bulk (chunked transactions, audit per change), project pricing, builds newest first', async () => {
+      const ids = ['s8a', 's8b'].map((d) => itemIdFor('9.80', d));
+      for (const [i, id] of ids.entries()) await boq.createLibraryItem(orgA, { id, code: '9.80', chapter: '09', chapterTitle: '', description: ['s8a', 's8b'][i] as string, unit: "יח'", tags: [], source: 'manual', sourceRef: null, active: true }, uid('aEditor'));
+      const one = await boq.patchLibraryItem(orgA, ids[0] as string, { price: 10 }, uid('aEditor'));
+      expect(one?.price).toMatchObject({ amount: 10, source: 'manual', currency: 'ILS' });
+      const r = await boq.bulkSetLibraryPrices(orgA, [{ itemId: ids[0] as string, amount: 10 }, { itemId: ids[1] as string, amount: 20 }, { itemId: 'it_missing', amount: 1 }], uid('aEditor'), 'bp_test');
+      expect(r.updated.map((u) => u.itemId)).toEqual([ids[1]]);
+      expect(r.skipped.map((x) => x.reason).sort()).toEqual(['not_found', 'unchanged']);
+      expect(await boq.setProjectPricing(orgA, pid, -5, uid('aEditor'))).toMatchObject({ adjustmentPct: -5 });
+      expect((await repo.getProject(orgA, pid))?.pricing?.adjustmentPct).toBe(-5);
+      for (const [i, b] of ['bA', 'bB'].entries()) await db.doc(fsPaths.boqBuild(orgA, pid, b)).set({ status: 'succeeded', createdAt: Timestamp.fromMillis(1000 + i) });
+      expect((await boq.listBuilds(orgA, pid, 10)).map((b) => b.id)).toEqual(['bB', 'bA']);
+    });
+
+    it('sheet-set delete: busy → conflict; tombstone + release + revoke + audit; finish removes the subtree; project delete removes everything', async () => {
+      const set = 'f'.repeat(64);
+      const sheetId = `${set}-p0`;
+      await db.doc(fsPaths.project(orgA, pid)).update({ storageBytes: 900 });
+      await db.doc(fsPaths.sheetSet(orgA, pid, set)).set({ status: 'splitting', sizeBytes: 400, storagePath: storagePaths.projectUpload(orgA, pid, set, 'pdf'), createdAt: Timestamp.now() });
+      await db.doc(fsPaths.sheet(orgA, pid, sheetId)).set({ sheetSetId: set, pageIndex: 0 });
+      await db.doc(fsPaths.version(orgA, pid, sheetId, 'v1')).set({ status: 'ready' });
+      await db.doc(fsPaths.correction(orgA, pid, 'c1')).set({ sheetId, kind: 'accept' });
+      await db.doc(fsPaths.shareLink(orgA, pid, 'l1')).set({ tokenHash: 'a'.repeat(64), revokedAt: null, versionLockBySheet: { [sheetId]: 'v1' } });
+      await expect(hk.beginSheetSetDelete(orgA, pid, set, uid('aEditor'))).rejects.toBeInstanceOf(RepoConflictError);
+      await db.doc(fsPaths.sheetSet(orgA, pid, set)).update({ status: 'ready', createdAt: Timestamp.fromMillis(0) });
+      const plan = await hk.beginSheetSetDelete(orgA, pid, set, uid('aEditor'));
+      expect(plan).toMatchObject({ sheetIds: [sheetId], releasedBytes: 400, storageBytes: 500, revokedShareLinks: 1 });
+      expect((await hk.beginSheetSetDelete(orgA, pid, set, uid('aEditor')))?.releasedBytes).toBe(0); // idempotent
+      const n = await hk.finishSheetSetDelete(orgA, pid, set, plan!);
+      expect(n).toMatchObject({ sheets: 1, versions: 1 });
+      expect((await db.doc(fsPaths.sheet(orgA, pid, sheetId)).get()).exists).toBe(false);
+      expect((await db.doc(fsPaths.correction(orgA, pid, 'c1')).get()).exists).toBe(false);
+      expect((await db.doc(fsPaths.shareLink(orgA, pid, 'l1')).get()).get('revokeReason')).toBe('sheet_set_deleted');
+
+      await db.doc(fsPaths.shareToken('a'.repeat(64))).set({ orgId: orgA, projectId: pid, linkId: 'l1' });
+      const begin = await hk.beginProjectDelete(orgA, pid, uid('aAdmin'));
+      expect(begin).toMatchObject({ name: 'S8', tokenHashes: ['a'.repeat(64)] });
+      expect(await repo.getProject(orgA, pid)).toBeNull(); // tombstone hides it at once
+      expect(await repo.findProjectOrgId(pid)).toBeNull();
+      expect(await hk.beginProjectDelete(orgA, pid, uid('aAdmin'))).toBeNull();
+      expect(await hk.finishProjectDelete(orgA, pid, begin!.tokenHashes)).toBeGreaterThan(0);
+      expect((await db.doc(fsPaths.project(orgA, pid)).get()).exists).toBe(false);
+      expect((await db.doc(fsPaths.shareToken('a'.repeat(64))).get()).exists).toBe(false);
+      const log = await db.collection(`orgs/${orgA}/auditLog`).where('entity', '==', 'projects').where('action', '==', 'delete').get();
+      expect(log.size).toBe(1);
     });
   });
 

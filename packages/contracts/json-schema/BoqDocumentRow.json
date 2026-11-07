@@ -88,6 +88,23 @@
             }
           ]
         },
+        "priceSource": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "override",
+                "library"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unpriced": {
+          "type": "boolean"
+        },
         "level": {
           "type": "string",
           "enum": [

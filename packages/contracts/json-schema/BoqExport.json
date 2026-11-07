@@ -121,6 +121,42 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "boq",
+            "comparison"
+          ]
+        },
+        "compare": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "fromBuildId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "toBuildId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                }
+              },
+              "required": [
+                "fromBuildId",
+                "toBuildId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

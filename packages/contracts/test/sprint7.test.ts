@@ -73,8 +73,8 @@ describe('Sprint 7 — line rename (descriptionOverride)', () => {
 
 describe('Sprint 7 — BOQ document model', () => {
   it('query = export dialog options', () => {
-    expect(BoqDocumentQuerySchema.parse({})).toEqual({ split: 'summed', confidence: true, chapters: undefined, markDraft: false });
-    expect(BoqDocumentQuerySchema.parse({ split: 'floor', confidence: '0', chapters: '04, 05,04', markDraft: '1' })).toEqual({ split: 'byFloor', confidence: false, chapters: ['04', '05'], markDraft: true });
+    expect(BoqDocumentQuerySchema.parse({})).toEqual({ split: 'summed', confidence: true, chapters: undefined, markDraft: false, prices: true });
+    expect(BoqDocumentQuerySchema.parse({ split: 'floor', confidence: '0', chapters: '04, 05,04', markDraft: '1' })).toEqual({ split: 'byFloor', confidence: false, chapters: ['04', '05'], markDraft: true, prices: true });
     expect(BoqDocumentQuerySchema.parse({ split: 'none' }).split).toBe('summed');
     expect(BoqDocumentQuerySchema.safeParse({ split: 'room' }).success).toBe(false);
     expect(BoqDocumentQuerySchema.safeParse({ chapters: Array.from({ length: 65 }, (_, i) => String(i)).join(',') }).success).toBe(false);
@@ -93,7 +93,7 @@ describe('Sprint 7 — BOQ document model', () => {
       titleRows: [{ kind: 'title', text: 'כתב כמויות' }],
       columns: [{ key: 'code', title: 'סעיף', width: 8 }],
       chapters: [{ code: '04', title: 'חשמל', notes: ['1. הערה'], rows: [{ kind: 'line', lineId: 'l1', code: '4.10', description: 'x', unit: "יח'", qty: null, price: null, total: 0, level: 'red', status: 'draft', needsInput: true, cellNote: 'להשלמה ידנית' }], subtotal: 0 }],
-      totals: { beforeVat: 0, vat: 0, afterVat: 0, vatRate: 0.18 },
+      totals: { currency: 'ILS', linesTotal: 0, adjustmentPct: 0, adjustment: 0, beforeVat: 0, vat: 0, afterVat: 0, vatRate: 0.18, pricedLines: 0, unpricedLines: 1 },
       warnings: [{ kind: 'needsInput', count: 1 }],
       exportBlocked: true,
       counts: { lines: 1, green: 0, yellow: 0, red: 1, draft: 1, reviewed: 0, approved: 0, overridden: 0 },

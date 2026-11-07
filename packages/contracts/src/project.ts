@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { TimestampSchema, pageOf } from './common.js';
 import { ProjectBoqSummarySchema } from './boq.js';
 import { DocIdSchema, UidSchema } from './org.js';
+import { ProjectPricingSchema } from './prices.js';
 
 export const PROJECT_STATUSES = ['active', 'archived'] as const;
 export const ProjectStatusSchema = z.enum(PROJECT_STATUSES);
@@ -58,6 +59,14 @@ export const ProjectSchema = z.object({
   storageBytes: z.number().int().nonnegative().optional(),
   /** Sprint 7 (read-only, from the org settings): the per-project quota the hub shows usage against. */
   storageQuotaBytes: z.number().int().positive().optional(),
+  /**
+   * Integration (read-only, API on read): current (non-superseded) sheets of the project and the per-project limit
+   * (`MAX_SHEETS_PER_PROJECT`) — hub banner "N מתוך 100". GET /projects/:id counts live; GET /projects uses `stats.sheets`.
+   */
+  sheetCount: z.number().int().nonnegative().optional(),
+  sheetLimit: z.number().int().positive().optional(),
+  /** Sprint 8: project discount / markup of the BOQ totals (API-written, `PATCH …/boq/pricing`). Absent = none. */
+  pricing: ProjectPricingSchema.optional(),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 

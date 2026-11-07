@@ -2596,3 +2596,377 @@ Checks (05.11): ruff / ruff format clean (src + tests), mypy 2.4.0 the CI way no
 full suite (`--ignore=tests/fuzz`) 687 passed, 4 skipped, 1 failed = `test_rooms_v4::…basement_split_with_reference`
 (the known stale-shared-artifacts failure); `pnpm turbo run lint typecheck test --filter=@kamutan/contracts
 --filter=@kamutan/api` green (contracts 148 + 3 new, API 399).
+
+## Sprint 8 — lines snapshot, price overrides, price import, cause attribution (Worker-BOQ)
+
+Brief: `docs/agents/SPRINT8_BRIEF.md` §1–2 (row Worker-BOQ). Contracts as published in `packages/contracts/src`
+(`compare.ts`, `prices.ts`, `boq.ts`, `jobs.ts`, `library.ts`) on 07.11 — the "Sprint 8 published" section of
+`packages/contracts/NOTES.md` and the regenerated `json-schema/` had not landed yet; the mirror tests tolerate exactly
+the pending pieces (below) and become strict once `pnpm gen` runs.
+
+### 1. Lines snapshot per build (`boq/snapshot.py`, `boq/build.py`)
+* Every succeeded build writes `orgs/{o}/projects/{p}/boq/{buildId}/lines.json.gz` (contracts `BoqLinesSnapshotSchema`,
+  `kamutan.boq-lines/1`; `private, max-age=31536000, immutable`) and sets **`boqBuilds/{id}.linesRef`**; `stats.linesSnapshot
+  {lines, bytes}`. Top level: `schema, projectId, buildId, createdAt, sheetVersions {sheetId: versionId}` (+
+  `skippedSheets {sheetId: reason}` when any). One entry per `boqLines` doc after the upsert (computed, obsolete kept at
+  0, manual lines `manual: true`).
+* Per line: `lineId, chapter, code, description` (= displayDescription), `unit, qty` (= qtyOverride ?? qty),
+  `computedQty, price, priceSource` (contracts `effectivePrice`: `priceOverride`, else `libraryPriceFor` — the active
+  priced item `itemIdFor(code, description)`, else the newest `price.updatedAt` of the code, ties smaller id; null =
+  "ללא מחיר"), `byFloor, level, status, sourceVersions` (strict `SourceVersionRef`), `versionQty`; `qtyOverride`,
+  `priceOverride`, `needsInput`, `origin` (≠ detected) only when set. Totals are not stored.
+* Size: Noah 77 lines / 15 sheets = **4.6 KB gzip** (42 KB raw, mostly descriptions); gzip level 9, sorted keys, mtime 0
+  (same build → same bytes apart from `createdAt`).
+
+### 2. `priceOverride*` preserved (`boq/build.py`)
+`PRESERVED` += `priceOverride, priceOverrideBy, priceOverrideAt, priceOverrideReason` (before `locked`) — identical to the
+published `BOQ_LINE_PRESERVED_FIELDS` (`test_preserved_fields_mirror_contracts` strict). The worker never writes or
+clears them (new lines don't carry the keys; a `null` from the API stays null). `has_human_marks` counts a price
+override, so an obsolete line with one is kept at qty 0 (red) instead of deleted.
+
+### 3. Prices from imported BOQs (`library_import/parse.py`, `prices.py`, `importer.py`, `ids.py`)
+* **Column detection** (`parse.header_kind`): ≤ 30-char header cells; `כמות…` = qty ('כמות סה"כ'), a price word without a
+  total word = `unitPrice` ("מחיר יח'", "מחיר", "מחיר ליחידה", "₪", "₪ ליח'", 'ש"ח', "Unit price"), a total word =
+  `total` ('סה"כ ₪', 'סה״כ מחיר', "סכום", "Total"). Unit no longer captures "₪ ליח'".
+* **Cells** (`parse.money`): numbers or text ("₪ 1,250.50", '85 ש"ח'), as written; 0 / empty / negative / > PRICE_MAX
+  (1e8) = no price. Row priced only by its total → total / qty (flag `price_from_total`). Parse output: `items[].price`,
+  `items[].priceFrom`, `stats.priced`, `priceColumn` (unitPrice | total | null) and **`priceRows`** (every priced item
+  row, duplicates included, 1-based sheet row = contracts `PriceImportRow`).
+* **Plan** (`prices.plan_price_import`) = mirror of contracts `planPriceImport` (active items of the exact code; several →
+  `itemIdFor`, else equal normalised description, else `ambiguous_item`; same item priced differently → every row
+  `duplicate_in_file`; equal → `unchanged`; `manual` price → `manual_price` conflict unless `overwriteManualPrices`).
+  Untrusted sandbox rows are clamped (`clean_rows`).
+* **Job**: `LibraryImportJob.mode` (`library` | `prices`) + `overwriteManualPrices` (mirror, optional; the job's value
+  wins, else the import doc's). Mode `library`: items + template as before, then the plan when the file has a price
+  column. Mode `prices`: only the plan (no item / template / default-deactivation writes). Writes
+  `itemLibrary/{id}.price {amount, currency: 'ILS', updatedAt, by: import createdBy, source: 'import', importId}`
+  (merge). Report = `libraryImports/{id}.stats.prices` (contracts `PriceImportReport` + extra `priceColumn`) and the job
+  `result.prices`; `null` in library mode without a price column.
+* Client sample `boq_sample.xls`: price column found (`מחיר יח'`), 0 priced rows → report all zeros, nothing written;
+  the 77 items / codes / flags unchanged. Synthetic priced workbook generated in the tests (never a customer file).
+* `item_id` moved to `library_import/ids.py` (import-light: the snapshot uses it); `importer.item_id` still re-exported.
+
+### 4. Cause attribution (`boq/aggregate._by_version`, `snapshot.compare`)
+* `Line.by_version` (snapshot only, not a `boqLines` field): each contribution's qty split over the sheet versions of
+  its evidence (by evidence quantities when present — geometry, measured corrections — else per item); rounding
+  remainder on the largest share so the shares sum to the qty. Noah: 77/77 lines attributed exactly, 35 lines span
+  ≥ 2 sheets (e.g. 4.00 = 17 on c054fd3a + 5 on eb8be8a3).
+* `snapshot.compare(old, new)` = reference for `BoqComparison.items` (`BoqCompareItem` fields: kind, Δqty, from/to
+  totals, Δ₪, `changes`, `causes`): `sheet` (a source version differs; `toVersionId` = the new build's version of that
+  sheet, null when the sheet is gone), `qty_override`, `price_override`, `library_price`, else `other`. A line the new
+  build keeps at 0 without sources counts as removed. The API owns the endpoint / Excel; reuse or port as needed.
+
+### Noah (frozen root `s6qa/s7_706`, copies in the scratchpad, `boq_local.py --no-corrections`, `KAMUTAN_AV_SCAN=off`)
+Committed HEAD (exported with `git archive`) vs this round, with and without room settings: 77/77 lines, **0
+differences** in qty / byFloor / level / description / unit / reasons / byRoom / origin / sourceVersions. kbench
+`eval-boq` identical: exact 59, within 61, gated EM 0.788, ΣAE 40.652 (= the s7_706 numbers above). No ingest change.
+
+### Contract notes / requests (API agent)
+* Regenerate `json-schema/` (`pnpm gen`): `LibraryImportJob` lacks `mode` / `overwriteManualPrices`
+  (`tests/test_boq_contracts.py` `PENDING_IMPORT_JOB_FIELDS` tolerates exactly these until then); `BoqLinesSnapshot.json`
+  is not generated (`test_snapshot_validates_against_contracts_schema_when_generated` skips until it is).
+* Passthrough extras the worker writes: snapshot `skippedSheets`, line `versionQty` / `origin` / `manual`;
+  `stats.prices.priceColumn`.
+* Price resolution nuance: the plan (contracts) prices the row's own item when a code has several items, while the
+  build may resolve the line to the code's `manual` item (Sprint 7). `libraryPriceFor` then falls back to the newest
+  priced item of the code, so the line still gets the imported price — unless the manual item is itself priced.
+* A retried import (crash after some price writes) reports those as `unchanged` the second time; `applied` counts
+  only the last attempt's writes (the audit uses the report).
+
+### Tests / commands
+`tests/test_boq_s8.py` (17): preserved fields + human marks; price override survives same-input / changed-qty rebuilds
+(approval drops, price stays) and a null restore; obsolete line with a price override kept; snapshot written + `linesRef`
++ effective qty / description / price (override, library) + optional keys; deterministic + `libraryPriceFor`
+precedence + inactive items; cause attribution across two sheets, a sheet revision (changed + removed lines with
+`sheet` causes), override / library price causes and Δ₪; added line from a new version; header kinds and money cells;
+a synthetic priced workbook (3 header variants, column order swapped, text price, price from total, duplicate code);
+client sample (price column, 0 prices, 77 items); the plan against the contracts' cases (applied, manual conflict,
+unchanged, itemIdFor, normalised description, ambiguous, duplicate, inactive / unknown, equal duplicate, overwrite);
+job modes `library` / `prices` / overwrite; unpriced file. `tests/test_boq_contracts.py` updated (pending job fields,
+`exclude_unset` dumps).
+```
+cd workers/drawing
+uv run ruff check src tests && uv run ruff format --check src tests
+uv run --with mypy==2.4.0 mypy src
+uv run --with bandit bandit -q -ll -r src
+KAMUTAN_AV_SCAN=off uv run pytest -q --ignore=tests/fuzz
+```
+Note: one `ruff format src tests` run this round may have reformatted `llm_gateway/prompts.py` (Worker-LLM's, edited
+concurrently) — whitespace only; later runs were limited to my paths.
+
+## Sprint 8 — chapter 04 / 9.01 accuracy (Worker-Accuracy)
+
+Brief: `docs/agents/SPRINT8_BRIEF.md` §4. Edited: `symbols/match.py`, `symbols/marks.py`, `symbols/detect.py` (no edit
+of `pipeline/understand.py`; its "keep this block here" hooks untouched). Tests: `tests/test_sprint8_accuracy.py` (6).
+Every cause below was found by matching the stored detections of the latest root (`s6qa/s7_706`) to the point GT
+(`gt/noah/sheets/*.geojson`) and rendering each disagreement from the PDF (20 px/mm crops).
+
+### Causes → fixes
+| line | before | cause on the sheet | fix |
+| --- | --- | --- | --- |
+| 4.00 (−1) | 22 | three errors netting −1: (a) c054fd3a first-floor bedroom 2, socket H=130 at (94.2, 256.8) missed — the cobra note's leader is one polyline (underline → stem → circle centre) ending on a filled dot inside the socket; the dot (27 tiny filled triangles) and the leader's last leg were "extra ink" in the reverse chamfer (q 0.585 < 0.6); (b) c054fd3a bedroom-2 AC socket "H=240 15" at (65.2, 289.0) read as **3X**: the stroke reader paired the "2" of "240" with a glyph-sized blob 4.6 mm away (the "4" and "0" between them); (c) eb8be8a3 patio "2X H=110" at (53.3, 159.4) read as single: the SHX reader gave "2]", and the stroke reader merged the green patio-hatch "+" crosses into the "2" and the "X" (read "X6") | `match.reverse`: ink of leader terminators (filled paths ≤ 0.8 mm) and the straight leg of a straight-line path that ends on such a dot and runs on ≥ 1 mm past the posed box are not counted (fill is still compared by area); `marks._local_groups(colour=)`: strokes of different colours never form one glyph; `marks._glyph_between`: two glyphs with another glyph on the baseline between them are not a word |
+| 4.02 (+1) | 6 | (b) above | (b) |
+| 4.01 | 15 | (c) above: the patio double was counted as a single, which hid that the drawing has **16** doubles (GT-D-001: "only 4.01 differs, 16 drawn vs 15") | now 16 = drawing; dispute, not fitted |
+| 4.07 | 3 | was right by luck: the exterior SW speaker (51.8, 168.7, under the green hatch) was missed and the "see note" cross under "ריכוז / רמקולים" (speaker hub = 6-socket box, GT `socket_box_6`) was counted as a speaker. The hatch fix recovered the real one (→ 4) | `detect._note_items`: a span on or touching a line with "ריכוז" (a hub) does not name its cross → 3 = drawing |
+| 9.01 (+1) | 44 | b2046277 kitchen LED strip: the type tag "1" (circle + digit, (312.0, 69.3)) matched the recessed-wall-light glyph (q 0.69), took its own tag and became `luminaire_strip`; the real symbol beside it stayed an untyped ceiling point → two fixtures | `detect._on_tag`: a vector match centred (≤ 0.5 r) on a fixture type tag is the tag; the tag then names the real symbol (strip, GT type 1) |
+| 4.03 (−1) | 7 | drawing: 7 power glyphs (ground 2, basement 3, first 2) = detected exactly. The 8th is the filled glyph at "הזנה לדוד חשמל" (c054fd3a (33.0, 180.1)), already counted as 4.23 (= 1, exact) | none: dispute (below) |
+| 4.05 (−1) | 10 | drawing: data 4 / TV 4 / phone 2 (basement + first) = detected exactly; nothing on the ground sheet (the "צ.קוברה / שקעים / TV / רשת" box near the comms panel is the island floor-conduit list, 4.08; the TV/phone/data of the 6-socket boxes are 4.06) | none: confirmed, dispute (below) |
+
+Detect-level A/B on the stored primitives of the 9 GT sheets (only `detect_symbols`, same inputs): c054fd3a TP 54 → 56,
+FP 5 → 4; eb8be8a3 TP 18 → 20, FP 2 → 0; b2046277 TP 32 → 33, FP 7 → 5; every other sheet identical; no new FN / FP
+anywhere. A broader first version of the leader rule (any straight path running on) was rejected: it turned the
+master-bath heater switch into a 2-way (a wall outline ran on) and made a leader crossing a "see note" mark.
+
+### Noah — clean full re-ingest of the 15 sheets (`run_s6_eval.sh s8acc`, `KAMUTAN_AV_SCAN=off`; before = `s7_706`)
+Cold = fresh root; warm = 2nd `ingest_local.py --force` into the same root (`gt/noah/eval/sprint6_s8acc_warm*`).
+| line | BOQ | drawing | before | after cold | after warm |
+| --- | --- | --- | --- | --- | --- |
+| 4.00 | 23 | 23 | 22 | **23** | 23 |
+| 4.01 | 15 | 16 | 15 | 16 (dispute) | 16 |
+| 4.02 | 5 | 5 | 6 | **5** | 5 |
+| 4.03 | 8 | 7 | 7 | 7 (dispute) | 7 |
+| 4.05 | 11 | 10 | 10 | 10 (dispute) | 10 |
+| 9.01 | 43 | 43 (GT-D-002 reading) | 44 | **43** | 43 |
+Every other of the 77 lines identical to before, cold and warm identical line by line. Exact 59 → **61**, exact-or-
+within 61 → **63** (no room settings 57/58 → 59/60), gated 54 / 51 unchanged, disputed exact 7 → 9 of 11. (The warm
+`_nors` build again equals the with-settings one: the cold run's demo settings stay stored — known since Sprint 7.)
+| metric (kbench, gt-v0.4.1-draft) | before cold | after cold | before warm (`s7acc_final`) | after warm |
+| --- | --- | --- | --- | --- |
+| symbols micro-F1 / glyph-F1 | 0.876 / 0.781 | **0.899 / 0.802** | 0.871 / 0.781 | **0.894 / 0.802** |
+| links exact R / P, kind acc | 0.933 / 0.966, 0.967 | same | same | same |
+| fixtures micro-F1 | 0.941 | 0.941 | 0.922 | 0.922 |
+| rooms matched / mean IoU | 52/52, 0.932 | same | same | same |
+(Fixtures 0.922 warm is the warm glyph store's, identical before and after.)
+
+### Disputes (documented, not fitted; the frozen GT files are not edited — for Data/QA to record)
+* **4.01 (GT-D-001)**: drawing 16 doubles (ground 5: dining bay, living H=20, patio H=110, island × 2), BOQ 15. We
+  now report the drawing's 16. Question 3 of GT-D-001 ("which of the 16 drawn doubles is not in 4.01?") stays open.
+* **4.03 (GT-D-001)**: drawing 7 power sockets; BOQ 8 = 7 + the power glyph drawn at "הזנה לדוד חשמל", which 4.23
+  (water-heater feed incl. timer) already prices. Counting it in 4.03 too would count one point twice. Proposed
+  dispute note: "4.03 = 8 only if the water-heater feed's socket glyph is priced as a power socket as well".
+* **4.05 (new, proposed GT-D-009)**: drawing 10 comms points (basement 2 data / 2 TV / 1 TEL, first the same), BOQ 11.
+  No unmatched comms glyph or label on any of the 15 sheets (searched the text layer for TV/TEL/טלפון/טלוויזיה/רשת/
+  בזק/תקשורת and rendered each hit). Candidates for the 11th: a point in the comms panel, or one of the 6-socket boxes'
+  data/TV/phone points (4.06) counted again.
+* **9.01 (GT-D-002)**: 43 now = 49 tags − 5 type-17 fans − the exterior-stair type 9 drawn on both lighting sheets.
+  The old 43 (before Stage 10) and 44 were both off-by-one artefacts; the dispute itself (BOQ vs AutoCAD 56) is the
+  owner's.
+
+### Tests / commands
+`tests/test_sprint8_accuracy.py` (6): leader + dot inside a socket not extra ink (a bare leader / a stroke ending
+inside still are; fails with the old reverse), scene flags (terminator, only the leg ending on the dot), glyph-between
+rule, hatch colour does not join a glyph, hub note ("ריכוז / רמקולים") names no cross (a doorbell note, and "ריכוז" of
+another note, still do), a match centred on a type tag is the tag.
+Checks: ruff 0.17.0 check clean, `ruff format --check` clean for my files (repo-wide: `tests/test_boq_s8.py` —
+Worker-BOQ's, in progress); mypy 2.4.0 the CI way (`uv run --with mypy==2.4.0 mypy src`): no issues in 156 files;
+bandit 1.9.4 `-ll`: no findings; full suite (`--ignore=tests/fuzz`, `KAMUTAN_AV_SCAN=off`): 736 passed, 5 skipped,
+1 failed = `test_rooms_v4::…basement_split_with_reference` (the known stale-shared-artifacts failure).
+Debug helpers used (scratch, not in the repo): re-run `detect_symbols` from a version's stored primitives + text, dump
+spot candidates / stroke-mark readings at a point, 20 px/mm PDFium crops.
+
+## Sprint 8 — Claude-ready LLM gateway: read_hard_text, verify_symbol, batching, prompt caching, cost (Worker-LLM)
+
+Brief: `docs/agents/SPRINT8_BRIEF.md` §5. Owns `llm_gateway/` (new: `hard_text.py` sandbox side, `hooks.py`
+orchestrator side). The gateway is still **off by default** (`KAMUTAN_LLM_PROVIDER=disabled`, org `llmEnabled` false):
+with it off nothing below runs and every artifact is byte-identical to before.
+
+### Flow (two sandbox passes per page, only when the org's gateway is on)
+1. `service/pipeline.py::_understand` → `hooks.prepare(gw, org, titleBlockMm)`: `gw.enabled_for(org)` (global switch +
+   `llmEnabled` + month not exhausted) → `args.llm = {"collect": true, "titleBlockMm": …}`; else nothing is prepared.
+2. **Pass 1** (the normal `understand` task) also writes crops under `outDir/llm/*.png` (never uploaded; not in `files`)
+   and returns `llmRequests` (`{version, items: [{id, kind, bboxMm, file, current | detectionId/cls/legendEntryId}]}`):
+   * `note` — blocks of spans the glyph dictionary read as noise (`hard_text.noisy`: conf < 0.5, "|" / "?", scattered
+     1-char tokens, a lone non-digit char < 0.7; stroke-only spans like "|" / "-|" are walls / leaders: never a seed,
+     only a bridge inside a line), grouped as words of one line (gap ≤ 3 mm) or stacked lines, within 15 mm of a
+     detection, ≤ 45 × 15 mm; readable short spans touching the block join the crop ("65" under a garbled "H"); crop
+     rendered by PDFium at 16 px/mm, padded 4 mm up / sideways (PDFium's *path* API drops the glyph tops of the 4.10
+     note, its *render* draws them). Noah 1bbe4113: 5 blocks — the bed-head "מפסק מחליף קיים / H=65", "להוסיף מחלף
+     H=65", two "נק' קיימת" notes ("ל' היימת" / "ל' -יימת", the cold-store misread of Sprint 6) and one "H=";
+   * `qualifier` — sockets with `כיתוב ליד הסמל לא נקרא` (2X / 3X / TV not readable): socket box + max(3 mm, 1.1 × size);
+   * `mark` — rotated "U.K= / O.K= / H=" boxes Tesseract could not parse: hook in `geometry/marks.read_marks` →
+     `hard_text.current().mark(box, stroke render)` (the same image Tesseract got, rotation 0; id = sha256 of the PNG);
+   * `verify` — yellow vector detections whose legend row has a thumbnail on this sheet (≤ 60 per sheet), crop
+     12 px/mm, plus the row's `legend/{entryId}.webp`.
+   Nothing whose box touches the title block is a candidate (sandbox) **and** the orchestrator drops such items again.
+3. `hooks.after_understand` (parent): validates the manifest (ids `^[a-z]_[0-9a-f]{20}$`, `file == llm/{id}.png`, ≤ 200,
+   finite boxes, ≤ 4 MB, title block) →
+   * `read_hard_text` (region `text_region`): readings with confidence ≥ 0.6 that differ from the current text →
+     **pass 2** = the same task into `outDir + "-llm"` with `args.llm.readings` (pass 1 stays intact if pass 2 fails).
+     In pass 2 a note replaces the *noisy* spans inside its block by one span (conf ≤ 0.75; readable spans keep their
+     own position), a qualifier adds a span on its socket, a mark answers the `read_marks` hook — the existing
+     annotation / refinement / lifecycle / pairing / height code then treats them like any text. Every leveled item of
+     pass 2 that is not identical to pass 1 (only a reading can cause it) → at most **yellow** + `נקרא בעזרת מודל שפה`,
+     and link groups of changed detections too (`hooks.cap_llm_derived`).
+   * `verify_symbol` (items `symbol`, prefix `legend_row`): grouped by ≤ 12 legend rows per call (the prefix, prompt
+     cached); `other_class` may name any class of the sheet's legend (labels passed as data). Applied to the final
+     detections (same id, class and box ± 1 mm) **through `calibration.calibrate`** with a level cap:
+     `agree` (≥ 0.6) → `אומת חזותית`, cap yellow (never green, even for a green-allowed class with score 0.99);
+     `other_class` → `בדיקה חזותית: ייתכן שזה סמל אחר במקרא`, red when confidence ≥ 0.8 else yellow; `unsure` →
+     `בדיקה חזותית לא חד-משמעית`, yellow. Green items and answers < 0.6 are untouched.
+   * `disabled` / `budget_exceeded` / errors: items stay exactly as pass 1 made them. Any exception → page kept.
+4. The orchestrator then caps + uploads as before and writes `{version}/llm.json` (`kamutan.llm/1`: status, calls,
+   tokens in / out / cache write / cache read, USD, crops sent / read / applied, verdict counts, capped, second pass,
+   seconds — no text, no images). Not in `SheetVersion.artifacts` (strict contract; readers find it by name).
+
+### Hook points (coordination — all marked "Sprint 8 (Worker-LLM) — keep")
+* `pipeline/understand.py::run` — one block after the spans are decoded (`session_from_args` → `apply_span_readings`
+  → `activate`), one line after `understand(...)` (`res.update(llm_ht.finish(...))`, needs the open render) and
+  `deactivate` in the `finally`. `understand()` itself is unchanged.
+* `geometry/marks.py::read_marks` — 2 lines after `parse_marks` (unparsed box → `_llm_mark`, a no-op without a session).
+* `service/pipeline.py::_understand` — `prepare` before `run_task`, `_llm_pass` after it, `llm.json` write before
+  `_refine_labels`; helpers `_llm_pass` / `LLM_FILE` next to `_refine_labels`.
+
+### Gateway (`gateway.py`, `providers.py`, `prompts.py`)
+* `LlmGateway.call_batch(org, purpose, items: [BatchItem(id, image, region_kind, vars)], item_schema, *, prefix:
+  [PrefixImage(ref, image, region_kind, vars)], shared_vars)` → `BatchResult(status, results {id: answer}, calls,
+  cached_items, cost_usd, tokens_in/out, cache_write/read_tokens)`. Every crop's region kind is checked — one
+  `title_block` (or unknown / missing kind) refuses the whole batch before anything is read. **≤ 10 item crops per
+  provider call** (`MAX_BATCH`), ≤ 12 prefix crops, ≤ 200 items per batch. **Per-item cache** (key: model, purpose,
+  prompt version, item schema, prefix + shared data, the item's image and vars) — a re-run sends only unseen crops.
+  Answer `{"items": [{"id", …}]}` validated against the item schema with this chunk's ids as an enum, **one repair
+  retry**; the prompt shows an id-free schema so system + prefix are identical across chunks (cacheable). Switch and
+  budget re-checked before every chunk.
+* Purposes `read_hard_text` (item `{text ≤ 200, confidence}`) and `verify_symbol` (`{verdict agree|other_class|unsure,
+  class (legend enum | null), confidence}`), prompt version 1; drawing text only inside `<data>`.
+* **Prompt caching**: `Provider.complete(..., cache=True, cache_prefix=n)`; Anthropic sends `system` as a text block
+  with `cache_control: {"type": "ephemeral"}` and the same marker on the last prefix image; usage
+  `cache_creation_input_tokens` / `cache_read_input_tokens` priced × `KAMUTAN_LLM_CACHE_WRITE_MULT` (1.25) /
+  `…_READ_MULT` (0.1). (Docs could not be fetched from this box — parameter names as in the public Messages API;
+  verify the multipliers / minimum cacheable length against the contract.) The fake provider simulates cache hits.
+* **Cost accounting**: `GatewayResult` / `BatchResult` carry tokens + USD per call; the monthly ledger
+  `orgs/{o}/llm-cache/usage/{YYYY-MM}.json` keeps `costUsd, calls, tokensIn, tokensOut, cacheWriteTokens,
+  cacheReadTokens` in total and `byPurpose`. **Budget**: when a call's worst case does not fit, or the spend reaches
+  `llmMonthlyBudgetUsd`, the month is marked `exhaustedAtBudgetUsd` → the gateway is off for that org (every call,
+  cache hits included, → `budget_exceeded` / `monthly_budget_exhausted`; `enabled_for` false, so no crops are even
+  prepared) until the month changes or an admin raises the budget above the exhausted value. Other orgs unaffected.
+* **Config**: `KAMUTAN_LLM_MODEL` default **`claude-sonnet-5-5`** (a key alone now enables the anthropic provider);
+  `KAMUTAN_LLM_PRICE_IN/OUT_PER_MTOK` 3 / 15 remain placeholders. Dev only: `KAMUTAN_LLM_PROVIDER=fake` +
+  `KAMUTAN_LLM_FAKE_REPLY=empty` (answers every batch with no items).
+* Privacy: crops only (re-encoded, metadata-free PNG ≤ 1568 px); title block refused at three levels; logs = one
+  line per chunk (`llm_call`, `batch: true`: ids, counts, bytes, tokens, USD, validation, status) + one `llm_page`
+  line (counts) — never images, prompt data or answers (tested with a secret string).
+
+### Measurement (`scripts/llm_measure.py`) — how the owner runs it
+```
+cd workers/drawing
+export KAMUTAN_LLM_API_KEY=…          # secret store; without it the script exits 2 with instructions
+uv run python scripts/llm_measure.py                  # 15 Noah sheets, off vs on, ≈ 2 × 6–8 min
+uv run python scripts/llm_measure.py --only 1bbe4113  # the 4.10 sheet only (BOQ lines then cover that sheet only)
+# options: --model, --budget-usd 30, --out /home/claude/kamutan-data/llm-measure, --tag NAME, --reuse-off
+uv run python scripts/llm_measure.py --dry-run        # no key: fake provider answering nothing (counts only)
+```
+Fresh roots `off/` and `on/` under `--out/--tag` (`KAMUTAN_AV_SCAN=off` set), `ingest_local.py --force` +
+`boq_local.py --no-corrections` with empty room settings (chapters 1–9) per mode; `report.md` / `report.json`: per BOQ
+line sample / off / on / level / closer-further-same, per sheet `llm.json` (calls, tokens, cache, $, crops, verdicts,
+pass 2, seconds), project totals and the org usage ledger. Set the contracted prices in the env first.
+Dry run on 1bbe4113 (this box): off 31 s, on 35 s; 77 lines identical (fake answers nothing); that sheet would send
+5 hard-text crops (1 call) + 43 verify crops (5 calls, legend prefix cached after the first).
+**Simulation** (scratch, fake model reading only the bed-head crop as "מפסק מחליף קיים H=65", 1bbe4113 alone): pass 2
+makes d_18 `switch_2way`, lifecycle existing, annotation H=65; Worker-Accuracy's `pair_two_ways` then fires: lk_10
+`add_to_existing` (d_18 + d_21) → **`two_way` (d_18 + d_22)**; all changed items yellow with `נקרא בעזרת מודל שפה`.
+The BOQ effect (4.10 1 → 2 expected; 4.14 per the Sprint 7 note) needs the real run.
+
+### Tests / commands
+`tests/test_llm_sprint8.py` (27): on/off per org + global + mid-job switch-off, batching 23 → 10/10/3 with shared
+cached prefix, per-item cache re-run (0 calls), answer ids enum, refusals (purpose, duplicate / bad ids, junk image),
+title block in items or prefix (4 kinds) + candidates + manifest re-check, schema repair once / error not cached,
+cost per call + per-org per-purpose ledger, budget exhaustion sticky / other org / raised budget, budget hit leaves
+items unchanged, verify through calibration never green (4 verdict cases, green-allowed class) + low-confidence /
+green untouched, LLM-derived cap (detections + link groups), noisy / note blocks on the real 4.10 geometry, span
+readings (noisy replaced, readable kept, bad readings rejected), mark hook round trip through `geometry.marks`,
+Anthropic `cache_control` shape + cache-token pricing (MockTransport), logs without content, two-pass end to end
+through `process_sheet_version`. Updated: `test_llm_gateway.py` (model default), `test_understand_pipeline.py`
+(counts legend_label calls only). `ruff check .` / `ruff format --check .` clean; mypy 2.4.0 the CI way: 1 error in
+`boq/aggregate.py:1135` (Worker-BOQ's in-progress edit, not touched); bandit 1.9.4 `-ll`: no findings.
+
+### Gaps / open
+* No real-model numbers yet (no key): reading quality, verify precision and $ per sheet come from `llm_measure.py`.
+  Readings ≥ 0.6 are trusted as text (then capped yellow); tune `MIN_READING_CONF` / `RED_OTHER_CONF` on that run.
+* Pass 2 re-runs the whole `understand` task (≈ +30–45 s on a lighting sheet) — only on pages with a usable reading.
+* Prices / cache multipliers are placeholders; the Anthropic prompt-cache minimum length may leave small prefixes
+  uncached (no error, just no discount). Structured-output API mode is not used — JSON-schema validation + one
+  repair in the gateway as before.
+* `verify_symbol` needs a legend row thumbnail on the same sheet (entries linked to another sheet's confirmed entry
+  are skipped); raster sheets: verify runs (crops from the raster), hard text only on Tesseract spans.
+* Contract (API agent): optional `SheetVersion.artifacts.llm` → `llm.json`, and a budget-exhausted flag for the org
+  settings UI (the ledger has `exhaustedAtBudgetUsd`); the existing 80 % alert gap (Sprint 2) remains.
+
+## Sprint 8 follow-up — price-import dry run, 100-sheet limit at split time, mypy (Worker-BOQ)
+
+Coordinator's three follow-ups. Field names for the dry run are proposed to the API agent in
+`packages/contracts/NOTES.md` "Sprint 8 follow-up — REQUEST from Worker-BOQ" (contracts `src/` not edited).
+
+### 1. Dry run (`library_import/prices.py`, `importer.py`, `boq/contracts.py`) — as published in contracts
+"Sprint 8 published (integration)"
+* `LibraryImportJob.dryRun?: bool` (mirror, strict test). **Only with mode `prices`**: a job with `dryRun: true` and
+  another mode fails validation (rejected `invalid_payload`) — a dry run never falls back to writing prices; the import
+  doc's `dryRun` counts only for a `prices` import.
+* The plan runs exactly as before; no `itemLibrary.price` is written. `stats.prices` keeps the contract counters
+  (`applied` = writes the plan would make) and gets `dryRun: true` and **`planned`** = exactly the plan's writes, one
+  per item: `{itemId, code, amount, current, currentSource}` (≤ 5000). Manual-price conflicts are NOT in `planned`:
+  `apply-prices` writes `planned` + the `manual_price` conflicts (`conflictRows`) listed in `overwriteItemIds` (the
+  coordinator's message said "plus the manual-price conflicts"; the contract text was followed — putting them in
+  `planned` would overwrite manual prices without a choice). Non-dry reports: `dryRun: false`, no `planned`.
+* Worker extras (passthrough, every import): `entries` (one per priced row: `{row, code, itemId, amount, status
+  apply|unchanged|conflict|unmatched, reason, current, currentSource}`, ≤ 2000, `entriesTruncated`), `priceColumn`.
+* Reports validate against the regenerated `PriceImportReport.json`. Known limit: `conflictRows` ≤ 500, so beyond 500
+  manual conflicts some cannot be chosen for overwrite.
+* Firestore nested merge: `stats` is merged, so re-running an import id in place would keep a stale `planned`; not a
+  production path (a succeeded import is a no-op on redelivery; apply goes through the API).
+
+### 2. 100-sheet limit at split time (`service/pipeline.py check_sheet_limit`, `errors.SHEET_LIMIT`) — code `sheet_limit` confirmed by the coordinator
+* Initial uploads only (not page reprocess): right after the probe, before `known_pages` / any sheet or version doc,
+  current sheets of the project (with `currentVersionId`, not `superseded`, not of this set) + the file's pages > 100 →
+  non-retryable **`sheet_limit`** with contracts `sheetLimitMessageHe(current)` text; `_record_failure` marks the set
+  and the job failed with that error; no sheet / version doc is created.
+* **Code name**: the coordinator wrote `sheet_limit_exceeded`, but the published contract (`SHEET_LIMIT_ERROR`, API
+  request #4) is `sheet_limit`; the worker follows the contract so the API's release/UI path matches. Flagged in the
+  contracts NOTES request.
+* `errors.py` (shared): additive `SHEET_LIMIT` constant + NON_RETRYABLE entry.
+
+### 3. mypy
+`boq/aggregate.py:1135` (`sum` over `dict[str, object]` values in `_by_version`, my earlier change) — rewritten with
+typed share lists; `uv run --with mypy==2.4.0 mypy src`: no issues in 156 files.
+
+### Also
+* Mirror test strict for the published `mode` / `overwriteManualPrices`; only `dryRun` pending (`PENDING_IMPORT_JOB_FIELDS`).
+* `snapshot.compare` placeholder rule aligned with the API's `isPlaceholder` (qty 0, no sources, not needsInput →
+  absent on either side). The snapshot now validates against the generated `BoqLinesSnapshot.json` (test no longer skips).
+* API request #5 (deleted set / project) — done, next section.
+
+### Tests
+`tests/test_boq_s8.py` now 24: + sheet limit (fails whole set at 99 + 2, exactly 100 allowed, own sheets not double
+counted), plan entries, dry run via job and via import doc, dry run in library mode, placeholder comparison; the
+client-sample test's path was fixed (it had been skipping).
+
+## Sprint 8 follow-up 2 — jobs of a deleted sheet set / project are dropped quietly (Worker-BOQ, API request #5)
+
+`service/gone.py`: the API deletes in two phases (tombstone `deletedAt` on the set / `deletingAt` on the project, then
+objects and docs). A job whose project doc is missing or has `deletingAt`, or (ingest) whose sheet set doc is missing
+or has `deletedAt`, raises `JobDropped`: the push handler acks **204** (no Pub/Sub retry), no error doc, no failed
+status, no artifact, no BOQ write; one INFO line `job dropped: {project|sheet_set} deleted (type=…, written before=N)`
+— counts only, no ids / names.
+
+Check points:
+* **ingest** (`service/pipeline.py`): job start (after the job-doc ownership check, before the "running" write); after
+  the probe (before the sheet-limit check and before any sheet / version doc); before each page; before a page's
+  artifact uploads and before its understanding uploads; before the final project count / set / job writes. Progress
+  writes (`_Progress`, called from the sandbox's progress callback) re-check at most every 5 s (`AliveCache`) and stop
+  writing once the job is gone (a write would re-create a deleted version doc); the next check point raises.
+* **boq.build** (`boq/build.py`): job start, after the debounce wait, before the evidence / snapshot writes, before the
+  line upserts, after the build (before the build / project / job docs).
+* **export.marked_pdf / symbols.find_similar** (not my modules): checked once in the push handler before dispatch
+  (project missing / `deletingAt` → 204). Their mid-run writes are not re-checked (owners: Worker-Export / Worker-A).
+* `library.import` is org-level (its `projectId` is provenance only): not dropped.
+
+Test seeding: `tests/pipeline_util.seed` now creates the project and sheet-set docs (as the API does) when absent;
+`test_pipeline::test_job_document_must_exist_and_belong_to_the_org` compares against those seeded docs instead of `{}`.
+Local tools create the project doc when missing (`cli.py` ingest, `scripts/boq_local.py`), so local / Noah runs are
+unaffected.
+
+Tests (`tests/test_boq_s8.py`, now 36): ingest dropped for project missing / deleting and set missing / deleted (no
+write at all, 204 via the push handler, log line without ids); set deleted after page 0 of 2 → nothing written after
+the delete, no final status; progress guard; boq.build of a deleting project (no write beyond the seeded job / build
+docs, 204); project deleted during aggregation → no evidence / snapshot / lines, build not marked failed; marked_pdf
+and find_similar of a deleting project acked 204 with no write. Plus the dry-run tests (planned = writes, schema
+validation, mode rule).

@@ -151,11 +151,18 @@ service cloud.firestore {
 
       // ---------------------------------------------------------------- projects
       match /projects/{projectId} {
-        allow read: if isMember(orgId);
-        allow write: if false;                     // create/update via API
+        // Sprint 8: DELETE /v1/projects/:pid (admin + MFA, typed name) first stamps the tombstone `deletingAt`, then the
+        // API deletes the subtree (Storage + recursiveDelete). A tombstoned project is gone for clients at once (`get`);
+        // `list` keeps the plain membership check (list rules must not depend on `resource.data` fields the client
+        // query does not filter on — the doc itself is deleted within the same request).
+        allow get: if isMember(orgId) && !('deletingAt' in resource.data);
+        allow list: if isMember(orgId);
+        allow write: if false;                     // create/update/delete via API
 
         match /sheetSets/{setId} {
-          allow read: if isMember(orgId);
+          // Sprint 8: DELETE …/sheet-sets/:id (editor+) stamps `deletedAt` before removing the set's sheets / objects.
+          allow get: if isMember(orgId) && !('deletedAt' in resource.data);
+          allow list: if isMember(orgId);
           allow write: if false;
         }
 

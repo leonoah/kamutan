@@ -1,5 +1,5 @@
 import { gzipSync } from 'node:zlib';
-import { BOQ_EVIDENCE_PATH_RE, BOQ_EXPORT_PATH_RE, LIBRARY_IMPORT_PATH_RE } from '@kamutan/contracts';
+import { BOQ_EVIDENCE_PATH_RE, BOQ_EXPORT_PATH_RE, BOQ_LINES_SNAPSHOT_PATH_RE, LIBRARY_IMPORT_PATH_RE } from '@kamutan/contracts';
 import type { App } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 import { ArtifactTooLargeError, decodeGzipJson, MAX_ARTIFACT_GZ_BYTES } from '../understanding/artifact-reader';
@@ -17,6 +17,8 @@ export const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.
  */
 export interface BoqStorage {
   readEvidence(path: string): Promise<unknown | null>;
+  /** Sprint 8: orgs/{o}/projects/{p}/boq/{buildId}/lines.json.gz (worker output, gzip JSON, size-capped). */
+  readLinesSnapshot(path: string): Promise<unknown | null>;
   writeExport(path: string, data: Buffer): Promise<void>;
   signExport(path: string, fileName: string, ttlSeconds: number): Promise<SignedUrl>;
   /** Whole object (≤ maxBytes) or null when missing; throws ImportTooLargeError above the cap. */
@@ -48,6 +50,15 @@ export class FirebaseBoqStorage implements BoqStorage {
 
   async readEvidence(path: string): Promise<unknown | null> {
     assert(BOQ_EVIDENCE_PATH_RE, path, 'evidence');
+    return this.readGz(path);
+  }
+
+  async readLinesSnapshot(path: string): Promise<unknown | null> {
+    assert(BOQ_LINES_SNAPSHOT_PATH_RE, path, 'lines snapshot');
+    return this.readGz(path);
+  }
+
+  private async readGz(path: string): Promise<unknown | null> {
     const file = this.file(path);
     try {
       const [meta] = await file.getMetadata();
@@ -119,6 +130,18 @@ export class InMemoryBoqStorage implements BoqStorage {
   async readEvidence(path: string): Promise<unknown | null> {
     assert(BOQ_EVIDENCE_PATH_RE, path, 'evidence');
     this.evidenceReads++;
+    const b = this.objects.get(path);
+    return b ? decodeGzipJson(b) : null;
+  }
+
+  /** Sprint 8: stands in for the worker's per-build lines snapshot. */
+  putLinesSnapshot(path: string, value: unknown): void {
+    assert(BOQ_LINES_SNAPSHOT_PATH_RE, path, 'lines snapshot');
+    this.objects.set(path, gzipSync(Buffer.from(JSON.stringify(value))));
+  }
+
+  async readLinesSnapshot(path: string): Promise<unknown | null> {
+    assert(BOQ_LINES_SNAPSHOT_PATH_RE, path, 'lines snapshot');
     const b = this.objects.get(path);
     return b ? decodeGzipJson(b) : null;
   }

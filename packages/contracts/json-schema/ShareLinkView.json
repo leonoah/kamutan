@@ -115,7 +115,8 @@
               "enum": [
                 "user",
                 "offboarding",
-                "project_deleted"
+                "project_deleted",
+                "sheet_set_deleted"
               ]
             },
             {
@@ -187,6 +188,9 @@
               "type": "null"
             }
           ]
+        },
+        "showPrices": {
+          "type": "boolean"
         },
         "projectId": {
           "type": "string",
@@ -261,6 +265,7 @@
         "revokedBy",
         "revokeReason",
         "pdfExportId",
+        "showPrices",
         "projectId",
         "state",
         "shortId",

@@ -1,0 +1,19 @@
+{
+  "$ref": "#/definitions/BoqBuildListQuery",
+  "definitions": {
+    "BoqBuildListQuery": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/BoqBuildListQuery.json"
+}

@@ -64,8 +64,9 @@ describe("Share dialog (S12, FR-30)", { timeout: 30_000 }, () => {
     const { backend } = renderDialog();
     const create = vi.spyOn(backend.api, "createShareLink");
     const dlg = await screen.findByRole("dialog", { name: "שיתוף לצפייה בלבד" });
-    // seeded links: active / expired / revoked
-    await waitFor(() => expect(dlg.querySelectorAll("[data-link]").length).toBe(3));
+    // seeded links: active / expired / revoked + (Sprint 8) active with prices
+    await waitFor(() => expect(dlg.querySelectorAll("[data-link]").length).toBe(4));
+    expect(dlg.querySelector("[data-link-prices]")).toHaveTextContent("כולל מחירים");
     expect(dlg.querySelector('[data-state="expired"]')).toHaveTextContent("פג תוקף");
     expect(dlg.querySelector('[data-state="revoked"]')).toHaveTextContent("בוטל");
     expect(dlg.querySelector('[data-state="active"]')).toHaveTextContent("נצפה 3 פעמים");
@@ -83,7 +84,7 @@ describe("Share dialog (S12, FR-30)", { timeout: 30_000 }, () => {
     await user.click(within(dlg).getByRole("button", { name: "העתק קישור" }));
     expect(writeText).toHaveBeenCalledWith(url.value);
     await waitFor(() => expect(toasts().some((x) => /^הקישור הועתק\. בתוקף עד \d\d\.\d\d\.\d{4}\.$/.test(x))).toBe(true));
-    await waitFor(() => expect(dlg.querySelectorAll("[data-link]").length).toBe(4));
+    await waitFor(() => expect(dlg.querySelectorAll("[data-link]").length).toBe(5));
     const token = url.value.split("/s/")[1]!;
     expect(dlg.querySelector("[data-share-list]")!.textContent).not.toContain(token);
 
@@ -138,14 +139,14 @@ describe("Share dialog (S12, FR-30)", { timeout: 30_000 }, () => {
     renderDialog({ canManage: false });
     const dlg = await screen.findByRole("dialog", { name: "שיתוף לצפייה בלבד" });
     expect(within(dlg).getByText("רק עורכים ומנהלים יכולים ליצור ולבטל קישורי שיתוף.")).toBeInTheDocument();
-    await waitFor(() => expect(dlg.querySelectorAll("[data-link]").length).toBe(3));
+    await waitFor(() => expect(dlg.querySelectorAll("[data-link]").length).toBe(4));
     expect(within(dlg).queryByRole("button", { name: /^צור קישור|^בטל/ })).toBeNull();
   });
 
   it("is accessible (axe)", async () => {
     renderDialog();
     const dlg = await screen.findByRole("dialog", { name: "שיתוף לצפייה בלבד" });
-    await waitFor(() => expect(dlg.querySelectorAll("[data-link]").length).toBe(3));
+    await waitFor(() => expect(dlg.querySelectorAll("[data-link]").length).toBe(4));
     expect(await axe(dlg)).toHaveNoViolations();
   });
 });

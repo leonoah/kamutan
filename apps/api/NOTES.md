@@ -1,4 +1,4 @@
-# @kamutan/api — notes (Sprint 0 – 7, Firebase, ADR 0008)
+# @kamutan/api — notes (Sprint 0 – 8, Firebase, ADR 0008)
 
 NestJS 11 (TypeScript strict) Core API. Sprint 0: **login → create project → upload & store a file**. Sprint 1:
 **quarantine upload → ingest via Pub/Sub → sheets list / confirm / regions / tiles (signed URLs) / reprocess / job status**.
@@ -9,6 +9,112 @@ risk-ranked review queue, room settings (tiling inputs), learn-from-correction (
 Runs as Cloud Functions 2nd gen `api` (europe-west1) behind the Firebase Hosting rewrite `/api/**`
 (same origin → no CORS needed), and locally via `src/main.ts`. Contracts (Zod, source of truth for DTOs,
 Firestore doc shapes and job payloads) live in `packages/contracts` (`@kamutan/contracts`).
+
+## Sprint 8 (API agent) — read this first, Web + Worker-BOQ
+
+Contracts: packages/contracts/NOTES.md **"Sprint 8 published"** (`prices.ts`, `compare.ts`, `housekeeping.ts` + additive
+fields). All additive; new defaults `ExportBoqRequest.includePrices` / `BoqDocumentQuery.prices` = true,
+`CreateShareLinkRequest.showPrices` = false.
+
+### Endpoints
+
+| Method | Path | Min role | Notes |
+| --- | --- | --- | --- |
+| PATCH | `/library/items/:itemId?orgId=` `{price: number\|null}` | editor | Existing route; `price` → `itemLibrary.price {amount, currency 'ILS', updatedAt, by, source 'manual', importId null}`, null removes. Audit `itemLibrary/update {fields, active, code, price {from, to, source}}` (`planLibraryItemPatch`, boq-docs.ts, both drivers). |
+| POST | `/library/prices` `BulkLibraryPriceRequest` | editor (strict rate limit) | ≤ 500 items, chunks of 100 per transaction (re-read inside); one audit event per changed item with the shared `batchId` (`bp_…`); `updated` / `skipped (not_found \| unchanged)` in request order. |
+| GET | `/library/items?priced=true\|false` | viewer | Price-list filter. |
+| POST | `/library/imports` `{…, mode: 'library'\|'prices', overwriteManualPrices}` | editor | Stored on the import doc and published in the `library.import` job. Worker-BOQ applies `planPriceImport` and writes `stats.prices`. **GET `/library/imports/:id`** (and finalize's view) appends ONE `itemLibrary/import_prices {importId, mode, rows, applied, unchanged, unmatched, conflicts, skippedManual, overwriteManualPrices}` event (actor = uploader) once the import succeeded with a report (`pricesAuditedAt` stamp, transaction, idempotent). |
+| PATCH | `/projects/:pid/boq/lines/:lineId` `{priceOverride: number\|null, reason?}` | reviewer route, **editor** for `priceOverride` | → `priceOverride{,By,At,Reason}`; allowed on approved lines (price only, approval kept). Audit `boqLines/update {price {from, to}, reason}`; history action **`price`** ("מחיר ידני · מחיר הספרייה → ₪50"). Response line is priced. |
+| PATCH | `/projects/:pid/boq/pricing` `{adjustmentPct: number\|null}` | editor | Project discount (< 0) / markup (> 0), −90 … 200 %; `project.pricing {adjustmentPct, updatedBy, updatedAt}`; audit `projects/update_pricing {from, to}`. |
+| PATCH | `/orgs/:orgId/settings` `{vatRate}` | admin + MFA + sign-in ≤ 10 min | VAT fraction 0 … 0.5 (default 0.18 via `vatRateOf`). |
+| GET | `/projects/:pid/boq/compare?from=&to=&base=previous\|export` | viewer | `BoqComparison`. `to` = latest build; `from` = explicit, else the newest succeeded build created before `to` (`listBuilds`, ≤ 100 scanned), or with `base=export` the build of the latest BOQ xlsx export (`latestBoqExport`: not marked PDFs, not comparison exports). Snapshot path DERIVED from the ids (`storagePaths.boqLinesSnapshot`, never the stored `linesRef`), parsed with `BoqLinesSnapshotSchema` (buildId + projectId must match), cached per path. 404 unknown / foreign build; 409 `not_ready` with the Hebrew `COMPARE_NO_PREVIOUS_HE` / `COMPARE_NO_SNAPSHOT_HE` / `COMPARE_NO_EXPORT_HE`, or a build that has not finished. |
+| POST | `/projects/:pid/boq/compare/export` `{from?, to?, base?}` | editor (export rate limit) | Excel "תוספות ושינויים" (`src/boq/compare.ts buildCompareWorkbook`): RTL, one row per added / removed / changed line, Δqty / totals / Δ₪ as formulas (`N(F)-N(E)`, `N(E)*N(H)`, `K-J`), SUM row, cause text; `sanitizeCell` on every text. Record `exports/{id}` with `purpose: 'comparison'`, `compare {fromBuildId, toBuildId}` (+ `exports/create` audit). 2-minute signed URL. |
+| DELETE | `/projects/:pid/sheet-sets/:sheetSetId` | editor (strict rate limit) | `DeleteSheetSetResponse`. 409 `conflict` (Hebrew `SHEET_SET_DELETE_BUSY_HE`) while the set is `uploaded/queued/splitting` and younger than 30 min. Phase 1 (one transaction): tombstone `deletedAt`, bytes released (`storageBytes -= sizeBytes` unless already released), share links that lock one of its sheets revoked (`sheet_set_deleted`, one `shareLinks/revoke_all` event), BOQ stale (`sheet`), audit `sheetSets/delete {sheets, releasedBytes, revokedShareLinks}`. Then Storage prefixes `uploads/{set}/`, `infected/{set}/`, `sheets/{sheet}/` (artifacts, tiles, crops) and `exports/{id}/` of marked PDFs that rendered those sheets. Phase 2: sheets + versions, corrections / legend rows / review items / room settings of those sheets, reprocess requests, those marked-PDF records, the set doc; sheets the set had superseded become current again; `stats.sheets` recounted. Idempotent on retry (tombstone). |
+| DELETE | `/projects/:pid` body `{confirmName}` | admin + MFA + sign-in ≤ 10 min (SEC-07 "מחיקת פרויקט") | 400 `validation_failed` with `PROJECT_DELETE_MISMATCH_HE` unless `deleteConfirmationMatches(confirmName, name)` (NFC, trimmed, whitespace collapsed). Phase 1: tombstone `deletingAt` (the project is invisible to every API read and to client `get`s from then on), every active link revoked (`project_deleted`), audit `projects/delete {name, sheetSets, releasedBytes, revokedShareLinks}`. Then the whole `orgs/{o}/projects/{p}/` Storage prefix, then the Firestore subtree (`recursiveDelete`) + the `shareTokens` of its links. `jobs/*` and the org audit log stay. |
+| POST | `/projects/:pid/uploads`, `/projects/:pid/sheet-sets` | editor | **409 `sheet_limit`** (Hebrew `sheetLimitMessageHe`, issues `sheets` / `maxSheets`) when the project already holds 100 current (non-superseded) sheets; finalize excludes the sheets of `replacesSheetSetId` and discards the quarantine object. A set the worker fails with `error.code == 'sheet_limit'` (split would exceed 100) is released like an infected one (`isInfected` → `RELEASED_ERROR_CODES`). |
+
+### Integration round (web) — see packages/contracts/NOTES.md "Sprint 8 published (integration)"
+| Method | Path | Min role | Notes |
+| --- | --- | --- | --- |
+| GET | `/projects/:pid/boq/builds?limit=` | viewer | `BoqBuildList` (CompareService.builds): `listBuilds` + `listBoqExports` (newest export per build); `hasSnapshot` = succeeded and `linesRef` == the derived snapshot path (no Storage read). |
+| POST | `/library/imports/:importId/apply-prices` | editor (strict rate limit) | Dry-run imports only: `claimPriceApply` (transaction: succeeded + `dryRun` + `stats.prices.planned` + not applied → stamps `pricesAppliedAt/By`; else 409), then `writeImportedPrices` (chunks of 100, re-read, `importedPriceSkip`: not_found / unchanged / manual_kept; price `source: 'import'`, `importId`, by = applier; audit per write with `importId`) + one `itemLibrary/import_prices {apply: true, applied, overwritten, kept, …}` event. A dry-run report is never audited on GET (nothing was written). |
+- `POST /library/imports` takes `dryRun` (needs `mode: 'prices'`), stored + published in the job.
+- **Compare without `to` = LIVE**: the current lines priced now (`liveSnapshot`: `priceLines` + `pricedQty` +
+  `displayDescription`; `sheetVersions` from the latest build's snapshot, else the lines' sources); `to.live: true`.
+  `to=<id>` keeps the stored snapshot. The Excel export follows the same selection.
+- `Project.sheetCount` / `sheetLimit` (GET one: `countCurrentSheets`; list: `stats.sheets`), `SheetSet.storageBytes`
+  (mapper: `countedBytes`), `DeleteSheetSetResponse.storageQuotaBytes`.
+- Tests: `e2e/sprint8.e2e.test.ts` "Sprint 8 integration (web)" (+4: live compare, builds list, dry run → apply with a
+  per-item overwrite / drift to manual kept / once / audit, project + set fields), roles matrix + openapi (+2 routes).
+  Gates (07.11, after the round): api 422 passed / 23 skipped / 2 todo; contracts 164; firebase-tests 54 / 201 skipped;
+  json-schema 202; worker mirror 34 passed.
+- Note: an apply that fails after the claim (write error) leaves the import marked applied with a partial write;
+  the remaining items can be set with `POST /library/prices`.
+
+### Read paths / totals
+- **Prices are resolved on read** (`src/boq/pricing.ts`: `priceLines` = contracts `libraryPriceFor` over ACTIVE priced
+  items + `effectivePrice`; `pricedQty` = 0 for a needsInput line without override) — GET boq lines carry `unitPrice`,
+  `unitPriceSource`, `lineTotal`; `summary.totals` (BoqTotals over ALL lines, project adjustment, org VAT). A library
+  price edit needs no rebuild. The derived fields are never stored.
+- **BoqDocumentModel** (`boq-document.ts`): row `price` = effective unit price (`includePrices`, default on), `total`
+  = qty × price, `priceSource`, `unpriced`; `totals` = `computeBoqTotals(linesTotal = Σ chapter subtotals, project
+  adjustment, VAT)`; warning `unpriced` (document lines without a price; never blocks). `prices=0` = the Sprint 3–7
+  layout (empty price column, totals 0).
+- **Excel main sheet**: unit price cells (note "ללא מחיר" on unpriced lines), line total formula unchanged
+  (`qty × price`); grand totals = `[סה"כ לפני הנחה / תוספת = SUM(chapters); "הנחה X%" = that × pct]`, `סה"כ כללי לא
+  כולל מע"מ` (SUM or lines + adjustment), **`מע"מ 18%` = before × rate (new row)**, `סה"כ כללי כולל מע"מ` = before + VAT.
+- **Share** `showPrices` (editor+, link creator): the snapshot holds `unitPrice` / `total` per line + `totals` ONLY for
+  such links; the public BOQ strips price fields of any other link (defence in depth); meta `link.showPrices`; audit
+  `shareLinks/create.showPrices`.
+- Projects with a `deletingAt` tombstone: `getProject` / `listProjects` / `findProjectOrgId` hide them (both drivers).
+
+### Firebase (`firebase/`)
+`firestore.rules`: `projects/{p}` and `sheetSets/{s}` split `read` into `get` (membership AND no delete tombstone —
+`deletingAt` / `deletedAt`) and `list` (membership); writes stay API-only. `storage.rules` comment: `boq/**` also holds
+the lines snapshots (prices) — deny-all; deletes are admin-SDK only. `model.ts`: project `pricing` / `deletingAt`,
+sheet-set `sizeBytes` / `storageReleasedAt` / `deletedAt`, item `price`, share link `showPrices` + revoke reason,
+`BOQ_LINE_API_FIELDS` + rename / price fields, `paths.boqLinesSnapshot`. Tests: `rules.lint.test.ts` "Sprint 8"
+(static, local) + `firestore.rules.test.ts` "Sprint 8" (emulator, CI). No new index (every new query is single-field:
+`sheetSetId ==`, `sheetId in`, `kind ==`, `superseded ==`, `supersededBySetId ==`, `createdAt desc`).
+
+### Tests
+`e2e/sprint8.e2e.test.ts` (14: library price + roles + audit summary; bulk + batchId + `priced`; price import mode +
+job + audit once; GET boq prices / totals / derived fields not stored; priceOverride on an approved line + history +
+restore + validation; adjustment + VAT + roles; document prices / `unpriced` / `prices=0`; Excel unit prices + note +
+discount / VAT formulas + `includePrices: false`; share hidden / `showPrices`; compare default / export base / explicit
+/ 404 / 409; compare Excel + record purpose; sheet-set delete end to end (busy, roles, counts, objects, quota, links,
+audit, 404 twice); project delete (roles, MFA, wrong name, body, outsider, everything gone, tokens, public link,
+audit)), `unit/compare.test.ts` (kinds, Δ, (code, unit) fallback, causes, placeholders = removed, Excel + injection),
+`unit/boq-document.test.ts` / `unit/excel.test.ts` (VAT row; gate warnings vs `unpriced`), acceptance:
+`uploads` **A-API-13b flipped** (100-sheet limit on reserve + finalize, revision allowed, worker refusal releases bytes),
+roles matrix + openapi (+8 routes / variants: DELETE sheet set (per-role sets in the world), DELETE project (wrong name
+→ 400), pricing, compare, compare export, priceOverride variant, library prices), isolation sweep masks `bp_` batch ids,
+`integration/firestore.emulator.test.ts` "Sprint 8" (CI). Contracts `test/sprint8.test.ts` (12, incl. `planPriceImport`
+reference cases for Worker-BOQ).
+
+Commands (07.11.2026, all green): `pnpm turbo run lint typecheck test build --filter=@kamutan/api
+--filter=@kamutan/contracts --filter=@kamutan/firebase-tests --concurrency=2` (api 418 passed / 23 emulator-skipped / 2
+todo; contracts 163; firebase-tests 54 / 201 emulator-skipped), `pnpm --filter @kamutan/contracts gen` (197 schemas),
+`pnpm --filter @kamutan/api openapi`; worker mirror `uv run pytest tests/test_boq_contracts.py tests/test_boq_s8.py`
+26 passed / 1 skipped (client sample absent).
+
+### Open
+- **SEC-51** asks for a 30-day soft delete of a project before the hard delete; the brief asks for an immediate delete
+  (quota release, links revoked) — implemented as an immediate hard delete with a tombstone during the request. A
+  soft-delete window needs an owner decision (and a purge job like the offboarding one).
+- A project delete that fails after phase 1 (Storage / recursiveDelete error) leaves a tombstoned, invisible project
+  with remnants; the same request cannot be retried (the project is 404 from then on). Needs a sweeper (script or
+  scheduled job over `deletingAt`) — not built. A failed sheet-set delete IS retryable (tombstone keeps the set visible
+  to DELETE).
+- Firestore drivers of the Sprint 8 repository methods are covered only by the emulator suite (CI); locally the
+  in-memory drivers run the e2e tests.
+- Worker-side: the 100-sheet refusal during the split (`sheet_limit`) is a Worker-BOQ / ingest request (contracts
+  NOTES request 4); until it lands, a file whose pages push a project over 100 is still split (the API refuses only
+  when the project is already full).
+- `GET /projects` (hub list) does not carry totals; the hub uses `GET …/boq?limit=1` → `summary.totals`.
+- Prices are visible to every member role (viewer included) — the library and BOQ were already member-readable; no
+  owner decision asked for hiding them from viewers.
+- Comparison of builds made before Sprint 8 answers 409 (no snapshot); rebuilding creates one.
 
 ## Sprint 7 (API agent) — read this first, Web + Worker-BOQ
 
@@ -59,10 +165,9 @@ todo; contracts 148; firebase-tests 50 / 199 emulator-skipped), `pnpm --filter @
 ### Open
 - The library rewrite runs after the line PATCH commits (not one transaction); a failure there leaves the line renamed
   and the library unchanged (the request errors; retry is idempotent).
-- No delete endpoint for sheet sets / projects exists; any future one must stamp `storageReleasedAt` (same helper) and
-  delete the `uploads/` + `infected/` prefixes.
+- ~~No delete endpoint for sheet sets / projects~~ → Sprint 8 (DELETE sheet set / project).
 - Review-queue `line` titles come from the cached base (per build) → a rename shows there after the next build.
-- `≤ 100 sheets per project` (SEC-14) not enforced. Price column stays empty (`price: null`, totals 0) as in every export.
+- ~~`≤ 100 sheets per project` not enforced; price column empty~~ → Sprint 8 (409 `sheet_limit`; prices + totals).
 - Emulator-only: the Firestore `releaseInfectedStorage` query (`error.code ==`, single-field auto index) and the
   in-transaction sheet-set recount run first in CI.
 

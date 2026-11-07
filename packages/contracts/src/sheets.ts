@@ -26,6 +26,11 @@ export const SheetSetSchema = z.object({
   name: z.string().max(255).optional(),
   uploadedBy: UidSchema,
   sizeBytes: z.number().int().nonnegative().optional(),
+  /**
+   * Integration (read-only, API mapper): bytes this set still holds in `project.storageBytes` (= `sizeBytes` until it is
+   * released — infected / `sheet_limit` / deleted) = what deleting it frees ("יתפנו כ-…").
+   */
+  storageBytes: z.number().int().nonnegative().optional(),
   /** jobs/{jobId} of the initial ingest. */
   ingestJobId: DocIdSchema.optional(),
   /** Version id the worker uses for every page sheet of the initial ingest. */

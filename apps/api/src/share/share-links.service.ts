@@ -12,6 +12,7 @@ import {
   TITLE_BLOCK_WARNING_EXCLUDED,
   TITLE_BLOCK_WARNING_INCLUDED,
   type BoqLine,
+  type BoqTotals,
   type ShareBoqSnapshot,
   type ShareLinkSheet,
   type ShareLinkWarning,
@@ -35,6 +36,7 @@ import { floorsOf } from '../boq/excel';
 import { countLines } from '../db/boq-docs';
 import { BOQ_REPOSITORY, type BoqRepository } from '../db/boq-repository';
 import { ExportsService } from '../governance/exports.service';
+import { priceLines, totalsOf } from '../boq/pricing';
 import { GOVERNANCE_STORAGE, type GovernanceStorage } from '../governance/governance-storage';
 import { watermarkText } from './watermark';
 
@@ -68,6 +70,7 @@ export function toView(projectId: string, l: ShareLink, nowMs = Date.now()): Sha
     shortId: shortIdOf(l.id),
     sheets: sheetsOf(l),
     boqLocked: !!l.boqSnapshotPath,
+    showPrices: l.showPrices === true,
   };
 }
 
@@ -80,8 +83,12 @@ export function sheetsOf(l: ShareLink): ShareLinkSheet[] {
   return out.sort((a, b) => a.sheetId.localeCompare(b.sheetId));
 }
 
-/** F-4: the public view of the BOQ, frozen at creation (no notes / reasons / override marker / user ids). */
-export function boqSnapshot(linkId: string, buildId: string | null, all: BoqLine[], at: Date): ShareBoqSnapshot {
+/**
+ * F-4: the public view of the BOQ, frozen at creation (no notes / reasons / override marker / user ids). Sprint 8:
+ * `prices` (link "הצג מחירים") = the lines are priced (pricing.ts) → unit price + total per line and the totals are
+ * frozen too; without it NO price field is written (prices never leave the org by default).
+ */
+export function boqSnapshot(linkId: string, buildId: string | null, all: BoqLine[], at: Date, prices: { totals: BoqTotals } | null = null): ShareBoqSnapshot {
   const lines = [...all].sort(compareLines);
   const c = countLines(lines);
   return {
@@ -89,9 +96,23 @@ export function boqSnapshot(linkId: string, buildId: string | null, all: BoqLine
     linkId,
     buildId,
     snapshotAt: at.toISOString(),
-    lines: lines.map((l) => ({ id: l.id, chapter: l.chapter, code: l.code, description: displayDescription(l), unit: l.unit, qty: effectiveQty(l), level: l.level, status: effectiveStatus(l), floor: l.floor ?? null, byFloor: l.byFloor ?? {}, ...(l.descriptionOverride?.trim() ? { descriptionManual: true } : {}) })),
+    lines: lines.map((l) => ({
+      id: l.id,
+      chapter: l.chapter,
+      code: l.code,
+      description: displayDescription(l),
+      unit: l.unit,
+      qty: effectiveQty(l),
+      level: l.level,
+      status: effectiveStatus(l),
+      floor: l.floor ?? null,
+      byFloor: l.byFloor ?? {},
+      ...(l.descriptionOverride?.trim() ? { descriptionManual: true } : {}),
+      ...(prices ? { unitPrice: l.unitPrice ?? null, total: l.lineTotal ?? null } : {}),
+    })),
     floors: floorsOf(lines),
     counts: { lines: c.lines, green: c.green, yellow: c.yellow, red: c.red, approved: c.approved },
+    ...(prices ? { showPrices: true, totals: prices.totals } : {}),
   };
 }
 
@@ -168,7 +189,14 @@ export class ShareLinksService {
     // F-4: freeze the BOQ now; the public API serves only this snapshot.
     const snapshotPath = storagePaths.shareBoqSnapshot(orgId, projectId, id);
     const snapshotBuildId = project.boq?.latestBuildId ?? null;
-    await this.storage.writeShareSnapshot(snapshotPath, boqSnapshot(id, snapshotBuildId, allLines, now));
+    // Sprint 8 ("הצג מחירים", editor+ like the link itself): prices are frozen into the snapshot only when asked.
+    let snapLines = allLines;
+    let prices: { totals: BoqTotals } | null = null;
+    if (req.showPrices) {
+      snapLines = priceLines(allLines, await this.boq.listLibraryItems(orgId, { active: true }));
+      prices = { totals: totalsOf(snapLines, project, org?.settings) };
+    }
+    await this.storage.writeShareSnapshot(snapshotPath, boqSnapshot(id, snapshotBuildId, snapLines, now, prices));
     const base: Omit<ShareLink, 'pdfExportId'> = {
       id,
       tokenHash: sha256Hex(token),
@@ -188,6 +216,7 @@ export class ShareLinksService {
       boqSnapshotPath: snapshotPath,
       // A-API-09: the overlay maps detections → lines with THIS build's evidence (the snapshot's), never a later one.
       boqBuildId: snapshotBuildId,
+      showPrices: req.showPrices === true,
     };
     const wantPdf = req.allowPdfDownload && Object.keys(lock).length > 0 && !!project.boq?.latestBuildId;
     const options = { legend: true as const, floorSplit: false, watermark: linkWatermark(base), hideTitleBlock: req.hideTitleBlock };

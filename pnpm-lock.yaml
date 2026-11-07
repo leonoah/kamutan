@@ -196,6 +196,9 @@ importers:
         specifier: ^5.0.16
         version: 5.0.16(@types/react@18.3.31)(react@18.3.1)(use-sync-external-store@1.7.0(react@18.3.1))
     devDependencies:
+      '@kamutan/contracts':
+        specifier: workspace:^
+        version: link:../../packages/contracts
       '@playwright/test':
         specifier: 1.56.1
         version: 1.56.1

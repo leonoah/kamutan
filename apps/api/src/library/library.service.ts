@@ -27,6 +27,10 @@ import {
   type PatchBoqRuleRequest,
   type PatchBoqTemplateRequest,
   type PatchLibraryItemRequest,
+  type ApplyImportPricesRequest,
+  type ApplyImportPricesResponse,
+  type BulkLibraryPriceRequest,
+  type BulkLibraryPriceResponse,
   DEFAULT_BOQ_TEMPLATE_ID,
   templateNeedsUpgrade,
 } from '@kamutan/contracts';
@@ -69,6 +73,8 @@ export class LibraryService {
       const seeded = await this.boq.seedDefaults(q.orgId);
       if (seeded.items > 0) items = await this.boq.listLibraryItems(q.orgId, opts);
     }
+    // Sprint 8: items with / without a price (the price list view).
+    if (q.priced !== undefined) items = items.filter((i) => (i.price != null) === q.priced);
     if (q.q) {
       const needle = q.q.toLowerCase();
       items = items.filter((i) => i.code.toLowerCase().includes(needle) || i.description.toLowerCase().includes(needle));
@@ -112,6 +118,20 @@ export class LibraryService {
     return item;
   }
 
+  /**
+   * Sprint 8: POST /v1/library/prices (editor+) — bulk set / clear of item prices (≤ 500), chunked transactions, one
+   * audit event per changed item (`itemLibrary/update {price, batchId}`). Unknown ids → `not_found`, same price → `unchanged`.
+   */
+  async bulkPrices(user: AuthContext, req: BulkLibraryPriceRequest): Promise<BulkLibraryPriceResponse> {
+    await this.access.requireRole(user, req.orgId, 'editor');
+    const batchId = `bp_${randomUUID().replace(/-/g, '')}`;
+    const r = await this.boq.bulkSetLibraryPrices(req.orgId, req.items, user.uid, batchId);
+    const order = new Map(req.items.map((x, i) => [x.itemId, i]));
+    const byOrder = (a: { itemId: string }, b: { itemId: string }) => (order.get(a.itemId) ?? 0) - (order.get(b.itemId) ?? 0);
+    this.logger.log({ orgId: req.orgId, batchId, updated: r.updated.length, skipped: r.skipped.length }, 'library prices updated');
+    return { batchId, updated: r.updated.sort(byOrder), skipped: r.skipped.sort(byOrder) };
+  }
+
   // ------------------------------------------------------------------ imports
   /**
    * Reserve an upload slot orgs/{orgId}/imports/{uuid}.{xls|xlsx} (storage.rules: create-only for editors, ≤ 20 MB,
@@ -141,6 +161,11 @@ export class LibraryService {
       finalizedAt: null,
       stats: null,
       error: null,
+      // Sprint 8: `prices` = fill item prices only; manual prices are replaced only with the explicit flag.
+      mode: req.mode ?? 'library',
+      overwriteManualPrices: req.overwriteManualPrices === true,
+      // Integration: review before writing (the worker computes the report only; apply-prices writes).
+      ...(req.dryRun === true ? { dryRun: true } : {}),
     };
     const created = await this.boq.createLibraryImport(req.orgId, doc);
     return { import: created, storagePath, contentType: LIBRARY_IMPORT_CONTENT_TYPE[kind], maxBytes: MAX_LIBRARY_IMPORT_BYTES, expiresAt };
@@ -195,6 +220,9 @@ export class LibraryService {
           storagePath: path,
           sourceKind: doc.sourceKind,
           traceparent,
+          mode: doc.mode ?? 'library',
+          overwriteManualPrices: doc.overwriteManualPrices === true,
+          ...(doc.dryRun === true ? { dryRun: true } : {}),
         });
       } catch (err) {
         this.logger.error({ err: (err as Error).message, importId }, 'library.import publish failed');
@@ -205,6 +233,46 @@ export class LibraryService {
     return this.view(orgId, queued.doc);
   }
 
+  /**
+   * Integration: POST /library/imports/:id/apply-prices (editor+) — writes a reviewed dry-run price import: every
+   * `planned` item + the `manual_price` conflicts listed in `overwriteItemIds` (explicit per-item choice). Claimed once
+   * (`pricesAppliedAt`, 409 otherwise); items re-checked at write time; one audit event per write + one
+   * `itemLibrary/import_prices {apply: true, …}` summary.
+   */
+  async applyPrices(user: AuthContext, importId: string, req: ApplyImportPricesRequest): Promise<ApplyImportPricesResponse> {
+    await this.access.requireRole(user, req.orgId, 'editor');
+    if (!isUuid(importId)) throw notFound('import');
+    let imp: LibraryImport | null;
+    try {
+      imp = await this.boq.claimPriceApply(req.orgId, importId, user.uid);
+    } catch (err) {
+      if (err instanceof RepoConflictError) {
+        const msg = { not_dry_run: 'the import was not a dry run (its prices are already written)', already_applied: 'the prices of this import were already applied', not_ready: 'the import has not finished' }[err.reason] ?? err.reason;
+        throw new ApiException(HttpStatus.CONFLICT, err.reason === 'not_ready' ? 'not_ready' : 'conflict', msg, [{ path: 'importId', message: err.reason }]);
+      }
+      throw err;
+    }
+    if (!imp) throw notFound('import');
+    const report = imp.stats?.prices;
+    const overwrite = new Set(req.overwriteItemIds);
+    const manual = (report?.conflictRows ?? []).filter((c) => c.reason === 'manual_price' && c.itemId);
+    const entries = new Map<string, { itemId: string; amount: number; allowManual: boolean }>();
+    for (const p of report?.planned ?? []) entries.set(p.itemId, { itemId: p.itemId, amount: p.amount, allowManual: false });
+    for (const c of manual) if (overwrite.has(c.itemId as string)) entries.set(c.itemId as string, { itemId: c.itemId as string, amount: c.incoming, allowManual: true });
+    const r = await this.boq.writeImportedPrices(req.orgId, importId, [...entries.values()], user.uid);
+    const overwritten = r.written.filter((w) => w.overwroteManual).length;
+    const kept = manual.filter((c) => !overwrite.has(c.itemId as string)).length + r.skipped.filter((s) => s.reason === 'manual_kept').length;
+    await this.repo.appendAudit(req.orgId, {
+      actorId: user.uid,
+      entity: 'itemLibrary',
+      entityId: null,
+      action: 'import_prices',
+      after: { importId, mode: imp.mode ?? 'prices', apply: true, applied: r.written.length, overwritten, kept, unmatched: report?.unmatched ?? 0, conflicts: report?.conflicts ?? 0, skipped: r.skipped.length },
+    });
+    this.logger.log({ orgId: req.orgId, importId, applied: r.written.length, overwritten, kept }, 'import prices applied');
+    return { importId, applied: r.written.length, overwritten, kept, skipped: r.skipped, appliedAt: imp.pricesAppliedAt ?? new Date().toISOString() };
+  }
+
   async getImport(user: AuthContext, orgId: string, importId: string): Promise<LibraryImportView> {
     await this.access.requireRole(user, orgId, 'viewer');
     if (!isUuid(importId)) throw notFound('import');
@@ -213,7 +281,16 @@ export class LibraryService {
     return this.view(orgId, doc);
   }
 
-  private async view(orgId: string, doc: LibraryImport): Promise<LibraryImportView> {
+  private async view(orgId: string, doc0: LibraryImport): Promise<LibraryImportView> {
+    let doc = doc0;
+    // Sprint 8: the worker cannot append to the audit chain — the first read of a finished price import audits it once.
+    if (doc.status === 'succeeded' && doc.stats?.prices && !doc.pricesAuditedAt) {
+      const wrote = await this.boq.auditImportPrices(orgId, doc.id).catch((err: unknown) => {
+        this.logger.warn({ err: (err as Error).message, orgId, importId: doc.id }, 'import price audit failed');
+        return false;
+      });
+      if (wrote) doc = (await this.boq.getLibraryImport(orgId, doc.id)) ?? doc;
+    }
     const job = doc.jobId ? await this.repo.getJob(doc.jobId) : null;
     return {
       ...doc,

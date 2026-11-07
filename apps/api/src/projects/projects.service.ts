@@ -1,5 +1,5 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { projectQuotaOf, type CreateProjectRequest, type ListProjectsQuery, type Org, type Project, type ProjectPage, type UpdateProjectRequest } from '@kamutan/contracts';
+import { MAX_SHEETS_PER_PROJECT, projectQuotaOf, type CreateProjectRequest, type ListProjectsQuery, type Org, type Project, type ProjectPage, type UpdateProjectRequest } from '@kamutan/contracts';
 import { Logger } from '@nestjs/common';
 import { AccessService } from '../access/access.service';
 import type { AuthContext } from '../auth/auth-context';
@@ -24,7 +24,7 @@ export class ProjectsService {
     // A-LIVE-02: card counters (sheets, % verified, open items) — worker counters + the API's reviewOpen.
     const items: Project[] = [];
     for (let i = 0; i < page.items.length; i += 10) items.push(...(await Promise.all(page.items.slice(i, i + 10).map((p) => (this.state ? this.state.withStats(q.orgId, p) : p)))));
-    return { ...page, items: items.map((p) => withStorage(p, org)) };
+    return { ...page, items: items.map((p) => ({ ...withStorage(p, org), ...(p.stats ? { sheetCount: p.stats.sheets } : {}), sheetLimit: MAX_SHEETS_PER_PROJECT })) };
   }
 
   async create(user: AuthContext, body: CreateProjectRequest): Promise<Project> {
@@ -39,9 +39,10 @@ export class ProjectsService {
     await Promise.all([this.repo.ensureStorageCounted(orgId, projectId), this.repo.releaseInfectedStorage(orgId, projectId)]).catch((err: unknown) =>
       this.logger.warn({ err: (err as Error).message, orgId, projectId }, 'storage accounting failed'),
     );
-    const [project, org] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId)]);
+    const [project, org, sheetCount] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.repo.countCurrentSheets(orgId, projectId)]);
     if (!project) throw notFound('project');
-    return withStorage(this.state ? await this.state.withStats(orgId, project) : project, org);
+    // Sprint 8 integration: the hub banner "N מתוך 100" (live count here; the list uses the card counter).
+    return { ...withStorage(this.state ? await this.state.withStats(orgId, project) : project, org), sheetCount, sheetLimit: MAX_SHEETS_PER_PROJECT };
   }
 
   async update(user: AuthContext, projectId: string, body: UpdateProjectRequest): Promise<Project> {

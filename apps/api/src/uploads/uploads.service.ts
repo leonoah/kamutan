@@ -9,6 +9,10 @@ import {
   UPLOAD_TTL_SECONDS,
   DocIdSchema,
   FILE_INFECTED_ERROR,
+  SHEET_LIMIT_ERROR,
+  exceedsSheetLimit,
+  MAX_SHEETS_PER_PROJECT,
+  sheetLimitMessageHe,
   projectQuotaOf,
   quotaExceededMessageHe,
   UPLOAD_ERROR_MESSAGES_HE,
@@ -61,6 +65,8 @@ export class UploadsService {
     const quota = projectQuotaOf(org?.settings);
     const used = project?.storageBytes ?? 0;
     if (used + req.sizeBytes > quota) throw quotaExceeded(used, quota, req.sizeBytes);
+    // Sprint 8 (SEC-14): ≤ 100 sheets per project — refuse early when the project is already full.
+    await this.assertSheetRoom(orgId, projectId);
 
     const fileId = randomUUID();
     const storagePath = storagePaths.quarantine(orgId, fileId);
@@ -105,6 +111,15 @@ export class UploadsService {
     if (req.replacesSheetSetId) {
       const old = await this.repo.getSheetSet(orgId, projectId, req.replacesSheetSetId);
       if (!old) throw new ApiException(HttpStatus.NOT_FOUND, 'not_found', 'sheet set not found');
+    }
+
+    // Sprint 8 (SEC-14): a full project takes no new file (a revision frees the sheets of the set it replaces). The page
+    // count is known only after the worker splits the file — the worker refuses a split that would exceed the limit.
+    try {
+      await this.assertSheetRoom(orgId, projectId, req.replacesSheetSetId);
+    } catch (err) {
+      await this.discard(claims.path);
+      throw err;
     }
 
     const stream = await this.storage.openRead(claims.path);
@@ -256,7 +271,8 @@ export class UploadsService {
     const ownJob = job && job.orgId === orgId && job.projectId === projectId ? job : null;
     const e = set.error ?? ownJob?.error ?? null;
     const infected = e?.code === FILE_INFECTED_ERROR;
-    if (infected && set.error?.code === FILE_INFECTED_ERROR) {
+    // Sprint 8: a set the worker refused for the 100-sheet limit is released the same way (never processed).
+    if ((infected && set.error?.code === FILE_INFECTED_ERROR) || set.error?.code === SHEET_LIMIT_ERROR) {
       await this.repo.releaseInfectedStorage(orgId, projectId, setId).catch((err: unknown) => this.logger.warn({ err: (err as Error).message, orgId, setId }, 'storage release failed'));
       set = (await this.repo.getSheetSet(orgId, projectId, setId)) ?? set;
     }
@@ -266,6 +282,18 @@ export class UploadsService {
       error: e ? { code: e.code, message: e.message, messageHe: UPLOAD_ERROR_MESSAGES_HE[e.code] ?? null } : null,
       infected,
     };
+  }
+
+  /** 409 `sheet_limit` (Hebrew message) when the project already holds MAX_SHEETS_PER_PROJECT current sheets. */
+  private async assertSheetRoom(orgId: string, projectId: string, replacesSheetSetId?: string): Promise<void> {
+    const current = await this.repo.countCurrentSheets(orgId, projectId, replacesSheetSetId ? { excludeSheetSetId: replacesSheetSetId } : {});
+    if (exceedsSheetLimit(current, 1)) {
+      this.logger.warn({ orgId, projectId, current }, 'sheet limit reached');
+      throw new ApiException(HttpStatus.CONFLICT, SHEET_LIMIT_ERROR, sheetLimitMessageHe(current, MAX_SHEETS_PER_PROJECT), [
+        { path: 'sheets', message: String(current) },
+        { path: 'maxSheets', message: String(MAX_SHEETS_PER_PROJECT) },
+      ]);
+    }
   }
 
   private verifyToken(token: string): UploadTokenClaims {

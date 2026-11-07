@@ -109,6 +109,8 @@ def ingest_file(
             },
             merge=False,
         )
+    if docs.get(f"orgs/{org}/projects/{project}") is None:  # as the API would (Sprint 8: jobs need their project)
+        docs.set(f"orgs/{org}/projects/{project}", {"orgId": org, "name": project, "createdBy": "local-cli"})
     docs.set(
         f"orgs/{org}/projects/{project}/sheetSets/{set_id}",
         {

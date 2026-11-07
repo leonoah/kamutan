@@ -2,13 +2,16 @@
 
 ``from_env(org_settings_reader, *, blobs=None, transport=None)`` builds it from the environment:
 
-* ``KAMUTAN_LLM_PROVIDER`` = ``disabled`` (default) | ``anthropic`` | ``fake``
-* ``KAMUTAN_LLM_API_KEY`` (anthropic; secret store only, never logged), ``KAMUTAN_LLM_MODEL`` (required for anthropic)
+* ``KAMUTAN_LLM_PROVIDER`` = ``disabled`` (default) | ``anthropic`` | ``fake`` (tests / dev;
+  ``KAMUTAN_LLM_FAKE_REPLY=empty`` = answers every batch with no items)
+* ``KAMUTAN_LLM_API_KEY`` (anthropic; secret store only, never logged), ``KAMUTAN_LLM_MODEL`` (default
+  ``claude-sonnet-5-5``, Sprint 8)
 * ``KAMUTAN_LLM_BASE_URL`` (optional, e.g. a regional endpoint), ``KAMUTAN_LLM_TIMEOUT_S`` (60),
   ``KAMUTAN_LLM_MAX_TOKENS`` (1024), ``KAMUTAN_LLM_PRICE_IN_PER_MTOK`` / ``…_OUT_PER_MTOK`` (USD; defaults 3 / 15 —
-  set them to the contracted model's prices).
+  set them to the contracted model's prices), ``KAMUTAN_LLM_CACHE_WRITE_MULT`` / ``…_CACHE_READ_MULT`` (prompt-cache
+  write / read price as a multiple of the input price; defaults 1.25 / 0.1).
 
-A missing key / model, or running inside the parser sandbox, yields a disabled gateway (every call → ``disabled`` /
+A missing key, or running inside the parser sandbox, yields a disabled gateway (every call → ``disabled`` /
 ``refused``); the pipeline must work without it.
 """
 
@@ -23,18 +26,33 @@ import httpx
 
 from ..stores.base import BlobStore, DocStore
 from ..stores.memory import InMemoryBlobStore
-from .gateway import ALLOWED_REGION_KINDS, GatewayResult, LlmGateway, OrgSettingsReader, in_parser_sandbox
+from .gateway import (
+    ALLOWED_REGION_KINDS,
+    MAX_BATCH,
+    BatchItem,
+    BatchResult,
+    GatewayResult,
+    LlmGateway,
+    OrgSettingsReader,
+    PrefixImage,
+    in_parser_sandbox,
+)
 from .prompts import PURPOSES, Purpose
-from .providers import AnthropicProvider, DisabledProvider, FakeProvider, Pricing, Provider, ProviderError
+from .providers import DEFAULT_MODEL, AnthropicProvider, DisabledProvider, FakeProvider, Pricing, Provider, ProviderError
 
 __all__ = [
     "ALLOWED_REGION_KINDS",
+    "DEFAULT_MODEL",
+    "MAX_BATCH",
     "PURPOSES",
     "AnthropicProvider",
+    "BatchItem",
+    "BatchResult",
     "DisabledProvider",
     "FakeProvider",
     "GatewayResult",
     "LlmGateway",
+    "PrefixImage",
     "Pricing",
     "Provider",
     "ProviderError",
@@ -74,14 +92,19 @@ def from_env(
 ) -> LlmGateway:
     e = os.environ if env is None else env
     kind = (e.get("KAMUTAN_LLM_PROVIDER") or "disabled").strip().lower()
-    pricing = Pricing(_float_env(e, "KAMUTAN_LLM_PRICE_IN_PER_MTOK", 3.0), _float_env(e, "KAMUTAN_LLM_PRICE_OUT_PER_MTOK", 15.0))
+    pricing = Pricing(
+        _float_env(e, "KAMUTAN_LLM_PRICE_IN_PER_MTOK", 3.0),
+        _float_env(e, "KAMUTAN_LLM_PRICE_OUT_PER_MTOK", 15.0),
+        _float_env(e, "KAMUTAN_LLM_CACHE_WRITE_MULT", 1.25),
+        _float_env(e, "KAMUTAN_LLM_CACHE_READ_MULT", 0.1),
+    )
     provider: Provider = DisabledProvider()
     if in_parser_sandbox():
         kind = "disabled"
     if kind == "anthropic":
         key = e.get("KAMUTAN_LLM_API_KEY", "")
-        model = e.get("KAMUTAN_LLM_MODEL", "")
-        if key and model:
+        model = (e.get("KAMUTAN_LLM_MODEL") or "").strip() or DEFAULT_MODEL
+        if key:
             provider = AnthropicProvider(
                 api_key=key,
                 model=model,
@@ -91,9 +114,12 @@ def from_env(
                 transport=transport,
             )
         else:
-            log.warning("llm_gateway_disabled reason=%s", "missing_key_or_model")
+            log.warning("llm_gateway_disabled reason=%s", "missing_key")
     elif kind == "fake":
-        provider = fake or FakeProvider()
+        # DEV (scripts/llm_measure.py --dry-run): KAMUTAN_LLM_FAKE_REPLY=empty answers every batch with no items, so
+        # every crop is prepared and "sent" (counted) and nothing changes
+        empty = (e.get("KAMUTAN_LLM_FAKE_REPLY") or "").strip().lower() == "empty"
+        provider = fake or (FakeProvider(responder=lambda s, u, i: '{"items": []}') if empty else FakeProvider())
     max_tokens = int(_float_env(e, "KAMUTAN_LLM_MAX_TOKENS", 1024))
     return LlmGateway(
         provider=provider,

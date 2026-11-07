@@ -5,7 +5,8 @@ import { useTranslation } from "react-i18next";
 import { ArrowUp, Clock, Download, Eye, Link2Off, SearchX } from "lucide-react";
 import { useBackend } from "@/api/client";
 import { shareErrorKind } from "@/api/http";
-import { EXPORT_ERROR_MESSAGES_HE, type PublicBoqLine, type PublicShareMeta, type ShareErrorKind } from "@/api/types";
+import { EXPORT_ERROR_MESSAGES_HE, type PublicBoqLine, type PublicShareBoq, type PublicShareMeta, type ShareErrorKind } from "@/api/types";
+import { formatMoney, formatMoneyDelta, formatPct, round2 } from "@/features/prices/model";
 import { Button } from "@/components/ui/button";
 import { ConfidenceBadge, levelFromDb } from "@/components/ConfidenceBadge";
 import { Logo } from "@/components/Logo";
@@ -73,7 +74,7 @@ export function SharedViewerPage() {
   if (meta.isError || !meta.data) return <ShareGone kind={shareErrorKind(meta.error)} />;
   const boqErr = boq.isError ? shareErrorKind(boq.error) : null;
   if (boqErr && boqErr !== "error") return <ShareGone kind={boqErr} />;
-  return <SharedViewer token={token} meta={meta.data} lines={boq.data?.lines ?? null} chapters={boq.data?.chapters ?? []} snapshotAt={boq.data?.snapshotAt ?? null} boqError={boq.isError} />;
+  return <SharedViewer token={token} meta={meta.data} lines={boq.data?.lines ?? null} chapters={boq.data?.chapters ?? []} snapshotAt={boq.data?.snapshotAt ?? null} totals={boq.data?.totals ?? null} boqError={boq.isError} />;
 }
 
 export function ShareGone({ kind }: { kind: ShareErrorKind }) {
@@ -103,6 +104,7 @@ function SharedViewer({
   lines,
   chapters,
   snapshotAt,
+  totals,
   boqError,
 }: {
   token: string;
@@ -111,9 +113,14 @@ function SharedViewer({
   chapters: { code: string; title: string }[];
   /** F-4: the BOQ is frozen at link creation. */
   snapshotAt: string | null;
+  /** Sprint 8: only in a snapshot made with "הצג מחירים". */
+  totals: PublicShareBoq["totals"];
   boqError: boolean;
 }) {
   const { t } = useTranslation();
+  // Sprint 8: prices are shown ONLY when the link carries them (meta flag AND priced lines) — never derived here.
+  const priced = Boolean(meta.showPrices) && (lines ?? []).some((l) => l.unitPrice !== undefined);
+  const colCount = (meta.showConfidence ? 5 : 4) + (priced ? 2 : 0);
   const { publicShare } = useBackend();
   const qc = useQueryClient();
   const [sheetId, setSheetId] = useState<string | null>(meta.sheets[0]?.id ?? null);
@@ -265,6 +272,8 @@ function SharedViewer({
                   <col />
                   <col className="w-14" />
                   <col className="w-16" />
+                  {priced ? <col className="w-20" /> : null}
+                  {priced ? <col className="w-24" /> : null}
                 </colgroup>
                 <thead>
                   <tr className="text-meta text-muted-foreground">
@@ -276,13 +285,19 @@ function SharedViewer({
                     <th scope="col" className="sticky top-0 z-10 h-8 border-b border-border bg-surface px-1 text-start font-medium first:ps-3">{t("boq.columns.code")}</th>
                     <th scope="col" className="sticky top-0 z-10 h-8 border-b border-border bg-surface px-1 text-start font-medium">{t("boq.columns.desc")}</th>
                     <th scope="col" className="sticky top-0 z-10 h-8 border-b border-border bg-surface px-1 text-start font-medium">{t("boq.columns.unit")}</th>
-                    <th scope="col" className="sticky top-0 z-10 h-8 border-b border-border bg-surface pe-3 ps-1 text-end font-medium">{t("boq.columns.qty")}</th>
+                    <th scope="col" className={cn("sticky top-0 z-10 h-8 border-b border-border bg-surface ps-1 text-end font-medium", priced ? "pe-1" : "pe-3")}>{t("boq.columns.qty")}</th>
+                    {priced ? (
+                      <>
+                        <th scope="col" className="sticky top-0 z-10 h-8 border-b border-border bg-surface px-1 text-end font-medium">{t("prices.columnPrice")}</th>
+                        <th scope="col" className="sticky top-0 z-10 h-8 border-b border-border bg-surface pe-3 ps-1 text-end font-medium">{t("prices.columnTotal")}</th>
+                      </>
+                    ) : null}
                   </tr>
                 </thead>
                 {groups.map((g) => (
                   <tbody key={g.code}>
                     <tr>
-                      <th scope="colgroup" colSpan={meta.showConfidence ? 5 : 4} className="sticky top-8 border-b border-border bg-surface-sunken px-3 py-1.5 text-start font-bold text-foreground">
+                      <th scope="colgroup" colSpan={colCount} className="sticky top-8 border-b border-border bg-surface-sunken px-3 py-1.5 text-start font-bold text-foreground">
                         {g.title}
                       </th>
                     </tr>
@@ -318,7 +333,15 @@ function SharedViewer({
                             ) : null}
                           </td>
                           <td className="border-b border-border px-1 pt-2 align-top text-meta text-muted-foreground">{l.unit}</td>
-                          <td className="border-b border-border pe-3 ps-1 pt-1.5 text-end align-top font-bold tabular text-foreground">{fmtQty(l.qty)}</td>
+                          <td className={cn("border-b border-border ps-1 pt-1.5 text-end align-top font-bold tabular text-foreground", priced ? "pe-1" : "pe-3")}>{fmtQty(l.qty)}</td>
+                          {priced ? (
+                            <>
+                              <td className="border-b border-border px-1 pt-1.5 text-end align-top tabular text-foreground" data-share-price={l.id}>
+                                {l.unitPrice != null ? <Ltr>{formatMoney(l.unitPrice)}</Ltr> : <span className="text-meta text-muted-foreground">{t("prices.noPrice")}</span>}
+                              </td>
+                              <td className="border-b border-border pe-3 ps-1 pt-1.5 text-end align-top font-medium tabular text-foreground">{l.total != null ? <Ltr>{formatMoney(l.total)}</Ltr> : null}</td>
+                            </>
+                          ) : null}
                         </tr>
                       );
                     })}
@@ -326,6 +349,34 @@ function SharedViewer({
                 ))}
               </table>
             )}
+            {priced && totals ? (
+              <dl className="flex flex-col gap-0.5 border-t border-border px-3 py-2 text-dense" data-share-totals>
+                {totals.adjustmentPct ? (
+                  <>
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-muted-foreground">{t("prices.totals.subtotal")}</dt>
+                      <dd className="tabular"><Ltr>{formatMoney(totals.linesTotal)}</Ltr></dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-muted-foreground">{t(totals.adjustmentPct < 0 ? "prices.totals.discount" : "prices.totals.markup", { pct: formatPct(Math.abs(totals.adjustmentPct)) })}</dt>
+                      <dd className="tabular"><Ltr>{formatMoneyDelta(totals.adjustment)}</Ltr></dd>
+                    </div>
+                  </>
+                ) : null}
+                <div className="flex justify-between gap-3 font-bold">
+                  <dt>{t("prices.totals.beforeVat")}</dt>
+                  <dd className="tabular"><Ltr>{formatMoney(totals.beforeVat)}</Ltr></dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">{t("prices.totals.vat", { pct: formatPct(round2(totals.vatRate * 100)) })}</dt>
+                  <dd className="tabular"><Ltr>{formatMoney(totals.vat)}</Ltr></dd>
+                </div>
+                <div className="flex justify-between gap-3 font-bold">
+                  <dt>{t("prices.totals.afterVat")}</dt>
+                  <dd className="tabular"><Ltr>{formatMoney(totals.afterVat)}</Ltr></dd>
+                </div>
+              </dl>
+            ) : null}
           </div>
         </section>
 

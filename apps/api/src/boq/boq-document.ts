@@ -1,6 +1,8 @@
 import {
   BOQ_DOCUMENT_SCHEMA,
   BOQ_STATUS_HE,
+  computeBoqTotals,
+  lineTotal,
   chapterKey,
   compareItemCodes,
   CONFIDENCE_HE,
@@ -72,6 +74,13 @@ export interface BoqDocumentInput {
   buildId?: string | null;
   /** Org `blockExportOnRed` (default true) → `exportBlocked`. */
   blockExportOnRed?: boolean;
+  /**
+   * Sprint 8: fill the unit-price column (default true). Prices come from the lines' `unitPrice` / `unitPriceSource`
+   * (resolved by the service, pricing.ts); a line without `unitPrice` is "ללא מחיר" (empty cell, total 0).
+   */
+  includePrices?: boolean;
+  /** Sprint 8: project discount (< 0) / markup (> 0) in percent of the lines total. */
+  adjustmentPct?: number;
 }
 
 export const floorNameOf = (floorNames: Readonly<Record<string, string>> | undefined, f: string): string => floorNames?.[f] ?? DEFAULT_FLOOR_NAMES[f] ?? f;
@@ -157,6 +166,8 @@ export function buildBoqDocument(input: BoqDocumentInput): BoqDocumentModel {
   const chapters = input.chapters && input.chapters.length ? [...input.chapters] : null;
   const docLines = linesInChapters(input.template, input.lines, chapters);
   const vatRate = input.vatRate ?? input.template.vatRate;
+  const includePrices = input.includePrices ?? true;
+  let priced = 0;
 
   const counts = { red: 0, yellow: 0 };
   for (const l of docLines) if (l.level !== 'green') counts[l.level]++;
@@ -196,10 +207,13 @@ export function buildBoqDocument(input: BoqDocumentInput): BoqDocumentModel {
       const awaiting = l.needsInput === true && !overridden;
       const cellNote = overridden ? `כמות שונתה ידנית (מחושב: ${l.qty})${l.qtyOverrideReason ? `: ${l.qtyOverrideReason}` : ''}` : awaiting ? NEEDS_INPUT_HE : null;
       const desc = displayDescription(l);
+      // Sprint 8: effective unit price (override ?? library), resolved by the service; none → "ללא מחיר".
+      const price: number | null = includePrices && typeof l.unitPrice === 'number' ? l.unitPrice : null;
+      const priceSource = price !== null ? (l.unitPriceSource ?? null) : null;
+      if (price !== null) priced++;
       for (const p of parts) {
         const qty = awaiting ? null : p.qty;
-        const price: number | null = null; // the client prices the BOQ; every export leaves the unit price empty
-        const total = r2((qty ?? 0) * (price ?? 0));
+        const total = r2(lineTotal(qty, price) ?? 0);
         subtotal += total;
         rows.push({
           kind: 'line',
@@ -216,6 +230,7 @@ export function buildBoqDocument(input: BoqDocumentInput): BoqDocumentModel {
           ...(l.needsInput ? { needsInput: true } : {}),
           ...(overridden ? { qtyOverridden: true } : {}),
           ...(isDescriptionOverridden(l) ? { descriptionOverridden: true } : {}),
+          ...(includePrices ? { priceSource, ...(price === null ? { unpriced: true } : {}) } : {}),
           cellNote,
         });
       }
@@ -224,18 +239,21 @@ export function buildBoqDocument(input: BoqDocumentInput): BoqDocumentModel {
     rows.push({ kind: 'subtotal', ...empty, description: CHAPTER_TOTAL, total: subtotal });
     outChapters.push({ code: ch.code, title: ch.title, notes: [...ch.notes], rows, subtotal });
   }
-  const beforeVat = r2(outChapters.reduce((a, c) => a + c.subtotal, 0));
+  const linesTotal = r2(outChapters.reduce((a, c) => a + c.subtotal, 0));
+  const totals = computeBoqTotals({ linesTotal, adjustmentPct: input.adjustmentPct ?? 0, vatRate, pricedLines: priced, unpricedLines: docLines.length - priced });
+  const warnings = documentWarnings(input.lines);
+  if (includePrices && totals.unpricedLines > 0) warnings.push({ kind: 'unpriced', count: totals.unpricedLines });
   return {
     schema: BOQ_DOCUMENT_SCHEMA,
     projectId: input.projectId,
     templateId: input.template.id ?? null,
     buildId: input.buildId ?? null,
-    options: { split: input.split, includeConfidence, chapters, markDraft: input.markDraft },
+    options: { split: input.split, includeConfidence, chapters, markDraft: input.markDraft, includePrices },
     titleRows,
     columns,
     chapters: outChapters,
-    totals: { beforeVat, vat: r2(beforeVat * vatRate), afterVat: r2(beforeVat * (1 + vatRate)), vatRate },
-    warnings: documentWarnings(input.lines),
+    totals,
+    warnings,
     exportBlocked: (input.blockExportOnRed ?? true) && exportBlockingLines(input.lines).length > 0,
     counts: countLines(docLines),
     generatedAt: input.date.toISOString(),
