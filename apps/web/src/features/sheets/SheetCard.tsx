@@ -9,6 +9,8 @@ import { ReasonChip } from "@/components/ReasonChip";
 import { Ltr } from "@/components/Ltr";
 import { cn } from "@/lib/utils";
 import { useTilesManifest } from "@/features/viewer/tiles";
+import { qualityFlag, qualityOf } from "@/features/quality/model";
+import { QualityBadge, QualityIssueList } from "@/features/quality/QualityNotice";
 import { DISCIPLINES, FLOORS, isMultiFloor, missingFields, sheetName, uncertainFields, type SheetDraft } from "./model";
 
 export interface SheetCardProps {
@@ -78,6 +80,9 @@ export function SheetCard({ projectId, row, draft, dirty, busy, onChange, onConf
   const confirmed = Boolean(row.sheet.confirmed) && !dirty;
   const reasons = (c?.reasons ?? []).filter((r) => r !== "SCALE_FROM_TITLE" && r !== "SCALE_MATCHES_DIMS");
   const scaleSourceOk = c?.reasons.includes("SCALE_MATCHES_DIMS");
+  // Sprint 9: input-quality gate (classification still needs confirming; counts depend on it).
+  const qFlag = qualityFlag(v);
+  const quality = qFlag ? qualityOf(v) : null;
 
   const fieldBox = (key: "discipline" | "floors" | "scale") =>
     cn(
@@ -118,6 +123,13 @@ export function SheetCard({ projectId, row, draft, dirty, busy, onChange, onConf
           <ConfidenceBadge level={levelFromDb(c.level)} score={c.confidence} size="sm" className="shrink-0" />
         ) : null}
       </div>
+
+      {quality && qFlag ? (
+        <div className="flex flex-col gap-1" data-card-quality={qFlag}>
+          <QualityBadge status={qFlag} className="self-start" />
+          <QualityIssueList quality={quality} />
+        </div>
+      ) : null}
 
       {reasons.length > 0 && !confirmed ? (
         <ul aria-label={t("sheets.reasons")} className="flex flex-wrap gap-1">

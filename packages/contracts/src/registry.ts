@@ -183,6 +183,7 @@ import {
   TilesArtifactSchema,
   VersionStageSchema,
 } from './sheets.js';
+import { InputQualityIssueSchema, InputQualitySchema } from './quality.js';
 import { DetectionClassSchema, SymbolClassSchema } from './taxonomy.js';
 import { TilesManifestSchema } from './tiles.js';
 import {
@@ -234,6 +235,8 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   SheetSet: SheetSetSchema,
   Sheet: SheetSchema,
   SheetVersion: SheetVersionSchema,
+  InputQuality: InputQualitySchema,
+  InputQualityIssue: InputQualityIssueSchema,
   SheetClassification: SheetClassificationSchema,
   SheetSummary: SheetSummarySchema,
   SheetPage: SheetPageSchema,

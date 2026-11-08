@@ -30,7 +30,7 @@ import { ELECTRICAL_SPEC, LIGHTING_SPEC, makeUnderstandingFixture, type Understa
 export const DEV_BASE = "/dev-artifacts";
 
 type Source =
-  | { kind: "fixture"; fixture: UnderstandingFixture }
+  | { kind: "fixture"; fixture: UnderstandingFixture; keep?: boolean }
   | { kind: "real"; prefix: string; paths: { legend?: string; detections?: string; rooms?: string } };
 
 interface Loaded {
@@ -58,6 +58,8 @@ export function statsOf(det: DetectionsArtifact | null, legend: LegendArtifact |
 export interface UnderstandingMock {
   /** Attach understanding sources to seeded rows (fixture), mutating the version docs like the worker would. */
   seedFixture(rows: SheetRow[], opts?: { electricalDetections?: number }): void;
+  /** Sprint 9: attach one fixture (optionally transformed, e.g. quality-capped) to a row of any project. */
+  seedSpec(row: SheetRow, fixture: UnderstandingFixture): void;
   /** Forget the synthetic sources (real artifacts arrived): strips the fixture paths from those versions. */
   dropFixtures(rows: SheetRow[]): void;
   /** Use the worker's real artifacts for this sheet (dev-index entry). */
@@ -162,9 +164,21 @@ export function createUnderstandingMock(): UnderstandingMock {
         row.version.stats = { ...row.version.stats, ...statsOf(fixture.detections, fixture.legend, fixture.rooms) };
       }
     },
+    seedSpec(row, fixture) {
+      if (!row.version) return;
+      sources.set(row.sheet.id, { kind: "fixture", fixture, keep: true });
+      const prefix = versionPrefix(row);
+      row.version.artifacts = {
+        ...row.version.artifacts,
+        legend: `${prefix}/legend.json.gz`,
+        detections: `${prefix}/detections.json.gz`,
+        rooms: `${prefix}/rooms.json.gz`,
+      };
+      row.version.stats = { ...row.version.stats, ...statsOf(fixture.detections, fixture.legend, fixture.rooms) };
+    },
     dropFixtures(rows) {
       for (const [sheetId, src] of sources) {
-        if (src.kind !== "fixture") continue;
+        if (src.kind !== "fixture" || src.keep) continue;
         sources.delete(sheetId);
         loaded.delete(sheetId);
         const v = rows.find((r) => r.sheet.id === sheetId)?.version;

@@ -552,3 +552,37 @@ coordinator's message described `planned` as including them, the contract text w
 against the regenerated `PriceImportReport.json`.
 Also done (your request #5): jobs of a deleted sheet set / project (doc missing, set `deletedAt`, project
 `deletingAt`) are acked 204 with nothing written — see workers/drawing/NOTES.md.
+
+## Sprint 9 published (Product agent) — Worker-Legend / Bench / Web read this
+
+Additive only. New module **`quality.ts`**; `json-schema/` regenerated (**204 schemas, +2**: `InputQuality`,
+`InputQualityIssue`; `SheetVersion` / `SheetSummary` carry `quality`). Hebrew copy as data for the worker:
+`json-schema/defaults/quality-messages.json` (issue titles / actions, status labels, banners, reason prefix + examples).
+
+**Shape — `SheetVersion.quality?: InputQuality | null`** (worker-written; absent / null = not checked ≡ ok, e.g. vector PDF):
+```
+{ status: 'ok'|'warn'|'reject',
+  effectiveDpi?: number (0 < dpi ≤ 4800) | null,
+  issues: [{ kind: 'low_resolution'|'mirrored'|'dark_background'|'screenshot'|'partial_crop'|'blurred',
+             detail?: string ≤ 300,            // diagnostic, not the UI text
+             severity?: 'warn'|'reject' }] ≤ 16,
+  metrics?: {name: number} ≤ 32 }             // optional tuning numbers (blurVar, darkRatio, …)
+```
+- Error code **`input_quality_rejected`** (`API_ERROR_CODES`, `INPUT_QUALITY_REJECTED`, Hebrew
+  `UPLOAD_ERROR_MESSAGES_HE.input_quality_rejected`).
+- **Semantics (please follow, Worker-Legend):**
+  - `reject` → write NO detections / unknown clusters / BOQ contribution for that version, but still render tiles +
+    thumbnail and finish the version as **`status: 'ready'`** (the drawing stays viewable). Optionally also set
+    `error {code: 'input_quality_rejected', message}` on the version and job — the UI treats either signal as rejected
+    (`isQualityRejected(v)` = `quality.status === 'reject'`, or that error code when `quality` is absent).
+  - `warn` → process; cap every detection / room at yellow or red and add the reason chip
+    **`qualityReasonHe(quality)`** = `"איכות קובץ ירודה: " + title of issues[0]` (e.g. `"איכות קובץ ירודה: רזולוציה נמוכה
+    מדי (כ-30 dpi)"`; dpi rounded to an integer below 100, to tens from 100). Without issues: `"איכות קובץ ירודה"`.
+    Put the most important issue first. The examples in `quality-messages.json` are the test vectors.
+  - `ok` → as today.
+- Helpers: `qualityIssueTitleHe(issue, dpi)`, `qualityIssueMessageHe(issue, dpi)` (title + what to do),
+  `QUALITY_ISSUE_HE {kind: {title, action}}`, `QUALITY_STATUS_HE`, `QUALITY_REJECT_BANNER_HE`, `QUALITY_WARN_BANNER_HE`,
+  `QUALITY_UPLOAD_ORIGINAL_HE` ("העלה את קובץ ה-PDF המקורי מתוכנת השרטוט"), `isQualityRejected`.
+- API: `quality` is on every version DTO (`GET …/sheets/:sid`, versions, reprocess) and on `SheetSummary.currentVersion`
+  (sheet list / gallery). **Never in share snapshots / public share DTOs.**
+- `firebase/model.ts` (DB agent): please mirror `SheetVersionDoc.quality?` (worker-only write; rules unchanged).

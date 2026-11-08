@@ -30,6 +30,8 @@ export const API_ERROR_CODES = [
   'file_infected',
   /** Sprint 8 (SEC-14): ≤ 100 sheets per project (409, Hebrew `message` = `sheetLimitMessageHe`). */
   'sheet_limit',
+  /** Sprint 9: the raster input failed the quality gate (version / job `error.code`; the version is still viewable). */
+  'input_quality_rejected',
   'internal_error',
   'service_unavailable',
 ] as const;

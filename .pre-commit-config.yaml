@@ -15,10 +15,10 @@ repos:
     rev: v0.17.0
     hooks:
       - id: ruff
-        files: ^(workers|benchmark)/.*\.pyi?$
+        files: ^(workers|benchmark|synth)/.*\.pyi?$
       - id: ruff-format
         args: ["--check"]
-        files: ^(workers|benchmark)/.*\.pyi?$
+        files: ^(workers|benchmark|synth)/.*\.pyi?$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

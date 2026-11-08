@@ -260,6 +260,13 @@ export interface SheetVersion {
     rooms?: number;
     legendEntries?: number;
   };
+  /** Sprint 9 — input-quality gate (worker-written; contracts `SheetVersionQuality`). */
+  quality?: {
+    status: 'ok' | 'warn' | 'reject';
+    effectiveDpi?: number | null;
+    issues: Array<{ kind: string; detail?: string; severity?: string }>;
+    metrics?: Record<string, number>;
+  } | null;
   workerVersion?: string;
   updatedAt?: FsTimestamp;
   /** Sprint 0 fields. */

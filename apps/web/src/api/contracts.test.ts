@@ -11,8 +11,17 @@ import {
   PatchProjectPricingResponseSchema,
   PriceImportReportSchema,
   PublicShareBoqSchema,
+  API_ERROR_CODES,
+  DetectionsArtifactSchema,
+  InputQualitySchema,
+  isQualityRejected,
+  qualityReasonHe,
+  RoomsArtifactSchema,
+  SheetSummarySchema,
+  SheetVersionSchema,
 } from "@kamutan/contracts";
 import { createMockBackend } from "./mock";
+import type { SheetRow } from "./types";
 
 /**
  * The mock backend answers with the API's exact Sprint 8 shapes: every response is parsed with the contracts' Zod
@@ -87,5 +96,65 @@ describe("Sprint 8: mock responses parse with the contracts schemas", () => {
     });
     ok(DeleteSheetSetResponseSchema, await b.api.deleteSheetSet("p-noah", sets[0]!.id));
     ok(DeleteProjectResponseSchema, await b.api.deleteProject("p-noah", { confirmName: "בית משפחת נח" }));
+  });
+});
+
+describe("Sprint 9: mock input-quality data parses with the contracts schemas", () => {
+  const rowsOf = (b: ReturnType<typeof createMockBackend>, projectId: string) =>
+    new Promise<SheetRow[]>((resolve, reject) => {
+      const unsub = b.realtime.sheets(ORG, projectId, (rows) => {
+        queueMicrotask(() => unsub());
+        resolve(rows);
+      }, reject);
+    });
+
+  it("p-web: one warn + one reject sheet; versions, quality and sheet summaries are contract-valid", async () => {
+    const b = createMockBackend({ latencyMs: 0, devIndex: false });
+    const rows = await rowsOf(b, "p-web");
+    const byStatus = Object.fromEntries(rows.map((r) => [r.version?.quality?.status ?? "none", r]));
+    expect(Object.keys(byStatus).sort()).toEqual(["reject", "warn"]);
+    for (const r of rows) {
+      const v = r.version!;
+      ok(InputQualitySchema, v.quality);
+      // the full version doc as the API returns it (DTO: createdAt / artifacts tiles in the contracts' shape)
+      const { tiles, ...artifacts } = v.artifacts ?? {};
+      ok(SheetVersionSchema, {
+        ...v,
+        artifacts: { ...artifacts, ...(tiles ? { tiles: { ...tiles, format: "webp" } } : {}) },
+        page: v.page ?? null,
+        regions: v.regions ?? [],
+        stats: v.stats ?? null,
+        workerVersion: v.workerVersion ?? null,
+        updatedAt: v.updatedAt ?? null,
+      });
+      ok(SheetSummarySchema.shape.currentVersion, { id: v.id, status: v.status, progress: v.progress, ...(v.error ? { error: v.error } : {}), quality: v.quality });
+      expect(v.status).toBe("ready"); // a rejected sheet stays viewable
+      expect(v.artifacts?.tiles).toBeTruthy();
+    }
+    const reject = byStatus.reject!.version!;
+    expect(isQualityRejected(reject)).toBe(true);
+    expect(reject.error?.code).toBe("input_quality_rejected");
+    expect(API_ERROR_CODES).toContain(reject.error!.code);
+    expect(reject.artifacts?.detections).toBeUndefined();
+    expect(reject.stats?.detections).toBeUndefined();
+  });
+
+  it("warn sheet: detections artifact is contract-valid, nothing green, every item carries qualityReasonHe first", async () => {
+    const b = createMockBackend({ latencyMs: 0, devIndex: false });
+    const warn = (await rowsOf(b, "p-web")).find((r) => r.version?.quality?.status === "warn")!;
+    const m = await b.api.getOverlay("p-web", warn.sheet.id, warn.version!.id);
+    const det = ok(DetectionsArtifactSchema, await (await fetch(m.detections!.url)).json());
+    const rooms = ok(RoomsArtifactSchema, await (await fetch(m.rooms!.url)).json());
+    const reason = qualityReasonHe(warn.version!.quality!);
+    expect(reason).toBe("איכות קובץ ירודה: צילום מסך ולא קובץ שרטוט");
+    expect(det.detections.length).toBeGreaterThan(0);
+    for (const d of [...det.detections, ...rooms.rooms]) {
+      expect(d.level).not.toBe("green");
+      expect(d.reasons[0]).toBe(reason);
+    }
+    // the reject sheet: no understanding at all
+    const reject = (await rowsOf(b, "p-web")).find((r) => r.version?.quality?.status === "reject")!;
+    const mr = await b.api.getOverlay("p-web", reject.sheet.id, reject.version!.id);
+    expect(mr.detections).toBeNull();
   });
 });

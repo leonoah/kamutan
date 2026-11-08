@@ -26,7 +26,8 @@ import {
   deleteConfirmationMatches,
   sheetLimitMessageHe,
 } from "@kamutan/contracts";
-import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, guessClassification, pageOf, rowFromDevIndex, sampleTiles, seedNoah, type DevIndexEntry } from "./mockSheets";
+import { DEV_ARTIFACTS_BASE, SAMPLE_FOR_UPLOAD, WEB_PROJECT, WEB_WARN_SHEET, guessClassification, pageOf, rowFromDevIndex, sampleTiles, seedNoah, seedWebSamples, type DevIndexEntry } from "./mockSheets";
+import { qualityCappedFixture } from "./mockSprint9";
 import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
 import { createReviewMock } from "./mockReview";
@@ -141,6 +142,19 @@ export const demoProjects = (): Project[] => [
     createdBy: "mock-user",
     createdAt: "2026-10-08T07:05:00.000Z",
   },
+  {
+    // Sprint 9: raster drawings collected from the web — one "warn" and one "reject" sheet (input-quality gate).
+    id: "p-web",
+    orgId: DEMO_ORG_ID,
+    name: "דירת כהן — שרטוטים מהאינטרנט",
+    address: "רחוב הגפן 3, חיפה",
+    floors: [],
+    stats: { sheets: 2, reviewOpen: 0, boqLines: 0, red: 0, yellow: 0, green: 0 },
+    storageBytes: 1_280_000,
+    status: "active",
+    createdBy: "mock-user",
+    createdAt: "2026-11-07T09:10:00.000Z",
+  },
 ];
 
 let seq = 0;
@@ -168,7 +182,15 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     sheetSets.set("p-noah", seed.sets);
     sheets.set("p-noah", seed.rows);
   }
+  if ((opts.seedSheets ?? true) && projects.has(WEB_PROJECT)) {
+    const web = seedWebSamples("2026-11-07T09:12:00.000Z");
+    sheetSets.set(WEB_PROJECT, web.sets);
+    sheets.set(WEB_PROJECT, web.rows);
+  }
   const understanding = createUnderstandingMock();
+  // Sprint 9: the warn sheet is counted (capped + reason); the reject sheet has no understanding artifacts at all.
+  const warnRow = sheets.get(WEB_PROJECT)?.find((r) => r.sheet.id === WEB_WARN_SHEET);
+  if ((opts.understandingFixture ?? true) && warnRow?.version?.quality) understanding.seedSpec(warnRow, qualityCappedFixture(WEB_WARN_SHEET, warnRow.version.quality));
   if ((opts.understandingFixture ?? true) && sheets.has("p-noah")) {
     understanding.seedFixture(sheets.get("p-noah")!, opts.fixtureDetections ? { electricalDetections: opts.fixtureDetections } : {});
   }

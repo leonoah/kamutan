@@ -62,6 +62,9 @@ import {
 } from "@/features/boq/queries";
 import { useLiveSheets } from "@/features/realtime/hooks";
 import { sheetName } from "@/features/sheets/model";
+import { qualityOf } from "@/features/quality/model";
+import { QualityBanner, QualityIssueList } from "@/features/quality/QualityNotice";
+import { canDeleteSets } from "@/features/deletes/DeleteParts";
 import {
   DEFAULT_LIFECYCLES,
   EMPTY_FILTERS,
@@ -1520,8 +1523,20 @@ export function ReviewPage() {
     (l: BoqLine) => <ReceiptGroups projectId={projectId} buildId={buildId} lineId={l.id} sheetLabel={fn.sheetLabel} />,
     [projectId, buildId, fn],
   );
+  // Sprint 9: input-quality gate of the shown sheet (reject → no counts, the drawing stays; warn → banner).
+  const rowQuality = useMemo(() => {
+    const q = qualityOf(row?.version);
+    return q && q.status !== "ok" ? q : null;
+  }, [row?.version]);
   const countsEl = useMemo(
-    () => (
+    () =>
+      rowQuality?.status === "reject" ? (
+        <div className="flex flex-col gap-2 p-4" data-counts-rejected role="status">
+          <h3 className="text-dense font-semibold text-foreground">{t("quality.countsRejectedTitle")}</h3>
+          <p className="text-dense text-muted-foreground">{t("quality.countsRejected")}</p>
+          <QualityIssueList quality={rowQuality} />
+        </div>
+      ) : (
       <CountsPanel
         counts={counts}
         selectedClass={selectedClass}
@@ -1533,8 +1548,8 @@ export function ReviewPage() {
         filtered={isFiltered(filters)}
         onClearFilters={fn.clearOverlayFilters}
       />
-    ),
-    [counts, selectedClass, fn, overlay.isLoading, overlay.isError, row, filters],
+      ),
+    [counts, selectedClass, fn, overlay.isLoading, overlay.isError, row, filters, rowQuality, t],
   );
   const viewerSelectedIds = useMemo(() => (selectedId ? [selectedId] : lassoIds), [selectedId, lassoIds]);
   const unknownCtx = useMemo(() => ({ detById: byId, rooms, thumbs, clusters }), [byId, rooms, thumbs, clusters]);
@@ -1788,6 +1803,17 @@ export function ReviewPage() {
       {/* A-UI-16: one <main> landmark and one <h1> (the visible title is the breadcrumb). */}
       <main id="main" tabIndex={-1} className="flex min-h-0 flex-1 flex-col outline-none">
       <h1 className="sr-only">{locked ? `${t("review.sheetAnalysis")}: ${row ? sheetName(row) : ""} · ${name}` : `${t("review.title")} · ${name}`}</h1>
+      {rowQuality && row ? (
+        <QualityBanner
+          key={row.sheet.id}
+          quality={rowQuality}
+          projectId={projectId}
+          sheetSetId={row.sheet.sheetSetId}
+          name={sheetName(row)}
+          canUpload={canDeleteSets(role)}
+          className="shrink-0 border-b border-border"
+        />
+      ) : null}
       <FilterBar
         filters={filters}
         onChange={setFilters}

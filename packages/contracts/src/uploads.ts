@@ -116,6 +116,8 @@ export const UPLOAD_ERROR_MESSAGES_HE: Readonly<Record<string, string>> = Object
   upload_expired: 'פג תוקף ההעלאה. נסו להעלות שוב.',
   upload_missing: 'הקובץ לא הגיע לשרת. נסו להעלות שוב.',
   /** Sprint 8 (SEC-14): ≤ 100 sheets per project (API 409 on upload / finalize; worker set error when a split exceeds it). */
+  /** Sprint 9: quality gate (version / job error). */
+  input_quality_rejected: 'איכות הקובץ נמוכה מדי לספירה. העלה את קובץ ה-PDF המקורי מתוכנת השרטוט.',
   sheet_limit: 'בפרויקט יש יותר מדי גיליונות (עד 100 גיליונות לפרויקט). מחקו סט גיליונות שאינו בשימוש או פתחו פרויקט חדש.',
 });
 

@@ -4,6 +4,7 @@ export * from './org.js';
 export * from './members.js';
 export * from './project.js';
 export * from './sheets.js';
+export * from './quality.js';
 export * from './taxonomy.js';
 export * from './understanding.js';
 export * from './takeoff.js';

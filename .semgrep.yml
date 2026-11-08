@@ -136,7 +136,7 @@ rules:
       - pattern: subprocess.$F(..., shell=True, ...)
       - pattern: os.system(...)
     paths:
-      include: ["/workers/**", "/benchmark/**"]
+      include: ["/workers/**", "/benchmark/**", "/synth/**"]
 
   # --- SEC-48: no pull_request_target in workflows ---------------------------------------
   - id: kamutan-no-pull-request-target

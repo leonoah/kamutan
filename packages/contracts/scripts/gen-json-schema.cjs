@@ -12,6 +12,13 @@ const {
   defaultRuleDoc,
   DEFAULT_ITEM_LIBRARY,
   DEFAULT_ITEM_LIBRARY_VERSION,
+  QUALITY_ISSUE_HE,
+  QUALITY_STATUS_HE,
+  QUALITY_REASON_PREFIX_HE,
+  QUALITY_REJECT_BANNER_HE,
+  QUALITY_WARN_BANNER_HE,
+  INPUT_QUALITY_ISSUE_KINDS,
+  qualityReasonHe,
 } = require('../dist/cjs/index.js');
 
 const outDir = path.join(__dirname, '..', 'json-schema');
@@ -42,5 +49,27 @@ fs.writeFileSync(
 fs.writeFileSync(
   path.join(outDir, 'defaults', 'library-defaults.json'),
   JSON.stringify({ version: DEFAULT_ITEM_LIBRARY_VERSION, templateVersion: DEFAULT_BOQ_TEMPLATE_VERSION, template: DEFAULT_BOQ_TEMPLATE, items: DEFAULT_ITEM_LIBRARY }, null, 2) + '\n',
+);
+// Sprint 9: Hebrew quality-gate copy for the worker (detection reason chips must equal `qualityReasonHe`).
+fs.writeFileSync(
+  path.join(outDir, 'defaults', 'quality-messages.json'),
+  JSON.stringify(
+    {
+      issueKinds: INPUT_QUALITY_ISSUE_KINDS,
+      issues: QUALITY_ISSUE_HE,
+      statuses: QUALITY_STATUS_HE,
+      reasonPrefix: QUALITY_REASON_PREFIX_HE,
+      rejectBanner: QUALITY_REJECT_BANNER_HE,
+      warnBanner: QUALITY_WARN_BANNER_HE,
+      examples: [
+        { quality: { status: 'warn', effectiveDpi: 31, issues: [{ kind: 'low_resolution' }] }, reason: qualityReasonHe({ effectiveDpi: 31, issues: [{ kind: 'low_resolution' }] }) },
+        { quality: { status: 'warn', effectiveDpi: 254, issues: [{ kind: 'low_resolution' }] }, reason: qualityReasonHe({ effectiveDpi: 254, issues: [{ kind: 'low_resolution' }] }) },
+        { quality: { status: 'warn', issues: [{ kind: 'mirrored' }] }, reason: qualityReasonHe({ issues: [{ kind: 'mirrored' }] }) },
+        { quality: { status: 'warn', issues: [] }, reason: qualityReasonHe({ issues: [] }) },
+      ],
+    },
+    null,
+    2,
+  ) + '\n',
 );
 console.log(`wrote ${names.length} JSON schemas to ${path.relative(process.cwd(), outDir) || outDir}`);

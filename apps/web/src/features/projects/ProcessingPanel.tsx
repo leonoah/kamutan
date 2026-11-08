@@ -8,6 +8,9 @@ import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isActiveJob, useLiveJobs, useLiveSheetSets, useLiveSheets } from "@/features/realtime/hooks";
 import { ReuploadButton } from "@/features/upload/ReuploadButton";
+import { Link } from "react-router-dom";
+import { qualityFlag, qualityOf } from "@/features/quality/model";
+import { QualityBadge, QualityIssueList } from "@/features/quality/QualityNotice";
 
 const KNOWN_STAGES = new Set([
   "ingest",
@@ -29,7 +32,18 @@ const KNOWN_STAGES = new Set([
  * Live processing view (S09-lite): Firestore listeners on jobs (orgId == X, projectId == Y),
  * the project's sheetSets and sheets/{id}/versions/{currentVersionId}.
  */
-export function ProcessingPanel({ orgId, projectId, onDeleteSet }: { orgId: string; projectId: string; onDeleteSet?: ((setId: string) => void) | undefined }) {
+export function ProcessingPanel({
+  orgId,
+  projectId,
+  onDeleteSet,
+  canUpload = false,
+}: {
+  orgId: string;
+  projectId: string;
+  onDeleteSet?: ((setId: string) => void) | undefined;
+  /** Sprint 9: editors may upload the original file for a low-quality sheet. */
+  canUpload?: boolean;
+}) {
   const { t } = useTranslation();
   const jobs = useLiveJobs(orgId, projectId);
   const sets = useLiveSheetSets(orgId, projectId);
@@ -49,6 +63,8 @@ export function ProcessingPanel({ orgId, projectId, onDeleteSet }: { orgId: stri
   // Per-sheet (per-version) stages: everything not yet ready, plus failures with a Hebrew reason.
   const sheetRows = (sheets.data ?? []).filter((r) => r.version && r.version.status !== "ready");
   const setOf = (r: SheetRow) => sets.data?.find((s) => s.id === r.sheet.sheetSetId);
+  // Sprint 9: ready sheets whose raster input failed / weakly passed the quality gate.
+  const qualityRows = (sheets.data ?? []).filter((r) => r.version?.status === "ready" && qualityFlag(r.version) !== null);
 
   return (
     <Card className="mt-8">
@@ -82,6 +98,19 @@ export function ProcessingPanel({ orgId, projectId, onDeleteSet }: { orgId: stri
             <ul className="flex flex-col gap-2">
               {sheetRows.map((r) => (
                 <SheetProgressRow key={r.sheet.id} row={r} setName={setOf(r)?.name ?? null} />
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {qualityRows.length > 0 ? (
+          <section aria-labelledby={`quality-${projectId}`} className="flex flex-col gap-2" data-quality-section>
+            <h3 id={`quality-${projectId}`} className="text-dense font-medium text-muted-foreground">
+              {t("quality.panelTitle")} · <span className="font-normal">{t("quality.panelSummary", { count: qualityRows.length })}</span>
+            </h3>
+            <ul className="flex flex-col gap-2">
+              {qualityRows.map((r) => (
+                <QualityRow key={r.sheet.id} row={r} projectId={projectId} setName={setOf(r)?.name ?? null} canUpload={canUpload} />
               ))}
             </ul>
           </section>
@@ -214,6 +243,42 @@ function SheetProgressRow({ row, setName }: { row: SheetRow; setName: string | n
       ) : (
         <Progress value={pct} aria-label={t("project.sheetProgressLabel", { name, stage: stageText })} />
       )}
+    </li>
+  );
+}
+
+/** Sprint 9: one sheet with a quality notice — badge, issues with what to do, open the sheet, upload the original. */
+function QualityRow({ row, projectId, setName, canUpload }: { row: SheetRow; projectId: string; setName: string | null; canUpload: boolean }) {
+  const { t } = useTranslation();
+  const q = qualityOf(row.version)!;
+  const flag = q.status === "reject" ? "reject" : "warn";
+  const page = t("project.pageN", { n: (row.sheet.pageIndex ?? 0) + 1 });
+  const name = row.sheet.title ?? (setName ? `${setName} · ${page}` : page);
+  return (
+    <li
+      data-quality-row={row.sheet.id}
+      data-quality={flag}
+      className={cn("flex flex-col gap-1.5 rounded-md border-s-4 px-3 py-2", flag === "reject" ? "border-destructive bg-destructive/[0.04]" : "border-conf-mid bg-conf-mid/[0.06]")}
+    >
+      <div className="flex flex-wrap items-center gap-2 text-dense">
+        <QualityBadge status={flag} />
+        <Link to={`/projects/${projectId}/sheets/${row.sheet.id}`} className="min-w-0 truncate font-medium text-foreground hover:text-primary hover:underline">
+          <bdi>{name}</bdi>
+        </Link>
+        <span className="text-meta text-muted-foreground">{t(`quality.status.${flag}`)}</span>
+      </div>
+      <QualityIssueList quality={q} className="ps-1" />
+      {canUpload ? (
+        <div className="flex justify-end">
+          <ReuploadButton
+            projectId={projectId}
+            sheetSetId={row.sheet.sheetSetId}
+            name={setName ?? name}
+            label={t("quality.reuploadOriginal")}
+            labelFor={t("quality.reuploadOriginalFor", { name: setName ?? name })}
+          />
+        </div>
+      ) : null}
     </li>
   );
 }

@@ -15,6 +15,7 @@ import { useProject, projectPhase, verifiedPct, activeProgress } from "./queries
 import { statsOf } from "@/features/boq/model";
 import { useBoqLines, useBoqState } from "@/features/boq/queries";
 import { ProcessingPanel } from "./ProcessingPanel";
+import { qualityFlag } from "@/features/quality/model";
 import { SheetGallery, sheetState } from "./SheetGallery";
 import { ProjectBoqSummary } from "./ProjectBoqSummary";
 import { EditProjectDialog } from "./EditProjectDialog";
@@ -74,6 +75,8 @@ export function ProjectPage() {
   const withLegend = rows.filter((r) => r.version?.status === "ready" && (Boolean(r.version.artifacts?.legend) || (r.version.stats?.legendEntries ?? 0) > 0));
   const activeJobs = (jobs.data ?? []).filter(isActiveJob);
   const hasActivity = activeJobs.length > 0 || (jobs.data ?? []).some((j) => j.status === "failed") || rows.some((r) => sheetState(r) === "processing" || sheetState(r) === "failed");
+  // Sprint 9: sheets that failed / weakly passed the input-quality gate keep the activity panel open (its quality list).
+  const hasQualityIssues = rows.some((r) => qualityFlag(r.version) !== null);
   const filterSheet: SheetRow | null = rows.find((r) => r.sheet.id === filterSheetId) ?? null;
   const loaded = Boolean(sheets.data) && Boolean(jobs.data);
   useEffect(() => {
@@ -215,7 +218,7 @@ export function ProjectPage() {
         </div>
       ) : null}
       {inlineUpload === null ? null : empty && rows.length === 0 ? (
-        orgId ? <ProcessingPanel orgId={orgId} projectId={p.id} /> : null
+        orgId ? <ProcessingPanel orgId={orgId} projectId={p.id} canUpload={canDeleteSets(org?.role)} /> : null
       ) : (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
           {/* Drawings (start side = right in RTL) */}
@@ -239,12 +242,12 @@ export function ProjectPage() {
               <SheetGallery projectId={p.id} rows={rows} selectedId={filterSheetId} onSelect={setFilterSheetId} setName={setName} onDeleteSet={askDelete} />
             )}
             {orgId ? (
-              <details open={hasActivity} className="group">
+              <details open={hasActivity || hasQualityIssues} className="group">
                 <summary className="cursor-pointer list-none text-dense font-medium text-muted-foreground hover:text-foreground">
                   {t("hub.activity")}
                   {hasActivity ? <span className="ms-2 inline-block size-2 animate-pulse rounded-full bg-primary align-middle" aria-hidden /> : null}
                 </summary>
-                <ProcessingPanel orgId={orgId} projectId={p.id} onDeleteSet={askDelete} />
+                <ProcessingPanel orgId={orgId} projectId={p.id} onDeleteSet={askDelete} canUpload={canDeleteSets(org?.role)} />
               </details>
             ) : null}
           </section>

@@ -12,6 +12,8 @@ import type {
   BulkLibraryPriceResponse as ContractBulkLibraryPriceResponse,
   DeleteProjectResponse as ContractDeleteProjectResponse,
   DeleteSheetSetResponse as ContractDeleteSheetSetResponse,
+  InputQuality as ContractInputQuality,
+  InputQualityIssue as ContractInputQualityIssue,
   ItemPrice as ContractItemPrice,
   PatchProjectPricingResponse as ContractPatchProjectPricingResponse,
   PriceImportReport as ContractPriceImportReport,
@@ -28,6 +30,10 @@ export type BoqComparison = ContractBoqComparison;
 export type BoqCompareItem = BoqComparison["items"][number];
 export type BoqCompareCause = BoqCompareItem["causes"][number];
 export type BoqCompareExportResponse = ContractBoqCompareExportResponse;
+/* Sprint 9 ("Sprint 9 published"): input-quality gate on the sheet version (worker-written). */
+export type InputQuality = ContractInputQuality;
+export type InputQualityIssue = ContractInputQualityIssue;
+export type InputQualityIssueKind = InputQualityIssue["kind"];
 
 export type Role = "admin" | "editor" | "reviewer" | "viewer";
 export type FileKind = "pdf" | "dwg" | "dxf" | "png";
@@ -240,6 +246,8 @@ export interface SheetVersion {
   };
   regions?: SheetRegion[];
   stats?: VersionStats;
+  /** Sprint 9: input-quality gate (raster input). Absent / null = not checked ≡ ok. `reject` → no counts. */
+  quality?: InputQuality | null;
   workerVersion?: string;
   updatedAt?: string;
 }

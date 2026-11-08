@@ -1,0 +1,38 @@
+{
+  "$ref": "#/definitions/InputQualityIssue",
+  "definitions": {
+    "InputQualityIssue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "low_resolution",
+            "mirrored",
+            "dark_background",
+            "screenshot",
+            "partial_crop",
+            "blurred"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "warn",
+            "reject"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/InputQualityIssue.json"
+}

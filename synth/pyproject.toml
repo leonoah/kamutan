@@ -1,0 +1,60 @@
+[project]
+name = "kamutan-synth"
+version = "0.1.0"
+description = "Kamutan synthetic drawing generator (vector PDF / DXF / raster + exact ground truth)"
+readme = "NOTES.md"
+authors = [
+    { name = "Claude", email = "noreply@anthropic.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "ezdxf>=1.4.4",
+    "fonttools>=4.60.0",
+    "numpy>=2.5.4",
+    "openpyxl>=3.1.5",
+    "pillow>=12.3.0",
+    "pypdfium2>=5.14.0",
+    "reportlab>=5.0.1",
+    "shapely>=2.2.0",
+]
+
+[project.scripts]
+kamutan-synth = "kamutan_synth.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.26.0",
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+    "types-jsonschema>=4.26.0.20261006",
+    "types-openpyxl>=3.1.5.20260827",
+    "types-reportlab>=5.0.0.20261008",
+    "types-shapely>=2.1.0.20260728",
+]
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# pypdfium2 ships no type information (no py.typed / stubs).
+module = ["pypdfium2", "pypdfium2.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# fontTools ships no py.typed marker.
+module = ["fontTools", "fontTools.*"]
+ignore_missing_imports = true

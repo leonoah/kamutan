@@ -309,6 +309,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -528,6 +529,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -744,6 +746,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -825,6 +828,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -906,6 +910,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1122,6 +1127,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1203,6 +1209,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1376,6 +1383,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1457,6 +1465,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1538,6 +1547,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1619,6 +1629,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1822,6 +1833,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1903,6 +1915,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -1984,6 +1997,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2065,6 +2079,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2146,6 +2161,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2227,6 +2243,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2368,6 +2385,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2449,6 +2467,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2530,6 +2549,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2611,6 +2631,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2692,6 +2713,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -2948,6 +2970,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3029,6 +3052,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3110,6 +3134,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3191,6 +3216,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3272,6 +3298,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3353,6 +3380,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3573,6 +3601,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3654,6 +3683,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3735,6 +3765,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -3816,6 +3847,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4043,6 +4075,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4124,6 +4157,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4205,6 +4239,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4286,6 +4321,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4428,6 +4464,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4509,6 +4546,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4590,6 +4628,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -4964,6 +5003,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5045,6 +5085,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5126,6 +5167,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5474,6 +5516,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5555,6 +5598,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5636,6 +5680,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5717,6 +5762,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -5798,6 +5844,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6125,6 +6172,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6206,6 +6254,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6560,6 +6609,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6641,6 +6691,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6722,6 +6773,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6803,6 +6855,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -6978,6 +7031,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7059,6 +7113,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7140,6 +7195,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7221,6 +7277,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7302,6 +7359,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7496,6 +7554,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7577,6 +7636,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7658,6 +7718,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7739,6 +7800,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7820,6 +7882,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7901,6 +7964,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -7982,6 +8046,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8327,6 +8392,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8408,6 +8474,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8489,6 +8556,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8570,6 +8638,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8651,6 +8720,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8732,6 +8802,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8813,6 +8884,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8894,6 +8966,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -8975,6 +9048,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9056,6 +9130,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9438,6 +9513,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9519,6 +9595,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9600,6 +9677,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9784,6 +9862,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9865,6 +9944,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -9946,6 +10026,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10027,6 +10108,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10108,6 +10190,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10486,6 +10569,73 @@
                                 ],
                                 "additionalProperties": false,
                                 "nullable": true
+                              },
+                              "quality": {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "ok",
+                                      "warn",
+                                      "reject"
+                                    ]
+                                  },
+                                  "effectiveDpi": {
+                                    "type": "number",
+                                    "exclusiveMinimum": true,
+                                    "minimum": 0,
+                                    "maximum": 4800,
+                                    "nullable": true
+                                  },
+                                  "issues": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "low_resolution",
+                                            "mirrored",
+                                            "dark_background",
+                                            "screenshot",
+                                            "partial_crop",
+                                            "blurred"
+                                          ]
+                                        },
+                                        "detail": {
+                                          "type": "string",
+                                          "maxLength": 300
+                                        },
+                                        "severity": {
+                                          "type": "string",
+                                          "enum": [
+                                            "warn",
+                                            "reject"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 16
+                                  },
+                                  "metrics": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "issues"
+                                ],
+                                "additionalProperties": false,
+                                "nullable": true
                               }
                             },
                             "required": [
@@ -10562,6 +10712,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10643,6 +10794,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -10724,6 +10876,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11393,6 +11546,73 @@
                       "additionalProperties": false,
                       "nullable": true
                     },
+                    "quality": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "warn",
+                            "reject"
+                          ]
+                        },
+                        "effectiveDpi": {
+                          "type": "number",
+                          "exclusiveMinimum": true,
+                          "minimum": 0,
+                          "maximum": 4800,
+                          "nullable": true
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "low_resolution",
+                                  "mirrored",
+                                  "dark_background",
+                                  "screenshot",
+                                  "partial_crop",
+                                  "blurred"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string",
+                                "maxLength": 300
+                              },
+                              "severity": {
+                                "type": "string",
+                                "enum": [
+                                  "warn",
+                                  "reject"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 16
+                        },
+                        "metrics": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "issues"
+                      ],
+                      "additionalProperties": false,
+                      "nullable": true
+                    },
                     "workerVersion": {
                       "type": "string",
                       "maxLength": 64,
@@ -11467,6 +11687,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11548,6 +11769,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -11956,6 +12178,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12037,6 +12260,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12118,6 +12342,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12199,6 +12424,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12280,6 +12506,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12676,6 +12903,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12757,6 +12985,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12838,6 +13067,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -12919,6 +13149,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13000,6 +13231,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13081,6 +13313,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13348,6 +13581,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13429,6 +13663,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13510,6 +13745,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13591,6 +13827,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13672,6 +13909,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -13753,6 +13991,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14600,6 +14839,73 @@
                           "additionalProperties": false,
                           "nullable": true
                         },
+                        "quality": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ok",
+                                "warn",
+                                "reject"
+                              ]
+                            },
+                            "effectiveDpi": {
+                              "type": "number",
+                              "exclusiveMinimum": true,
+                              "minimum": 0,
+                              "maximum": 4800,
+                              "nullable": true
+                            },
+                            "issues": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "low_resolution",
+                                      "mirrored",
+                                      "dark_background",
+                                      "screenshot",
+                                      "partial_crop",
+                                      "blurred"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string",
+                                    "maxLength": 300
+                                  },
+                                  "severity": {
+                                    "type": "string",
+                                    "enum": [
+                                      "warn",
+                                      "reject"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 16
+                            },
+                            "metrics": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "issues"
+                          ],
+                          "additionalProperties": false,
+                          "nullable": true
+                        },
                         "workerVersion": {
                           "type": "string",
                           "maxLength": 64,
@@ -14688,6 +14994,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14769,6 +15076,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14850,6 +15158,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -14931,6 +15240,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15012,6 +15322,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15093,6 +15404,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15555,6 +15867,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15636,6 +15949,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15717,6 +16031,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -15798,6 +16113,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16207,6 +16523,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16288,6 +16605,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16369,6 +16687,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -16450,6 +16769,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17075,6 +17395,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17156,6 +17477,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17237,6 +17559,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17318,6 +17641,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17399,6 +17723,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -17480,6 +17805,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18075,6 +18401,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18156,6 +18483,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18237,6 +18565,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18318,6 +18647,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18399,6 +18729,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18480,6 +18811,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18852,6 +19184,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -18933,6 +19266,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19014,6 +19348,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19095,6 +19430,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19397,6 +19733,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19478,6 +19815,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19559,6 +19897,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19640,6 +19979,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19721,6 +20061,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -19802,6 +20143,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20106,6 +20448,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20187,6 +20530,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20268,6 +20612,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20349,6 +20694,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20430,6 +20776,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20658,6 +21005,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20739,6 +21087,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20820,6 +21169,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20901,6 +21251,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -20982,6 +21333,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21532,6 +21884,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21613,6 +21966,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21694,6 +22048,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21775,6 +22130,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -21856,6 +22212,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -22418,6 +22775,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -22499,6 +22857,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -22580,6 +22939,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -22661,6 +23021,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -22742,6 +23103,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -22823,6 +23185,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -22904,6 +23267,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -22985,6 +23349,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -23066,6 +23431,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -23147,6 +23513,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -23354,6 +23721,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -23435,6 +23803,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -23516,6 +23885,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -23597,6 +23967,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -23678,6 +24049,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -23759,6 +24131,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -24310,6 +24683,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -24391,6 +24765,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -24472,6 +24847,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -24553,6 +24929,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -24832,6 +25209,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -24913,6 +25291,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -24994,6 +25373,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25075,6 +25455,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25464,6 +25845,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25545,6 +25927,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25626,6 +26009,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25707,6 +26091,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -25788,6 +26173,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29386,6 +29772,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29467,6 +29854,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29548,6 +29936,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -29629,6 +30018,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33251,6 +33641,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33332,6 +33723,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33413,6 +33805,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33494,6 +33887,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33575,6 +33969,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -33990,6 +34385,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -34071,6 +34467,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -34152,6 +34549,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -34233,6 +34631,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -34314,6 +34713,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35376,6 +35776,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35457,6 +35858,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35538,6 +35940,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -35619,6 +36022,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36255,6 +36659,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36336,6 +36741,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36417,6 +36823,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36498,6 +36905,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36579,6 +36987,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36660,6 +37069,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36891,6 +37301,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -36972,6 +37383,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37053,6 +37465,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37134,6 +37547,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37215,6 +37629,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37687,6 +38102,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37768,6 +38184,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -37849,6 +38266,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38040,6 +38458,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38121,6 +38540,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38202,6 +38622,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38283,6 +38704,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -38944,6 +39366,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39025,6 +39448,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39106,6 +39530,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39187,6 +39612,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39431,6 +39857,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39512,6 +39939,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39593,6 +40021,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39674,6 +40103,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39755,6 +40185,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -39836,6 +40267,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40015,6 +40447,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40096,6 +40529,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40177,6 +40611,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40258,6 +40693,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40339,6 +40775,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40549,6 +40986,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40630,6 +41068,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40711,6 +41150,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -40792,6 +41232,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41378,6 +41819,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41459,6 +41901,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41540,6 +41983,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41621,6 +42065,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41702,6 +42147,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41891,6 +42337,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -41972,6 +42419,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42053,6 +42501,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42134,6 +42583,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42215,6 +42665,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -42296,6 +42747,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43271,6 +43723,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43352,6 +43805,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43433,6 +43887,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43514,6 +43969,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43595,6 +44051,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -43676,6 +44133,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44393,6 +44851,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44474,6 +44933,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44555,6 +45015,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44636,6 +45097,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44717,6 +45179,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -44798,6 +45261,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45334,6 +45798,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45415,6 +45880,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45496,6 +45962,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -45577,6 +46044,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46466,6 +46934,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46547,6 +47016,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46628,6 +47098,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46709,6 +47180,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46790,6 +47262,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -46871,6 +47344,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47342,6 +47816,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47423,6 +47898,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47504,6 +47980,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47585,6 +48062,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47666,6 +48144,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -47974,6 +48453,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48055,6 +48535,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48136,6 +48617,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48217,6 +48699,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48298,6 +48781,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48877,6 +49361,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -48958,6 +49443,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49039,6 +49525,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49120,6 +49607,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49578,6 +50066,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49659,6 +50148,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -49740,6 +50230,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50324,6 +50815,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50405,6 +50897,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50486,6 +50979,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50567,6 +51061,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -50648,6 +51143,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51214,6 +51710,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51295,6 +51792,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51376,6 +51874,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51457,6 +51956,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51538,6 +52038,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51619,6 +52120,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -51700,6 +52202,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52143,6 +52646,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52224,6 +52728,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52305,6 +52810,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52592,6 +53098,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52673,6 +53180,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52754,6 +53262,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52835,6 +53344,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -52916,6 +53426,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53060,6 +53571,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53141,6 +53653,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53222,6 +53735,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53303,6 +53817,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53504,6 +54019,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53585,6 +54101,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53666,6 +54183,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53747,6 +54265,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -53828,6 +54347,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54094,6 +54614,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54175,6 +54696,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54256,6 +54778,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54337,6 +54860,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54418,6 +54942,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54499,6 +55024,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54761,6 +55287,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54842,6 +55369,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -54923,6 +55451,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55004,6 +55533,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55180,6 +55710,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55261,6 +55792,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55342,6 +55874,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55423,6 +55956,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55504,6 +56038,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55709,6 +56244,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55790,6 +56326,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55871,6 +56408,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -55952,6 +56490,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -56135,6 +56674,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -56216,6 +56756,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -56297,6 +56838,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -56378,6 +56920,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -56459,6 +57002,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -56540,6 +57084,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -56621,6 +57166,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -56939,6 +57485,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -57020,6 +57567,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -57101,6 +57649,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -57526,6 +58075,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -57607,6 +58157,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -57688,6 +58239,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -57769,6 +58321,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -57850,6 +58403,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -58183,6 +58737,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -58264,6 +58819,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -58345,6 +58901,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -58426,6 +58983,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -58766,6 +59324,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -58847,6 +59406,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -58928,6 +59488,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -59009,6 +59570,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -59331,6 +59893,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -59412,6 +59975,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -59493,6 +60057,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -59790,6 +60355,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -59871,6 +60437,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -59952,6 +60519,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -60315,6 +60883,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -60396,6 +60965,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -60477,6 +61047,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -60610,6 +61181,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -60691,6 +61263,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -60772,6 +61345,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -60873,6 +61447,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -60954,6 +61529,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -61035,6 +61611,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -61116,6 +61693,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -61197,6 +61775,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -61455,6 +62034,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]
@@ -61536,6 +62116,7 @@
                             "quota_exceeded",
                             "file_infected",
                             "sheet_limit",
+                            "input_quality_rejected",
                             "internal_error",
                             "service_unavailable"
                           ]

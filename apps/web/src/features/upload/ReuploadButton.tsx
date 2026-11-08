@@ -10,7 +10,20 @@ import { useUploadStore } from "./uploadStore";
  * A-UI-05 (07_test_plan E2E-14): "העלה מחדש" on a failed file. Picks one file and uploads it as the replacement of the
  * failed set (`replacesSheetSetId`), so the failed set leaves the list once the new one is in.
  */
-export function ReuploadButton({ projectId, sheetSetId, name }: { projectId: string; sheetSetId: string | null; name: string | null }) {
+export function ReuploadButton({
+  projectId,
+  sheetSetId,
+  name,
+  label,
+  labelFor,
+}: {
+  projectId: string;
+  sheetSetId: string | null;
+  name: string | null;
+  /** Sprint 9: visible text (default "העלה מחדש") and its accessible name with the file name. */
+  label?: string;
+  labelFor?: string;
+}) {
   const { t } = useTranslation();
   const backend = useBackend();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -20,11 +33,11 @@ export function ReuploadButton({ projectId, sheetSetId, name }: { projectId: str
         size="sm"
         variant="secondary"
         onClick={() => inputRef.current?.click()}
-        aria-label={name ? t("upload.reuploadFor", { name }) : t("upload.reupload")}
+        aria-label={name ? (labelFor ?? t("upload.reuploadFor", { name })) : (label ?? t("upload.reupload"))}
         data-reupload={sheetSetId ?? ""}
       >
         <RotateCcw aria-hidden />
-        {t("upload.reupload")}
+        {label ?? t("upload.reupload")}
       </Button>
       <input
         ref={inputRef}

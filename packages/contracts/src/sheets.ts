@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { pageOf, Sha256HexSchema, TimestampSchema } from './common.js';
 import { DocIdSchema, UidSchema } from './org.js';
 import { ConfidenceLevelSchema } from './review.js';
+import { InputQualitySchema } from './quality.js';
 
 /** Accepted source file kinds (SEC-14), as detected by magic bytes. */
 export const FILE_KINDS = ['pdf', 'dwg', 'dxf', 'png'] as const;
@@ -356,6 +357,11 @@ export const SheetVersionSchema = z.object({
     .object({ kind: z.enum(['reference_walls', 'manual']), sources: z.array(z.string().max(300)).max(32), message: z.string().max(200) })
     .nullable()
     .optional(),
+  /**
+   * Sprint 9 (Worker-Legend, raster input): input-quality gate result. Absent / null = not checked (vector input) ≡ ok.
+   * `reject` → no detections / counts, tiles still rendered. See quality.ts.
+   */
+  quality: InputQualitySchema.nullable().optional(),
   workerVersion: z.string().max(64).nullable(),
   /** jobs/{jobId} that produces this version. */
   jobId: DocIdSchema.nullable().optional(),
@@ -376,6 +382,8 @@ export const SheetSummarySchema = SheetSchema.extend({
       status: SheetVersionStatusSchema,
       progress: VersionProgressSchema,
       error: ProcessingErrorSchema.nullable().optional(),
+      /** Sprint 9: the version's input-quality result (absent = not checked). */
+      quality: InputQualitySchema.nullable().optional(),
     })
     .nullable(),
 });

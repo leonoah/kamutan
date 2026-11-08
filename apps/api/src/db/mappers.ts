@@ -21,6 +21,10 @@ import {
   CalibrationStatsSchema,
   TimingsMsSchema,
   TitleBlockMmSchema,
+  InputQualityIssueSchema,
+  InputQualitySchema,
+  INPUT_QUALITY_ISSUES_MAX,
+  type InputQuality,
   type Job,
   type JobProgress,
   type LegendEntry,
@@ -311,7 +315,32 @@ function titleBlockFromBbox(v: unknown): SheetVersion['titleBlockMm'] {
   return titleBlock({ x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) });
 }
 
+/**
+ * Sprint 9: worker-written `quality` (tolerant: unknown issue kinds are dropped, a bad dpi becomes null, an unreadable
+ * block is omitted). `null` stays null.
+ */
+export function inputQualityOf(v: unknown): InputQuality | null | undefined {
+  if (v === null) return null;
+  if (!v || typeof v !== 'object') return undefined;
+  const strict = InputQualitySchema.safeParse(v);
+  if (strict.success) return strict.data;
+  const o = v as Record<string, unknown>;
+  const status = InputQualitySchema.shape.status.safeParse(o.status);
+  if (!status.success) return undefined;
+  const issues = (Array.isArray(o.issues) ? o.issues : [])
+    .flatMap((i) => {
+      const r = InputQualityIssueSchema.safeParse(i);
+      if (r.success) return [r.data];
+      const k = InputQualityIssueSchema.shape.kind.safeParse((i as Record<string, unknown> | null)?.kind);
+      return k.success ? [{ kind: k.data }] : [];
+    })
+    .slice(0, INPUT_QUALITY_ISSUES_MAX);
+  const dpi = InputQualitySchema.shape.effectiveDpi.safeParse(o.effectiveDpi);
+  return { status: status.data, ...(o.effectiveDpi !== undefined ? { effectiveDpi: dpi.success ? (dpi.data ?? null) : null } : {}), issues };
+}
+
 export function toVersion(sheetId: string, id: string, d: Doc): SheetVersion {
+  const quality = inputQualityOf(d.quality);
   const status = oneOf(d.status, SHEET_VERSION_STATUSES, 'queued');
   const page = PageGeometrySchema.safeParse(d.page);
 
@@ -333,6 +362,7 @@ export function toVersion(sheetId: string, id: string, d: Doc): SheetVersion {
         : {}),
     ...(Array.isArray(d.referenceSources) ? { referenceSources: (d.referenceSources as unknown[]).filter((x): x is string => typeof x === 'string' && x.length <= 300).slice(0, 16) } : {}),
     ...(d.reprocessReason !== undefined ? { reprocessReason: reprocessReasonOf(d.reprocessReason) } : {}),
+    ...(quality !== undefined ? { quality } : {}),
     workerVersion: str(d.workerVersion),
     ...(typeof d.jobId === 'string' ? { jobId: d.jobId } : {}),
     ...(d.createdAt !== undefined ? { createdAt: isoOrNull(d.createdAt) } : {}),
@@ -377,9 +407,15 @@ export function toJob(id: string, d: Doc): Job {
 }
 
 /** Summary of the current version for the sheets list. */
-export function versionSummary(v: SheetVersion | null): Pick<SheetVersion, 'id' | 'status' | 'progress' | 'error'> | null {
+export function versionSummary(v: SheetVersion | null): Pick<SheetVersion, 'id' | 'status' | 'progress' | 'error' | 'quality'> | null {
   if (!v) return null;
-  return { id: v.id, status: v.status, progress: v.progress, ...(v.error !== undefined ? { error: v.error } : {}) };
+  return {
+    id: v.id,
+    status: v.status,
+    progress: v.progress,
+    ...(v.error !== undefined ? { error: v.error } : {}),
+    ...(v.quality !== undefined ? { quality: v.quality } : {}),
+  };
 }
 
 const conf = (v: unknown): number => (typeof v === 'number' && v >= 0 && v <= 1 ? v : 0);

@@ -9,6 +9,8 @@ import { Ltr } from "@/components/Ltr";
 import { cn } from "@/lib/utils";
 import { SheetThumb } from "@/features/sheets/SheetThumb";
 import { sheetName, uncertainFields } from "@/features/sheets/model";
+import { qualityFlag, qualityOf } from "@/features/quality/model";
+import { QualityBadge, QualityIssueList } from "@/features/quality/QualityNotice";
 
 export type SheetState = "processing" | "failed" | "toConfirm" | "ready";
 
@@ -72,7 +74,10 @@ function SheetTile({
   const name = sheetName(row);
   const state = sheetState(row);
   const v = row.version;
-  const det = v?.stats?.detections;
+  // Sprint 9: input-quality gate — a rejected sheet shows no counts (the drawing still opens); warn shows the issue.
+  const qFlag = state === "ready" || state === "toConfirm" ? qualityFlag(v) : null;
+  const quality = qFlag ? qualityOf(v) : null;
+  const det = qFlag === "reject" ? undefined : v?.stats?.detections;
   const floors = row.sheet.floors ?? [];
   const discipline = row.sheet.discipline ? t(`disciplines.${row.sheet.discipline}`, { defaultValue: row.sheet.discipline }) : null;
   const analyzeHref = `/projects/${projectId}/sheets/${row.sheet.id}`;
@@ -92,12 +97,14 @@ function SheetTile({
       aria-label={name}
       data-sheet={row.sheet.id}
       data-state={state}
+      data-quality={qFlag ?? undefined}
       className={cn(
         "group flex h-full flex-col overflow-hidden rounded-lg border bg-surface transition-colors",
         selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-foreground/30",
       )}
     >
       {/* Thumbnail: click = filter the BOQ by this sheet; the title link = open the analysis. */}
+      <div className="relative">
       <button
         type="button"
         onClick={() => onSelect(selected ? null : row.sheet.id)}
@@ -129,6 +136,9 @@ function SheetTile({
           {t(`hub.sheetState.${state}`)}
         </span>
       </button>
+      {/* Sprint 9: outside the button (its accessible name is the filter action), above the thumbnail. */}
+      {qFlag ? <QualityBadge status={qFlag} className="pointer-events-none absolute bottom-1.5 start-1.5 shadow-sm" /> : null}
+      </div>
 
       <div className="relative flex flex-1 flex-col gap-2 p-3">
         {onDeleteSet ? (
@@ -186,6 +196,12 @@ function SheetTile({
           <div className="flex flex-col gap-1">
             <span className="text-meta text-muted-foreground">{t(`project.stage.${v.progress.stage}`, { defaultValue: t("project.versionStatus.processing") })}</span>
             <Progress value={v.progress.pct} aria-label={t("project.sheetProgressLabel", { name, stage: "" })} />
+          </div>
+        ) : null}
+        {quality ? (
+          <div className="flex flex-col gap-0.5" data-tile-quality>
+            {qFlag === "reject" ? <span className="text-meta font-medium text-destructive">{t("quality.tileNotCounted")}</span> : null}
+            <QualityIssueList quality={quality} compact className="text-muted-foreground" />
           </div>
         ) : null}
         {state === "ready" && det ? (

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { QTY_CHANGED_REASON, isQtyChangedReason } from "@/api/types";
+import { isQualityReason } from "@/features/quality/model";
 
 /**
  * Reason → plain Hebrew chip (spec §צ'יפים של סיבות). Known codes (NOT_IN_LEGEND…) are translated; Sprint-2
@@ -24,6 +25,21 @@ export function ReasonChip({ code, className }: { code: string; className?: stri
         )}
       >
         {t("reasons.CONSERVATIVE_CALIBRATION")}
+      </span>
+    );
+  }
+  if (isQualityReason(code)) {
+    // Sprint 9: items of a low-quality raster sheet ("איכות קובץ ירודה: רזולוציה נמוכה מדי (כ-30 dpi)") — the
+    // short chip + the issue (dpi as an LTR island) and a hint on what it means.
+    const detail = code.slice(t("quality.reasonChip").length).replace(/^:\s*/, "");
+    return (
+      <span
+        data-reason="INPUT_QUALITY"
+        title={`${code}. ${t("quality.reasonHint")}`}
+        className={cn("inline-flex h-5 max-w-full items-center gap-1 rounded-sm border border-conf-mid/60 bg-conf-mid/[0.08] px-1.5 text-meta text-foreground", className)}
+      >
+        <span className="shrink-0">{t("quality.reasonChip")}</span>
+        {detail ? <span className="truncate text-muted-foreground">· {detail}</span> : null}
       </span>
     );
   }

@@ -332,6 +332,88 @@
                       "type": "null"
                     }
                   ]
+                },
+                "quality": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ok",
+                            "warn",
+                            "reject"
+                          ]
+                        },
+                        "effectiveDpi": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "exclusiveMinimum": 0,
+                              "maximum": 4800
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "issues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "low_resolution",
+                                  "mirrored",
+                                  "dark_background",
+                                  "screenshot",
+                                  "partial_crop",
+                                  "blurred"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string",
+                                "maxLength": 300
+                              },
+                              "severity": {
+                                "type": "string",
+                                "enum": [
+                                  "warn",
+                                  "reject"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 16
+                        },
+                        "metrics": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          },
+                          "propertyNames": {
+                            "minLength": 1,
+                            "maxLength": 64
+                          }
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "issues"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [

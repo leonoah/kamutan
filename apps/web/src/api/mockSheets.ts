@@ -302,3 +302,100 @@ export function rowFromDevIndex(e: DevIndexEntry, createdAt: string): { row: She
   };
   return { row, set };
 }
+
+/**
+ * Sprint 9 — demo project "p-web" (drawings collected from the web): two raster sheets that hit the input-quality gate.
+ * - warn: a CAD-viewer screenshot at ~96 dpi → counted, every item capped "סביר" / "לבדיקה" with the quality reason;
+ * - reject: a ~30 dpi mirrored crop → no counts, the drawing is still viewable (the version is `ready`).
+ * The tiles reuse two Noah sample renders (so the drawing shows with the Noah data and 404s quietly without it).
+ */
+export const WEB_PROJECT = "p-web";
+export const WEB_WARN_SHEET = "web-shot-p0";
+export const WEB_REJECT_SHEET = "web-crop-p0";
+export const WEB_WARN_QUALITY = {
+  status: "warn",
+  effectiveDpi: 96,
+  issues: [
+    { kind: "screenshot", detail: "viewer toolbar detected at the top edge", severity: "warn" },
+    { kind: "low_resolution", detail: "text x-height ≈ 3.5 px", severity: "warn" },
+  ],
+} as const satisfies NonNullable<SheetRow["version"]>["quality"];
+export const WEB_REJECT_QUALITY = {
+  status: "reject",
+  effectiveDpi: 30,
+  issues: [
+    { kind: "low_resolution", detail: "≈30 dpi at A1", severity: "reject" },
+    { kind: "mirrored", detail: "mirrored text in the title block", severity: "reject" },
+    { kind: "partial_crop", detail: "no sheet frame / title block" },
+  ],
+} as const satisfies NonNullable<SheetRow["version"]>["quality"];
+
+export function seedWebSamples(createdAt: string): { sets: SheetSet[]; rows: SheetRow[] } {
+  const items = [
+    { sheetId: WEB_WARN_SHEET, setId: "web-shot", file: "חשמל-דירה-צילום-מסך.png", title: "חשמל — צילום מסך מהאינטרנט", fileId: "eb8be8a3", discipline: "electrical", floors: ["ground"], quality: WEB_WARN_QUALITY },
+    { sheetId: WEB_REJECT_SHEET, setId: "web-crop", file: "הריסה-חיתוך-הפוך.png", title: "הריסה — חיתוך הפוך", fileId: "70a5c3e0", discipline: "demolition", floors: ["ground"], quality: WEB_REJECT_QUALITY },
+  ] as const;
+  const sets: SheetSet[] = [];
+  const rows: SheetRow[] = [];
+  for (const it of items) {
+    sets.push({
+      id: it.setId,
+      orgId: ORG,
+      projectId: WEB_PROJECT,
+      fileKind: "png",
+      sha256: it.setId.padEnd(64, "0"),
+      storagePath: `orgs/${ORG}/projects/${WEB_PROJECT}/uploads/${it.setId}/source.png`,
+      status: "ready",
+      name: it.file,
+      uploadedBy: "mock-user",
+      createdAt,
+    });
+    const tiles = sampleTiles(it.fileId, false);
+    const reject = it.quality.status === "reject";
+    rows.push({
+      sheet: {
+        id: it.sheetId,
+        sheetSetId: it.setId,
+        pageIndex: 0,
+        title: it.title,
+        discipline: it.discipline,
+        floors: [...it.floors],
+        scaleDenominator: null,
+        classification: {
+          discipline: it.discipline,
+          floors: [...it.floors],
+          sheetTitle: it.title,
+          scaleText: null,
+          confidence: 0.55,
+          level: "yellow",
+          reasons: ["RASTER", "TITLE_NOT_FOUND"],
+        },
+        confirmed: true,
+        confirmedBy: "mock-user",
+        confirmedAt: createdAt,
+        currentVersionId: "v1",
+        updatedAt: createdAt,
+      },
+      version: {
+        id: "v1",
+        sheetId: it.sheetId,
+        versionNo: 1,
+        status: "ready",
+        createdAt,
+        progress: { stage: "done", pct: 100 },
+        ...(reject ? { error: { code: "input_quality_rejected", message: "input quality gate: reject" } } : {}),
+        page: pageOf(tiles, 0),
+        artifacts: {
+          tiles,
+          thumbnail: tiles.prefix.replace(/\/tiles$/, "/thumbnail.webp"),
+        },
+        regions: [],
+        stats: { paths: 0, segments: 0, textLines: 0, glyphs: 0 },
+        quality: structuredClone(it.quality) as NonNullable<SheetRow["version"]>["quality"],
+        workerVersion: "mock",
+        updatedAt: createdAt,
+      },
+    });
+  }
+  return { sets, rows };
+}

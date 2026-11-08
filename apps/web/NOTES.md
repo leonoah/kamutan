@@ -960,3 +960,68 @@ Share link `/s/demo-noah-prices` (with prices). Per-set bytes (finalize; dev-ind
 - Firebase Auth (~450 kB source) is still in the entry chunk (needed by every signed-in route and by `/login`); Firestore is
   deferred. Lazy-loading Auth would need an async `AuthService`.
 - Price columns in the panel are one merged column (narrow pane); the full unit-price column exists in the preview.
+
+# Sprint 9 (web): input-quality gate
+
+Brief: `docs/agents/SPRINT9_BRIEF.md` §3 + row "Product". Contract: packages/contracts/NOTES.md "Sprint 9 published"
+(`SheetVersion.quality {status ok|warn|reject, effectiveDpi?, issues[{kind, detail?, severity?}]}`, error
+`input_quality_rejected`). `src/api/types.ts` takes `InputQuality` / `InputQualityIssue` type-only from contracts; the
+real backend reads `quality` straight from the version doc (Firestore listener), the API DTOs carry it too.
+
+## Model + copy
+- `features/quality/model.ts`: `qualityOf(version)` (`quality`, or the bare error code `input_quality_rejected` → reject
+  without issues, else null), `qualityFlag`, `isRejected`, `issueTitle` ("רזולוציה נמוכה מדי (כ-30 dpi)"; same dpi
+  rounding as the contracts), `issueAction`, `displayIssues` (dedupe; empty → one generic line, so there is always an
+  action), `isQualityReason`.
+- Copy: `src/i18n/he.sprint9.ts` (`quality.*`, `project.errors.input_quality_rejected`). Every issue has a title (what is
+  wrong) and an action (what to do), e.g. "צילום מסך ולא קובץ שרטוט — העלה את קובץ ה-PDF המקורי מתוכנת השרטוט במקום צילום
+  מסך." Singular imperative, as in the brief. `quality.test.ts` pins titles / actions / statuses / banners / reason
+  prefix / error text to the contracts' `QUALITY_ISSUE_HE` etc. (no contracts runtime in app code).
+
+## Screens
+- **Hub gallery tile**: chip "▲ איכות ירודה" / "⊘ לא נספר" over the thumbnail (outside the filter button so its
+  accessible name stays the filter action), the issue titles under the meta line; a **rejected tile shows no counts**
+  ("לא נספרו פריטים", no progress bar) but still opens the sheet analysis.
+- **Processing panel** ("העלאות ועיבוד"): section "איכות קבצים · N גיליונות עם בעיית איכות" — per sheet: badge, link to the
+  sheet, status, each issue + what to do, and for editors "העלה קובץ מקורי" (= `ReuploadButton` → upload as the
+  replacement of that set; the old set leaves once the new one is in). The hub keeps the panel open while quality issues
+  exist.
+- **Sheet analysis / review header**: `QualityBanner` under the header (role=status, coloured start border + icon + words):
+  status, what it means for the counts (warn: "ספרנו… כולם מסומנים לבדיקה ולא יסומנו 'מאומת'"; reject: "לא ספרנו…
+  השרטוט מוצג לעיון בלבד"), issue list with actions, "העלה קובץ מקורי" (editors). Reject: the counts tab is replaced by
+  "לא נספרו פריטים" + issues; the drawing is shown as usual.
+- **Items of a warn sheet**: the worker's reason "איכות קובץ ירודה: <issue>" renders as a dedicated chip
+  (`data-reason="INPUT_QUALITY"`, hint in the title) in the queue, item card, tooltips.
+- **Confirm sheets** card: badge + issue list.
+
+## Mock
+New demo project **`p-web`** "דירת כהן — שרטוטים מהאינטרנט" (`seedWebSamples` in `mockSheets.ts`): `web-shot-p0` = warn
+(screenshot + ~96 dpi; counted: 36-detection fixture with every item capped to yellow/red and `qualityReasonHe` first —
+`mockSprint9.ts`, lazy mock chunk only) and `web-crop-p0` = reject (~30 dpi, mirrored, partial crop; no understanding
+artifacts, version `ready` + `error.code input_quality_rejected`). Tiles reuse two Noah renders (shown with the Noah data,
+404 quietly without). p-noah / p-levi unchanged.
+
+## Tests
+- Unit: `features/quality/quality.test.ts` 4 (copy = contracts, dpi rounding, flags = contracts `isQualityRejected`,
+  issues / reason chip), `quality.ui.test.tsx` 5 (hub tiles + no counts on reject + processing list + axe; viewer has no
+  upload; rejected sheet banner + drawing + counts notice + axe; warn banner + reason chip + axe; confirm cards).
+- Contracts: `src/api/contracts.test.ts` +2 — p-web versions parse with `SheetVersionSchema` / `InputQualitySchema` /
+  `SheetSummary.currentVersion`; warn detections / rooms parse with `DetectionsArtifactSchema` / `RoomsArtifactSchema`,
+  none green, reason = `qualityReasonHe`; reject has no detections.
+- Playwright `e2e/sprint9.e2e.ts` (both data modes): hub tiles + quality list + axe, list → sheet; rejected sheet banner /
+  drawing / counts + axe; warn sheet banner + reason chip + axe; upload the original replaces the rejected set; phone hub
+  without horizontal scroll.
+- Runs (08.11): `pnpm turbo run lint typecheck test build` for contracts / api / web / viewer green (web unit 380; one
+  `boq.test.tsx` timeout under the parallel turbo run, green alone and on `turbo test --force`). Playwright full suite:
+  Noah data 115 passed / 1 skipped / 1 failed: `ia-navigation` "A-UI-02 mobile 390" (scrollWidth 443 on `/projects/p-noah`
+  or `/library`, not a Sprint 9 screen), which passes 3/3 with `--repeat-each=3` alone, so it is load-related flakiness.
+  `KAMUTAN_DEV_ARTIFACTS=/nonexistent E2E_PORT=4318`: 99 passed / 18 skipped / 0 failed. `sprint9.e2e.ts` 5/5 in both
+  modes, axe 0 serious / critical.
+- Screenshots: `/home/claude/kamutan-data/acceptance/ui/screens/{desktop,mobile}/s9-*.png`.
+
+## Known gaps / open
+- The worker's reason chip must equal `qualityReasonHe` (vectors in contracts `json-schema/defaults/quality-messages.json`);
+  until Worker-Legend writes it, real warn sheets show only the banner / badge (the item cards then have no quality chip).
+- "העלה קובץ מקורי" re-uploads the whole set (`replacesSheetSetId`); for a multi-page set with one bad page, that is
+  the whole file.
+- The hub tile shows the `quality` of the current version only. Superseded versions are not shown.

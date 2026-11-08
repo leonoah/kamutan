@@ -90,6 +90,8 @@
     "IdTokenClaims.json",
     "IngestSheetVersionJob.json",
     "IngestTopicJob.json",
+    "InputQuality.json",
+    "InputQualityIssue.json",
     "Invite.json",
     "InviteList.json",
     "ItemLibraryItem.json",

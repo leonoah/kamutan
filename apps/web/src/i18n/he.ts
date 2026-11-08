@@ -1,4 +1,5 @@
 import { sprint8He } from "./he.sprint8";
+import { sprint9He } from "./he.sprint9";
 /** Hebrew UI strings (default locale). Micro-copy follows docs/spec/05_ux.md §מיקרו-קופי verbatim where it exists. */
 const he = {
   app: {
@@ -211,6 +212,8 @@ const he = {
       // Sprint 7: error mapping only (per-project storage quota: API)
       file_infected: "הקובץ נחסם: זוהה תוכן זדוני",
       quota_exceeded: "אין מספיק מקום בפרויקט: הקובץ חורג ממכסת האחסון.",
+      // Sprint 9: input-quality gate (version / job error)
+      input_quality_rejected: sprint9He.projectErrors.input_quality_rejected,
     },
     retry: "נסה שוב",
     skip: "דלג",
@@ -1713,6 +1716,8 @@ const he = {
   },
   // Sprint 8: prices, "מה השתנה", deletes, route loading (src/i18n/he.sprint8.ts)
   ...sprint8He,
+  // Sprint 9: input-quality gate (src/i18n/he.sprint9.ts)
+  quality: sprint9He.quality,
 };
 
 export default he;

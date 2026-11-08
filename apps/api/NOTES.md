@@ -879,3 +879,19 @@ Sprint 1:
   the worker would make cross-page order exact.
 - No OpenTelemetry yet (`traceparent` propagated or minted). No member/invite, delete-project or share endpoints yet.
 - In Functions the JSON body is parsed by the framework (its own limit), so the 256kb API limit only applies locally.
+
+## Sprint 9 (Product agent) — input-quality gate surfaced
+
+Contract: packages/contracts/NOTES.md "Sprint 9 published" (`InputQuality`, error code `input_quality_rejected`).
+- `src/db/mappers.ts`: `inputQualityOf(raw)` — tolerant parse of the worker-written `quality` (strict parse first; else
+  status kept, unknown issue kinds dropped, an over-long `detail` / bad `severity` → just `{kind}`, a bad dpi → null, ≤ 16
+  issues; unknown status → omitted; `null` stays null). `toVersion` adds `quality` when the doc has it, so every version
+  DTO carries it: `GET …/sheets/:sid/versions/:vid`, `POST …/reprocess` (`sheetVersion`), PUT regions internals.
+  `versionSummary` adds it to `SheetSummary.currentVersion` (`GET …/sheets`, the gallery).
+- A rejected version stays `ready` (tiles signable, tiles-manifest unchanged); the API does no gating of its own — the
+  worker writes no detections for it.
+- **Share**: `PublicShareMeta.sheets[]` / overlay DTOs are built field by field, so `quality` / `effectiveDpi` never leak;
+  pinned by a test.
+- `openapi.json` regenerated (`npm run build && npm run openapi`).
+- Tests: `test/e2e/sprint9.e2e.test.ts` (5): sheet list per sheet (ok / warn / reject / absent for vector), full version DTO
+  (reject still `ready` with tiles), reprocess, share meta + overlay without quality, mapper tolerance.
