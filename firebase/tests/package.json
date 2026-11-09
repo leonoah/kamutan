@@ -10,9 +10,9 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "6.0.0",
-    "firebase": "13.1.0",
+    "firebase": "13.2.0",
     "@types/node": "^22.10.0",
     "typescript": "^5.6.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   }
 }
