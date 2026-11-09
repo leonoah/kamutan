@@ -1,0 +1,209 @@
+{
+  "schema_version": "1.0",
+  "project_id": "yahav",
+  "split": "dev",
+  "data_location": "outside git: $KAMUTAN_DATA_DIR/sample-yahav",
+  "gt_location": "outside git: $KAMUTAN_DATA_DIR/gt/yahav",
+  "files": [
+    {
+      "file_id": "sheet_111b8ba3",
+      "file_name": "sheet_111b8ba3.pdf",
+      "kind": "pdf",
+      "bytes": 401180,
+      "sha256": "111b8ba33027a4a486cc5f85c893f835be2a12937bee19e565c2f1922d3e91a9",
+      "discipline": "electrical",
+      "floors": [
+        "ground"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_268f72d6",
+      "file_name": "sheet_268f72d6.pdf",
+      "kind": "pdf",
+      "bytes": 375819,
+      "sha256": "268f72d682682c656980e46a6ff2168b44308df137bb7af85d8d70e34b7f6427",
+      "discipline": "lighting",
+      "floors": [
+        "ground"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_3372aed6",
+      "file_name": "sheet_3372aed6.pdf",
+      "kind": "pdf",
+      "bytes": 348019,
+      "sha256": "3372aed693a8a37302f83f67d1a38d3441ed62f5539e49bbea83fba15c64056b",
+      "discipline": "demolition",
+      "floors": [
+        "first"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_521ffbb0",
+      "file_name": "sheet_521ffbb0.pdf",
+      "kind": "pdf",
+      "bytes": 270269,
+      "sha256": "521ffbb01bd1797419b60b10fa3063e4ffe3728b520e7c1b7db148136ff34d1d",
+      "discipline": "plumbing",
+      "floors": [
+        "ground"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_55abe89d",
+      "file_name": "sheet_55abe89d.pdf",
+      "kind": "pdf",
+      "bytes": 224179,
+      "sha256": "55abe89d256a88e687b19166d4add23e2eafed2cfbe825a406f33ed12f8f214d",
+      "discipline": "lighting",
+      "floors": [
+        "first"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_57b50ce9",
+      "file_name": "sheet_57b50ce9.pdf",
+      "kind": "pdf",
+      "bytes": 169040,
+      "sha256": "57b50ce92266c9cc0d03db9fe2dff87b63ef3dcfa94c84658f6c9eca9744e4eb",
+      "discipline": "lighting",
+      "floors": [
+        "basement"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_6ddff007",
+      "file_name": "sheet_6ddff007.pdf",
+      "kind": "pdf",
+      "bytes": 193885,
+      "sha256": "6ddff007107b9a425ff4402eb956261ab5dd347afff15bd50f29c340b7272ebd",
+      "discipline": "pool",
+      "floors": [],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_7ed379df",
+      "file_name": "sheet_7ed379df.pdf",
+      "kind": "pdf",
+      "bytes": 202797,
+      "sha256": "7ed379df64a43cbe72f66ea33d45ce9f7ae787b97a7993fd658d8f15aed096fa",
+      "discipline": "pool",
+      "floors": [],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_86271aba",
+      "file_name": "sheet_86271aba.pdf",
+      "kind": "pdf",
+      "bytes": 128572,
+      "sha256": "86271aba970536224ef3012bad620676e7eb88afd649d8034a3e449476b44908",
+      "discipline": "plumbing",
+      "floors": [
+        "basement"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_92c7caa4",
+      "file_name": "sheet_92c7caa4.pdf",
+      "kind": "pdf",
+      "bytes": 172817,
+      "sha256": "92c7caa4481f27811297c01bae97089b0875e2f24b2c0610ff1871bd1ed11b87",
+      "discipline": "electrical",
+      "floors": [
+        "basement"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_9cf263b2",
+      "file_name": "sheet_9cf263b2.pdf",
+      "kind": "pdf",
+      "bytes": 126257,
+      "sha256": "9cf263b2dba4eca475f87911bf648ef09a32fbb2237f4c3e6bb483ed421a0088",
+      "discipline": "demolition",
+      "floors": [
+        "basement"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_d2423910",
+      "file_name": "sheet_d2423910.pdf",
+      "kind": "pdf",
+      "bytes": 214296,
+      "sha256": "d2423910cd2274547b833f2e8acbb33f8e8c157c7fd6f8754d0743c4e6cf4e60",
+      "discipline": "electrical",
+      "floors": [
+        "first"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_d9f712f5",
+      "file_name": "sheet_d9f712f5.pdf",
+      "kind": "pdf",
+      "bytes": 206376,
+      "sha256": "d9f712f571b95954047fed224ede7e0200cac38e3fcabe0dbbe35729a2d2496b",
+      "discipline": "plumbing",
+      "floors": [
+        "first"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_de16567e",
+      "file_name": "sheet_de16567e.pdf",
+      "kind": "pdf",
+      "bytes": 244572,
+      "sha256": "de16567eab7ba264a375beb78763d07897f1c613f4b8d262fa01721afabe64e5",
+      "discipline": "construction",
+      "floors": [
+        "first"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_dfc7100d",
+      "file_name": "sheet_dfc7100d.pdf",
+      "kind": "pdf",
+      "bytes": 154654,
+      "sha256": "dfc7100dc024db911ee32300d63a0f41a39a69389add97fcd9a92c4743075b85",
+      "discipline": "construction",
+      "floors": [
+        "basement"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_f7e91e78",
+      "file_name": "sheet_f7e91e78.pdf",
+      "kind": "pdf",
+      "bytes": 363481,
+      "sha256": "f7e91e78a0510de4f890a8e4b02283da8616fb4fcc6fcb59ffa2da56310cb8ee",
+      "discipline": "construction",
+      "floors": [
+        "ground"
+      ],
+      "orientation": "landscape"
+    },
+    {
+      "file_id": "sheet_fc89ec44",
+      "file_name": "sheet_fc89ec44.pdf",
+      "kind": "pdf",
+      "bytes": 369898,
+      "sha256": "fc89ec44d2acbd89e80eb8265e6a46be3d69475123744ce73e3db1953e11d315",
+      "discipline": "demolition",
+      "floors": [
+        "ground"
+      ],
+      "orientation": "landscape"
+    }
+  ]
+}
