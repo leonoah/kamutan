@@ -3940,3 +3940,20 @@ pytest -q --ignore=tests/fuzz`.
   in the baseline; not looked into (scale/).
 * `legend/` not touched this sprint: legend labels now arrive as correct Hebrew from the text layer; Worker-Accuracy's
   request (stroke letter inside a ring vs the row label) is still open.
+
+### Sprint 10 Worker-Lighting — final measurement (10.11, tree 8841ffe, `run_eval.sh <p> lightF*`, `KAMUTAN_AV_SCAN=off`)
+Supersedes the result tables above (which miscounted yahav as 6/11 and rubel as 3/7). Roots `s10qa/<p>/lightF*`, reports
+`gt/<p>/eval/lightF*.md`, runner `s10qa/run_light10_final.sh`. Pre-sprint, none of the three projects produced a
+per-topology / set line (rule kind did not exist; only achituv 4.32 got 8 from the sensor rule).
+* **Noah** cold: identical to `baseline` on every line in both variants (52/66 exact + 54/66 within gated, 9/11 disputed =
+  61/63; nors 50/51). Warm (2nd ingest into a copy of the cold root): headline identical, every lighting line identical
+  (4.09 16, 4.10 1, 4.11 5, 4.12 3, 4.14 1, 4.15 1, 4.16 2, 9.01 43); **socket lines move** 4.00 23→30, 4.01 16→12,
+  4.02 5→2, 4.05 9→8 (symbol detection with a warm glyph store — Worker-Accuracy; no circuits involved: Noah prices 0).
+* **achituv 7/9** point lines exact through the pipeline (floors now classified right): 4.31 23, 4.32 5, 4.34 4, 4.35 2,
+  4.37 3, 4.38 1, 4.39 1; 4.33 6 vs 9 and 4.36 2 vs 1 = dispute. 4.40 install 81 vs 62 (compilation sheet + 13 garden
+  spikes), 4.41 fans 4 vs 0, profiles 0 (no rule produces profile lengths yet).
+* **yahav 5/11**: 4.39–4.43 exact; 4.35 30/34, 4.36 4/6, 4.38 3/4 (10 untagged / undetected fixtures), 4.37 6 vs 5 (dispute),
+  4.44 0 + 4.45 2 (A4: 1 of 6 fixtures detected), A6 unmatched "שלוש נק' מאור כוללות מפסק בודד משותף". 4.46 install 69/58.
+* **rubel 2/7**: 4.40, 4.42 exact; 4.38 12/13, 4.39 3/4; 4.37 55 vs 46 (first floor: 12 box tags without a detected fixture,
+  11 unplaced fixture tags → 5 no_switch + extra singles); D1 = 11 (GT 12), D2 = 19 (GT 17) → unmatched set lines; 3 circuits
+  of 3 have no "סט: שירשור שלוש" line. All three תאורה sheets now ingest (ground 92 fixtures, 86 tagged).
