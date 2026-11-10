@@ -192,8 +192,11 @@
       "bytes": 164136,
       "sha256": "d01321ef4d5eb0e5697a757b2f32cbd413a8b3c58381594bf265b53f5c8c908c",
       "discipline": "post_permit",
-      "floors": [],
-      "orientation": "landscape"
+      "floors": [
+        "ground"
+      ],
+      "orientation": "landscape",
+      "floors_source": "title block (Sprint 11 Data/QA, read by eye)"
     },
     {
       "file_id": "sheet_e19d03a4",

@@ -30,10 +30,22 @@ CLASSES: dict[str, tuple[list[str], str | None]] = {
     "socket_power_triple_box6": ([], "power triple in a 6-place box (no class yet)"),
     "socket_popup": ([], "pop-up socket in the kitchen island (text / new symbol)"),
     "comms_point_aggregated": (
-        ["tv_point", "data_point", "phone_point", "bezek_point", "speaker", "intercom"],
+        [
+            "tv_point",
+            "data_point",
+            "phone_point",
+            "bezek_point",
+            "speaker",
+            "intercom",
+            "camera",
+            "alarm_detector",
+            "siren",
+            "keypad",
+            "thermostat",
+        ],
         (
-            "ALL communication points together: TV / phone / data / intercom / speaker / camera / alarm / AC thermostat "
-            "(thermostat and camera have no class yet)"
+            "ALL communication points together: TV / phone / data / intercom / speaker / camera / alarm detector / siren / "
+            "keypad / AC thermostat (Sprint 11: remapped to the new classes)"
         ),
     ),
     "comms_d18": (["socket_box_6"], "D18 = 6 sockets + 3 conduits to the comms panel; distinct from the plain triple"),
@@ -42,14 +54,17 @@ CLASSES: dict[str, tuple[list[str], str | None]] = {
     "feed_heater_bathroom": (["heater_feed"], None),
     "install_heater_bathroom": (["heater_feed"], "same count as the heater feeds (install line)"),
     "feed_solar_heater": (["water_heater_feed"], "roof: דוד שמש + gas heater, one combined feed"),
-    "feed_shutter": (["switch_shutter"], "one feed per electric shutter (switch_shutter or a shutter-motor symbol)"),
+    "feed_shutter": (
+        ["shutter_feed"],
+        "one feed per electric shutter = the circled-M motor symbol (Sprint 11: class shutter_feed)",
+    ),
     "feed_awning": ([], "awning motor feed, no switch (text)"),
-    "feed_smoke_detector": ([], "smoke detector symbol (no class yet)"),
-    "install_smoke_detector": ([], "= feed_smoke_detector count"),
+    "feed_smoke_detector": (["smoke_detector"], None),
+    "install_smoke_detector": (["smoke_detector"], "= feed_smoke_detector count"),
     "feed_doorbell": (["doorbell"], None),
     "install_doorbell": (["doorbell"], "= feed_doorbell count"),
-    "feed_ventilator": ([], "ventilator (ונטה) feed + switch (text rule 4.19 today)"),
-    "install_ventilator": ([], "= feed_ventilator count"),
+    "feed_ventilator": (["ventilator_feed"], "ventilator (ונטה) feed symbol, circled V (Sprint 11: class ventilator_feed)"),
+    "install_ventilator": (["ventilator_feed"], "= feed_ventilator count"),
     "feed_3phase_heat_pump": (["socket_3phase"], "3-phase, by appliance text 'היתרו'"),
     "feed_3phase_ac": (["socket_3phase"], "3-phase, by appliance text 'מזגן'"),
     "feed_3phase_ev": (["socket_3phase"], "3-phase, by appliance text 'רכב חשמלי'"),
@@ -106,6 +121,42 @@ CLASSES: dict[str, tuple[list[str], str | None]] = {
     "misc_pvc_vent_pipe": ([], '4" PVC for ventilators = ventilator count'),
 }
 COUNT_UNITS = {"יחידה", "סט", "חדר"}
+# Kinds whose classes are a plain 1:1 count, so the by-eye sheet GT (gt/<p>/sheets, Sprint 11) gives a per-floor count.
+PER_FLOOR_KINDS = {
+    "socket_single",
+    "socket_double",
+    "socket_power_single",
+    "socket_power_double",
+    "socket_triple_box6",
+    "comms_point_aggregated",
+    "feed_heater_bathroom",
+    "feed_shutter",
+    "feed_smoke_detector",
+    "install_smoke_detector",
+    "feed_doorbell",
+    "install_doorbell",
+    "feed_ventilator",
+    "install_ventilator",
+}
+
+
+def drawn_counts(project: str) -> tuple[dict[str, dict[str, int]], list[str]]:
+    """{class: {floor: n}} of NEW symbols on the electrical sheets of the by-eye GT, and the sheets used."""
+    counts: dict[str, dict[str, int]] = {}
+    used: list[str] = []
+    for path in sorted((GT / project / "sheets").glob("*.geojson")):
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        meta = doc["kamutan"]
+        if meta.get("discipline") != "electrical" or meta.get("completeness") != "complete":
+            continue
+        used.append(str(meta["sheet_id"]))
+        for feat in doc["features"]:
+            props = feat["properties"]
+            if props.get("lifecycle") == "existing" or props.get("kind") != "symbol":
+                continue
+            by_floor = counts.setdefault(str(props["class"]), {})
+            by_floor[str(props["floor"])] = by_floor.get(str(props["floor"]), 0) + 1
+    return counts, used
 
 
 def main() -> int:
@@ -116,11 +167,18 @@ def main() -> int:
             continue
         d = json.loads(f.read_text(encoding="utf-8"))
         out = []
+        drawn, drawn_sheets = drawn_counts(p)
         for ln in d["lines"]:
             if ln["unit"] not in COUNT_UNITS:
                 continue
             k, g, s = classify(ln["description"])
             classes, note = CLASSES.get(k, ([], None))
+            per_floor: dict[str, int] | None = None
+            if drawn_sheets and k in PER_FLOOR_KINDS and classes:
+                per_floor = {}
+                for cls in classes:
+                    for floor, n in drawn.get(cls, {}).items():
+                        per_floor[floor] = per_floor.get(floor, 0) + n
             out.append(
                 {
                     "code": ln["code"],
@@ -132,8 +190,13 @@ def main() -> int:
                     "kamutan_support": s,
                     "classes": classes,
                     "derivation": note,
-                    "per_floor": None,
-                    "per_floor_source": None,
+                    "per_floor": per_floor,
+                    "drawn_total": sum(per_floor.values()) if per_floor is not None else None,
+                    "per_floor_source": (
+                        f"by-eye sheet GT eye-s11-v1, electrical sheets {', '.join(drawn_sheets)} (new symbols only)"
+                        if per_floor is not None
+                        else None
+                    ),
                     "flags": [x for x in ln["flags"] if x == "zero_quantity" or x.startswith("duplicate_code")],
                 }
             )
@@ -146,7 +209,8 @@ def main() -> int:
             ),
             "note": (
                 "expected_total is the project total the detection classes should sum to (after lifecycle filtering and "
-                "cross-sheet de-dup). per_floor is null until a manual drawing count is added."
+                "cross-sheet de-dup). per_floor / drawn_total = the manual drawing count from the Sprint 11 by-eye sheet GT "
+                "(null where the line is not a plain class count or the project has no complete electrical GT)."
             ),
             "lines": out,
         }

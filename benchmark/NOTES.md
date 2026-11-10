@@ -560,3 +560,89 @@ uv run kbench eval-boq --truth $GT --pred-lines ROOT/orgs/org-demo/projects/p-no
   main at that time, not a clean pre-sprint tree; the Stage-10 E2E-01 build is the clean reference.
 - Room settings: `boq_local.py` writes demo room settings (user input: cladding heights, 5.06/5.07 partial cladding)
   unless `--room-settings` points at an empty file. "Without touch" numbers are reported both ways.
+
+## Sprint 11 Data/QA — independent by-eye symbol GT, per-class P/R, expected counts, disputes
+
+**GT (outside git): `gt/<p>/sheets/<sha8>.geojson`, `gt_version eye-s11-v1`, `annotator agent:data-qa-s11`,
+`status draft-verified`.** Made by eye, NOT seeded from the detector: each sheet rendered in gridded tiles
+(`tools/gt/render_tiles.py`, paper mm of the displayed page, 9–13 px/mm), the sheet's legend read first, every symbol
+written into a table `gt/<p>/annot/<sha8>.txt` (`class x y ; note ; lifecycle=existing ; uncertain=true`), built with
+`tools/gt/build_sheet_gt.py` (positions refined to the drawn coloured glyph, "ink snap" — the drawing only). Only then
+`tools/gt/compare_detections.py` against `s10qa/<p>/warmfix_cold` (newest full run of the committed tree) and
+`tools/gt/review_sheet.py` (zoomed contact sheets, GT green / detection blue): every class confusion and non-trivial
+miss / FP was looked at again at 18–22 px/mm and resolved by the drawing. Results of that pass: 9 GT positions were
+misread by 5–20 mm (wrong grid label) and corrected, 2 Rubel symbols in a strip that had not been tiled were added
+(found because the detector had one of them), 14 glyph types were corrected on the lighting pass 2 (two-way / cross
+switch, wall bar); no GT class was changed to agree with the detector without the glyph being re-read. Each file
+carries `made_by`, `completeness`, and per feature `position_source` (`eye` / `eye+ink-snap`), `eye_xy`, `uncertain`.
+
+| project | sheet | what | state | features |
+| --- | --- | --- | --- | --- |
+| achituv | d4f897bc / 4ae7bc0d / 634431e4 | חשמל מרתף / קרקע / א | complete | 29 / 70 / 52 |
+| achituv | 01295d0d / f499f0f6 / a4635b44 | תאורה מרתף / קרקע / א | complete | 24 / 64 / 50 |
+| achituv | f06e0f38 | תאורה כל הקומות (master, repeats the floor sheets) | not done | – |
+| yahav | 92c7caa4 / 111b8ba3 / d2423910 | חשמל מרתף / קרקע / א | complete | 35 / 76 / 54 |
+| yahav | 57b50ce9 / 268f72d6 / 55abe89d | תאורה מרתף / קרקע / א | complete (pass 2 on every glyph) | 21 / 78 / 49 |
+| rubel | a595be66 / 61f36c68 / 170e522f | חשמל מרתף / קרקע / א | complete | 17 / 104 / 77 |
+| rubel | c0584d0d / 8c14d820 | תאורה מרתף / א | complete (luminaires; Rubel draws no switch glyphs — orange dot + circuit box) | 10 / 46 |
+| rubel | f1b6df02 | תאורה קרקע (A1) | **not done** | – |
+| noah | eb8be8a3 | חשמל קרקע | **partial**: sockets / speakers; monochrome sheet, no ink snap (±1.5 mm) | 21 |
+| noah | c054fd3a / b2046277 / 1bbe4113 | חשמל מרתף+א, תאורה ×2 | **not done** (`sheets_rebuilt_draft/` is still the detector-seeded draft) | – |
+
+877 features, 18 sheets. Not annotated on purpose: elevations ("חזית פריסה"), detail boxes, legends. `ac_unit` (dashed
+"מזגן עילי" outline) and linear items (`conduit_cobra`, `luminaire_strip`, `kind: linear`) are marked but not scored.
+Known weak spots: ceiling-vs-wall of "feed for hidden LED strip" points (`uncertain`), the three Rubel pool / sauna /
+shed feeds read as 3-phase (`uncertain`), D18 boxes as `socket_box_6`.
+
+**Tools (`tools/gt/`, ruff + format + mypy clean, `tests/test_gt_tools.py` 7 tests):** `render_tiles.py` (tile + mm grid
++ optional marks), `build_sheet_gt.py`, `compare_detections.py`, `review_sheet.py`, `pr_report.py`.
+`uv run python tools/gt/pr_report.py --run <label> --rerun` → `gt/eval_sprint11_symbols_<label>.md` (wraps
+`kbench eval --truth gt/<p> --pred-detections s10qa/<p>/<label>/artifacts` per project → `gt/<p>/eval/s11_symbols_<label>.{json,md}`,
+sums per class, adds class families). Disagreement list: `gt/eval_sprint11_disagreements_warmfix_cold.txt`.
+
+**Per-class P/R, run `warmfix_cold`, 3 mm (TP / FP / FN):** socket_single 112/1/25 (P 0.991, R 0.818) ·
+socket_double 73/5/1 · socket_triple 22/1/0 · socket_power 20/6/1 · socket_power_double 8/0/3 · socket_3phase 7/3/6 ·
+data_point 33/0/1 · speaker 23/0/2 · alarm_detector 36/0/1 · shutter_feed 22/0/1 · smoke_detector 10/0/0 ·
+camera 7/0/24 · luminaire_ceiling 103/19/23 · luminaire_wall 57/13/28 · ceiling_fan 6/15/0 · switch_single 71/37/6 ·
+switch_2way 1/0/28 · switch_cross 0/0/9 · switch_shutter 0/0/4 · panel 0/0/9 · intercom 0/0/2 · socket_box_6 0/0/3.
+Families (class-agnostic inside the family): **luminaire 213/0/7 (213 checked, P 1.000)**, **socket
+single+double+triple 214/0/19 (214 checked, P 1.000)**, switch 108/1/11 (109 checked), power family 44/0/1, comms 35/0/0.
+**No single class reaches 200 checked detections** (largest: luminaire_ceiling 122, socket_single 113, switch_single
+108); two families do, both with precision 1.0 — but the green rule is per class, and inside those families the class
+is often wrong (below). All 728 scored detections are yellow, so there is no green bucket to measure yet.
+
+**Causes (for Worker-Accuracy), by size:** (1) switch type: 27 two-way and 9 cross glyphs classed `switch_single`
+(Achituv / Yahav lighting; legend rows מחלף / מצלב are separate glyphs: two hooked tails / three tails); (2)
+ceiling-vs-wall: 19 wall glyphs (bar on one side, "H=") → ceiling (Yahav 16), and 13 full-crosshair ceiling glyphs →
+wall on Rubel first floor; (3) `ceiling_fan` given to 15 plain luminaires (Rubel basement 4 of 4, Achituv feeds A1 / N2
+/ N4 / L2, Yahav emergency + G1 + E1) while the real fan glyph (cross of four boxes) is found 6 of 6; (4) cameras: 0 of
+24 on Rubel + Yahav (orange cone glyph, drawn rotated), 7 of 7 on Achituv; (5) purple "AC socket" glyphs missed: 17 of
+the 25 missed singles (Rubel 13, Achituv 4); (6) filled-glyph family: 5 × 3-phase → power, 2 × power-double →
+3-phase (Rubel dishwasher / water bar), Achituv hob ↔ oven swapped pair; (7) single → double ×5 / triple ×1 where a
+dimension ("20") or another socket's "X2 / X3" sits beside the glyph (Rubel 153,275 · 205,407 · 219,445; Yahav
+136,214 · 250,390 · 148,409), and one double → single (Achituv basement 141.7,165.3, "X2" note 5 mm away); (8)
+`unknown` ×26 on title-block status circles / the D18 detail, cobra ×2 and heater_feed ×1 on pool text (Rubel ground);
+(9) never detected: panels 0 / 9, shutter switch 0 / 4, intercom 0 / 2, D18 box 0 / 3, garden spikes 0 / 3; (10) switch
+positions in callout boxes are detected 1–1.5 mm off the dot (tail included in the bbox) — inside tolerance today.
+
+**`expected_counts.json` remapped** (`tools/projects/build_expected_counts.py`): comms line += `camera`,
+`alarm_detector`, `siren`, `keypad`, `thermostat`; shutter feed → `shutter_feed`; smoke lines → `smoke_detector`;
+ventilator lines → `ventilator_feed`. New per line: `per_floor` + `drawn_total` from the by-eye GT (new symbols on the
+complete electrical sheets) for plain class counts. Drawn vs BOQ — achituv: single 32 / 34, double 21 / 19, power 4 / 4,
+power double 3 / 3, triple 11 / 10, comms 38 / 38, heater 3 / 3, shutter 8 / 8, smoke 3 / 3, bell 1 / 1, ventilator 1 / 1;
+yahav: 49 / 46, 22 / 21, 8 / 8, 3 / 3, 5 / 5, comms 26 / 25, 3 / 3, shutter 4 / 4, smoke 3 / 3, 1 / 1, ventilator 2 / 2;
+rubel: 48 / 42, 26 / 27, 7 / 8, 4 / 4, 6 / 7, comms 64 / 58, shutter 11 / 11, smoke 4 / 4, bell 1 / 1.
+
+**Manifests:** floors `["ground"]` (+ `floors_source`) for the three no-floor entries, read from the title blocks: rubel
+`sheet_d01321ef` (אחרי טופס 4 — "קומת קרקע"), yahav `sheet_6ddff007` + `sheet_7ed379df` (תכ' בריכה — "קרקע").
+
+**Disputes** (`tools/projects/s11_disputes.py`, idempotent; all `lines: []` + `candidate_lines`, so no gated set moved):
+achituv GT-D-111 (4.17 USB 5 vs 4), 112 (4.07 comms 37 / 38 — closes if the entrance intercom counts), 113 (4.02 21 vs
+19, 4.01 32 vs 34), 114 (4.33 / 4.36 circuits 6 / 2 vs 9 / 1), 115 (title block "קומת קרקע" on the first-floor sheets);
+yahav GT-D-111 (4.37 6 vs 5, A6), 112 (4.01 49 vs 46, 4.02, 4.07); rubel GT-D-111 (4.41 / 4.43 chains 11 / 15+4 vs 12 /
+17), 112 (4.01 48 vs 42, 4.07 64 vs 58), 113 (4.02 / 4.03 / 4.05 one short each).
+
+**Not done:** Rubel ground lighting, Noah c054fd3a + both lighting sheets, Achituv master lighting sheet; no second
+annotator (one agent, two passes); the BOQ double count (Achituv bell 4.15) was not handed over — no change made in
+Worker-BOQ's files. Gates: `uv run ruff check .`, `ruff format --check .`, `mypy src` (CI way, 2.4.0), `pytest -q` → 152
+passed, 2 skipped (7 new in `tests/test_gt_tools.py`).

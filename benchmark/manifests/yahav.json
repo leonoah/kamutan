@@ -84,8 +84,11 @@
       "bytes": 193885,
       "sha256": "6ddff007107b9a425ff4402eb956261ab5dd347afff15bd50f29c340b7272ebd",
       "discipline": "pool",
-      "floors": [],
-      "orientation": "landscape"
+      "floors": [
+        "ground"
+      ],
+      "orientation": "landscape",
+      "floors_source": "title block (Sprint 11 Data/QA, read by eye)"
     },
     {
       "file_id": "sheet_7ed379df",
@@ -94,8 +97,11 @@
       "bytes": 202797,
       "sha256": "7ed379df64a43cbe72f66ea33d45ce9f7ae787b97a7993fd658d8f15aed096fa",
       "discipline": "pool",
-      "floors": [],
-      "orientation": "landscape"
+      "floors": [
+        "ground"
+      ],
+      "orientation": "landscape",
+      "floors_source": "title block (Sprint 11 Data/QA, read by eye)"
     },
     {
       "file_id": "sheet_86271aba",
