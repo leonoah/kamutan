@@ -3798,3 +3798,52 @@ elevation) ≈ "הריסה" → demolition on electrical sheets; "מיזוה" �
     lighting circuits of the title floor in memory (`remap_floors`), since they were floored at ingest.
 
 ### Confusion tables (discipline; floors) — before = Data/QA `baseline` sheet docs, after = fresh ingest `cls10`
+Sheet docs (effective `discipline` / `floors` after the project reconcile) vs `benchmark/manifests/<p>.json`:
+
+| project | sheets | discipline right | floors right | red / yellow / green | notes |
+| --- | --- | --- | --- | --- | --- |
+| rubel | 19 | 11 → **19** | 4 → **18** | 16/3/0 → **0/19/0** | the one floor miss: "אחרי טופס 4" — title block says "קומת קרקע", manifest (file name) has no floor |
+| achituv | 22 | 18 → **22** | 10 → **22** | 8/14/0 → **0/22/0** | 4 sheets moved by `floorCheck` (בניה / חשמל / תאורה א: title "קרקע"; העמדה א: title "מרתף"), 1 overview |
+| yahav | 17 | 13 → **17** | 8 → **15** | 17/0/0 → **0/17/0** | the two pool sheets: title "קרקע", manifest no floor; both flagged "אותו גיליון פעמיים" |
+| noah | 15 | 15 → 15 | 15 → 15 | 0/3/12 → 0/3/12 | unchanged |
+
+Discipline confusions before (true → read, 58 sheets): demolition → lighting 3, construction → lighting 2, ceiling →
+lighting 1, plumbing → lighting 1, electrical → demolition 2, demolition → hvac 1, furniture → demolition 1, furniture →
+none 2, pool → none 2, post_permit → none 1 (16 wrong). After: **none** (58/58). Floors before: 33 sheets with no floor,
+3 "first" read as ground; after: 55/58, the three left are the no-floor-in-file-name sheets above (owner / Data/QA: the
+title blocks do say ground — suggest the manifests take it). All 58 sheets are yellow, not green: the anchored-cells
+path scores the block structure 0.8 (labels unread), so the owner still confirms each sheet once.
+
+### BOQ effect (`run_eval.sh <p> cls10`, fresh ingest; "before" = `boq10b` = same BOQ code on the old ingest)
+| project | exact (= within) | Σ abs. error | key lines |
+| --- | --- | --- | --- |
+| rubel | 25 → **30** / 115 | 1141 → 1041 | sockets 10 → 31 (42), 18 → 29 (27); נק' תקשורת 25 → 50 (58); גוף תאורה 42 → 103 (96); smoke detector, bell, cobra exact. Worse: ceiling fans 13 → 41 (6: 29 `ceiling_fan` on the ground lighting sheet), AC drains 14 → 22 (10), showers 6 → 11 (4) — detection on now-correct sheets (Worker-Accuracy) |
+| achituv | 30 → **33** / 85 | 532 → 432 | **גוף תאורה 162 → 81** (62): the overview is skipped (`skippedSheets: overview`); 81 = 12 + 46 + 23 on the three floor sheets (the overview alone also has 81) — the remaining +19 is detection, not double counting. By floor now basement / ground / first (was basement / ground). נק' תקשורת 38 ✔, נק' מאור בודדה 23 ✔. Worse: 3.01 4 → 3, bell 1 → 2 |
+| yahav | 23 → **35** / 110 | 684 → 628 | שקע בודד 46 ✔, תריס 4 ✔, smoke detectors 3 ✔, bell ✔, washing machine 2 ✔; bathroom tiling areas dropped under truth (21 → 11 of 15.5 m²) |
+| noah | 61 / 63 → **61 / 63** (nors 59 / 60 → 59 / 60) | 43.7 → 43.7 | no line differs; 15/15 sheets, 12 green |
+
+### Tests / gates
+`tests/test_sprint10_classify.py` (25 cases): CMap parse / rebuild / repair threshold; end-to-end text layer on a hand-built
+AutoCAD-like PDF (fontTools-built Hebrew font, wrong ToUnicode → right letters); bad files never raise; cells title
+block (garbled labels, folding ק/כ/ל, split words, new disciplines, anchors required); strict free text; mirrored scale;
+glued prefix; not-red when read; label phrases + label floors; overview detection (and the two non-cases); containment
+offset; floor clash resolved / flagged / duplicate pair / confirmed never moved; font-text-only tokens; `apply_to_project`
+on local stores (marks, region floors, idempotence, BOQ `skippedSheets`); `remap_floors`. Contracts:
+`test/sprint10_classify.test.ts`. Commands: `uv run ruff check src tests scripts && uv run ruff format --check src tests
+scripts`; `uv run --with mypy==2.4.0 mypy src`; `uv run --with bandit bandit -q -ll -r src`; `KAMUTAN_AV_SCAN=off uv run
+pytest -q --ignore=tests/fuzz`.
+
+### Open / requests
+* **Perf:** `text.json.gz` lines of the PDF text layer now carry `src: "pdf"` → `tests/golden/page_digests.json` for the
+  synthetic sample10 sheets needed a re-record (content otherwise byte-identical; Noah digests unchanged).
+* **Data/QA:** floors of "אחרי טופס 4" (Rubel) and the two pool sheets (Yahav) — title blocks say ground. Owner question:
+  Achituv's title blocks name the wrong floor on four first-floor sheets; Yahav has two versions of the pool sheet.
+* **API / Web:** show `coverage.reason` / `floorCheck.reason`; a user override "count this overview anyway" does not exist.
+  Hebrew labels for `pool` / `post_permit`.
+* The overview rule needs font text and the same scale on both sheets: an SHX-only project (Noah) or an overview
+  reduced to 1:100 is not detected. A sheet moved by `floorCheck` keeps the rooms it built at ingest with the walls of the
+  title's floor (no automatic reprocess). Two same-floor versions of one sheet are flagged, not excluded.
+* Rubel "חשמל - קומת מרתף": the dimension check sets the region to 1:25 against the title's 1:50 ("קנה מידה סותר") — same
+  in the baseline; not looked into (scale/).
+* `legend/` not touched this sprint: legend labels now arrive as correct Hebrew from the text layer; Worker-Accuracy's
+  request (stroke letter inside a ring vs the row label) is still open.
