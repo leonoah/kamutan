@@ -20,25 +20,36 @@ from ..rooms.names import normalise
 # kind -> keywords (normalised with rooms.names.normalise: no spaces / quotes / punctuation, final letters folded)
 # ``None`` kind = marker without a class (stops the search: the block is not a fixture label).
 RULES: list[tuple[str | None, tuple[str, ...]]] = [
-    (None, ("ברז לניאגרה", "פירוק", "הריסה", "לביטול", "משאבה", "חדר כביסה", "ומייבש")),
+    # 'קנ"מ' (Sprint 11, Worker-Areas): a drawing title ("חזית מקלחון קנ"מ 1:25" under an elevation detail), not a point
+    (None, ("ברז לניאגרה", "פירוק", "הריסה", "לביטול", "משאבה", "חדר כביסה", "ומייבש", 'קנ"מ')),
     ("wc_monoblock", ("מונובלוק", "מונו בלוק")),
-    ("wc_concealed", ("ניאגרה סמויה", "מרכז ניאגרה", "מסתור ניאגרה", "אסלה תלויה", "ניאגרה נמוכה")),
+    # Sprint 11 (Worker-Areas): "מיכל הדחה סמוי" is the designer's other name of the concealed cistern (Achituv)
+    ("wc_concealed", ("ניאגרה סמויה", "מרכז ניאגרה", "מסתור ניאגרה", "אסלה תלויה", "ניאגרה נמוכה", "מיכל הדחה")),
     ("garden_tap", ("ברז גן", "תמי 4", "תמי4", "לתמי")),
     ("faucet_wall", ("ברז קיר",)),
     ("faucet_basin", ("ברז פרח", "ברז עומד", "סוללה עומדת")),
     ("washer", ("מכונת כביסה", "למכונת", "כביסה")),
     ("ac", ("מזגן", "מאייד", "מעבה")),
+    # Sprint 11 (Worker-Areas): the parts of a shower / bath point as the boxed notes name them — "ראש טוש / דוש
+    # מהתקרה", "נק' מים מאחז" (hand shower), "קופסת ניקוז", "ניקוז רגיל"
     ("bath", ("אמבטיה", "אמבט")),
-    ("shower", ("מקלחון", "מקלחת", "ראש גשם", "תעלת ניקוז", "מזלף")),
+    (
+        "shower",
+        ("מקלחון", "מקלחת", "ראש גשם", "תעלת ניקוז", "מזלף", "ראש טוש", "ראש דוש", "מים מאחז", "קופסת ניקוז", "ניקוז רגיל"),
+    ),
     ("mixer", ("אינטרפוץ", "אינטרפוצ", "מערבל")),
     ("kitchen_sink", ("כיור מטבח", "קערת מטבח")),
     ("sink_point", ("נק מים+ביוב", "נק מים וביוב", "מים+ביוב", "מים וביוב", "כיור")),
 ]
 _NORM_RULES: list[tuple[str | None, tuple[str, ...]]] = [(k, tuple(normalise(w) for w in ws)) for k, ws in RULES]
+# boxed notes only (Sprint 11): "אביק פיית מילוי" in its own box with a leader is the bath's filler point — on Noah the
+# same words are a loose remark beside a tub that is already drawn
+BOXED_RULES: list[tuple[str, tuple[str, ...]]] = [("bath", (normalise("פיית מילוי"),))]
 _HEB = re.compile(r"[א-ת]")
 # short abbreviations matched as whole tokens on the raw text ("מ.א" = AC indoor unit, "מ.כ" = washing machine)
 _ABBREV: list[tuple[str, re.Pattern[str]]] = [
-    ("ac", re.compile(r"(?:^|[\s(,ל])מ\s?[.\"'״׳]\s?א(?![א-ת])")),
+    # "קבלן מ.א" (Sprint 11, Worker-Areas) is the AC contractor ("יסומנו בשטח ע"י קבלן מ.א"), not a unit
+    ("ac", re.compile(r"(?<!קבלן)(?:^|[\s(,ל])מ\s?[.\"'״׳]\s?א(?![א-ת])")),
     ("washer", re.compile(r"(?:^|[\s(,ל])מ\s?[.\"'״׳]\s?כ(?![א-ת])")),
 ]
 _PRIORITY = {k: i for i, (k, _) in enumerate(RULES) if k is not None}
@@ -64,6 +75,7 @@ class Label:
     conf: float
     lines: list[TextItem] = field(default_factory=list)
     matched: str = ""
+    frame: Any = None  # Sprint 11: the note box (:class:`~.leaders.Frame`) the lines are written in
 
     @property
     def center(self) -> tuple[float, float]:
@@ -119,6 +131,17 @@ def classify_text(s: str) -> tuple[str | None, str, float]:
     return best
 
 
+def also_kinds(text: str, kind: str | None) -> list[str]:
+    """Other point kinds a note names besides its own (Sprint 11): "נק' מים קרים משולבת כביסה + תמי 4 + ניקוז לכביסה"
+    is one box for two points — the washing machine and the Tami 4 tap."""
+    n = normalise(text)
+    out: list[str] = []
+    for k in ("garden_tap", "washer"):
+        if k != kind and any(kw and kw in n for kk, kws in _NORM_RULES if kk == k for kw in kws):
+            out.append(k)
+    return out
+
+
 def _aligned(a: TextItem, b: tuple[float, float, float, float]) -> bool:
     ov = min(a.bbox[2], b[2]) - max(a.bbox[0], b[0])
     short = min(a.bbox[2] - a.bbox[0], b[2] - b[0])
@@ -164,8 +187,11 @@ def blocks(items: Sequence[TextItem]) -> list[list[TextItem]]:
     return out
 
 
-def labels(text: Sequence[Any]) -> list[Label]:
-    """Fixture / AC labels of a sheet (blocks with a kind; marker blocks with kind None are dropped)."""
+def labels(text: Sequence[Any], frames: Sequence[Any] | None = None) -> list[Label]:
+    """Fixture / AC labels of a sheet (blocks with a kind; marker blocks with kind None are dropped).
+
+    ``frames`` (Sprint 11, :class:`~.leaders.Frame` note boxes): the lines written inside one box are one block
+    whatever their spacing, and never join the lines of another box (boxed notes are stacked 1 mm apart)."""
     items = [
         t
         for t in text_items(text)
@@ -174,8 +200,24 @@ def labels(text: Sequence[Any]) -> list[Label]:
         and len(normalise(t.text)) >= 2
         and t.conf >= 0.3
     ]
+    grouped: list[tuple[list[TextItem], Any]] = []
+    if frames:
+        by_frame: dict[int, list[TextItem]] = {}
+        rest: list[TextItem] = []
+        for t in items:
+            hits = [fk for fk, f in enumerate(frames) if f.holds(t.bbox)]
+            if hits:
+                fk0 = min(hits, key=lambda q: (frames[q].box[2] - frames[q].box[0]) * (frames[q].box[3] - frames[q].box[1]))
+                by_frame.setdefault(fk0, []).append(t)
+            else:
+                rest.append(t)
+        for fk1 in sorted(by_frame):
+            grouped.append((sorted(by_frame[fk1], key=lambda t: (t.bbox[1], -t.bbox[2])), frames[fk1]))
+        grouped.extend((blk, None) for blk in blocks(rest))
+    else:
+        grouped = [(blk, None) for blk in blocks(items)]
     out: list[Label] = []
-    for blk in blocks(items):
+    for blk, frame in grouped:
         # the first line with a kind decides; a marker line (kind None with a match) vetoes the whole block
         kind: str | None = None
         matched = ""
@@ -190,14 +232,54 @@ def labels(text: Sequence[Any]) -> list[Label]:
                 continue
             if kind is None or _PRIORITY[k] < _PRIORITY[kind]:
                 kind, matched, conf = k, kw, sc * min(1.0, max(0.3, it.conf))
+        if not veto and kind is None and frame is not None:
+            n_blk = normalise(" ".join(t.text for t in blk))
+            for bk, kws in BOXED_RULES:
+                if any(kw in n_blk for kw in kws):
+                    kind, matched, conf = bk, kws[0], min(1.0, max(0.3, min(t.conf for t in blk)))
+                    break
         if veto or kind is None:
             continue
         x0 = min(t.bbox[0] for t in blk)
         y0 = min(t.bbox[1] for t in blk)
         x1 = max(t.bbox[2] for t in blk)
         y1 = max(t.bbox[3] for t in blk)
-        out.append(Label(kind, " / ".join(t.text for t in blk), (x0, y0, x1, y1), conf, list(blk), matched))
+        out.append(Label(kind, " / ".join(t.text for t in blk), (x0, y0, x1, y1), conf, list(blk), matched, frame))
     return out
+
+
+# ---------------------------------------------------------------------------------------------- shower parts
+_WAYS = re.compile(r"([2-5])\s*דר[כך]")
+_PART_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("mixer", ("אינטרפוץ", "אינטרפוצ")),
+    ("hand", ("מים מאחז", "מאחז")),
+    ("rain", ("ראש טוש", "ראש דוש", "ראש גשם")),
+    ("channel", ("תעלת ניקוז",)),
+    ("box", ("קופסת ניקוז",)),
+    ("plain_drain", ("ניקוז רגיל",)),
+    ("filler", ("פיית מילוי",)),
+)
+_NORM_PARTS = tuple((k, tuple(normalise(w) for w in ws)) for k, ws in _PART_WORDS)
+
+
+def shower_parts(text: str) -> tuple[list[str], int | None]:
+    """(parts, ways) named by a shower / bath note, the main one first: ``mixer`` (אינטרפוץ, with its "3 דרך" /
+    "4 דרך"), ``hand`` (נק' מים מאחז), ``rain`` (ראש טוש / דוש / גשם), ``channel`` (תעלת ניקוז), ``box`` (קופסת
+    ניקוז), ``plain_drain`` (ניקוז רגיל), ``filler`` (bath filler spout). One box may name two ("אינטרפוץ 4 דרך
+    H=110 / ראש טוש קירי H=220")."""
+    n = normalise(text)
+    parts = [k for k, ws in _NORM_PARTS if any(w and w in n for w in ws)]
+    if not parts:  # OCR slips ("אינטרפו3"): one fuzzy pass for the long words
+        for k, ws in _NORM_PARTS:
+            if any(
+                len(w) >= 6
+                and any(SequenceMatcher(None, w, n[i : i + len(w)]).ratio() >= 0.8 for i in range(max(1, len(n) - len(w) + 1)))
+                for w in ws
+            ):
+                parts.append(k)
+                break
+    m = _WAYS.search(text)
+    return parts, (int(m.group(1)) if m and "mixer" in parts else None)
 
 
 def bath_dims(text: Sequence[Any]) -> list[tuple[tuple[float, float], str]]:

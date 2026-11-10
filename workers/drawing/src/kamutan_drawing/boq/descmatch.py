@@ -438,6 +438,8 @@ QUALIFIERS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     "mount": (("recessed", r"שקוע"), ("surface", r"עהט|חיצוני")),
     "scope": (("outdoor", r"פיתוח|חוצ"), ("indoor", r"פנימ")),
+    # Sprint 11 (Worker-Areas) — keep: the drain of a shower point tells the designer's shower lines apart
+    "drain": (("channel", r"תעלת ניקוז"), ("box", r"קופסת ניקוז"), ("plain", r"ניקוז רגיל")),
 }
 # groups whose value must be stated on both sides or neither (a plain partition is not a double one)
 REQUIRED_GROUPS = ("layers",)

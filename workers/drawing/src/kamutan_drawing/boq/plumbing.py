@@ -117,6 +117,35 @@ def _match(
     return True, reasons
 
 
+_MIXERS = re.compile(r"אינטרפוץ(?: (\d) דרך)? x(\d+)")
+_HEB_N = {2: "שתי", 3: "שלוש", 4: "ארבע"}
+R_MEASURED_SHOWER = "סעיף לפי מרכיבי המקלחון בשרטוט"
+
+
+def measured_shower(f: Det) -> tuple[str, dict[str, float]] | None:
+    """Sprint 11: the description of a shower point as the drawing states it (fixture annotations of a boxed-note
+    sheet: ``אינטרפוץ 3 דרך x2``, ``תעלת ניקוז`` / ``קופסת ניקוז`` / ``ניקוז רגיל``) + its parameters — resolved against
+    the library by description, so the client's own variants (2 / 3 mixers, 3 / 4 way, channel / box / plain drain,
+    basement) are chosen by what is drawn. None when the shower carries no mixer count."""
+    if f.cls != "fixture_shower":
+        return None
+    m = next((mm for a in f.annotations if (mm := _MIXERS.fullmatch(str(a)))), None)
+    if m is None:
+        return None
+    n = int(m.group(2))
+    ways = int(m.group(1)) if m.group(1) else None
+    mix = "אינטרפוץ" if n == 1 else f"{_HEB_N.get(n, str(n))} יחידות אינטרפוץ"
+    if ways:
+        mix += f" {ways} דרך"
+    drain = next((d for d in ("תעלת ניקוז", "קופסת ניקוז", "ניקוז רגיל") if d in f.annotations), None)
+    where = " מרתף" if f.floor in ("basement", "-1") else ""
+    desc = f"נק' למקלחון{where} הכוללת הזנת חמים+קרים, התקנת {mix}, נק' מים+מזלף, ראש גשם" + (f" ו{drain}" if drain else "")
+    params: dict[str, float] = {"interpuz": float(n)}
+    if ways:
+        params["ways"] = float(ways)
+    return desc, params
+
+
 def plumbing_units(
     dets: list[Det],
     rules: list[Rule],
@@ -124,6 +153,7 @@ def plumbing_units(
     scales: dict[str, int | None],
     labeler: Any = None,
     resolvable: Any = None,
+    resolve_desc: Any = None,
 ) -> tuple[list[Unit], dict[str, Any]]:
     """``labeler(det, radius)`` / ``resolvable(rule) -> bool`` (Sprint 10): label-qualified variants; a default
     Sprint-10 rule whose item the library lacks falls through to the next matching rule (Noah's kitchen sinks stay on
@@ -156,6 +186,14 @@ def plumbing_units(
             units.append(u)
             continue
         r, reasons = hit
+        # Sprint 11: a shower whose parts are counted on the drawing picks the client's line by its own description
+        # (one unit per shower: each one is a separate set of notes, whatever the room polygons say)
+        ms = measured_shower(f) if resolve_desc is not None else None
+        item = resolve_desc(ms[0], ms[1], r.unit or None) if ms is not None else None
+        if item is not None:
+            units.append(Unit(r, [(f, None)], 1.0, [*reasons, R_MEASURED_SHOWER], item=item))
+            stats["measuredShowers"] = int(stats.get("measuredShowers") or 0) + 1
+            continue
         if r.match.get("perRoom") and f.room_id:
             per_room[(r.id, f.sheet_id, f.room_id)].append((f, reasons))
         else:

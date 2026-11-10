@@ -68,6 +68,25 @@ class NameMatch:
     raw: str
 
 
+def _word_bounds(text: str) -> set[int]:
+    """Offsets, in the normalised digit-less string of ``text``, at which a word starts or ends."""
+    out = {0}
+    pos = 0
+    for w in re.split(r"\s+", text):
+        pos += len(_DIGITS.sub("", normalise(w)))
+        out.add(pos)
+    return out
+
+
+def _at_word_bounds(n: str, v: str, bounds: set[int]) -> bool:
+    i = n.find(v)
+    while i >= 0:
+        if i in bounds and i + len(v) in bounds:
+            return True
+        i = n.find(v, i + 1)
+    return False
+
+
 def match_room_name(text: str) -> NameMatch | None:
     """Best dictionary match of one text item, or None.
 
@@ -83,10 +102,13 @@ def match_room_name(text: str) -> NameMatch | None:
     # qualifiers ("ח.רחצה הורים", "ח.רחצה כללי") belong to the label, not to a note
     words = [w for w in re.split(r"\s+", t) if w]
     core = _DIGITS.sub("", normalise(" ".join(w for w in words if normalise(w) not in _QUALIFIERS))) or n
+    bounds = _word_bounds(t)
     best: NameMatch | None = None
     for v, canon in _VARIANTS:
         if len(v) < 3 or v not in n:
             continue
+        if not _at_word_bounds(n, v, bounds):
+            continue  # Sprint 11: "מיקום מדויק" is not ממ"ד — the name must start and end at word boundaries
         cover = len(v) / max(1, min(len(n), len(core) if v in core else len(n)))
         score = 1.0 if cover >= 0.8 else 0.35 + 0.5 * cover
         if best is None or score > best.score:

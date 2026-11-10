@@ -244,6 +244,10 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
         robj = _gz_json(blobs, str(rp)) if str(rp).startswith(pre) else None
         cap("rooms", robj, raster)
         room_docs = [r for r in ((robj or {}).get("rooms") or []) if isinstance(r, dict)]
+        if s.get("floorCheck"):  # Sprint 11 (Worker-Rooms) — keep: rooms follow the sheet's corrected floor too
+            from ..rooms.crosssheet import remap_room_floors
+
+            room_docs = remap_room_floors(s, room_docs)
         rooms = {str(r.get("id")): str(r.get("name") or "") for r in room_docs}
         regions = [r for r in (v.get("regions") or []) if isinstance(r, dict)]
         floors = [str(f) for f in (s.get("floors") or [])] or sorted({str(r["floor"]) for r in regions if r.get("floor")})

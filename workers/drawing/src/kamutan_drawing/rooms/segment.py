@@ -114,15 +114,35 @@ def _faces(ws: WallSet, bx: Polygon, mm_per_m: float) -> tuple[list[_Face], Base
     free = bx.difference(w1c)
     border = bx.exterior.buffer(0.5)
     big_r = ENVELOPE_GAP_M * mm_per_m
-    env: BaseGeometry | None = None
     out: list[_Face] = []
-    wb = w1c.buffer(0.5)
+    glazing = shapely.union_all([g.buffer(0.2, join_style="mitre") for g in ws.glazing]) if ws.glazing else None
+    leaking: list[tuple[Polygon, bool]] = []  # (space, cut by a glazing band)
     for f in _polys(free):
         if not f.intersects(border):
             out.append(_Face(f, True, 0.0))
             continue
-        if env is None:
-            env = _fill_holes(w1c.buffer(big_r, quad_segs=4).buffer(-big_r, quad_segs=4))
+        if glazing is None or not f.intersects(glazing):
+            leaking.append((f, False))
+            continue
+        # Sprint 11: a space that leaks to the outside is cut by the glazing bands (vitrines whose leaves / broken
+        # frame lines no line pair spans): the pieces that no longer reach the border are closed rooms
+        pieces = _polys(f.difference(glazing))
+        if all(piece.intersects(border) for piece in pieces):
+            leaking.append((f, False))  # the bands close nothing here: the space stays as it was
+            continue
+        for piece in pieces:
+            if piece.intersects(border):
+                leaking.append((piece, True))
+            else:
+                out.append(_Face(piece, True, 0.0))
+    # what bounds a leaking space: the walls — plus the glazing bands for the spaces they cut (rooms that are closed
+    # without them, and leaking spaces they do not touch, never see them)
+    shells: dict[bool, tuple[BaseGeometry, BaseGeometry]] = {}
+    for f, cut in leaking:
+        if cut not in shells:
+            sh = w1c.union(glazing) if cut and glazing is not None else w1c
+            shells[cut] = (_fill_holes(sh.buffer(big_r, quad_segs=4).buffer(-big_r, quad_segs=4)), sh.buffer(0.5))
+        env, wb = shells[cut]
         for piece in _polys(f.intersection(env)):
             if piece.area <= 0:
                 continue

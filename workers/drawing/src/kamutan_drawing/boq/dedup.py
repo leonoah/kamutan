@@ -298,6 +298,23 @@ def _dedup_rooms(rule: Rule, by: dict[tuple[str, str], list[Det]], sheets: dict[
             )
             stats.alignments.append({"rule": rule.id, "floor": floor, "secondary": sec, "authority": au, "support": sup,
                                      "how": how, "t": [round(tx, 2), round(ty, 2)]})  # fmt: skip
+            # Sprint 11 (Worker-Areas) — keep: one AC unit = one socket (electrical) + one drain (plumbing). A socket
+            # and a drain of the same floor that found no partner by room / radius are still the same unit when the
+            # drain is drawn far from the socket (Rubel: drain points along the outer walls, sockets at the indoor
+            # units): leftover sockets pair one-to-one with leftover drains, nearest first. Only the sockets beyond
+            # the number of drains stay as extra units ("פריט מגיליון משני").
+            taken = {m.key for m in matched.values()}
+            free_b = [d for d in by.get((floor, au), []) if d.key not in taken and d.dropped_by is None]
+            left = sorted(
+                ((math.hypot(db.x - (k * da.x + tx), db.y - (k * da.y + ty)), da.key, db.key, da, db)
+                 for da in a if da.key not in matched for db in free_b),
+                key=lambda q: (q[0], q[1], q[2]),
+            )  # fmt: skip
+            for _, ka, kb, _da, db in left:
+                if ka in matched or kb in taken:
+                    continue
+                matched[ka] = db
+                taken.add(kb)
             for d in a:
                 if d.key in matched:
                     d.dropped_by = matched[d.key].key

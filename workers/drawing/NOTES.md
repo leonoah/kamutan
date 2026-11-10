@@ -3228,6 +3228,47 @@ Asked: why electrical-sheet rooms come out `other`. Measured with scratchpad `to
 Not written by me: it needs `rooms/` segmentation on these plans + floors from file names (`classify/`) + a translation
 in `boq/spaces.py`; a detection-side guess would not get near the truth and would touch Noah's marker path.
 
+### Sprint 10 (warm determinism) — Noah cold vs warm glyph store (Worker-Accuracy, 10.11)
+Reported by Worker-Lighting (`lightF_cold` / `lightF_warm`): warm moved 4.00 23 → 30, 4.01 16 → 12, 4.02 5 → 2, 4.05 9 → 8.
+**Root cause.** On c054fd3a the legend's "2X" and the socket drawn right after it are ONE stroke-text span. The glyph
+reader gives the socket's stroke ")" with a cold store ("2X)", stripped by `clean_qualifier`) and "%" with a warm store
+("2X%", not stripped) → qualifier "2X%" is not a multiplier → `multiplicity` None → the "שקע בודד" / "שקע בהרכבים" rows
+become a look-alike family *named by text* (`_is_text_family`): every socket is deferred to the qualifier OCR pass and
+comes out a guessed single with `דומה לסמל אחר`, the 2X / 3X marks stop applying, and the bracket family (TV / TEL / רשת)
+loses its reads in the same pass (side effect of the flood; not traced further). 35 records on that one sheet.
+**Not a Sprint 10 code regression** (measured): the pre-sprint detection code (`before2` snapshot) gives the same wrong
+result on the warm text; warm single-sheet ingests with `ocr/` or `parse/` reverted to 18a5eed still read "2X%"; the cold
+store is byte-identical in every root since the box was re-provisioned. The one earlier "warm" root of this sprint
+(`light10_warm`) was not a warm run (its ingest stopped after 2 sheets). What made the warm reading differ from Sprint
+8's is not isolated (candidate: Tesseract 5.3.4 on the new box labels the store's glyphs — the same thing that moved
+4.05 10 → 9); the defect itself is latent in `clean_qualifier`.
+**Fixes** (all marked "Sprint 10 (warm determinism)"):
+1. `legend/parse.py clean_qualifier`: non-letter, non-digit marks around a multiplier are strokes of the symbol, never
+   part of the token ("2X%", "%2X", "*3X" → 2X / 3X; "50%", words, long tokens unchanged).
+2. `legend/parse.py` (entry build): the row labelled "שקע בהרכבים" IS the multiplier row — a short mark that does not
+   parse keeps the digit read (2–6, else 2). Rubel ground floor: cold reads the mark "20", warm "2X" (there the COLD
+   run was the wrong one: 3 guessed doubles, every socket `דומה לסמל אחר`).
+3. `symbols/rings.py _inner_text`: with several short words inside a ring, the only one that is a member's letter names
+   it (Yahav first floor: "M" + a stray stroke read "3" cold / "J" warm → the shutter feed was dropped warm).
+**Noah after the fixes** (`warmfix2_cold` / `warmfix2_warm`, warm = 2nd `ingest_local.py --force` into a copy of the cold
+root, under `flock /tmp/kamutan-eval.lock`): exact 61 / within 63 / gated 54 / disputed 9 both; **all 77 lines identical**
+(4.00 23 / 23, 4.01 16 / 16, 4.02 5 / 5, 4.05 9 / 9); cold identical to before the fix on 15 / 15 sheets. Left between
+cold and warm: reasons / annotations on 4 detections of c054fd3a + 24ab0ea0 (an "H=70" / "H=24" annotation, the
+`תווית המקרא לא ודאית` chip) — no class, no line. (The `_nors` warm build is not clean by construction: the cold run's
+demo room settings stay in the copied root — known since Sprint 7.)
+**The three new projects** (cold / warm with fix 1 only, `warmfix_*`): Achituv 33 / 33 exact, every line identical.
+Yahav 35 / 34: 4.12 shutter 4 → 3 (fix 3), 4.08 1 → 0 (room names read differently — rooms, not symbols), basement
+bracket tv → phone (warm reads "TEL", cold "ונז": warm is right; a reading difference, not fixable in detection).
+Rubel 30 / 30 exact but 4 lines moved: 4.01 31 → 33 and 4.02 29 → 26 (fix 2), 3.14 AC drains 22 → 19 and 4.37 55 → 56
+(text items read differently: "קבלן מ.א" → "קבלן ח.א"). After fixes 2 + 3, re-detecting the stored cold and warm text
+(scratchpad `tools/cw_redetect.py`): Yahav first floor identical; Rubel ground differs by 1 socket + 1 annotation
+(was 7 records); Yahav basement keeps the TEL difference. Full cold / warm runs of the three with fixes 2 + 3: not
+re-run (≈ 80 min of the shared eval lock). **Warm ≠ cold remains possible wherever a decision hangs on stroke text**:
+the warm store reads differently by design (mostly better).
+Tests (`tests/test_sprint10_accuracy.py`, 21): stray marks around a multiplier; cold / warm readings of the legend
+multiplier give identical detections on the synthetic legend sheet ("2X)" / "2X%"; fails without fix 1); the combos row
+keeps its multiplicity when the mark reads "20"; a stray letter beside the ring letter.
+
 ### Not done (reset) / open
 * Plumbing fixture parts (interpuz count + way, rain head, hand shower, drain channel vs box, `water_manifold`,
   washing-machine point) as annotations on the shower / bath detections — designed (per room: count the mixer /
@@ -3245,7 +3286,7 @@ in `boq/spaces.py`; a detection-side guess would not get near the truth and woul
   fixed by another agent's `classify/` change by 01:00 (54 detections in both before2 / after2). Achituv
   `תאורה - קומת מרתף`: the title block is not found, so the filled "לביצוע" status dot is scanned — a false luminaire
   (before) / ceiling fan (after); `classify/` owner.
-* Noah warm run (second ingest into the same root) not done this round; the glyph-store path is untouched by these edits.
+* Noah warm run: done, see "Sprint 10 (warm determinism)" above.
 * Gates on the committed tree 8841ffe (10.11 07:30): ruff / format clean (257 files), mypy 2.4.0 CI way: no issues in
   170 files, bandit `-ll` clean, `tests/test_sprint10_accuracy.py` 17 passed; full suite 07:50: 882 passed / 27 skipped / 1 failed —
   `test_sandbox::test_fork_bomb_ends_typed_and_leaves_no_processes` (`51 <= 48 + 1`: counts processes on the shared box
@@ -3957,3 +3998,225 @@ per-topology / set line (rule kind did not exist; only achituv 4.32 got 8 from t
 * **rubel 2/7**: 4.40, 4.42 exact; 4.38 12/13, 4.39 3/4; 4.37 55 vs 46 (first floor: 12 box tags without a detected fixture,
   11 unplaced fixture tags → 5 no_switch + extra singles); D1 = 11 (GT 12), D2 = 19 (GT 17) → unmatched set lines; 3 circuits
   of 3 have no "סט: שירשור שלוש" line. All three תאורה sheets now ingest (ground 92 fixtures, 86 tagged).
+
+## Sprint 11 Worker-Rooms — rooms on Rubel / Achituv / Yahav (code + unit tests done; **project evals NOT run** — see "Not verified")
+
+Brief: `docs/agents/SPRINT11_BRIEF.md` item 1. Owns `rooms/`, `geometry/`. Scratch tools (outside the repo):
+re-run `rooms.segment` on the stored primitives of an eval root + overlay PNG, snapshot / diff of every sheet's rooms.
+**Regression guard used on every change:** `segment()` of all 15 Noah sheets (stored primitives of
+`s10qa/noah/warmfix_cold`, reference walls as the pipeline passes them) must give byte-identical room JSON.
+
+### Causes found on the drawings (rendered and read) and fixes so far
+| # | cause (where seen) | fix | Noah rooms |
+| --- | --- | --- | --- |
+| 1 | **Wall colour = largest filled colour.** Achituv ground construction: the beige entrance deck (14 300 mm²) out-weighs the walls (2 600) → the deck was "the walls", 0 rooms; basement / first-floor construction + demolition + one furniture sheet: the light-grey 1:5 parapet detail drawn beside the plan (7 270 mm²). 8 Achituv sheets, 2 Yahav. | `rooms/walls._dominant_wall_colour`: when < 50 % of the largest colour's area is wall-shaped, the colour with the largest wall-shaped area among the mostly-wall-shaped colours wins. Noah sheets: 93–100 % wall-shaped → untouched. | identical |
+| 2 | **Hatched concrete walls** (Achituv ממ"ד): two thin outline lines + a 45°/135° cross hatch, no fill; the hatch strokes are listed as text strokes, so the wall pass never saw them. | `rooms/closure.hatched_walls` (neutral pen only, cross hatch, 0.08–0.45 m thick, ≥ 0.6 m long, next to filled walls) → wall parts. A red / magenta cross hatch (Noah: a lining) is a work item, not a wall. | identical |
+| 3 | **Vitrines are not line pairs.** A sliding vitrine = 2–3 staggered leaf rectangles, a fixed one = a frame line broken at each mullion; a full-width vitrine ends at a perpendicular wall, so `_add_windows`' jamb test fails → the whole ground floor leaks, no room. | `rooms/closure.glazing_bands` (raster, 4 px/mm: ≥ 2 parallel strokes ≤ 0.2 m apart, 0.5–9 m, both ends on a wall) → `WallSet.glazing`. Used **only** for spaces that still leak to the border and only when a band actually closes a piece (`segment._faces`); rooms closed without them never see them (Noah's wardrobe rails / thin partitions are such bands — unused there). | identical |
+| 4 | **Room names matched across word boundaries.** "מיקום מדויק יסומן בשטח" (AC note on every MEP sheet) contains "ממד" once the spaces are stripped → rooms named ממ"ד; same mechanism gave "מרפסת", "מסדרון", "שירותים" on a 32 m² room (→ `wc`, wet → bathroom tiling 41.97 m² vs 17.5). | `rooms/names`: a dictionary name must start and end at word boundaries of the text. | identical |
+| 5 | **Rooms keep the title-block floor on sheets moved by `floorCheck`** (Achituv first floor: construction / electrical / lighting rooms say `ground`, plumbing `first`) → `match_room` (same floor) never pairs them, and the canonical "ground" floor was the first-floor plan. | `rooms/crosssheet.remap_room_floors`, hook in `boq/build.py` next to Worker-Classify's `remap_floors` ("Sprint 11 (Worker-Rooms) — keep"). | n/a (no `floorCheck` on Noah) |
+| 6 | **Electrical-sheet rooms are `other`, sheets of one floor sit 40–90 mm apart, outdoor accessories have no polygon.** | `rooms/crosssheet`: `register` (translation from the rooms both sheets closed: equal area + same relative position, ≥ 2 agreeing rooms or one large room with equal box), `FloorLocator.locate` (point of any sheet → canonical room / inside the building outline / outdoors / unknown), `building_outline` (canonical rooms + 0.25 m, closed 1 m, holes filled). Hook in `boq/aggregate.py` `det_room_type` ("Sprint 11 (Worker-Rooms) — keep"): the waterproof add-on rule gets the canonical room's type (bathroom when the canonical room holds a shower / bath / WC of any sheet); a point outdoors counts as `courtyard` **only when `outdoor_trusted`** (floor has ≥ 3 canonical rooms, ≥ 30 m², and ≥ 60 % of the sheet's accessories are inside the outline). Unregistered sheet → the old own-room path. | rule not resolvable on Noah's library (to confirm by the eval) |
+
+Rooms per project by `segment()` on stored primitives (all sheets): Achituv 40 → 64 after fixes 1–3; ground construction
+0 → 3 (כניסה 28 m², מטבח+סלון 62 m², ממ"ד 8.7 m²), basement construction 0 → 2 (חדר רחצה 4.6, family room 39.9).
+
+## Sprint 11 Worker-Areas — plumbing points, AC drains (IN PROGRESS, updated as work proceeds)
+
+Brief: `docs/agents/SPRINT11_BRIEF.md` item 3. Files: `fixtures/{leaders,labels,detect}.py` (plumbing side), `boq/dedup.py`
+(AC pairing, marked "Sprint 11 (Worker-Areas) — keep"), tests `tests/test_sprint11_areas.py` (9, green).
+
+### Cause found on the drawings (rendered and read: Rubel / Achituv / Yahav plumbing sheets, all floors)
+The later projects write every plumbing point as a **boxed note**: text inside a thin orange rectangle (one 4-segment
+path, often drawn twice, sometimes once dark red + once orange), a straight leader in the box pen (sometimes in the
+dimension red) from the box edge to a blue dot at the point; a note naming several points has a fan of leaders
+("אינטרפוץ 3 דרך" → 3 dots 15 cm apart; one "ניקוז מזגן" note → 2–4 dots). `LeaderIndex` follows dark pens only (Noah), so
+no leader was ever found: every item sat on its note, each note of a shower became its own shower, WC note + WC block
+were two WCs, "ברז קיר … + ניקוז" notes (the basin points) had no basin, the dryer block was a second washing machine,
+elevation details ("חזית מקלחון קנ"מ 1:25", "3 יח' אינטרפוץ") were showers, and the general note "כל מיקומי ניקוז מזגנים
+יסומנו בשטח ע"י קבלן מ.א" was an AC unit ("מ.א" abbreviation).
+
+### Fixes
+* `leaders.FrameIndex` / `Frame`: note boxes + same-pen leaders (fallback: another coloured pen, ≤ 2 pieces);
+  `labels(text, frames)`: the lines of one box = one label, stacked boxes stay apart; `Label.frame`.
+* `detect`: a boxed note without a leader on a plumbing sheet = general note (dropped). Sheet with ≥ 3 boxed notes with
+  leaders (`boxed`): loose texts name nothing; blocks no note names are dropped; one item per leader end; AC dots are
+  never merged / snapped; faucet note with "ניקוז" and no basin block → text basin + attached faucet; one box naming two
+  points ("כביסה + תמי 4") → both; `_boxed_showers`: parts within 1.5 m (never across two known rooms) = one shower /
+  bath (bath when it has "פיית מילוי"), annotations `אינטרפוץ 3 דרך x2`, `נק' מים מאחז x1`, `ראש גשם`,
+  `תעלת ניקוז` / `קופסת ניקוז` / `ניקוז רגיל`.
+* `labels`: "קבלן מ.א" is the contractor, not a unit; 'קנ"מ' = a drawing title (marker); "מיכל הדחה" = concealed cistern;
+  shower words "ראש טוש / דוש", "מים מאחז", "קופסת ניקוז", "ניקוז רגיל"; boxed-only "פיית מילוי" → bath.
+* `boq/dedup._dedup_rooms`: leftover AC sockets pair one-to-one with leftover drains of the floor (a drain far from its
+  socket is still the same unit); only sockets beyond the number of drains stay extra.
+
+### Measured at the fixture stage (re-detect on the stored `warmfix_cold` artifacts; scratch harness, not an eval)
+Noah: fixtures of all sheets **byte-identical** to the committed tree (dump of both trees compared).
+Plumbing-sheet totals, before → after (truth): Rubel WC 8 → 5 (5), showers 12 → 5 (4 + 1 parents), basins 2 → 5 (5),
+washing 3 → 1 (1), AC 15 → 12 (10), kitchen 2 (2), garden tap 2 (6); Achituv WC 0 concealed → 4 (4), basins 3 → 4 (4),
+showers 4 → 2 (1 + 1 basement), bath 1 (1), washing 2 → 1 (1), AC 9 (9), garden tap 2 (4); Yahav WC 5 → 4 (4), basins
+3 → 5 (4), kitchen 2 → 1 (2), showers 3 (1 + 1 + 1, now told apart by ways / drain), washing 2 (2), AC 10 → 9 (9), tap 3 (3).
+
+### Disputes for the owner (drawing ≠ BOQ; counted on the rendered sheets)
+* Rubel "ניקוז למזגן": 12 "ניקוז מזגן" dots drawn (first 6, ground 5, basement 1), BOQ 10.
+* Rubel "ברז גן / תמי 4": 2 drawn (first-floor balcony tap, kitchen Tami 4), BOQ 6. Achituv: 3 drawn, BOQ 4.
+
+### Open / requests
+* Yahav basement kitchenette sink ("נק' מים חם/קר + ניקוז כיור H=50") is read as a basin: plumbing sheets carry no room
+  names — **Worker-Rooms**: room type (kitchen / kitchenette) on plumbing-sheet rooms would settle it (3.01 / 3.02).
+* **Worker-Accuracy (`ocr/`)**: Achituv basement "נק מים עבור תמי 4 H=110" (light-orange underlined note) is not read at all;
+  "מזגן" is read "מזהן" on the electrical sheets.
+* Not done: outdoor kitchen sink (Rubel "צנרת מים חמים+קרים + ביוב חופשים מהריצפה", Yahav "נק מים חמים/קרים / ניקוז
+  מהריצפה" — boxed notes at the outdoor kitchens, no label kind; "outdoor" needs the building outline), manifolds by floor
+  (the notes say "מרכזיית מים שקוע בקיר" / "מתחת לדק", never ראשית / משנית — the text rules need those words; the client's
+  lines state the floor), ceilings / STR / gypsum / block walls / lighting profiles (measured only: Achituv ceiling fills
+  13.6 m² first + 7.5 m² ground vs BOQ 16.5; profiles are yellow lines with a rotated "פרופיל חיצוני / שקוע" label and a
+  dimension on the lighting sheets — a new detector + rules + contracts mirror, not started).
+
+### BOQ side (added after the fixture work)
+* `boq/plumbing.measured_shower` + `plumbing_units(resolve_desc=…)` (hook in `aggregate`, marked): a shower with counted
+  parts is resolved by ITS OWN description ("נק' למקלחון [מרתף] … שלוש יחידות אינטרפוץ 3 דרך … ותעלת ניקוז") + params
+  `interpuz` / `ways`, one unit per shower (never merged per room) → Rubel 3.05 / 3.06, Achituv 3.04 / 3.06, Yahav
+  3.05 / 3.06 / 3.07 are told apart by what is drawn. Noah's showers carry no counted parts → rules as before.
+* `descmatch.QUALIFIERS["drain"]` (channel / box / plain; ignored by `_ambiguous` / `_extra_qualifiers` so a generic
+  shower rule is not made ambiguous by it).
+* `rules.Library.resolve`: an imported item of the rule's code whose description CONFLICTS with the rule (another
+  target / parameter) no longer wins by code — found on Rubel: default `r_plumb_basin_wall_faucet` has Noah's code 3.02,
+  Rubel's 3.02 is the kitchen sink, so 4 basins landed on the kitchen line once they had their faucets.
+
+### Dev measurement (partial re-ingest of the plumbing + electrical sheets on a copy of `warmfix_cold`, then BOQ + kbench;
+labels `areas11_dev1` / `areas11_dev2`; other agents' uncommitted BOQ-level edits are in the tree)
+| project | line | truth | before → after |
+| --- | --- | --- | --- |
+| Rubel | 3.01 basins | 5 | 2 → 5 |
+| Rubel | 3.03 WC | 5 | 8 → 5 |
+| Rubel | 3.05 shower 2× | 4 | 11 → 4 |
+| Rubel | 3.06 shower parents 3× | 1 | 0 → 1 |
+| Rubel | 3.08 washing | 1 | 3 → 1 |
+| Rubel | 3.14 AC drain | 10 | 22 → 12 (dispute: 12 drawn) |
+| Achituv | 3.01 basins | 4 | 3 → 4 |
+| Achituv | 3.03 WC | 4 | 0 → 4 |
+| Achituv | 3.04 shower | 1 | 2 → 1 |
+| Achituv | 3.06 basement shower | 1 | 2 → 1 |
+| Achituv | 3.07 washing | 1 | 5 → 1 |
+| Achituv | 3.11 AC drain | 9 | 13 → 9 |
+| Yahav | 3.03 WC | 4 | 5 → 4 |
+| Yahav | 3.05 / 3.06 / 3.07 showers | 1 / 1 / 1 | 0 / 0 / 3 → 1 / 1 / 1 |
+| Yahav | 3.14 AC drain | 9 | 14 → 9 |
+| Yahav | 3.01 basins | 4 | 3 → 5 (kitchenette sink read as a basin, see Open) |
+| Yahav | 3.02 kitchen sinks | 2 | 2 → 1 (the old 2 = the ground kitchen + an unlabelled OUTDOOR sink block; now only labelled points count) |
+Exact lines in those dev runs: Rubel 30 → 36, Achituv 33 → 40, Yahav 35 → (see final).
+
+### Sprint 11 Worker-Areas — final measurement (10.11, full fresh ingests, `flock /tmp/kamutan-eval.lock … run_eval.sh`)
+Labels: Noah `areas11_cold` / `areas11_warm`, the others `areas11_final`; baseline = `warmfix_cold`. The tree also holds
+the other Sprint-11 agents' uncommitted edits (rooms/, symbols/, legend/, `aggregate` room types), so chapter 04 / 05
+moves in these runs are theirs; my lines are chapter 03 (table above, reproduced exactly by the full runs).
+* **Noah cold: 61 / 77 exact, within 63 — every line identical to baseline (qty and level), both builds (`_nors` 59).**
+  Noah warm: 61 / 77, two lines differ from both baselines (4.09 16 → 15, 4.10 1 → 2: socket classes from symbol
+  detection — none of my files is on that path; cold is identical; hand to Worker-Accuracy).
+* Exact totals: Rubel 30 → 36 / 115, Achituv 33 → 38 / 85 (+6 mine, +1 / −2 others in chapter 04), Yahav 35 → 40 / 110
+  (+5 / −1 mine: 3.02; +1 other).
+* Gates run: ruff check / format (clean for my files; 2 RUF046 in `rooms/closure.py`, not mine), mypy CI way (1 error in
+  `rooms/closure.py`, not mine), bandit -ll clean, pytest 898 passed / 27 skipped with
+  `test_boq_s10::test_waterproof_add_on_counts_accessories_of_wet_rooms` failing — it passes on the committed tree and
+  fails through Worker-Rooms' `det_room_type` change in `aggregate` (not my hunk).
+* Files outside `fixtures/`: `boq/{plumbing,dedup,descmatch,rules,aggregate}.py` — each hunk marked "Sprint 11
+  (Worker-Areas)". No contracts / default-rule change (no mirror impact).
+
+### Files
+New: `rooms/closure.py`, `rooms/crosssheet.py`, `tests/test_sprint11_rooms.py` (15 cases). Edited: `rooms/walls.py`,
+`rooms/segment.py`, `rooms/names.py`. Outside my dirs (marked "Sprint 11 (Worker-Rooms) — keep"): `boq/build.py` (room
+floors after a floor fix, 4 lines), `boq/aggregate.py` (`det_room_type` + `stats.markers.sheetFloors*`). `symbols/`,
+`legend/` untouched.
+
+### Verified by running
+* Noah, all 15 sheets, `segment()` on stored primitives with the pipeline's reference walls: **room JSON byte-identical**
+  to the pre-change snapshot after every fix (last run after the final edit).
+* Gates on the whole worker: `ruff check src tests scripts` clean, `ruff format --check` clean (254 files),
+  `mypy src` (venv mypy) no issues in 172 files, `KAMUTAN_AV_SCAN=off pytest -q --ignore=tests/fuzz` **917 passed / 27
+  skipped**; `tests/test_sprint11_rooms.py` 15 passed. `bandit` is not in the venv — not run.
+* Segmentation time on stored primitives after simplifying the hatch outlines: 2–3 s on the A1 sheets that took 20–45 s
+  before the simplification (total per project not re-measured after it).
+
+### NOT verified (must be done before this is trusted)
+* **No `run_eval.sh` ran with these changes** — the first eval command (`rooms11_boqonly`, BOQ-only on a copy of the
+  Achituv `warmfix_cold` root) needed an approval nobody answered, so I stopped issuing eval commands. There is **no
+  before → after per BOQ line, no exact total per project and no Noah cold / warm result** for this work. The Noah claim
+  rests on identical rooms + the full unit suite only; the BOQ hooks (`det_room_type`, room floors) were exercised by
+  unit tests, not on a project.
+* To run: `for p in noah achituv yahav rubel; do flock /tmp/kamutan-eval.lock env KAMUTAN_AV_SCAN=off
+  benchmark/tools/projects/run_eval.sh $p rooms11_a; done`, compare with `warmfix_cold` (baseline 61/63, 30, 33, 35).
+* The three projects' rooms were re-segmented offline only before fix 4 landed for Yahav / Rubel overlays; I looked at
+  Achituv ground / basement / first construction, Yahav ground and Rubel ground construction. Yahav and Rubel floors
+  were not checked room by room.
+
+### Expectations to check on the eval (not measured)
+* 4.08 waterproof add-on (truth 25 / 16 / 28, baseline 10 / 4 / 1): should rise — outdoor accessories now count where
+  the floor model is trusted. By eye on Achituv ground electrical: outdoor sockets = gate feed, 2 parking / irrigation,
+  filter socket at the ממ"ד window, terrace socket by the living-room wall end, socket at the south-east corner (6) +
+  the doorbell push; the rule also counts comms hosts (cameras, siren, alarm detectors are drawn outside) — if the
+  designer does not price those as "אביזר מוגן מים" the line will over-count: **owner question** (dispute candidate).
+* Bathroom tiling on Achituv (5.02 41.97 vs 17.5, 5.03 155 vs 72.5): the 32–38 m² first-floor space was named "שירותים"
+  / "חדר כביסה" by cause 4 and tiled as a wet room; with the name fix it should drop out.
+* Waterproofing per חדר (5/3/3 vs 3/2/2): Achituv basement bathroom is now a canonical room (construction basement
+  0 → 2 rooms); needs a shower / bath mapped onto it (`_room_fixtures` still maps by area ± 15 %, not by registration).
+
+### Open issues
+* `_room_fixtures`, tiling and `settings_by_room` still pair rooms by floor + area (`match_room`); they should use
+  `FloorLocator` like `det_room_type` (fixture point → canonical room).
+* Outdoor areas are a yes / no per point, not polygons: no outdoor tiling area (5.01 etc.), no balcony / pergola room.
+  Garden walls are filled like house walls on Rubel, so a closing-based envelope would swallow the plot — a named
+  outdoor face ("דשא", "שטח מרוצף", "ריצוף חוץ") is the next step.
+* Light-grey ceiling / valance zones (Achituv kitchen "סינר גבס") are wall-shaped fills attached to walls → taken as
+  wall, the room loses that strip.
+* Glazing bands are axis-parallel only; a wardrobe front drawn as two leaves wall-to-wall inside a *leaking* room would
+  cut it (closed rooms are immune).
+* Achituv ground: the guest WC beside the ממ"ד and the stair hall are not separate rooms yet; MEP ground sheets were
+  not re-checked after fix 4 (before it they produced one bogus "מרפסת" = the ממ"ד).
+* Registration needs ≥ 2 rooms closed on both sheets (or one large); a sheet with no closed room stays unregistered →
+  its accessories keep the old behaviour (never outdoors).
+
+## Sprint 11 — symbols against the by-eye GT (Worker-Accuracy, work item 2)
+Measure: Data/QA's independent GT (`gt/<p>/sheets`, 18 sheets) scored by re-detecting on the stored `warmfix_cold`
+primitives / text (scratchpad `tools/gtscore.py`: greedy 3 mm match, ac_unit / note_point / conduit_cobra not scored), and
+full runs `acc11_cold` (4 projects) + `acc11_warm` (Noah) under the eval lock.
+**Causes → fixes** (`symbols/match.py`, `symbols/template.py`; tests `tests/test_sprint11_symbols.py`, 3):
+| cause (seen on the drawing) | fix |
+| --- | --- |
+| A disc whose fill is exported as many small filled paths repeats its strokes: the wall light has 3757 points on 339 cells of ink, the ceiling point 2403 on 319. NMS's "more specific = 1.25 × more points" let the wall light (Rubel 61 + 38) and "point + fan" take plain ceiling points; the same rule hid two-way switches behind single ones | `_ink_cells`: "more specific" counts distinct ink (0.2 mm cells) |
+| "point + fan" = the point + a thin box (6 % of its points): its fit stays inside the 0.15 slack on a bare point | `_extra_on_ink`: the more specific drawing replaces only when ≥ 60 % of the ink it adds is drawn (needs the scene; `spot` passes it) |
+| Cameras (Rubel 0 / 14, Yahav 0 / 10): the cone's fill pieces sum to 8.0 mm² in the legend and 5.6–10.4 on the plan → `fill_diff` 0.21 → quality × 0.16 | `Template.fill_pieces`; `fill_difference`: an exploded solid cut into another number of pieces here may differ by 40 % of its area (same number of pieces = compared exactly, as before) |
+| …then 2–3 cameras per camera: an exploded solid fits anywhere inside itself and the shifted poses share < 50 % of points | NMS: two poses of the same exploded template with overlapping boxes are one instance |
+**Per class on the GT (TP / FP / FN), before = `warmfix_cold` (Data/QA's report) → after:** micro P 0.829 → **0.896**, R 0.775 →
+**0.865** (TP 625 → 697, FP 129 → 81, FN 181 → 109).
+| class | before | after |
+| --- | --- | --- |
+| switch_2way | 1 / 0 / 28 | 26 / 11 / 3 (9 of the FP are cross switches) |
+| switch_single | 71 / 37 / 6 | 69 / 1 / 8 |
+| camera | 7 / 0 / 24 | 29 / 1 / 2 |
+| luminaire_ceiling | 103 / 19 / 23 | 123 / 14 / 3 |
+| luminaire_wall | 57 / 13 / 28 | 60 / 1 / 25 |
+| ceiling_fan | 6 / 15 / 0 | 6 / 7 / 0 |
+| socket_single / double | 112 / 1 / 25, 73 / 5 / 1 | 115 / 1 / 22, 73 / 2 / 1 (the warm-determinism fix 2) |
+| socket_3phase / power / power_double | 7 / 3 / 6, 20 / 6 / 1, 8 / 0 / 3 | 8 / 2 / 5, 20 / 7 / 1, 8 / 0 / 3 |
+Unchanged: switch_cross 0 / 0 / 9, switch_shutter 0 / 0 / 4, panel 0 / 0 / 9, intercom 0 / 0 / 2, socket_box_6 0 / 0 / 3,
+luminaire_outdoor 0 / 1 / 3, unknown FP 28.
+**Tried and reverted (measured worse on the GT):** one template point per 0.1 mm cell (wall lights 62 → 30); a
+missing-stroke tie-break between near-equal look-alikes (fans FP 7 → 3 but wall lights −2, power pair not fixed).
+**BOQ, `warmfix_cold` → `acc11_cold`** (shared tree: chapter 03 / 05 and 4.08 moved with Worker-Areas / Worker-Rooms, not
+listed): Noah cold 61 / 63 = warm 61 / 63, **every line identical cold vs warm and vs before** (one detection changed:
+b2046277 (221, 115) two-way → single — a single switch with a red dashed link line on it; no line moved). Exact totals
+(all agents' work together): Achituv 33 → 36, Yahav 35 → 40, Rubel 30 → 37. Symbol lines: Rubel 4.45 fans 41 → 9
+(truth 6), 4.07 comms 50 → 61 (58; cameras), 4.03 7 → **8**, 4.04 2 → 3 (4); Yahav 4.07 16 → 26 (25), 4.47 fans 4 → 3
+(6), 4.35 30 → 31 (34). **Worse, open:** Achituv 4.04 power-double 3 → 1 and 4.21 3-phase 1 → 3 in `acc11_cold` — after
+the "another number of pieces" refinement (made after that run) re-detection gives 2 and 2: one two-tick socket still
+reads 3-phase (0.870 vs 0.867, the tick-count problem); Achituv switch lines 4.34 4 → 3, 4.37 3 → 2, 4.36 2 → 3 and
+Rubel 4.36 7 → 2 (two-way / cross / single now split differently; cross switches are still read two-way; Rubel's
+ground lighting sheet is not in the GT — not checked by eye); Rubel 4.44 fixtures 103 → 143 (truth 96): the 29 former
+"fans" are now luminaires, the sheet total did not change (146 symbols for 102) — the ground lighting sheet
+f1b6df02 over-counts (broken legend rows 42 mm wide; not in the GT) — not examined.
+**Noah warm 4.09 / 4.10** (Worker-Areas' report): not reproduced in `acc11_cold` / `acc11_warm` (all 77 lines equal); the
+state after the last refinement is checked by re-detection on the stored cold and warm text only (identical to acc11);
+the orchestrator's `s11int` run is the confirmation.
+**Not started:** purple AC-socket glyph (17 singles), cross-switch glyph, leader notes re-classing sockets, panels,
+shutter switch, intercom, D18 boxes, garden spikes, "X2" reach, cobra arcs, `unknown` false hits.
+Gates: ruff / format clean; mypy 2.4.0 CI way: no issues in 172 files; bandit `-ll` on `symbols/` + `legend/` clean; pytest
+917 passed on the re-run (one run under eval load had 1 failure that did not repeat; not identified).

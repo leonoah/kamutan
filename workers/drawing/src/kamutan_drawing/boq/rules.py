@@ -1165,7 +1165,8 @@ def _ambiguous(description: str, cands: list[Item], params: dict[str, float] | N
     groups: set[str] = set()
     for c in fits[1:]:
         qa, qb = descmatch.qualifiers(top.description), descmatch.qualifiers(c.description)
-        diff = {g for g in set(qa) & set(qb) if qa[g] != qb[g] and g not in q}  # both state a value, different ones
+        # both state a value, different ones ("drain", Sprint 11: a shower's drain only matters to a query that states it)
+        diff = {g for g in set(qa) & set(qb) if qa[g] != qb[g] and g not in q and g != "drain"}
         if not diff:
             return False  # a plain near-duplicate wording: the ranking picks
         groups |= diff
@@ -1327,7 +1328,11 @@ class Library:
 
                 best = max(same, key=lambda i: (code_sim(i), tuple(-x for x in _fits_params(i, params)), i.id))
                 s = code_sim(best)
-                if trust_code or not description or s >= CODE_MATCH_MIN or best.default:
+                # Sprint 11 (Worker-Areas) — keep: codes drift between the designer's BOQs (3.02 = basin with a wall
+                # faucet on Noah, the kitchen sink on Rubel). An imported item of the same code whose description
+                # states another target / parameter than the rule (a conflict) is another line: the description decides
+                clash = bool(description) and not best.default and bool(descmatch.conflicts(description, best.description))
+                if trust_code or not description or best.default or (s >= CODE_MATCH_MIN and not clash):
                     return Resolution(best, "user_code" if trust_code else "code", s)
         if not description:
             return None
@@ -1352,7 +1357,7 @@ class Library:
 
         def _extra_qualifiers(i: Item) -> int:
             """Qualifiers the item states and the rule does not (מרתף / הורים / חוץ): the plain variant first."""
-            return sum(1 for g in descmatch.qualifiers(i.description) if g not in q_qual and g != "medium")
+            return sum(1 for g in descmatch.qualifiers(i.description) if g not in q_qual and g not in ("medium", "drain"))
 
         ranked = sorted(cands, key=lambda t: (_fits_params(t[1], params), _extra_qualifiers(t[1]), _extra_tokens(t[1]), -t[0],
                                               t[1].id))  # fmt: skip

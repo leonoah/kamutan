@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -26,6 +27,7 @@ from shapely.geometry import LineString, Polygon
 from shapely.geometry.base import BaseGeometry
 
 from ..ingest.pdf_vector import VectorSheet
+from .closure import glazing_bands, hatched_walls
 
 WHITE_MIN = 245  # fill channels all >= this: white mask, not a wall
 WALL_STROKE_MIN_MM = 0.45  # heavy pen (sample: 0.55 mm wall outlines vs 0.25 mm drawing pen)
@@ -40,6 +42,7 @@ WINDOW_STRAIGHT_M = 0.15  # a frame / glass polyline stays within this of its ch
 WINDOW_PATH_RATIO = 1.35  # … and its path is at most this × its chord
 WALL_T_M = (0.06, 0.6)  # wall thickness range, real metres
 BORROW_TOL_MM = 1.0  # reference walls closer than this to own walls are the same wall (alignment noise)
+DOMINANT_WALL_SHARE = 0.5  # of the largest fill colour's area must be wall-shaped for it to be "the walls"
 
 
 @dataclass
@@ -66,6 +69,9 @@ class WallSet:
     stats: dict[str, float] = field(default_factory=dict)
     openings: list[Opening] = field(default_factory=list)
     borrowed: BaseGeometry | None = None  # walls taken from a reference sheet (MEP thin partitions)
+    # Sprint 11: glazing bands (vitrines / windows the line-pair rule missed, :mod:`.closure`). They close only the
+    # spaces that still leak to the outside (``segment._faces``); rooms that are closed without them never see them
+    glazing: list[BaseGeometry] = field(default_factory=list)
 
 
 def _rings(vs: VectorSheet, i: int) -> list[np.ndarray]:
@@ -164,7 +170,7 @@ def extract_walls(
     parts: list[BaseGeometry] = []
     stats: dict[str, float] = {}
     if area_by:
-        dom = max(area_by, key=lambda c: area_by[c])
+        dom = _dominant_wall_colour(polys, colour, area_by, mm_per_m)
         dom_parts = [g for k, g in polys.items() if colour(k) == dom]
         dom_union = shapely.union_all([g.buffer(0.05) for g in dom_parts]) if dom_parts else Polygon()
         parts.extend(dom_parts)
@@ -178,6 +184,19 @@ def extract_walls(
                 parts.append(g)
         stats["fillPaths"] = float(len(parts))
         stats["dominantFill"] = float(dom[0] * 65536 + dom[1] * 256 + dom[2])
+
+    # Sprint 11: concrete walls drawn as a cross hatch between two thin lines (no fill) — only next to the filled
+    # walls of a drawing (a hatched detail elsewhere on the sheet is not a wall of the plan)
+    if parts:
+        try:
+            hatched = hatched_walls(vs, box, mm_per_m)
+        except Exception:  # noqa: BLE001 - best effort: a geometry error must not lose the filled walls
+            hatched = []
+        if hatched:
+            near_fill = shapely.union_all([p.buffer(0.05) for p in parts]).buffer(0.5 * mm_per_m)
+            keep_h = [g for g in hatched if g.intersects(near_fill)]
+            parts.extend(keep_h)
+            stats["hatchedWalls"] = float(len(keep_h))
 
     # heavy pen outlines (also the only wall evidence on some sheets)
     heavy = inbox & vs.path_stroked & (vs.path_width_mm >= WALL_STROKE_MIN_MM)
@@ -218,6 +237,13 @@ def extract_walls(
         return ws
     _add_doors(vs, inbox, ws, mm_per_m)
     _add_windows(vs, inbox, ws, mm_per_m)
+    try:
+        closed = shapely.union_all([walls, *ws.bridges]) if ws.bridges else walls
+        ws.glazing = list(glazing_bands(vs, closed, box, mm_per_m, ex))
+    except Exception:  # noqa: BLE001 - best effort
+        ws.glazing = []
+    if ws.glazing:
+        ws.stats["glazingBands"] = float(len(ws.glazing))
     if reference_closures is not None and not reference_closures.is_empty:
         own = shapely.union_all([walls, *ws.bridges]).buffer(BORROW_TOL_MM)
         extra = reference_closures.intersection(shapely.box(*box)).difference(own)
@@ -228,6 +254,32 @@ def extract_walls(
             ws.borrowed = closing if ws.borrowed is None else ws.borrowed.union(closing)
             ws.stats["borrowedClosures"] = float(len(keep))
     return ws
+
+
+def _dominant_wall_colour(
+    polys: dict[int, BaseGeometry],
+    colour: Callable[[int], tuple[int, int, int]],
+    area_by: dict[tuple[int, int, int], float],
+    mm_per_m: float,
+) -> tuple[int, int, int]:
+    """The wall fill colour of a drawing: the colour with the largest total area.
+
+    Sprint 11 (Worker-Rooms): a site / villa plan also fills surfaces that are not walls — a timber deck, a pool, a
+    paved terrace, a 1:5 detail drawn beside the plan — and one of them can out-weigh every wall of the house (Achituv
+    ground floor: the beige entrance deck 2.3× the wall area; its basement: the grey parapet detail). When the
+    largest colour is made of such surfaces (less than ``DOMINANT_WALL_SHARE`` of its area is wall-shaped: long and
+    wall-thick), the colour with the largest wall-shaped area among the colours that *are* mostly wall-shaped wins
+    instead (the deck's stair treads are wall-shaped too, but the deck colour as a whole is not). A drawing whose largest colour is its
+    walls (every sheet of the Sprint 2–9 sample) is unaffected."""
+    dom = max(area_by, key=lambda c: area_by[c])
+    like_by: dict[tuple[int, int, int], float] = {}
+    for k, g in polys.items():
+        if _is_wall_like(g, mm_per_m):
+            like_by[colour(k)] = like_by.get(colour(k), 0.0) + float(g.area)
+    if like_by.get(dom, 0.0) >= DOMINANT_WALL_SHARE * area_by[dom]:
+        return dom
+    walls_like = {c: a for c, a in like_by.items() if a >= DOMINANT_WALL_SHARE * area_by[c]}
+    return max(walls_like, key=lambda c: (walls_like[c], c)) if walls_like else dom
 
 
 def _poly_parts(g: BaseGeometry) -> list[BaseGeometry]:

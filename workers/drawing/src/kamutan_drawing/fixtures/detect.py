@@ -34,8 +34,8 @@ from ..ingest.pdf_vector import VectorSheet
 from ..rooms.types import DRY_NAMED, type_from_name
 from ..types_sprint2 import BBox, Region
 from . import model as M
-from .labels import Label, labels, text_items
-from .leaders import Leader, LeaderIndex
+from .labels import Label, also_kinds, labels, shower_parts, text_items
+from .leaders import FrameIndex, Leader, LeaderIndex
 from .model import FixtureDetection
 from .shapes import ShapeHit, cross_marks, detect_shapes, furniture_segments, sink_boxes
 
@@ -91,12 +91,16 @@ KIND_CLASS = {
     "faucet_wall": "faucet_wall",
     "faucet_basin": "faucet_basin",
 }
+FAUCET_KINDS = frozenset({"faucet_wall", "faucet_basin"})
 LEADER_SNAP_M = 0.3
 ROOM_NEAREST_M = 2.5
 ANY_NEAREST_M = 1.5
 AC_MERGE_M = 1.5
 SHOWER_MERGE_M = 2.0
 NMS_M = 0.25
+# Sprint 11 (Worker-Areas) — boxed-note plumbing sheets (see :class:`~.leaders.FrameIndex`)
+BOXED_MIN_NOTES = 3  # this many boxed notes with a leader: the sheet names every point by a boxed note
+SHOWER_PART_LINK_M = 1.5  # the parts of one shower / bath (mixers, hand point, rain head, drain) lie this close
 
 
 @dataclass
@@ -214,13 +218,28 @@ def detect(
                 shape_items.append(_from_shape(h, k, mmpm))
     # ------------------------------------------------------------------ labels + leaders
     allowed = LABEL_KINDS.get(disc or "", frozenset())
-    labs = [lb for lb in labels(text) if lb.kind in allowed]
+    # Sprint 11 (Worker-Areas): boxed notes — the lines of one box are one label, its leaders are followed in the
+    # box pen (orange on Rubel / Achituv / Yahav); a boxed note without any leader is a general note, not a point
+    fi = FrameIndex(prims) if allowed else None
+    all_labs = labels(text, fi.frames if fi is not None else None)
+    labs = [lb for lb in all_labs if lb.kind in allowed]
     li = LeaderIndex(prims, text_items(text)) if labs else None
-    avoid_all = [lb.bbox for lb in labels(text)]
+    avoid_all = [lb.bbox for lb in all_labs]
     lab_leaders: list[tuple[Label, list[Leader]]] = []
     for lb in labs:
-        lead = li.follow(lb, avoid=[a for a in avoid_all if a != lb.bbox]) if li is not None else []
+        lead: list[Leader] = []
+        if lb.frame is not None and fi is not None:
+            lead = fi.follow(lb.frame)
+        if not lead and li is not None:
+            lead = li.follow(lb, avoid=[a for a in avoid_all if a != lb.bbox])
+        if lb.frame is not None and not lead and disc == "plumbing":
+            continue
         lab_leaders.append((lb, lead))
+    boxed_n = sum(1 for lb, lead in lab_leaders if lb.frame is not None and lead)
+    boxed = disc == "plumbing" and boxed_n >= BOXED_MIN_NOTES
+    if boxed:  # every point of the sheet is a boxed note: loose texts (detail drawings, room notes) name nothing
+        lab_leaders = [(lb, lead) for lb, lead in lab_leaders if lb.frame is not None]
+    part_items: list[_Item] = []
     # ------------------------------------------------------------------ shapes vs room names
     kept_shapes: list[_Item] = []
     for it in shape_items:
@@ -243,8 +262,16 @@ def detect(
         targets = TARGETS.get(kind)
         k = region_of(lb.center)
         mmpm = reg_info[k][1]
+        if boxed:  # one box naming two points ("כביסה + תמי 4"): the other one too, at the same dot
+            for other in also_kinds(lb.text, kind):
+                text_only.extend(_point_items(lb, lead, other, k, mmpm, rms, any_length=True))
         if targets is None:  # garden tap / AC: text-only positions
-            text_only.extend(_point_items(lb, lead, kind, k, mmpm, rms))
+            text_only.extend(_point_items(lb, lead, kind, k, mmpm, rms, multi=boxed, any_length=boxed))
+            used_label.add(li_idx)
+            continue
+        if boxed and kind in ("shower", "mixer", "bath"):
+            # one item per leader end (a fan = several mixers); grouped into showers / baths by :func:`_boxed_showers`
+            part_items.extend(_point_items(lb, lead, kind, k, mmpm, rms, multi=True, any_length=True))
             used_label.add(li_idx)
             continue
         matched: list[tuple[_Item, Leader | None]] = []
@@ -315,7 +342,21 @@ def detect(
                             s.label = s.label or lb
                             s.leader = s.leader or mld
             else:
-                text_only.extend(_point_items(lb, lead, kind, k, mmpm, rms, multi=True))
+                fpts = _point_items(lb, lead, kind, k, mmpm, rms, multi=True, any_length=boxed)
+                if boxed and "ניקוז" in lb.text:
+                    # "ברז קיר מים חמים/קרים H=110 + ניקוז H=60": the faucet note is the whole basin point (no basin
+                    # block is drawn at the leader end): a text basin with its faucet
+                    for f in fpts:
+                        basin = _Item(
+                            "fixture_basin", f.center, f.box, f.score, "text", list(f.reasons), list(f.annotations),
+                            label=lb, leader=f.leader, region=k, mm_per_m=mmpm,
+                        )  # fmt: skip
+                        text_only.append(basin)
+                        f.attached = basin
+                        f.source = "shape+text"
+                        faucet_items.append(f)
+                else:
+                    text_only.extend(fpts)
             used_label.add(li_idx)
             continue
         if matched:
@@ -323,16 +364,21 @@ def detect(
                 _apply_label(s, lb, mld2, kind, reason)
             used_label.add(li_idx)
         else:
-            text_only.extend(_point_items(lb, lead, kind, k, mmpm, rms, multi=kind == "sink_point"))
+            text_only.extend(_point_items(lb, lead, kind, k, mmpm, rms, multi=kind == "sink_point", any_length=boxed))
             used_label.add(li_idx)
     # shapes in dry rooms that no label confirmed are dropped
     shape_items = [s for s in shape_items if s.score >= 0.5 or s.source != "shape"]
+    if boxed:
+        # the notes are the points: a block no note names (the dryer beside the washer, a tub outline, furniture that
+        # looks like a tray) is drawing, not a plumbing point
+        shape_items = [s for s in shape_items if s.source != "shape" and s.cls not in ("fixture_shower", "fixture_bath")]
+        text_only.extend(_boxed_showers(part_items, rms))
     items = shape_items + text_only
     items = _resolve_showers(items, rms)
     if disc in SHAPE_DISCIPLINES:
         items = _shower_zones(prims, items, rms, reg_info, add_unlabelled=disc != "plumbing")
-        _snap_text_items(prims, items, rms, reg_info, text)
-    items = _merge_ac(items, disc, detections)
+        _snap_text_items(prims, items, rms, reg_info, text, boxed=boxed)
+    items = _merge_ac(items, disc, detections, boxed=boxed)
     items = _nms(items)
     items.extend(faucet_items)
     # ------------------------------------------------------------------ output records
@@ -430,16 +476,26 @@ def _apply_label(s: _Item, lb: Label, ld: Leader | None, kind: str, reason: list
 
 
 def _point_items(
-    lb: Label, lead: list[Leader], kind: str, region: int, mmpm: float, rooms: list[_Room], *, multi: bool = False
+    lb: Label,
+    lead: list[Leader],
+    kind: str,
+    region: int,
+    mmpm: float,
+    rooms: list[_Room],
+    *,
+    multi: bool = False,
+    any_length: bool = False,
 ) -> list[_Item]:
-    """Text-only items at the leader terminal(s) (several for a "V" leader when ``multi``), else at the label."""
+    """Text-only items at the leader terminal(s) (several for a "V" leader when ``multi``), else at the label.
+    ``any_length`` (boxed notes: the leader starts on the box, it cannot be a stray line): no 4 m limit."""
     cls = KIND_CLASS[kind]
     pts: list[tuple[tuple[float, float], Leader | None]] = []
-    good = [ld for ld in lead if ld.length / mmpm <= 4.0]
+    good = [ld for ld in lead if any_length or ld.length / mmpm <= 4.0]
     if good:
         good.sort(key=lambda ld: -ld.length)
         for ld in good if multi else good[:1]:
-            if all(math.dist(ld.terminal, p) > 0.3 * mmpm for p, _ in pts):
+            # the dots of a fan (three mixers 15 cm apart) are separate points; a "V" leader's ends are ≥ 0.3 m apart
+            if all(math.dist(ld.terminal, p) > (0.5 if any_length else 0.3 * mmpm) for p, _ in pts):
                 pts.append((ld.terminal, ld))
     if not pts:
         pts.append((lb.center, None))
@@ -466,6 +522,73 @@ def _point_items(
                 leader=pld,
                 region=region,
                 mm_per_m=mmpm,
+            )
+        )
+    return out
+
+
+def _boxed_showers(parts: list[_Item], rooms: list[_Room]) -> list[_Item]:
+    """Boxed-note sheets: the shower / bath points. Every leader end of a shower-part note (``parts``: mixers, hand
+    points, rain heads, drain channel / box, bath filler) is one part; parts closer than 1.5 m (single link; never
+    across two known rooms) are one shower — a bath when the set has a filler spout or a bath note. The point carries
+    what the BOQ line is chosen by: ``אינטרפוץ 3 דרך x2`` (units × ways), ``נק' מים מאחז x1``, ``ראש גשם``,
+    ``תעלת ניקוז`` / ``קופסת ניקוז``."""
+    if not parts:
+        return []
+    info = [(it, *shower_parts(it.label.text if it.label is not None else "")) for it in parts]
+    room_of = [_room_at(rooms, it.center) for it in parts]
+    parent = list(range(len(parts)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(parts)):
+        for j in range(i):
+            if room_of[i] is not None and room_of[j] is not None and room_of[i] is not room_of[j]:
+                continue
+            if math.dist(parts[i].center, parts[j].center) <= SHOWER_PART_LINK_M * parts[i].mm_per_m:
+                parent[find(i)] = find(j)
+    groups: dict[int, list[int]] = {}
+    for i in range(len(parts)):
+        groups.setdefault(find(i), []).append(i)
+    out: list[_Item] = []
+    for members in groups.values():
+        g = [info[i] for i in members]
+        mixers = [x for x in g if x[1][:1] == ["mixer"]]
+        hands = [x for x in g if x[1][:1] == ["hand"]]
+        ways = sorted({w for _, _, w in mixers if w is not None})
+        named = {p for _, ps, _ in g for p in ps}
+        is_bath = "filler" in named or any(it.cls == "fixture_bath" and not ps for it, ps, _ in g)
+        ann: list[str] = []
+        if mixers:
+            ann.append(f"אינטרפוץ {ways[-1]} דרך x{len(mixers)}" if ways else f"אינטרפוץ x{len(mixers)}")
+        if hands:
+            ann.append(f"נק' מים מאחז x{len(hands)}")
+        for part, word in (("rain", "ראש גשם"), ("channel", "תעלת ניקוז"), ("box", "קופסת ניקוז"), ("plain_drain", "ניקוז רגיל"),
+                           ("filler", "פיית מילוי")):  # fmt: skip
+            if part in named:
+                ann.append(word)
+        anchor = next((it for it, ps, _ in g if ps[:1] == ["rain"]), None) or (mixers[0][0] if mixers else g[0][0])
+        xs = [it.center[0] for it, _, _ in g]
+        ys = [it.center[1] for it, _, _ in g]
+        lead_it = mixers[0][0] if mixers else anchor
+        reasons = [M.R_TEXT_ONLY] + ([M.R_SHOWER_FROM_MIXER] if mixers and not is_bath else [])
+        out.append(
+            _Item(
+                "fixture_bath" if is_bath else "fixture_shower",
+                anchor.center,
+                (min(xs), min(ys), max(xs), max(ys)),
+                min(0.9, 0.62 + 0.04 * (len(g) - 1)),
+                "text",
+                reasons,
+                ann,
+                label=lead_it.label,
+                leader=lead_it.leader,
+                region=anchor.region,
+                mm_per_m=anchor.mm_per_m,
             )
         )
     return out
@@ -670,6 +793,7 @@ def _shower_zones(
 SNAP_CROSS_TERMINAL_MM = 6.0  # a "+" mark this close to the leader end is the point
 SNAP_CROSS_LABEL_MM = 12.0  # … else one this close to the note itself (leader not followed / wrong)
 SINK_REACH_M = 1.5
+BOXED_SINK_REACH_M = 0.6
 KITCHEN_NAME_REACH_M = 3.0
 
 
@@ -700,14 +824,19 @@ def _snap_text_items(
     rooms: list[_Room],
     reg_info: list[tuple[tuple[float, float, float, float], float, list[str], str | None]],
     text: Sequence[Any],
+    *,
+    boxed: bool = False,
 ) -> None:
     """Text-only items sit on their note when the leader was not followed: move them onto the drawn point.
+    ``boxed`` (boxed-note sheets): an AC drain note already sits on its dot — it is not moved to a "+" mark.
     * AC (drain + gas note): the "+" point mark at the leader end (≤ 6 mm), else the free one nearest the note
       (≤ 12 mm) — the note's leader may have been confused with a neighbouring line;
     * sink notes ("נק' מים+ביוב", shared by basins and kitchen sinks): the sink-sized box outline nearest the leader
       end / note in the same room (≤ 1.5 m); class from the room (kitchen / living or a "מטבח" name nearby →
       kitchen sink; bathroom / wc → basin). In place."""
     todo = [it for it in items if it.source == "text" and it.cls in ("ac_unit", "fixture_basin", "fixture_kitchen_sink")]
+    if boxed:
+        todo = [it for it in todo if it.cls != "ac_unit" and not (it.label is not None and it.label.kind in FAUCET_KINDS)]
     if not todo:
         return
     boxes = [b for b, _, _, _ in reg_info]
@@ -742,7 +871,7 @@ def _snap_text_items(
     for it in sinks:
         if it.region not in by_region:
             by_region[it.region] = sink_boxes(prims, [reg_info[it.region][0]], reg_info[it.region][1])
-        pts = [it.center] + ([it.label.center] if it.label is not None else [])
+        pts = [it.center] + ([it.label.center] if it.label is not None and not boxed else [])
         room = _room_at(rooms, it.center)
         cands = []
         for comp in by_region[it.region]:
@@ -753,7 +882,8 @@ def _snap_text_items(
             if room is not None and croom is not None and croom is not room:
                 continue
             d = min(math.dist(cen, p) for p in pts) / it.mm_per_m
-            if d <= SINK_REACH_M:
+            # boxed notes: the dot is at the sink itself — a block further away is another fixture (the WC)
+            if d <= (BOXED_SINK_REACH_M if boxed else SINK_REACH_M):
                 cands.append((d, cen, comp))
         if not cands:
             continue
@@ -782,9 +912,10 @@ def _class_of(d: Any) -> str:
     return str(getattr(d, "cls", getattr(d, "class_", "")))
 
 
-def _merge_ac(items: list[_Item], disc: str | None, detections: Sequence[Any] | None) -> list[_Item]:
+def _merge_ac(items: list[_Item], disc: str | None, detections: Sequence[Any] | None, *, boxed: bool = False) -> list[_Item]:
     """AC labels of one unit ("מזגן עילי" + "ניקוז + גז למזגן" / "שקע למזגן") → one ``ac_unit``; electrical
-    sheets snap it to the nearest socket detection (≤ 15 mm paper)."""
+    sheets snap it to the nearest socket detection (≤ 15 mm paper). ``boxed`` (boxed-note sheets): every dot of a
+    "ניקוז מזגן" note is a drain — two units back to back on one wall are 0.3 m apart and stay two."""
     acs = [it for it in items if it.cls == "ac_unit"]
     if not acs:
         return items
@@ -798,7 +929,7 @@ def _merge_ac(items: list[_Item], disc: str | None, detections: Sequence[Any] | 
     # two notes of one unit (closer than 0.5 m) are one
     uniq: list[_Item] = []
     for a in merged:
-        if any(math.dist(u.center, a.center) <= 0.5 * a.mm_per_m for u in uniq):
+        if any(math.dist(u.center, a.center) <= (0.5 if boxed else 0.5 * a.mm_per_m) for u in uniq):
             continue
         uniq.append(a)
     merged = uniq

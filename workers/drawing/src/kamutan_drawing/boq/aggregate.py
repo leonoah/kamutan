@@ -901,7 +901,13 @@ def aggregate(
     for u in c_units:
         add_unit(u)
     stats["combinations"] = c_stats
-    p_units, p_stats = plumbing_units(all_dets, rules, room_index, scales, labeler, resolvable)
+
+    def resolve_desc(desc: str, params: dict[str, float] | None, unit: str | None) -> Item | None:
+        # Sprint 11 (Worker-Areas) — keep: a shower described by its drawn parts → the client's variant
+        res = resolve(None, desc, False, params, unit)
+        return res.item if res is not None else None
+
+    p_units, p_stats = plumbing_units(all_dets, rules, room_index, scales, labeler, resolvable, resolve_desc)
     for u in p_units:
         add_unit(u)
     consumed |= consumed_classes(rules)
@@ -934,17 +940,33 @@ def aggregate(
     for u in count_only_units(all_dets, rules, labeler, resolvable):
         add_unit(u)
 
+    # Sprint 11 (Worker-Rooms) — keep: the room type of an accessory comes from the canonical room it stands in (its
+    # sheet registered onto the floor's canonical sheet, rooms.crosssheet); outside the building outline = outdoors
+    from ..rooms.crosssheet import OUTDOOR, FloorLocator
+
+    locator = FloorLocator(rooms_by_sheet, canon, scales)
+    wet_fx = {"fixture_shower", "fixture_bath", "fixture_wc_concealed", "fixture_wc_monoblock"}
+    pts_by: dict[tuple[str, str | None], list[tuple[float, float]]] = defaultdict(list)
+    for d in all_dets:
+        if d.dropped_by is None and d.cls not in FIXTURE_CLASSES:
+            pts_by[(d.sheet_id, d.floor)].append((d.x, d.y))
+    outdoor_ok = {k: locator.outdoor_trusted(k[0], k[1], v) for k, v in pts_by.items()}
+
     def det_room_type(d: Det) -> str | None:
+        where, cr = locator.locate(d.sheet_id, d.floor, d.x, d.y)
+        if cr is not None:
+            return "bathroom" if cr.type not in ("bathroom", "wc") and room_fx.get(cr.key, frozenset()) & wet_fx else cr.type
         r = room_index.get((d.sheet_id, d.room_id)) if d.room_id else None
         if r is None:
-            return None
+            return "courtyard" if where == OUTDOOR and outdoor_ok.get((d.sheet_id, d.floor)) else None
         c = r if r.key in {x.key for x in canon} else (match_room(r, canon) or r)
         return c.type
 
     mk_units, mk_stats = marker_units(all_dets, rules, labeler, resolvable, det_room_type)
     for u in mk_units:
         add_unit(u)
-    stats["markers"] = mk_stats
+    stats["markers"] = {**mk_stats, "sheetFloorsRegistered": locator.stats["registered"],
+                        "sheetFloorsUnregistered": locator.stats["unregistered"]}  # fmt: skip
 
     # --- class → item (and user-chosen item codes); Sprint 10: the first rule whose label filter matches wins
     excluded_lifecycle = 0
