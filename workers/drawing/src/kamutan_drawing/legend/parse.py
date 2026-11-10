@@ -115,6 +115,7 @@ def _inside_center(b: BBox, box: BBox, pad: float = 0.0) -> bool:
 
 
 _QUAL_STRIP = re.compile(r"[|\[\]()<>{}~_+\-–—=]+")
+_QUAL_EDGE = re.compile(r"^[^0-9A-Za-z\u05d0-\u05ea×]+|[^0-9A-Za-z\u05d0-\u05ea×]+$")
 
 
 def clean_qualifier(t: str) -> str:
@@ -123,6 +124,12 @@ def clean_qualifier(t: str) -> str:
     t = _QUAL_STRIP.sub(" ", t)
     t = re.sub(r"\s+", "", t)
     m = multiplicity(t) if len(t) <= 3 else None
+    if m is None:
+        # Sprint 10 (warm determinism): the symbol drawn right after its "2X" joins the same text span and its strokes
+        # read as one stray mark — ")" with a cold glyph store (stripped above), "%" with a warm one. Any non-letter,
+        # non-digit mark around a multiplier is such a stroke, never part of the token.
+        core = _QUAL_EDGE.sub("", t)
+        m = multiplicity(core) if core != t and len(core) <= 3 else None
     if m is not None:
         return f"{m}X"
     # a final-form letter can never start a word: it is a stroke of the symbol read as a letter
@@ -305,6 +312,13 @@ def _parse_symbol_table(
             sbb = bbox_of(s[seg_idx])
             cls, cconf = suggest_class(label, label_conf)
             mult = multiplicity(qual_text) if qual_text else None
+            if mult is None and qual_text and len(qual_text) <= 3 and "בהרכב" in label:
+                # Sprint 10 (warm determinism): "שקע בהרכבים" IS the multiplier row; one misread glyph of its mark
+                # ("20" with a cold glyph store, "2X" with a warm one on Rubel) must not turn the socket rows into a
+                # look-alike family named by text. The digit read (2–6) is the count; none read → 2.
+                dm = re.search(r"[2-6]", qual_text)
+                mult = int(dm.group()) if dm else 2
+                qual_text = f"{mult}X"
             if mult is not None and cls == "socket_single":
                 cls = {2: "socket_double", 3: "socket_triple"}.get(mult, cls)
             e = LegendEntry(

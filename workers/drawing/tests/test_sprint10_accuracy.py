@@ -409,3 +409,139 @@ def test_a_classless_marker_never_suppresses_a_real_symbol_in_nms() -> None:
     alone = MA.Candidate(cross, (60.0, 20.0), eye, 1.0, 0.0, 1.0)
     alone.quality = 0.9
     assert [c.tpl.id for c in MA._nms([alone], 0.45, frozenset({"cross"}))] == ["cross"]
+
+
+# ----------------------------------------------------------------- Sprint 10 (warm determinism)
+def test_a_stray_mark_beside_a_multiplier_is_never_part_of_the_qualifier() -> None:
+    """Noah c054fd3a: the socket drawn right after the legend's "2X" joins its text span; the glyph reader gives that
+    stroke ")" with a cold glyph store and "%" with a warm one. Both must be the multiplier."""
+    from kamutan_drawing.legend.classes import multiplicity
+    from kamutan_drawing.legend.parse import clean_qualifier
+
+    for raw in ("2X", "2X)", "2X%", "%2X", "2X%%", "*3X", "+א2"):
+        q = clean_qualifier(raw)
+        assert multiplicity(q) in (2, 3) and len(q) == 2, raw
+    # nothing else changes: words, numbers with a mark and long tokens stay as they were
+    assert clean_qualifier("50%") == "50%"
+    assert clean_qualifier("BEZEK |") == "BEZEK"
+    assert clean_qualifier("TV") == "TV"
+    assert multiplicity(clean_qualifier("H=2X%")) is None
+
+
+def test_cold_and_warm_readings_of_the_legend_multiplier_give_the_same_detections(tmp_path: object) -> None:
+    """Cold / warm determinism on the synthetic legend sheet: only the reading of the legend's "2X" span differs
+    ("2X)" cold, "2X%" warm, as on Noah). Before the fix the warm reading lost the multiplier, the socket rows became
+    a look-alike family named by text and every socket came out a guessed single."""
+    import dataclasses
+
+    import pytest
+
+    from kamutan_drawing.classify.sheet import span_from_line
+    from kamutan_drawing.legend.parse import parse_legends
+    from kamutan_drawing.parse.pdf import PdfPageSource
+
+    from .synth_legend import LEGEND_BOX, hebrew_font, legend_sheet_pdf
+
+    if hebrew_font() is None:
+        pytest.skip("needs a TTF font with Hebrew glyphs (DejaVu Sans)")
+    p = tmp_path / "s.pdf"  # type: ignore[operator]
+    p.write_bytes(legend_sheet_pdf())
+    src = PdfPageSource.open(str(p), 0)
+    try:
+        vs = src.vectors()
+        spans = [span_from_line(ln) for ln in src.text_layer()]
+    finally:
+        src.close()
+    x0, y0, x1, y1 = LEGEND_BOX
+    idx = [
+        i for i, sp in enumerate(spans)
+        if sp.text.strip() in ("2X", "X2") and x0 <= (sp.bbox[0] + sp.bbox[2]) / 2 <= x1 and y0 <= (sp.bbox[1] + sp.bbox[3]) / 2 <= y1
+    ]  # fmt: skip
+    assert len(idx) == 1
+
+    sym = next(e.symbol_bbox for lg in parse_legends(vs, spans).legends for e in lg.entries if "בהרכבים" in e.label)
+    sp0 = spans[idx[0]]
+    joined = (sp0.bbox[0], sp0.bbox[1], sym[2], sp0.bbox[3])  # the reader joins the symbol's strokes to the "2X" span
+
+    def run(reading: str) -> tuple[list[tuple[object, ...]], list[tuple[str, int | None]]]:
+        sp2 = list(spans)
+        sp2[idx[0]] = dataclasses.replace(sp0, text=reading, bbox=joined)
+        leg = parse_legends(vs, sp2)
+        res = D.detect_symbols(vs, sp2, leg, discipline="electrical", scale_den=50)
+        dets = sorted(
+            (d.cls, round(d.center[0], 1), round(d.center[1], 1), d.level, tuple(d.annotations), tuple(d.reasons))
+            for d in res.detections
+        )
+        return dets, [(e.qualifier, e.multiplicity) for lg in leg.legends for e in lg.entries if e.qualifier]
+
+    ref, ref_q = run("2X")
+    assert ref_q == [("2X", 2)] and any(d[0] == "socket_double" for d in ref)
+    for reading in ("2X)", "2X%"):
+        got, got_q = run(reading)
+        assert got_q == ref_q, reading
+        assert got == ref, reading
+
+
+def test_a_stray_letter_beside_the_ring_letter_does_not_hide_the_member() -> None:
+    """Yahav first floor: the text layer holds "M" in the ring; a stroke nearby reads as a digit with a cold glyph store
+    and as "J" with a warm one. The one word that is a member's letter names the ring in both."""
+    vs, entries = _legend_sheet()
+    fam = RG.merge_ring_families(TP.build_templates(entries, vs), vs, [])[0]
+    s = Sheet()
+    _ring(s, 100.0, 100.0, ORANGE, None)
+    plan = s.build()
+    cold = [_span("V", 100.0, 100.0), _span("3", 100.6, 100.3)]
+    warm = [_span("V", 100.0, 100.0), _span("J", 100.6, 100.3)]
+    for spans in (cold, warm):
+        e, amb, word = RG.resolve_member(fam, (100.0, 100.0), 1.0, plan, spans)
+        assert e is not None and e.label == "וונטה" and not amb and word == "V"
+    # two member letters inside stay undecided
+    e, amb, _ = RG.resolve_member(fam, (100.0, 100.0), 1.0, plan, [_span("V", 100.0, 100.0), _span("M", 100.6, 100.3)])
+    assert e is None
+
+
+def test_the_combos_row_is_the_multiplier_row_however_its_mark_reads(tmp_path: object) -> None:
+    """Rubel ground floor: the legend's "2X" reads "20" with a cold glyph store and "2X" with a warm one. The row
+    labelled "שקע בהרכבים" keeps its multiplicity either way, so the detections are the same."""
+    import dataclasses
+
+    import pytest
+
+    from kamutan_drawing.classify.sheet import span_from_line
+    from kamutan_drawing.legend.parse import parse_legends
+    from kamutan_drawing.parse.pdf import PdfPageSource
+
+    from .synth_legend import LEGEND_BOX, hebrew_font, legend_sheet_pdf
+
+    if hebrew_font() is None:
+        pytest.skip("needs a TTF font with Hebrew glyphs (DejaVu Sans)")
+    p = tmp_path / "s.pdf"  # type: ignore[operator]
+    p.write_bytes(legend_sheet_pdf())
+    src = PdfPageSource.open(str(p), 0)
+    try:
+        vs = src.vectors()
+        spans = [span_from_line(ln) for ln in src.text_layer()]
+    finally:
+        src.close()
+    x0, y0, x1, y1 = LEGEND_BOX
+    i = next(
+        k for k, sp in enumerate(spans)
+        if sp.text.strip() in ("2X", "X2") and x0 <= (sp.bbox[0] + sp.bbox[2]) / 2 <= x1 and y0 <= (sp.bbox[1] + sp.bbox[3]) / 2 <= y1
+    )  # fmt: skip
+    sym = next(e.symbol_bbox for lg in parse_legends(vs, spans).legends for e in lg.entries if "בהרכבים" in e.label)
+    joined = (spans[i].bbox[0], spans[i].bbox[1], sym[2], spans[i].bbox[3])
+
+    def run(reading: str) -> tuple[list[tuple[object, ...]], list[tuple[str, int | None]]]:
+        sp2 = list(spans)
+        sp2[i] = dataclasses.replace(spans[i], text=reading, bbox=joined)
+        leg = parse_legends(vs, sp2)
+        dets = sorted(
+            (d.cls, round(d.center[0], 1), round(d.center[1], 1), tuple(d.annotations), tuple(d.reasons))
+            for d in D.detect_symbols(vs, sp2, leg, discipline="electrical", scale_den=50).detections
+        )
+        return dets, [(e.qualifier, e.multiplicity) for lg in leg.legends for e in lg.entries if e.qualifier]
+
+    ref = run("2X")
+    assert ref[1] == [("2X", 2)]
+    assert run("20") == ref
+    assert run("3O")[1] == [("3X", 3)]

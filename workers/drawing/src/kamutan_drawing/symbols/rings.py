@@ -192,12 +192,19 @@ def merge_ring_families(templates: list[Template], vs: VectorSheet, spans: Seque
     return rest + fams
 
 
-def _inner_text(spans: Sequence[TextSpan], cx: float, cy: float, r: float) -> str | None:
+def _inner_text(spans: Sequence[TextSpan], cx: float, cy: float, r: float, known: frozenset[str] = frozenset()) -> str | None:
+    """The one short word inside the ring. Sprint 10 (warm determinism): with several words (a stray stroke read as a
+    letter — "J" beside the "M" with a warm glyph store, a digit with a cold one), the only one that is a member's
+    letter (``known``) is the word."""
     words: list[str] = []
     for sp in _spans_inside(spans, cx, cy, r):
         for w in _WORD.findall(sp.text):
             if 1 <= len(w) <= 2 and w not in _NOT_LETTERS:
                 words.append(w)
+    if len(words) > 1 and known:
+        named = {w for w in words if w in known or w.upper() in known}
+        if len(named) == 1:
+            return next(iter(named))
     return words[0] if len(words) == 1 else None
 
 
@@ -209,6 +216,7 @@ def resolve_member(
     info: RingInfo = t.ring
     r = info.r * scale
     cx, cy = center
+    known = frozenset(x for m in info.members for x in m.letters)
     segs = inner_strokes(vs, cx, cy, r)
     if len(segs):
         q = _norm_points(segs, cx, cy, r)
@@ -223,11 +231,11 @@ def resolve_member(
         fits.sort(key=lambda f: f[0])
         if fits and fits[0][0] <= FIT_MAX and (len(fits) == 1 or fits[0][0] <= FIT_RATIO * fits[1][0]):
             return fits[0][1].entry, False, None
-        word = _inner_text(spans, cx, cy, r)
+        word = _inner_text(spans, cx, cy, r, known)
         if word is None:
             return None, True, None
     else:
-        word = _inner_text(spans, cx, cy, r)
+        word = _inner_text(spans, cx, cy, r, known)
         if word is None:
             return None, False, None
     hits = [m for m in info.members if word in m.letters or word.upper() in m.letters]
