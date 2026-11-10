@@ -81,6 +81,12 @@ def _is_total(t: str) -> bool:
     return t.startswith(('סה"כ', "סהכ"))
 
 
+# Sprint 10 (the designer's three later BOQs): a cancelled line carries "בוטל" in the unit column; a line "לא לסיכום,
+# לספירה בסוף: …" / "אופציה, לא לסיכום- …" / "לספירה בסיום, לא לסיכום: …" is a unit price only (qty 1 placeholder)
+CANCELLED_UNITS = frozenset({"בוטל", "בוטלה", "מבוטל", "cancelled"})
+NOT_FOR_TOTAL_RE = re.compile(r"^\W{0,3}(?:לא\s*לסיכום|לספירה\s*ב(?:סוף|סיום)|אופציה)")
+
+
 @dataclass
 class _RawItem:
     row: int
@@ -93,6 +99,8 @@ class _RawItem:
     flags: list[str] = field(default_factory=list)
     price: float | None = None
     price_from: str | None = None  # unitPrice | total
+    cancelled: bool = False  # Sprint 10: unit "בוטל"
+    not_for_total: bool = False  # Sprint 10: "לא לסיכום / לספירה בסוף / אופציה"
 
 
 def header_kind(text: str) -> str | None:
@@ -129,7 +137,32 @@ def _find_header(sheet: Sheet) -> tuple[int, dict[str, int]] | None:
                     break
         if {"code", "description"} <= set(cols) and ("unit" in cols or "qty" in cols):
             return r, cols
+        # Sprint 10: the designer's later BOQs leave the code header blank (" ") — the code column is then the column
+        # left of the description whose data cells look like item codes (numbers / "4.10")
+        if "description" in cols and ("unit" in cols or "qty" in cols) and "code" not in cols:
+            c = _guess_code_column(sheet, r, cols)
+            if c is not None:
+                return r, {**cols, "code": c}
     return None
+
+
+def _guess_code_column(sheet: Sheet, hrow: int, cols: dict[str, int]) -> int | None:
+    """The unassigned column (up to 3 left of the description) where most of the next rows carry a code-like cell next
+    to a description; None when fewer than 3 rows do."""
+    taken = set(cols.values())
+    desc_i = cols["description"]
+    best: tuple[int, int] | None = None
+    for c in range(max(0, desc_i - 3), desc_i + 1):
+        if c in taken:
+            continue
+        n = 0
+        for row in sheet.rows[hrow + 1 : hrow + 400]:
+            t = _cell_text(_get(row, c))
+            if t and CODE_RE.match(t) and re.search(r"\d", t) and _cell_text(_get(row, desc_i)):
+                n += 1
+        if n >= 3 and (best is None or n > best[0]):
+            best = (n, c)
+    return best[1] if best else None
 
 
 def money(c: Cell) -> float | None:
@@ -226,6 +259,12 @@ def _parse_sheet(sheet: Sheet) -> dict[str, Any] | None:
             unit = _cell_text(_get(row, cols.get("unit")))[:32]
             it = _RawItem(r, chapter_index(), code_c, desc[:2000], unit, qty)
             it.price, it.price_from = _row_price(row, cols, qty)
+            if _k(unit) in CANCELLED_UNITS:  # Sprint 10: "בוטל" in the unit column = a cancelled line (qty 0, excluded)
+                it.flags.append("cancelled")
+                it.cancelled = True
+            if NOT_FOR_TOTAL_RE.search(_k(desc)):  # "לא לסיכום, לספירה בסוף: …" = unit-price-only placeholder
+                it.flags.append("not_for_total")
+                it.not_for_total = True
             items.append(it)
             continue
         if desc and qty is None:
@@ -249,9 +288,12 @@ def _parse_sheet(sheet: Sheet) -> dict[str, Any] | None:
             major = it.code.split(".", 1)[0]
             ch["code"] = f"{int(major):02d}" if major.isdigit() else "00"
         if it.code in seen:
+            # Sprint 10: a code used twice (5.09 / 3.18 / 7.03 in the designer's BOQs) — both lines are kept: distinct
+            # descriptions are distinct items (itemIdFor hashes the description); an identical description is one item
             it.flags.append("duplicate_code")
             flags.append(f"duplicate_code:{it.code}")
-            continue
+            if norm(seen[it.code]["description"]) == norm(it.description):
+                continue
         out = {
             "code": it.code,
             "rawCode": it.raw.value,
@@ -259,13 +301,15 @@ def _parse_sheet(sheet: Sheet) -> dict[str, Any] | None:
             "chapterTitle": ch["title"] or ch["heading"],
             "description": it.description,
             "unit": it.unit,
-            "qty": it.qty,
+            "qty": 0.0 if it.cancelled else it.qty,
             "price": it.price,
             "priceFrom": it.price_from,
             "row": it.row,
             "flags": it.flags,
+            "cancelled": it.cancelled,
+            "notForTotal": it.not_for_total,
         }
-        seen[it.code] = out
+        seen.setdefault(it.code, out)
         out_items.append(out)
     for out in out_items:
         if out["priceFrom"] == "total":
@@ -295,6 +339,9 @@ def _parse_sheet(sheet: Sheet) -> dict[str, Any] | None:
         "stats": {
             "items": len(out_items),
             "priced": sum(1 for i in out_items if i["price"] is not None),
+            "cancelled": sum(1 for i in out_items if i["cancelled"]),
+            "notForTotal": sum(1 for i in out_items if i["notForTotal"]),
+            "duplicateCodes": sum(1 for i in out_items if "duplicate_code" in i["flags"]),
             "chapters": len(out_chapters),
             "droppedTitleTexts": dropped_titles,
             "otherRows": other_rows,

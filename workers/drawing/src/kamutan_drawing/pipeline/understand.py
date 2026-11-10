@@ -63,6 +63,7 @@ STAGE_PCT = {"legend": 88, "detect": 91, "rooms": 96}
 LINKS_FILE = "links.json.gz"
 TEXT_ITEMS_FILE = "text_items.json.gz"  # Sprint 6 (Worker-Text): kamutan.textItems/1
 GEOMETRY_FILE = "geometry.json.gz"  # Sprint 6 (Worker-Geometry): kamutan.geometry/1, plan sheets only
+CIRCUITS_FILE = "circuits.json.gz"  # Sprint 10 (Worker-Lighting): kamutan.circuits/1, lighting sheets only
 FIXTURES_FILE = "fixtures.json.gz"
 WALLS_FILE = "walls.json.gz"
 # sheets whose walls other sheets of the same floor borrow (kamutan.walls/1, Worker-B's rooms.reference)
@@ -542,6 +543,14 @@ def understand(
             log.warning("links failed", exc_info=True)
             links_doc = link_stats = None
     lap("links")
+    # ------------------------------------------------ Sprint 10 (Worker-Lighting) — keep: lighting circuits from tags
+    circuits_doc: dict[str, Any] | None = None
+    if links and run_detect and not raster and discipline in LINK_DISCIPLINES:
+        circuits_doc = _circuits(
+            vs, spans, dets_json, sheet_id=sheet_id, regions=regions, legend=leg_json, title_block=title_block
+        )
+    lap("circuits")
+    # ------------------------------------------------ end Sprint 10 block
     # ---------------------------------------------------------------- construction geometry (Sprint 6, Worker-Geometry)
     geo_doc: dict[str, Any] | None = None
     if geometry and not raster and discipline in GEOMETRY_DISCIPLINES:
@@ -572,6 +581,8 @@ def understand(
         if geo_doc is not None:
             # reported under its own key (``geometryFile``), like ``wallsFile``: the orchestrator uploads it
             (out_dir / GEOMETRY_FILE).write_bytes(gz_json(geo_doc))
+        if circuits_doc is not None:  # Sprint 10 (Worker-Lighting) — keep: ``circuitsFile``, uploaded by the orchestrator
+            (out_dir / CIRCUITS_FILE).write_bytes(gz_json(circuits_doc))
     lap("write")
     return {
         "legend": leg_json,
@@ -592,6 +603,9 @@ def understand(
         **({"textItemStats": ti_doc["stats"]} if ti_doc is not None else {}),
         **({"geometryFile": GEOMETRY_FILE} if geo_doc is not None and out_dir is not None else {}),
         **({"geometryStats": geo_doc["stats"]} if geo_doc is not None else {}),
+        # Sprint 10 (Worker-Lighting) — keep
+        **({"circuitsFile": CIRCUITS_FILE} if circuits_doc is not None and out_dir is not None else {}),
+        **({"circuitStats": circuits_doc["stats"]} if circuits_doc is not None else {}),
         **({"referenceWalls": len(reference_walls)} if reference_walls else {}),
         **({"regionFloors": region_floors} if region_floors else {}),
         "calibration": default_table().stats(),
@@ -971,6 +985,32 @@ def run(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
         close()
     res["outDir"] = out.relative_to(wd).as_posix()
     return res
+
+
+# ---------------------------------------------------------------- Sprint 10 (Worker-Lighting) — keep this block here
+def _circuits(
+    vs: VectorSheet,
+    spans: list[TextSpan],
+    dets_json: list[dict[str, Any]],
+    *,
+    sheet_id: str,
+    regions: list[dict[str, Any]],
+    legend: dict[str, Any],
+    title_block: BBox | None,
+) -> dict[str, Any] | None:
+    """``circuits.json.gz`` of a lighting sheet (:mod:`kamutan_drawing.lighting`): fixture ↔ switch-position pairing by
+    the circuit tags; best effort (None on failure — the link graph still works)."""
+    try:
+        from ..lighting import circuits_for_sheet
+
+        exclude: list[BBox] = [title_block] if title_block else []
+        for lg in legend.get("legends") or []:
+            b = lg.get("bboxMm") or {}
+            exclude.append((float(b["x"]), float(b["y"]), float(b["x"]) + float(b["w"]), float(b["y"]) + float(b["h"])))
+        return circuits_for_sheet(vs, spans, dets_json, sheet_id=sheet_id, regions=regions, exclude=exclude)
+    except Exception:  # best effort
+        log.warning("lighting circuits failed", exc_info=True)
+        return None
 
 
 # ---------------------------------------------------------------- Sprint 6 (Worker-Geometry) — keep this block here

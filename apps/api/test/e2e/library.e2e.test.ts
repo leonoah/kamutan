@@ -304,7 +304,9 @@ describe('Library e2e — items, imports, templates, rules (fake auth, in-memory
       expect(list.items.length).toBe(DEFAULT_ITEM_LIBRARY.length);
       // org A already had items → nothing seeded there
       expect((await t.boq.seedDefaults(orgId)).items).toBe(0);
-      expect([...t.repo.docs.values()].filter((d) => d.source === 'default' && typeof d.code === 'string' && d.defaultsVersion === 1).length).toBeGreaterThanOrEqual(DEFAULT_ITEM_LIBRARY.length);
+      expect([...t.repo.docs.values()].filter((d) => d.source === 'default' && typeof d.code === 'string' && d.defaultsVersion === 1).length).toBeGreaterThanOrEqual(
+        DEFAULT_ITEM_LIBRARY.filter((i) => i.defaultsVersion === 1).length, // Sprint 10: library v3 adds items of defaultsVersion 3
+      );
     });
   });
 });

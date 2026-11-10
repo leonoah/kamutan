@@ -38,8 +38,10 @@ from ..legend.parse import LegendEntry, LegendResult, clean_qualifier
 from ..ocr.dictionary import TextSpan
 from ..ocr.textutil import levenshtein, normalize
 from .geometry import BBox, bbox_dict, groups_of, in_box, seg_lengths, segment_components, stroke_signature
+from .legend_extra import SHUTTER_FEED, SHUTTER_SWITCH_ANNOTATION, VENTILATOR_FEED, extra_class, is_shutter_switch, refine_entries
 from .marks import GlyphLibrary, build_library, qualifier_clouds, read_marks_near, read_qualifier
 from .match import Candidate, Scene, build_scene, spot
+from .rings import merge_ring_families, resolve_member
 from .tags import Tag, find_tags
 from .template import Template, build_templates
 
@@ -90,6 +92,7 @@ WARNING_REASONS = {
 }
 R_BLOCK_COUNT_PREFIX = "ספירת בלוקים ("  # .blocks.R_BLOCK_COUNT (both numbers in the text)
 OVERLAP_MM = 4.0
+FEED_OWN_SYMBOL = frozenset({VENTILATOR_FEED, SHUTTER_FEED})  # Sprint 10: feeds drawn as their own ring symbol
 
 
 @functools.lru_cache(maxsize=16384)
@@ -124,6 +127,13 @@ REFINES: dict[str, set[str]] = {
 TEXT_ANCHOR_CLASSES = {"fixture_wc_concealed", "fixture_wc_monoblock", "faucet_wall", "faucet_basin", "fixture_basin"}
 H_RE = re.compile(r"H\s*=\s*(\d{2,3})", re.IGNORECASE)
 IP_RE = re.compile(r"IP\s*(\d{2})", re.IGNORECASE)
+# Sprint 10: accessory add-ons written beside a socket — "+TYPE C" / "USB" (BOQ "תוספת עבור שקע USB+TYPE C"),
+# "שקע קופץ" (pop-up socket in the kitchen island); the token travels as an annotation the BOQ rules count
+USB_RE = re.compile(r"USB|TYPE\s*-?\s*C(?![A-Za-z])", re.IGNORECASE)
+POPUP_RE = re.compile(r"קופץ|קופצ")
+A_USB = "USB"
+A_POPUP = "קופץ"
+ADDON_REACH_MM = 7.0  # an add-on note stands a little farther from its socket than a 2X mark
 
 
 @dataclass
@@ -249,6 +259,10 @@ def annotation_tokens(text: str) -> list[str]:
         out.append(f"H={m.group(1)}")
     for m in IP_RE.finditer(text):
         out.append(f"IP{m.group(1)}")
+    if USB_RE.search(text):
+        out.append(A_USB)
+    if POPUP_RE.search(text):
+        out.append(A_POPUP)
     for w in _tokens(text):
         q = clean_qualifier(w)
         if multiplicity(q) is not None and len(q) <= 3:
@@ -386,6 +400,8 @@ def _vector_detection(
         source="vector",
         class_conf=0.95 if m else entry.class_conf,
     )
+    if cls.startswith("switch") and is_shutter_switch(entry.label):
+        d.annotations.append(SHUTTER_SWITCH_ANNOTATION)  # Sprint 10: a shutter switch is not a light switch
     if ambiguous or (by_text and not READ_QUALIFIER_OCR):
         # the class hangs on text next to the symbol that the reader could not confirm
         d.reasons.append(R_SIMILAR)
@@ -403,24 +419,34 @@ def _resolve_by_ocr(
     deferred: list[tuple[Candidate, BBox, list[str], LegendEntry | None, bool]],
     mappings: dict[str, dict[str, Any]],
     markers: list[tuple[Candidate, LegendEntry]],
+    spans: list[TextSpan] | None = None,
 ) -> list[Detection]:
     """A-pipeline-01: name each deferred family member by the word OCR reads at the end of its stem
-    (:mod:`.qualifiers`); unread ones keep the previous rule (plain member + ``דומה לסמל אחר``, or dropped)."""
-    from .qualifiers import read_qualifiers
+    (:mod:`.qualifiers`); unread ones keep the previous rule (plain member + ``דומה לסמל אחר``, or dropped).
+    Sprint 10: the sheet's text layer is consulted first (:func:`.qualifiers.read_from_spans` — the word beside the
+    bracket may be a font text object the OCR windows cannot see); OCR runs only for the candidates still unread."""
+    from .qualifiers import read_from_spans, read_qualifiers
 
     fams = [[e for e in c.tpl.entries if e.multiplicity is None] for c, *_ in deferred]
-    try:
-        reads = read_qualifiers(
-            vs.segs,
-            vs.seg_path,
-            vs.path_bbox,
-            [c.center for c, *_ in deferred],
-            [float(c.tpl.size) for c, *_ in deferred],
-            fams,
-        )
-    except Exception:  # best effort: OCR context is an improvement, never a failure of the sheet
-        log.warning("qualifier OCR failed", exc_info=True)
-        reads = {}
+    centers = [c.center for c, *_ in deferred]
+    sizes = [float(c.tpl.size) for c, *_ in deferred]
+    reads = read_from_spans(centers, sizes, fams, spans or [])
+    rest = [i for i in range(len(deferred)) if i not in reads]
+    if rest:
+        try:
+            ocr = read_qualifiers(
+                vs.segs,
+                vs.seg_path,
+                vs.path_bbox,
+                [centers[i] for i in rest],
+                [sizes[i] for i in rest],
+                [fams[i] for i in rest],
+            )
+        except Exception:  # best effort: OCR context is an improvement, never a failure of the sheet
+            log.warning("qualifier OCR failed", exc_info=True)
+            ocr = {}
+        for k, rd in ocr.items():
+            reads[rest[k]] = rd
     out: list[Detection] = []
     for i, (c, b, near, entry, ambiguous) in enumerate(deferred):
         r = reads.get(i)
@@ -506,6 +532,79 @@ def _colour_mask(vs: VectorSheet, templates: list[Template]) -> np.ndarray | Non
     return keep
 
 
+COLOUR_TOL = 60  # sum of |ΔR|+|ΔG|+|ΔB| within which two pens are "the same colour"
+COLOUR_MIN_SHARE = 0.5  # a candidate whose explained ink is mostly in colours the legend drawing never uses is rejected
+UNIQUE_COLOUR_MIN_Q = 0.5  # quality floor for a template whose dominant colour no other legend drawing shares
+
+
+def _path_colour(vs: VectorSheet, p: int) -> tuple[int, int, int]:
+    src = vs.path_fill_rgba if vs.path_fill_mode[p] > 0 else vs.path_stroke_rgba
+    return int(src[p, 0]), int(src[p, 1]), int(src[p, 2])
+
+
+def template_colours(t: Template, vs: VectorSheet) -> dict[tuple[int, int, int], int]:
+    """Pen / fill colours of the legend drawing(s) behind a template → number of their segments (ring families:
+    every member)."""
+    out: dict[tuple[int, int, int], int] = {}
+    for e in t.entries:
+        if not len(e.seg_idx):
+            continue
+        paths, counts = np.unique(vs.seg_path[e.seg_idx], return_counts=True)
+        for p, n in zip(paths.tolist(), counts.tolist(), strict=True):
+            c = _path_colour(vs, int(p))
+            out[c] = out.get(c, 0) + int(n)
+    return out
+
+
+def unique_colour_templates(tpl_colours: dict[str, dict[tuple[int, int, int], int]]) -> set[str]:
+    """Templates whose *dominant* colour (≥ 50 % of the drawing's segments) is distinct (beyond ``COLOUR_TOL``) from
+    every other template's colours — and not a neutral pen (black / grey), which names nothing."""
+    out: set[str] = set()
+    for tid, cols in tpl_colours.items():
+        total = sum(cols.values())
+        if not total:
+            continue
+        dom, n = max(cols.items(), key=lambda kv: kv[1])
+        if n < 0.5 * total or max(dom) - min(dom) <= 40:
+            continue
+        others = [c for oid, oc in tpl_colours.items() if oid != tid for c in oc]
+        if all(sum(abs(a - b) for a, b in zip(dom, o, strict=True)) > COLOUR_TOL for o in others):
+            out.add(tid)
+    return out
+
+
+def colour_share(c: Candidate, scene: Scene, vs: VectorSheet, colours: dict[tuple[int, int, int], int]) -> float:
+    """Sprint 10: share (by ink length) of the scene strokes under the posed template drawn in one of the legend
+    drawing's colours. This designer colour-codes the catalogue (sockets red, switches purple, luminaires yellow,
+    cameras orange…), so a yellow wall-light template posed on an orange camera is told apart by colour even when
+    the strokes fit. Strokes longer than the symbol (walls, leaders) are ignored, like in :func:`match.reverse`."""
+    if not colours:
+        return 1.0
+    rad = 0.5 * c.tpl.diag * c.scale + 0.3
+    idx = scene.tree.query_ball_point(np.asarray(c.center), rad)
+    if not idx:
+        return 1.0
+    segs = np.unique(scene.pt_seg[np.asarray(idx)])
+    segs = segs[scene.seg_len[segs] <= 1.6 * c.tpl.size * c.scale + 0.5]
+    if len(segs) == 0:
+        return 1.0
+    inv = np.linalg.inv(c.mat)
+    mid = np.column_stack([(scene.segs[segs, 0] + scene.segs[segs, 2]) / 2, (scene.segs[segs, 1] + scene.segs[segs, 3]) / 2])
+    q = (mid - np.asarray(c.center)) @ inv.T
+    inside = (np.abs(q[:, 0]) <= c.tpl.w / 2 + 0.3) & (np.abs(q[:, 1]) <= c.tpl.h / 2 + 0.3)
+    segs = segs[inside]
+    if len(segs) == 0:
+        return 1.0
+    pal = np.array(sorted(colours), dtype=np.int32)
+    paths = vs.seg_path[scene.seg_ids[segs]]
+    rgb = vs.path_stroke_rgba[paths, :3].astype(np.int32)
+    fill = vs.path_fill_mode[paths] > 0
+    rgb[fill] = vs.path_fill_rgba[paths[fill], :3].astype(np.int32)
+    ok = (np.abs(rgb[:, None, :] - pal[None, :, :]).sum(axis=2) <= COLOUR_TOL).any(axis=1)
+    w = scene.seg_len[segs]
+    return float(w[ok].sum() / max(w.sum(), 1e-9))
+
+
 def _region_of(pt: tuple[float, float], regions: list[dict[str, Any]]) -> dict[str, Any] | None:
     from shapely.geometry import Point, Polygon
 
@@ -545,17 +644,34 @@ def detect_symbols(
     ]
     tix = TextIndex(plan_spans)
     entries = legend.entries
+    # Sprint 10: classes for this designer's wider catalogue (smoke detector, camera, thermostat, shutter feed…)
+    # on rows the legend classes left without a class (they would be markers) or as a generic heater feed
+    refine_entries(entries)
     sym_entries = [e for e in entries if e.kind == "symbol"]
     templates = build_templates(sym_entries, vs)
     # simple classless drawings ("+" = see note) are neither items nor useful markers
     templates = [t for t in templates if not (_is_marker(t) and t.complexity < 0.6 and not _is_note(t))]
+    # Sprint 10: circles with a letter inside (M / T / V / ג / צ / פ) are one ring family; the letter picks the member
+    templates = merge_ring_families(templates, vs, spans)
     res.templates = len(templates)
     scene: Scene = build_scene(vs, exclude, keep_mask=_colour_mask(vs, templates))
-    sp = spot(templates, scene) if templates else None
+    tpl_colours = {t.id: template_colours(t, vs) for t in templates}
+    # Sprint 10: a pose whose ink is mostly in colours the legend drawing never uses is vetoed before NMS
+    sp = (
+        spot(
+            templates,
+            scene,
+            accept=lambda c: colour_share(c, scene, vs, tpl_colours.get(c.tpl.id, {})) >= COLOUR_MIN_SHARE,
+            passive=frozenset(t.id for t in templates if _is_marker(t)),  # markers never suppress a real symbol
+        )
+        if templates
+        else None
+    )
     cands: list[Candidate] = sp.detections if sp else []
     if sp is not None:
         res.scale, res.scale_estimated = sp.scale, sp.scale_estimated
     scale_uncertain = res.scale_estimated or scale_den is None
+    own_colour = unique_colour_templates(tpl_colours)
 
     dets: list[Detection] = []
     markers: list[tuple[Candidate, LegendEntry]] = []
@@ -565,10 +681,29 @@ def detect_symbols(
     for c in cands:
         t = c.tpl
         min_q = 0.6 if t.complexity >= 0.7 else 0.74
+        if t.id in own_colour and t.complexity >= 0.7:
+            # Sprint 10: the ink colour alone names this symbol (no other legend drawing uses it): a solid symbol
+            # whose fill is exploded differently per instance (the camera's cone) may fit a little worse
+            min_q = UNIQUE_COLOUR_MIN_Q
         if c.quality < min_q:
             continue
         b = c.bbox()
         near = [tix.spans[i].text for i, _ in tix.near(b, max(3.0, 0.9 * t.size))]
+        if t.ring is not None:
+            entry, ambiguous, word = resolve_member(t, c.center, c.scale, vs, plan_spans)
+            if entry is None and not ambiguous:
+                continue  # an empty ring (conduit end, dot) is not a circled-letter item
+            d: Detection | None
+            if entry is None:
+                d = Detection(
+                    cls="unknown", center=c.center, bbox=b, angle=c.angle_deg, quality=c.quality, margin=0.05,
+                    source="vector", reasons=[R_SIMILAR], annotations=[word[:32]] if word else [],
+                )  # fmt: skip
+            else:
+                d = _vector_detection(c, b, near, entry, False, True, mappings, markers, word)
+            if d is not None:
+                dets.append(d)
+            continue
         entry, ambiguous = _family_member(t, near)
         by_strokes = False
         if READ_QUALIFIER_STROKES and ambiguous and len(t.entries) > 1:
@@ -586,7 +721,7 @@ def detect_symbols(
         if d is not None:
             dets.append(d)
     if deferred:
-        dets.extend(_resolve_by_ocr(vs, deferred, mappings, markers))
+        dets.extend(_resolve_by_ocr(vs, deferred, mappings, markers, plan_spans))
 
     # ---- DXF block references (Stage 10, A-pipeline-05): block count vs graphic count per block
     if inserts:
@@ -881,6 +1016,10 @@ def _annotate(dets: list[Detection], tix: TextIndex, markers: list[tuple[Candida
             cls_block, _ = suggest_class(block, s.conf)
             if cls_block is not None and cls_block != cls_txt:
                 cls_txt = cls_block
+        if cls_txt == "heater_feed" and extra_class(block or s.text)[0] in FEED_OWN_SYMBOL:
+            # Sprint 10: "הזנה לוונטה" / "הזנה לתריס" name a ventilator / shutter feed, which has its own symbol (the V
+            # / M ring); the keyword rules' "ונטה" → heater feed must not turn the socket beside it into a heater feed
+            cls_txt = None
         if cls_txt:
             ok = [
                 (di, g)
@@ -903,9 +1042,14 @@ def _annotate(dets: list[Detection], tix: TextIndex, markers: list[tuple[Candida
             continue
         size = max(d.bbox[2] - d.bbox[0], d.bbox[3] - d.bbox[1])
         toks = annotation_tokens(s.text)
-        if toks and g <= max(3.5, 1.2 * size):
+        addon = any(tk in (A_USB, A_POPUP) for tk in toks)
+        if toks and g <= max(3.5, 1.2 * size, ADDON_REACH_MM if addon else 0.0):
             for tk in toks:
                 if multiplicity(tk) is not None and g > max(2.5, 0.8 * size):
+                    continue
+                if tk in (A_USB, A_POPUP) and not d.cls.startswith("socket"):
+                    continue
+                if tk not in (A_USB, A_POPUP) and g > max(3.5, 1.2 * size):
                     continue
                 d.annotations.append(tk)
                 n = multiplicity(tk)

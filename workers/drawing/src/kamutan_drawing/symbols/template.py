@@ -29,6 +29,11 @@ from .geometry import ORIENTS, bbox_of, orient_matrix, path_fill_areas, resample
 STEP = 0.1
 MIN_ANCHOR_R = 0.9
 FAMILY_TOL = 0.025  # mean symmetric chamfer / size below which two templates are the same drawing
+# Sprint 10: two drawings are the same only when (nearly) every point of each lies on the other. A circle with a
+# different letter inside (M / ג / צ / פ / V on the same ring) keeps a small *mean* distance because the shared ring
+# dominates, yet 30–50 % of the letter's points are off the other drawing — those are distinct symbols, not a family.
+FAMILY_UNEXPLAINED = 0.08  # share of points of either drawing farther than the match tolerance from the other
+FAMILY_POINT_TOL = 0.12  # mm (+ 0.02 × size, as in match.forward)
 
 
 @dataclass
@@ -55,6 +60,7 @@ class Template:
     symmetric: bool  # mirror image equals itself (checked numerically)
     fill_area: float = 0.0  # mm² of filled (solid) parts, e.g. the power socket's half disc
     tree: Any = field(repr=False, default=None)  # cKDTree of ``pts``
+    ring: Any = None  # Sprint 10: :class:`.rings.RingInfo` when this is a circled-glyph family (letter decides)
 
     @property
     def diag(self) -> float:
@@ -77,6 +83,33 @@ def _chamfer_sym(a: np.ndarray, b: np.ndarray) -> float:
 
 def _best_orient_distance(a: np.ndarray, b: np.ndarray) -> float:
     return min(_chamfer_sym(a @ orient_matrix(ang, mir).T, b) for ang, mir in ORIENTS)
+
+
+def _unexplained_share(a: np.ndarray, b: np.ndarray, tol: float) -> float:
+    """Largest share of points of either drawing that lie farther than ``tol`` from the other (best orientation)."""
+    if len(a) == 0 or len(b) == 0:
+        return 1.0
+    best = 1.0
+    tb = cKDTree(b)
+    for ang, mir in ORIENTS:
+        ra = a @ orient_matrix(ang, mir).T
+        ta = cKDTree(ra)
+        s = max(float((tb.query(ra)[0] > tol).mean()), float((ta.query(b)[0] > tol).mean()))
+        best = min(best, s)
+    return best
+
+
+def same_drawing(a: Template, b: Template) -> bool:
+    """Look-alike test of two legend drawings (one *family*): similar size, small mean chamfer, and nearly every
+    point of each explained by the other (see ``FAMILY_UNEXPLAINED``)."""
+    same = abs(a.w - b.w) < 0.1 * max(a.w, b.w) + 0.15 and abs(a.h - b.h) < 0.1 * max(a.h, b.h) + 0.15
+    turned = abs(a.w - b.h) < 0.1 * max(a.w, b.h) + 0.15 and abs(a.h - b.w) < 0.1 * max(a.h, b.w) + 0.15
+    if not (same or turned):
+        return False
+    size = max(a.size, b.size)
+    if _best_orient_distance(b.pts, a.pts) >= FAMILY_TOL * size:
+        return False
+    return _unexplained_share(b.pts, a.pts, FAMILY_POINT_TOL + 0.02 * size) <= FAMILY_UNEXPLAINED
 
 
 def _anchor(segs_abs: np.ndarray, kinds: np.ndarray, vs: VectorSheet, seg_idx: np.ndarray, center: np.ndarray) -> Anchor:
@@ -155,9 +188,7 @@ def build_templates(entries: list[LegendEntry], vs: VectorSheet) -> list[Templat
         if t is None:
             continue
         for o in out:
-            same = abs(o.w - t.w) < 0.1 * max(o.w, t.w) + 0.15 and abs(o.h - t.h) < 0.1 * max(o.h, t.h) + 0.15
-            turned = abs(o.w - t.h) < 0.1 * max(o.w, t.h) + 0.15 and abs(o.h - t.w) < 0.1 * max(o.h, t.w) + 0.15
-            if (same or turned) and _best_orient_distance(t.pts, o.pts) < FAMILY_TOL * max(o.size, t.size):
+            if same_drawing(o, t):
                 o.entries.append(e)
                 break
         else:

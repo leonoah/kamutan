@@ -40,7 +40,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from .. import errors as E
@@ -63,11 +63,53 @@ ENV_ALLOW = (
 )
 NetMode = Literal["auto", "require", "off"]
 
+# Sprint 10 (Perf): the sandbox memory limit (RLIMIT_AS of the child, MB). Default 3072 (SEC-17: 2–4 GB); the env
+# var may raise it to MAX_MEMORY_MB at most — the production worker has 4 GB and must keep room for itself.
+DEFAULT_MEMORY_MB = 3072
+MIN_MEMORY_MB = 512
+MAX_MEMORY_MB = 3584
+MEMORY_ENV = "KAMUTAN_SANDBOX_MEMORY_MB"
+
+
+# Sprint 10 (Perf): the CPU limit (RLIMIT_CPU of the child, s; SEC-17: 120 s per sheet), same scheme. The cap is the
+# default wall limit: more CPU than wall-clock time can never be used by the single-threaded parser.
+DEFAULT_CPU_S = 120
+MIN_CPU_S = 10
+MAX_CPU_S = 300
+CPU_ENV = "KAMUTAN_SANDBOX_CPU_S"
+
+
+def _int_env(env: dict[str, str] | None, name: str, default: int, lo: int, hi: int, unit: str) -> int:
+    """``name`` from the environment clamped to [lo, hi]; ``default`` when unset or not an integer (logged)."""
+    raw = (os.environ if env is None else env).get(name, "")
+    try:
+        v = int(raw)
+    except ValueError:
+        if raw:
+            log.warning("%s=%r is not an integer; using %d %s", name, raw, default, unit)
+        return default
+    if v > hi:
+        log.warning("%s=%d exceeds the cap of %d %s; using the cap", name, v, hi, unit)
+    elif v < lo:
+        log.warning("%s=%d is below the floor of %d %s; using the floor", name, v, lo, unit)
+    return min(hi, max(lo, v))
+
+
+def memory_mb_from_env(env: dict[str, str] | None = None) -> int:
+    """``KAMUTAN_SANDBOX_MEMORY_MB`` clamped to [MIN_MEMORY_MB, MAX_MEMORY_MB] (4 GB worker); default 3072."""
+    return _int_env(env, MEMORY_ENV, DEFAULT_MEMORY_MB, MIN_MEMORY_MB, MAX_MEMORY_MB, "MB")
+
+
+def cpu_s_from_env(env: dict[str, str] | None = None) -> int:
+    """``KAMUTAN_SANDBOX_CPU_S`` clamped to [MIN_CPU_S, MAX_CPU_S]; default 120."""
+    return _int_env(env, CPU_ENV, DEFAULT_CPU_S, MIN_CPU_S, MAX_CPU_S, "s")
+
 
 @dataclass(frozen=True)
 class Limits:
-    memory_mb: int = 3072  # SEC-17: 2-4 GB
-    cpu_s: int = 120  # SEC-17: 120 s CPU per sheet
+    # SEC-17: 2-4 GB. Read from KAMUTAN_SANDBOX_MEMORY_MB when a Limits() is built without it (Sprint 10).
+    memory_mb: int = field(default_factory=memory_mb_from_env)
+    cpu_s: int = field(default_factory=cpu_s_from_env)  # SEC-17: 120 s CPU per sheet; KAMUTAN_SANDBOX_CPU_S (Sprint 10)
     wall_s: float = 300.0
     fsize_mb: int = 1024
     nproc: int = 512  # threads count too; tesseract runs as a grandchild
@@ -81,6 +123,7 @@ class Limits:
 
 
 ProgressFn = Callable[[str, int], None]
+_OOM_MARKERS = (b"MemoryError", b"std::bad_alloc", b"Out of memory", b"out of memory")
 
 
 @functools.cache
@@ -346,10 +389,12 @@ def run_task(
         raise error
     if got_result:
         return result
+    if any(m in stderr_tail for m in _OOM_MARKERS):
+        # the child could not even report it — Python's MemoryError at the top level, or a native library
+        # (pdfium / libwebp) aborting on a failed allocation (stderr is inspected, never logged)
+        raise SandboxError(E.PARSE_MEMORY_LIMIT, f"parser exceeded the memory limit ({limits.memory_mb} MB)")
     if rc is not None and rc < 0:
         raise _signal_error(-rc, limits.cpu_s)
-    if b"MemoryError" in stderr_tail:  # the child could not even report it (stderr is inspected, never logged)
-        raise SandboxError(E.PARSE_MEMORY_LIMIT, f"parser exceeded the memory limit ({limits.memory_mb} MB)")
     if not got_result:
         log.warning("sandbox child exited rc=%s without result (stderr bytes=%d)", rc, len(stderr_tail))
         raise SandboxError(E.PARSE_CRASHED, f"parser exited with status {rc} without a result")

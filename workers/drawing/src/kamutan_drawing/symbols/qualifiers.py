@@ -168,6 +168,56 @@ def _stack(windows: list[Window], length: float, half: float) -> tuple[Image.Ima
     return img, pitch
 
 
+SPAN_REACH = 2.6  # × symbol size: a text-layer word this close to a bracket's centre may name it (≈ the OCR window)
+
+
+class SpanLike(Protocol):
+    bbox: tuple[float, float, float, float]
+    text: str
+
+
+def read_from_spans(
+    centers: Sequence[tuple[float, float]],
+    sizes: Sequence[float],
+    families: Sequence[Sequence[FamilyEntry]],
+    spans: Sequence[SpanLike],
+) -> dict[int, Reading]:
+    """Sprint 10: name family members from the sheet's TEXT LAYER before any OCR.
+
+    Some designers write the word beside a bracket ("רשת", "TEL") as a font text object: the text layer holds it
+    cleanly, while the OCR windows (rendered from strokes) see nothing — and when the legend row kept no qualifier,
+    the plain span check (``detect._family_member``) has nothing to compare it with. Here every word of a nearby span
+    is compared with each member's implied tokens (:func:`entry_tokens`), **exact match only**; nearest span first,
+    one span per candidate and one candidate per span; a candidate whose nearest matching spans name two different
+    members at the same distance stays unread (OCR / the old fallback decide)."""
+    tokens = [[entry_tokens(f.label, f.qualifier) for f in fam] for fam in families]
+    pairs: list[tuple[float, int, int, int, str, str]] = []  # (distance, candidate, span, entry, word, token)
+    for i, (c, size) in enumerate(zip(centers, sizes, strict=True)):
+        reach = SPAN_REACH * max(float(size), 1.0)
+        for si, sp in enumerate(spans):
+            sx, sy = (sp.bbox[0] + sp.bbox[2]) / 2, (sp.bbox[1] + sp.bbox[3]) / 2
+            dist = math.hypot(sx - c[0], sy - c[1])
+            if dist > reach:
+                continue
+            words = [_PUNCT.sub("", w).upper() for w in str(sp.text).split()]
+            for ei, toks in enumerate(tokens[i]):
+                hit = next(((w, t) for w in words for t in toks if w and w == t.upper()), None)
+                if hit is not None:
+                    pairs.append((dist, i, si, ei, hit[0], hit[1]))
+    pairs.sort()
+    out: dict[int, Reading] = {}
+    used_spans: set[int] = set()
+    for dist, i, si, ei, word, tok in pairs:
+        if i in out or si in used_spans:
+            continue
+        rivals = {e for d, j, s, e, _, _ in pairs if j == i and s not in used_spans and abs(d - dist) < 1e-6}
+        if len(rivals) > 1:
+            continue
+        out[i] = Reading(i, ei, 1.0, word, -1, tok)
+        used_spans.add(si)
+    return out
+
+
 def read_qualifiers(
     segs: np.ndarray,
     seg_path: np.ndarray,

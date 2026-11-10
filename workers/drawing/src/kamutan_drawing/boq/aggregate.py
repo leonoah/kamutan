@@ -19,9 +19,11 @@ from .contracts import LinkGroup
 from .corrections import Correction, ManualQty, OldDetections, apply_corrections
 from .dedup import Det, SheetMeta, dedup
 from .geometry import GeoItem, geometry_units, parse_geometry
+from .labeled import count_only_units, make_labeler, marker_units, pick_class_rule, text_lines
 from .plumbing import combination_units, consumed_classes, plumbing_units, suggestion_units
 from .rules import (
     CLASS_HE,
+    CODE_MATCH_MIN,
     FIXTURE_CLASSES,
     FLOOR_ORDER,
     LABEL_RADIUS_MM,
@@ -36,6 +38,7 @@ from .rules import (
     R_NO_ITEM,
     R_NO_LINKS,
     R_NO_RULE,
+    R_NOT_FOR_TOTAL,
     R_RELABELED,
     R_SHARED,
     R_SWITCH_LINK,
@@ -43,6 +46,7 @@ from .rules import (
     R_UNKNOWN_FLOOR,
     R_UNKNOWN_SYMBOL,
     SHARED_KINDS,
+    SPRINT10_RULE_IDS,
     STAIR_WORDS,
     SWITCH_CLASSES,
     UNMATCHED_CHAPTER,
@@ -50,6 +54,7 @@ from .rules import (
     Library,
     Resolution,
     Rule,
+    desc_score,
 )
 from .spaces import Room, canonical_rooms, ceiling_heights, match_room, room_from_doc, settings_by_room
 from .suggested import default_quick_action, suggested_units
@@ -87,6 +92,8 @@ class SheetInput:
     text_items: list[dict[str, Any]] | None = None
     legends: list[tuple[float, float, float, float]] = field(default_factory=list)
     geometry: Any = None
+    # Sprint 10 (Worker-Lighting): the version's circuits.json.gz object (kamutan.circuits/1), None = no artifact
+    circuits: Any = None
 
 
 @dataclass
@@ -108,7 +115,11 @@ class Contribution:
     origin: str = "detected"  # Sprint 6: detected | text | geometry | suggested | manual
     quick_action: dict[str, str | None] | None = None
     needs_input: bool = False
+    circuit: dict[str, Any] | None = None  # Sprint 10 (Worker-Lighting): {id, kind, fixtures} of a lighting circuit
 
+
+# rule kinds whose lines have no drawn symbol behind them (Sprint 10: dropped when the org library lacks the item)
+DERIVED_KINDS = frozenset({"text_item", "one_off_suggestion", "suggested_item", "template_chapter"})
 
 RoomRef = tuple[str | None, str | None, str | None, str | None, str | None]  # (sheetId, roomId, name, type, floor)
 MAX_BY_ROOM = 200
@@ -156,6 +167,12 @@ class Line:
     # Sprint 8 (cause attribution, lines snapshot only — not a boqLines field): the computed qty per sheet version,
     # [{sheetId, versionId, qty}] sorted; sums to ``qty`` minus what no drawing produced (suggestions, templates).
     by_version: list[dict[str, Any]] = field(default_factory=list)
+    # Sprint 10 (Worker-Lighting, contracts additive ``circuit?``): {id, kind, fixtures} when every contribution of the
+    # line is a lighting circuit of one kind and fixture count (id = the circuit ids joined with ",")
+    circuit: dict[str, Any] | None = None
+    # Sprint 10 (contracts request, additive): the item is a "לא לסיכום / לספירה בסוף" line of the client's BOQ — unit
+    # price only, never counted in the totals (the API / Excel exclude it)
+    not_for_total: bool = False
 
     def computed_fields(self) -> dict[str, Any]:
         extra: dict[str, Any] = {
@@ -165,8 +182,12 @@ class Line:
             "needsInput": self.needs_input,
             "quickAction": dict(self.quick_action) if self.quick_action else None,
         }
+        if self.circuit is not None:
+            extra["circuit"] = dict(self.circuit)
         if self.order_qty is not None:
             extra.update({"orderQty": self.order_qty, "wasteFactor": self.waste_factor})
+        if self.not_for_total:
+            extra["notForTotal"] = True
         return {
             **extra,
             "chapter": self.chapter,
@@ -335,6 +356,8 @@ def prepare(
                 source="manual" if d.get("_source") == "manual" else "auto",
                 correction_id=str(d.get("_correctionId") or d.get("_verified") or "") or None,
                 verified=bool(d.get("_verified")),
+                legend_label=str(entry.get("label"))[:200] if entry is not None and entry.get("label") else None,
+                length_m=float(d["lengthM"]) if isinstance(d.get("lengthM"), int | float) and d["lengthM"] > 0 else None,
             )
         )
     out.sort(key=lambda x: _natural(x.id))
@@ -554,6 +577,27 @@ def _slug(code: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", code).strip("_") or "x"
 
 
+def _lighting_units(
+    rules: list[Rule], sheets: list[SheetInput], per_sheet: dict[str, list[Det]], library: Library
+) -> tuple[list[Unit], set[str], dict[str, Any]]:
+    """Sprint 10 (Worker-Lighting) hook: ``lighting.boq.circuit_units`` over the lighting sheets that carry a
+    ``circuits`` artifact. No artifact → nothing (the link graph stays in charge, as before Sprint 10); the module's
+    own default rule applies when the org has no ``lighting_circuit`` rule."""
+    carriers = [s for s in sheets if isinstance(s.circuits, dict) and s.circuits.get("circuits")]
+    if not carriers:
+        return [], set(), {}
+    from ..lighting.boq import CircuitSheet, circuit_units
+
+    cs = [
+        CircuitSheet(
+            s.sheet_id, s.version_id, list(s.floors), s.circuits, {d.id: d for d in per_sheet.get(s.sheet_id, [])}, s.discipline
+        )
+        for s in sorted(carriers, key=lambda s: s.sheet_id)
+    ]
+    res = circuit_units(cs, rules, library)
+    return list(res.units), {str(x) for x in res.covered}, dict(res.stats)
+
+
 def aggregate(
     sheets: list[SheetInput],
     rules: list[Rule],
@@ -637,13 +681,24 @@ def aggregate(
     for rl in rules:  # rules are sorted by priority: the first rule of a code describes it
         if rl.item_code and rl.item_code not in code_rules:
             code_rules[rl.item_code] = rl
-    resolved_cache: dict[tuple[str | None, str, bool], Resolution | None] = {}
+    resolved_cache: dict[tuple[Any, ...], Resolution | None] = {}
 
-    def resolve(code: str | None, desc: str, trust: bool) -> Resolution | None:
-        k = (code, desc, trust)
+    def resolve(code: str | None, desc: str, trust: bool, params: dict[str, float] | None = None,
+                unit: str | None = None) -> Resolution | None:  # fmt: skip
+        k = (code, desc, trust, tuple(sorted(params.items())) if params else None, unit)
         if k not in resolved_cache:
-            resolved_cache[k] = library.resolve(code, desc, trust_code=trust)
+            resolved_cache[k] = library.resolve(code, desc, trust_code=trust, params=params, unit=unit)
         return resolved_cache[k]
+
+    # Sprint 10: labels of detections (annotations + legend label + OCR lines nearby) for label-qualified rules; a
+    # default Sprint-10 rule applies only when the org's library has its item (`resolvable`)
+    labeler = make_labeler({s.sheet_id: text_lines(s.texts) for s in sheets if s.texts})
+
+    def resolvable(r: Rule) -> bool:
+        """A default Sprint-10 rule applies only when the org's library has its item; older rules always apply."""
+        if r.id not in SPRINT10_RULE_IDS:
+            return True
+        return resolve(r.item_code, r.description, r.source == "custom", None, r.unit or None) is not None
 
     def add(
         rule: Rule | None,
@@ -682,7 +737,8 @@ def aggregate(
                 if ref is not None and ref.unit:
                     unit_hint = ref.unit
         elif unmatched is None and rule is not None:
-            res = resolve(rule.item_code, rule.description, rule.source == "custom")
+            res = resolve(rule.item_code, rule.description, rule.source == "custom",
+                          unit.params if unit is not None else None, rule.unit or None)  # fmt: skip
             rule_reasons.extend(rule.reasons)
             if res is None:
                 unmatched = ("X-" + _slug(rule.item_code or rule.id).replace("_", "-"), rule.description or rule.id)
@@ -691,6 +747,13 @@ def aggregate(
                 rule_reasons.append(R_DEFAULT_RULE)
         if unit_hint is None and rule is not None and rule.unit:
             unit_hint = rule.unit
+        # Sprint 10: an org whose (imported) library lacks the item of a default rule that has no drawn symbol behind it
+        # (text / one-off / suggested / template), or that computed nothing (qty 0), gets no "לא משויך" line — only
+        # noise; a detected symbol without an item stays a red line (it must be assigned)
+        dropped = unmatched is not None and rule is not None and rule.source == "default" and res is None
+        if dropped and user_code is None and rule is not None and (rule.kind in DERIVED_KINDS or qty == 0):
+            stats["unmatchedDropped"] = int(stats.get("unmatchedDropped") or 0) + 1
+            return
         if unmatched is not None:
             level = "red"
             if R_NO_RULE not in rule_reasons:
@@ -724,6 +787,7 @@ def aggregate(
                 origin,
                 (dict(unit.quick_action) if unit.quick_action else None) if unit is not None else None,
                 bool(unit.needs_input) if unit is not None else False,
+                dict(unit.circuit) if unit is not None and unit.circuit else None,
             )
         )
 
@@ -733,6 +797,10 @@ def aggregate(
         add(u.rule, u.members, u.qty, list(u.reasons), u.level, unmatched=u.unmatched, user_code=u.user_code, item=u.item,
             unit=u)  # fmt: skip
 
+    # --- Sprint 10 (Worker-Lighting) — keep: circuits from the tags (lighting/boq.py) replace the composite groups of
+    # the sheets they cover (Worker-BOQ may move this into labeled.py; keep the call shape)
+    lc_units, lc_covered, lc_stats = _lighting_units(rules, sheets, per_sheet, library)
+    stats["lightingCircuits"] = {**lc_stats, "units": len(lc_units), "sheets": sorted(lc_covered)}
     # --- composite lighting (link graph per sheet; fallback without links)
     merge_mm = max([float(r.match.get("pointMergeMm") or 0) for r in rules if r.kind == "composite_lighting"] or [0.0])
     grouped_switches = 0
@@ -755,6 +823,8 @@ def aggregate(
     for s in sorted(sheets, key=lambda s: s.sheet_id):
         dets = per_sheet[s.sheet_id]
         by_id = {d.id: d for d in dets}
+        if s.sheet_id in lc_covered:
+            continue  # Sprint 10: priced from the circuit tags
         if s.links is None:
             if s.discipline != "lighting":
                 continue
@@ -806,6 +876,8 @@ def aggregate(
         unlinked_switches += sum(1 for d in dets if d.cls in SWITCH_CLASSES and d.dropped_by is None and d.id not in in_group)
     stats["groupedSwitches"] = grouped_switches
     stats["unlinkedSwitches"] = unlinked_switches
+    for u in lc_units:  # Sprint 10 (Worker-Lighting)
+        add_unit(u)
 
     # --- lighting install count
     install_rules = [r for r in rules if r.kind == "install_count"]
@@ -829,7 +901,7 @@ def aggregate(
     for u in c_units:
         add_unit(u)
     stats["combinations"] = c_stats
-    p_units, p_stats = plumbing_units(all_dets, rules, room_index, scales)
+    p_units, p_stats = plumbing_units(all_dets, rules, room_index, scales, labeler, resolvable)
     for u in p_units:
         add_unit(u)
     consumed |= consumed_classes(rules)
@@ -857,7 +929,24 @@ def aggregate(
     for mq in applied.manual:
         add_unit(_manual_unit(mq, c2i, disc.get(mq.sheet_id, "")))
 
-    # --- class → item (and user-chosen item codes)
+    # --- Sprint 10: count-only class rules (switch boxes, fan installs) and marker add-ons (waterproof / USB) over every
+    # live new detection, consumed or not
+    for u in count_only_units(all_dets, rules, labeler, resolvable):
+        add_unit(u)
+
+    def det_room_type(d: Det) -> str | None:
+        r = room_index.get((d.sheet_id, d.room_id)) if d.room_id else None
+        if r is None:
+            return None
+        c = r if r.key in {x.key for x in canon} else (match_room(r, canon) or r)
+        return c.type
+
+    mk_units, mk_stats = marker_units(all_dets, rules, labeler, resolvable, det_room_type)
+    for u in mk_units:
+        add_unit(u)
+    stats["markers"] = mk_stats
+
+    # --- class → item (and user-chosen item codes); Sprint 10: the first rule whose label filter matches wins
     excluded_lifecycle = 0
     unmapped = 0
     for d in all_dets:
@@ -866,7 +955,8 @@ def aggregate(
         if d.item_code and d.code_rule:
             add(None, [(d, None)], 1, [], user_code=(d.item_code, re.sub(r"[^A-Za-z0-9_-]", "_", d.code_rule)[:128]))
             continue
-        rule = next((r for r in c2i if d.cls in r.classes), None)
+        pick = pick_class_rule(d, c2i, labeler, resolvable)
+        rule = pick.rule
         if rule is not None and rule.item_code is None:
             continue  # the org says: not a BOQ item
         if d.lifecycle in NOT_NEW_LIFECYCLES:
@@ -877,7 +967,10 @@ def aggregate(
             extra = [R_NO_RULE] + ([R_UNKNOWN_SYMBOL] if d.cls == "unknown" else [])
             add(None, [(d, None)], 1, extra, "red", unmatched=("X-" + _slug(d.cls).replace("_", "-"), CLASS_HE.get(d.cls, d.cls)))
             continue
-        add(rule, [(d, None)], 1, [])
+        if pick.params or pick.reasons:
+            add_unit(Unit(rule, [(d, None)], 1.0, list(pick.reasons), params=pick.params))
+        else:
+            add(rule, [(d, None)], 1, [])
     stats["excludedByLifecycle"] = excluded_lifecycle
     stats["unmapped"] = unmapped
     stats["skipped"] = dict(sorted(skipped.items()))
@@ -888,6 +981,8 @@ def aggregate(
 
     tiling_rule_ids = {r.id for r in rules if r.kind in ("tiling_floor", "tiling_cladding", "tiling_corner", "waterproofing")}
     for tu in tx_units:  # one unit per merged match: its qty goes to the majority room of its texts (byRoom)
+        if tu.rule.source == "default" and tu.rule.id in SPRINT10_RULE_IDS and not resolvable(tu.rule):
+            continue  # Sprint 10: a generic text rule for a line the client's BOQ lacks is not a "לא משויך" line
         add_unit(Unit(tu.rule, [(entry_det(e), None) for e in tu.members], tu.qty, [], "yellow", floor=tu.floor,
                       origin="text"))  # fmt: skip
     canon_keys_ = {(r.sheet_id, r.id) for r in canon}
@@ -930,9 +1025,18 @@ def aggregate(
     text_order = ["electrical", "lighting", "plumbing", "construction", "architecture", "architecture_master"]
 
     def catalog_unit(code: str, members: list[TextEntry], qty: float, floor: str | None, origin: str) -> Unit | None:
-        # the catalog names the org's code itself: the library item of that code (else the rule's resolution)
+        # the catalog names the reference code; Sprint 10: codes drift between projects (4.06 = "שקע כח משולש" in the
+        # designer's later BOQs), so the code's item counts only when it is the org's own manual / default item or its
+        # wording matches the rule's — else the rule resolves by description; nothing matching → no line
         rule = code_rules.get(code)
         item = library.preferred(code)  # a manual (renamed) item of the code first, then by id
+        own = item is not None and (item.manual or item.default)
+        drift = item is not None and not own and rule is not None and bool(rule.description)
+        if drift and rule is not None and item is not None and desc_score(rule.description, item.description) < CODE_MATCH_MIN:
+            res = resolve(None, rule.description, False, None, rule.unit or None)
+            if res is None:
+                return None
+            item = res.item
         if rule is None and item is None:
             return None
         return Unit(rule, [(entry_det(e), None) for e in members], qty, [], "yellow", floor=floor, origin=origin, item=item)
@@ -946,14 +1050,9 @@ def aggregate(
             n_cat += 1
     stats["textItems"]["catalogUnits"] = n_cat
 
-    # --- suggested lines (every rule-covered item no rule produced), then the template chapters (chapter 01)
+    # --- Worker-Text catalog suggestions first (the drawings show a trigger, not the item: 4.28 main panel, 9.03 vent
+    # duct — they carry a quantity), then the suggested rules (every rule-covered item no rule produced)
     refs = [SheetRef(s.sheet_id, s.version_id, s.discipline, tuple(s.floors), (s.page[0], s.page[1])) for s in sheets]
-    produced = {c.resolution.item.id for c in contribs if c.resolution is not None}
-    s_units, s_stats = suggested_units(rules, library, refs, text_entries, produced, geo=geo_items, dets=live, canon=canon,
-                                       room_type=geo_room, docs=geo_docs)  # fmt: skip
-    for u in s_units:
-        add_unit(u)
-    # Worker-Text catalog suggestions (the drawings show a trigger, not the item: 4.28 main panel, 9.03 vent duct)
     produced_codes = {code for c in contribs if (code := code_of(c))}
     n_sug = 0
     for code, cmembers, cqty, cfloor in catalog_units(text_entries, set(), produced_codes, text_order, suggested=True):
@@ -965,6 +1064,11 @@ def aggregate(
             su.quick_action = {"kind": default_quick_action(unit_s), "sheetId": cmembers[0].sheet_id}
             add_unit(su)
             n_sug += 1
+    produced = {c.resolution.item.id for c in contribs if c.resolution is not None}
+    s_units, s_stats = suggested_units(rules, library, refs, text_entries, produced, geo=geo_items, dets=live, canon=canon,
+                                       room_type=geo_room, docs=geo_docs)  # fmt: skip
+    for u in s_units:
+        add_unit(u)
     s_stats["catalogUnits"] = n_sug
     stats["suggested"] = s_stats
 
@@ -1138,6 +1242,20 @@ def _by_version(cs: list[Contribution]) -> list[dict[str, Any]]:
     return [{"sheetId": sid, "versionId": vid, "qty": q} for (sid, vid), q in zip(keys, shares, strict=True)]
 
 
+def _line_circuit(cs: list[Contribution]) -> dict[str, Any] | None:
+    """Sprint 10: the line's ``circuit`` when every contribution is a lighting circuit of the same kind and fixture
+    count (the per-topology wording); None otherwise (mixed kinds — the set-wording base line — or no circuits)."""
+    circ = [c.circuit for c in cs if c.circuit]
+    if not circ or len(circ) != len(cs):
+        return None
+    kinds = {str(c.get("kind")) for c in circ}
+    fixtures = {int(c.get("fixtures") or 0) for c in circ}
+    if len(kinds) != 1 or len(fixtures) != 1:
+        return None
+    ids = ",".join(str(c.get("id")) for c in circ)
+    return {"id": ids[:500], "kind": kinds.pop(), "fixtures": fixtures.pop()}
+
+
 def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
     by_key: dict[str, list[Contribution]] = defaultdict(list)
     for c in contribs:
@@ -1178,6 +1296,9 @@ def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
             level = min_level(level, "yellow")
         reasons = [r for r, _ in sorted(rule_r.items(), key=lambda kv: (-kv[1], kv[0]))]
         reasons += [r for r, _ in sorted(ev_r.items(), key=lambda kv: (-kv[1], kv[0])) if r not in reasons]
+        nft = first.resolution is not None and first.resolution.item.not_for_total
+        if nft and R_NOT_FOR_TOTAL not in reasons:
+            reasons.append(R_NOT_FOR_TOTAL)
         if level != "green" and not reasons:
             reasons = [R_LOW]
         evidence: list[dict[str, Any]] = []
@@ -1248,6 +1369,8 @@ def _lines(contribs: list[Contribution], room_of: Any = None) -> list[Line]:
                 needs,
                 qa,
                 [] if needs else _by_version(cs),
+                _line_circuit(cs),
+                not_for_total=nft,
             )
         )
     lines.sort(key=lambda ln: (ln.chapter == UNMATCHED_CHAPTER, ln.chapter, code_key(ln.code), ln.id))

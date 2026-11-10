@@ -213,6 +213,10 @@
             "geometry": {
               "type": "string",
               "maxLength": 1024
+            },
+            "circuits": {
+              "type": "string",
+              "maxLength": 1024
             }
           },
           "additionalProperties": false
@@ -464,6 +468,36 @@
                     "read",
                     "used"
                   ],
+                  "additionalProperties": false
+                },
+                "circuits": {
+                  "type": "object",
+                  "properties": {
+                    "circuits": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "fixtures": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "taggedFixtures": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "untaggedFixtures": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "positions": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unmatchedTags": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
                   "additionalProperties": false
                 }
               },

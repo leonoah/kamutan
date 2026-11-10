@@ -87,6 +87,9 @@ export const DISCIPLINE_CODES = [
   'flooring',
   'ceiling',
   'other',
+  // Sprint 10 (Worker-Classify): the designer's pool sheet ("בריכה") and works after occupancy ("אחרי טופס 4")
+  'pool',
+  'post_permit',
 ] as const;
 /** Lower-case code; not an enum so the classifier can add codes without a contract bump. */
 export const DisciplineSchema = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/, 'invalid discipline code');
@@ -146,6 +149,30 @@ export const SheetSchema = z.object({
   supersededMatch: z.enum(SUPERSEDE_MATCH_KINDS).nullable().optional(),
   /** On the NEW sheet: the old sheet it replaces (corrections of that sheet re-match onto this one, as in E2E-12). */
   supersedes: DocIdSchema.nullable().optional(),
+  // --- Sprint 10 (Worker-Classify, workers/drawing classify/project.py): project-level reconciliation, worker-written
+  /** Set while this sheet repeats other current sheets of its discipline (an "all floors" sheet): the BOQ build skips
+   * it (`skippedSheets[id] = 'overview'`); the per-floor sheets are counted. Null / absent: a normal sheet. */
+  coverage: z
+    .object({
+      status: z.literal('overview'),
+      coveredBy: z.array(DocIdSchema).max(16),
+      floors: z.array(FloorSchema).max(16),
+      contentShare: z.number().min(0).max(1),
+      reason: z.string().max(300),
+    })
+    .nullable()
+    .optional(),
+  /** Set while the worker moved the sheet to another floor than its title block names (two sheets of one discipline
+   * claimed the same floor; the floor whose sheets share its content wins). `floors` then follows this. */
+  floorCheck: z
+    .object({
+      titleFloors: z.array(FloorSchema).max(16),
+      floors: z.array(FloorSchema).max(16),
+      support: z.number().min(0).max(1),
+      reason: z.string().max(300),
+    })
+    .nullable()
+    .optional(),
 });
 export type Sheet = z.infer<typeof SheetSchema>;
 
@@ -223,6 +250,8 @@ export const VersionArtifactsSchema = z.object({
   textItems: z.string().max(1024).optional(),
   /** Sprint 6: geometry.json.gz (kamutan.geometry/1, Worker-Geometry) — hatches / wall runs / polylines / stairs */
   geometry: z.string().max(1024).optional(),
+  /** Sprint 10: circuits.json.gz (kamutan.circuits/1, Worker-Lighting) — circuits from the tags, lighting sheets only */
+  circuits: z.string().max(1024).optional(),
 });
 export type VersionArtifacts = z.infer<typeof VersionArtifactsSchema>;
 
@@ -324,6 +353,18 @@ export const VersionStatsSchema = z.object({
   timingsMs: TimingsMsSchema.optional(),
   /** Sprint 7 (Worker-Accuracy): drawn height marks read on this sheet / used by a measure. */
   heights: z.object({ read: count, used: count }).optional(),
+  /** Sprint 10 (Worker-Lighting): circuits.json.gz counts (lighting sheets); the worker writes only these keys. */
+  circuits: z
+    .object({
+      circuits: count.optional(),
+      fixtures: count.optional(),
+      taggedFixtures: count.optional(),
+      untaggedFixtures: count.optional(),
+      positions: count.optional(),
+      unmatchedTags: count.optional(),
+    })
+    .strict()
+    .optional(),
 });
 export type VersionStats = z.infer<typeof VersionStatsSchema>;
 

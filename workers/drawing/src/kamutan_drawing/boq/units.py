@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from .dedup import Det
 from .rules import Item, Rule
@@ -29,6 +30,11 @@ class Unit:
     origin: str | None = None
     quick_action: dict[str, str | None] | None = None
     needs_input: bool = False
+    # Sprint 10: measured parameters (length_m / diameter_mm …) for the description-based library resolution
+    params: dict[str, float] | None = None
+    # Sprint 10 (Worker-Lighting): the lighting circuit behind the unit — contracts BoqLine additive
+    # ``circuit {id, kind, fixtures}``
+    circuit: dict[str, Any] | None = None
 
 
 def room_det(room: Room) -> Det:

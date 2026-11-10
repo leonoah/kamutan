@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .dedup import Det
-from .rules import FLOOR_ORDER, R_TEMPLATE, Item, Library, Rule
+from .rules import FLOOR_ORDER, R_NEEDS_INPUT, R_TEMPLATE, Item, Library, Rule
 from .units import Unit
 
 SHEET_EVIDENCE_ID = "sheet"
@@ -53,17 +53,30 @@ def template_units(rules: list[Rule], library: Library, sheets: list[SheetRef], 
         if disc and not trig:
             continue
         excluded = {str(c) for c in m.get("excludeCodes") or []}
-        qty = float(m["quantity"]) if isinstance(m.get("quantity"), int | float) and m["quantity"] > 0 else 1.0
+        # Sprint 10: no quantity = "להשלמה ידנית" (needsInput, qty 0, in the item's own unit); `importedOnly` = only the
+        # client's own items (never the shipped default library), never a "לא לסיכום" unit-price line
+        q = m.get("quantity")
+        qty: float | None = float(q) if isinstance(q, int | float) and q > 0 else None
+        imported_only = m.get("importedOnly") is True
         floor = _first_floor([f for s in trig for f in s.floors])
         reasons = [] if R_TEMPLATE in r.reasons else [R_TEMPLATE]
         for item in library.in_chapters(chapters):
             if item.id in seen or item.code in excluded:
+                continue
+            if imported_only and (not item.imported or item.not_for_total):
                 continue
             seen.add(item.id)
             out.append(_unit(r, item, trig, qty, reasons, floor))
     return out
 
 
-def _unit(r: Rule, item: Item, trig: list[SheetRef], qty: float, reasons: list[str], floor: str | None) -> Unit:
+def _unit(r: Rule, item: Item, trig: list[SheetRef], qty: float | None, reasons: list[str], floor: str | None) -> Unit:
+    if qty is None:
+        from .suggested import default_quick_action
+
+        u = Unit(r, [(sheet_det(s), None) for s in trig[:1]], 0.0, [*reasons, R_NEEDS_INPUT], "red", item=item,
+                 floor=floor, ignore_member_levels=True, origin="suggested", needs_input=True)  # fmt: skip
+        u.quick_action = {"kind": default_quick_action(item.unit), "sheetId": trig[0].sheet_id if trig else None}
+        return u
     return Unit(r, [(sheet_det(s), None) for s in trig], qty, list(reasons), "yellow", item=item, floor=floor,
                 ignore_member_levels=True)  # fmt: skip

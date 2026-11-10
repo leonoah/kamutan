@@ -34,6 +34,13 @@ MAX_GLYPH_EXTENT = 8.0  # connected component larger than this is not text
 TOUCH_TOL = 0.06  # strokes of one letter share endpoints (exactly, in SHX)
 DENSIFY_STEP = 0.10  # sampling step for T-junction detection
 QUANT = 8  # key quantisation: 1/QUANT of line height
+# Sprint 10 (Perf): a "line" whose glyph boxes have (almost) no height is a row of horizontal ticks / hatch dashes,
+# never text (drawing text is >= ~1.5 mm). Such lines were rendered for OCR at 40 px per 0.001 mm of height — a
+# 1–3 GB image per line (Rubel: parse_memory_limit on four sheets). Noah's smallest real line is 0.169 mm.
+MIN_LINE_HEIGHT_MM = 0.1
+# Sprint 10 (Perf): above this many candidate pairs in one `_link_lines` pass, the pairs stay a numpy array
+# (~16 B per pair) instead of a Python set + list of tuples (~120 B per pair).
+PAIRS_SET_MAX = 1_000_000
 FEAT_ROWS, FEAT_COLS = 24, 16  # bitmap: y in [-1.6, 0.8] H, x in [0, 1.6] H
 FEAT_Y0, FEAT_Y1, FEAT_X1 = -1.6, 0.8, 1.6
 
@@ -242,12 +249,19 @@ def _link_lines(boxes: np.ndarray, styles: list, max_gap_factor: float = 1.2, mi
     tree = cKDTree(np.stack([cx, cy], 1))
     r = float(np.percentile(h, 95)) * 3 + 1.0
     # Sprint 5 (perf): the per-pair tests are evaluated with numpy, then applied in the set's own iteration order
-    # (DSU unions and the small-mark candidate lists depend on it) — same result as the scalar loop
-    plist = list(tree.query_pairs(r))
+    # (DSU unions and the small-mark candidate lists depend on it) — same result as the scalar loop.
+    # Sprint 10 (Perf): a dense site-survey underlay gives 3–8 M pairs per pass, which as a Python set + list of
+    # tuples was ~1 GB (Rubel ground floors: parse_memory_limit). Up to PAIRS_SET_MAX the historic set order is kept
+    # (output identical; Noah has ≤ 0.35 M); above it the pairs stay a (k, 2) array in (i, j) order. DSU groups do
+    # not depend on the order (the root is always the smallest member); only ties between small-mark candidates do.
+    pa = tree.query_pairs(r, output_type="ndarray")
     small_cand: dict[int, list[int]] = defaultdict(list)
     linked = np.zeros(n, dtype=bool)
-    if plist:
-        pa = np.array(plist, dtype=np.int64)
+    if len(pa):
+        if len(pa) <= PAIRS_SET_MAX:
+            pa = np.array(list(tree.query_pairs(r)), dtype=np.int64)
+        else:
+            pa = pa[np.lexsort((pa[:, 1], pa[:, 0]))].astype(np.int64, copy=False)
         I, J = pa[:, 0], pa[:, 1]
         sid = {st: k for k, st in enumerate(dict.fromkeys(styles))}
         style_id = np.array([sid[st] for st in styles], dtype=np.int64)
@@ -447,6 +461,8 @@ def extract_text_lines(vs: VectorSheet, sheet: str = "") -> list[TextLine]:
                     continue
             gboxes = boxes[grp]
             base, top, H = _line_metrics(gboxes)
+            if H < MIN_LINE_HEIGHT_MM:  # Sprint 10 (Perf): degenerate zero-height row, see MIN_LINE_HEIGHT_MM
+                continue
             glyphs: list[Glyph] = []
             for sub in _merge_stacked(gboxes, H):
                 ci = [int(idx[grp[k]]) for k in sub]

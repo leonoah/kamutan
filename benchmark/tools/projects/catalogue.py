@@ -39,7 +39,7 @@ KINDS: list[tuple[str, str, str, str]] = [
     ("plumb_basin", "plumbing point", "rule", r"לכיור בחדר רחצה"),
     ("plumb_kitchen_sink_out", "plumbing point", "none", r"לכיור מטבח חוץ"),
     ("plumb_kitchen_sink", "plumbing point", "rule", r"לכיור מטבח"),
-    ("plumb_wc_concealed", "plumbing point", "rule", r"מיכל הדחה סמוי|ניאגרה סמויה"),
+    ("plumb_wc_concealed", "plumbing point", "rule", r"^נק'.*(מיכל הדחה סמוי|ניאגרה סמויה)"),
     ("plumb_wc_monoblock", "plumbing point", "rule", r"מונובלוק"),
     ("plumb_shower_3way_x3", "plumbing point", "partial", r"למקלחון.*שלוש יח' אינטרפוץ"),
     ("plumb_shower_4way", "plumbing point", "partial", r"למקלחון.*אינטרפוץ 4 דרך"),

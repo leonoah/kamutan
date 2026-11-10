@@ -433,6 +433,7 @@ def _run(
     failed = [o for o in outcomes if o.status == "failed"]
     ensure_alive(docs, job.project_path, paths.sheet_set, written=sum(o.status == "ready" for o in outcomes))
     _update_project_sheet_count(job, docs)
+    _reconcile_project(job, blobs, docs)  # Sprint 10 (Worker-Classify) — keep: overviews / floor clashes across sheets
     if not job.is_reprocess:
         docs.set(paths.sheet_set, {"status": "ready" if ok else "failed", "pageCount": len(pages), "updatedAt": SERVER_TIMESTAMP})
     if failed:
@@ -517,6 +518,26 @@ def _update_project_sheet_count(job: IngestSheetVersionJob, docs: DocStore) -> N
             docs.set(job.project_path, {"stats": {"sheets": project_sheet_count(docs, job.project_path)}})
     except Exception:
         log.warning("job %s: project sheet count not updated", job.jobId, exc_info=True)
+
+
+def _reconcile_project(job: IngestSheetVersionJob, blobs: BlobStore, docs: DocStore) -> None:
+    """Sprint 10 (Worker-Classify, ``classify.project``): an all-floors sheet that repeats the per-floor sheets is
+    marked ``coverage.status = overview`` (the BOQ skips it); a sheet whose title names another floor's plan gets the
+    floor its content shares with the other disciplines. Best effort: never fails the job."""
+    try:
+        from ..classify.project import apply_to_project
+
+        rec = apply_to_project(docs, blobs, job.orgId, job.projectId)
+        if rec is not None and (rec.overviews or rec.floor_fixes or rec.clashes):
+            log.info(
+                "job %s: project reconcile — %d overview(s), %d floor fix(es), %d clash(es)",
+                job.jobId,
+                len(rec.overviews),
+                len(rec.floor_fixes),
+                len(rec.clashes),
+            )
+    except Exception:
+        log.warning("job %s: project reconcile failed", job.jobId, exc_info=True)
 
 
 def _schedule_dependents(job: IngestSheetVersionJob, docs: DocStore, sid: str) -> None:
@@ -910,6 +931,23 @@ def _understand(
         blobs.write(pre + GEOMETRY_FILE, data, "application/gzip", cache_control=IMMUTABLE)
         if FIXTURES_IN_ARTIFACTS:
             artifacts["geometry"] = pre + GEOMETRY_FILE
+    # Sprint 10 (Worker-Lighting) — keep: lighting circuits (kamutan.circuits/1) next to links.json.gz; levels are
+    # green / yellow only (no calibration cap needed); `stats.circuits` = the sandbox's counts, cleaned
+    circ_file = res.get("circuitsFile")
+    if circ_file is not None:
+        if circ_file != CIRCUITS_FILE:
+            raise IngestError(E.PARSE_CRASHED, "understanding reported an invalid circuits artifact name")
+        data = Path(safe_output_path(workdir, f"{out_dir}/{CIRCUITS_FILE}")).read_bytes()
+        blobs.write(pre + CIRCUITS_FILE, data, "application/gzip", cache_control=IMMUTABLE)
+        if FIXTURES_IN_ARTIFACTS:
+            artifacts["circuits"] = pre + CIRCUITS_FILE
+        cst = res.get("circuitStats")
+        if isinstance(cst, dict):
+            stats["circuits"] = {
+                k: max(0, min(int(v), 100_000))
+                for k, v in cst.items()
+                if k in CIRCUIT_STAT_KEYS and isinstance(v, int | float) and not isinstance(v, bool)
+            }
     # Sprint 7 (Worker-Accuracy): drawn heights read / used by the geometry measures → version `stats.heights`
     heights = clean_height_stats(res.get("geometryStats"))
     if heights is not None:
@@ -1059,6 +1097,8 @@ LINKS_FILE = "links.json.gz"
 FIXTURES_FILE = "fixtures.json.gz"
 TEXT_ITEMS_FILE = "text_items.json.gz"  # Sprint 6 (Worker-Text), = pipeline.understand.TEXT_ITEMS_FILE
 GEOMETRY_FILE = "geometry.json.gz"  # Sprint 6 (Worker-Geometry), = pipeline.understand.GEOMETRY_FILE
+CIRCUITS_FILE = "circuits.json.gz"  # Sprint 10 (Worker-Lighting), = pipeline.understand.CIRCUITS_FILE
+CIRCUIT_STAT_KEYS = ("circuits", "fixtures", "taggedFixtures", "untaggedFixtures", "positions", "unmatchedTags")
 WALLS_FILE = "walls.json.gz"  # kamutan.walls/1 — SheetVersion.artifacts.walls (readers fall back to the name)
 # contracts SheetVersion.artifacts.fixtures / .walls (optional, Sprint 4 integration)
 FIXTURES_IN_ARTIFACTS = True

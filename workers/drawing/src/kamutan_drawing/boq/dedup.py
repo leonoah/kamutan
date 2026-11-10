@@ -89,6 +89,9 @@ class Det:
     treads: tuple[int, int | None] | None = None
     # the evidence item's own reason (a partition measured by convention: "מחיצה דו-צדדית בגובה קומה" / "חיפוי חד-צדדי")
     note: str | None = None
+    # Sprint 10: the legend label of the detection's entry (label-qualified class rules) and a drawn run length (m)
+    legend_label: str | None = None
+    length_m: float | None = None
 
     @property
     def key(self) -> str:

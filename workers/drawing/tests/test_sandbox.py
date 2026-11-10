@@ -234,3 +234,71 @@ def test_landlock_required_but_unavailable_fails_closed(workdir, monkeypatch):
     with pytest.raises(SandboxError) as e:
         run_task("selftest.echo", {}, workdir=workdir, limits=replace(QUICK, landlock="require"))
     assert e.value.code == "internal"
+
+
+# ---- Sprint 10 (Perf): configurable memory limit + informative memory-limit message
+def test_memory_limit_from_env_default_clamp_and_invalid():
+    from kamutan_drawing.sandbox.runner import DEFAULT_MEMORY_MB, MAX_MEMORY_MB, MIN_MEMORY_MB, memory_mb_from_env
+
+    assert memory_mb_from_env({}) == DEFAULT_MEMORY_MB == 3072
+    assert memory_mb_from_env({"KAMUTAN_SANDBOX_MEMORY_MB": "3500"}) == 3500
+    assert memory_mb_from_env({"KAMUTAN_SANDBOX_MEMORY_MB": "8192"}) == MAX_MEMORY_MB == 3584  # 4 GB worker
+    assert memory_mb_from_env({"KAMUTAN_SANDBOX_MEMORY_MB": "16"}) == MIN_MEMORY_MB
+    assert memory_mb_from_env({"KAMUTAN_SANDBOX_MEMORY_MB": "lots"}) == DEFAULT_MEMORY_MB
+    assert memory_mb_from_env({"KAMUTAN_SANDBOX_MEMORY_MB": ""}) == DEFAULT_MEMORY_MB
+
+
+def test_cpu_limit_from_env_default_clamp_and_invalid():
+    from kamutan_drawing.sandbox.runner import DEFAULT_CPU_S, MAX_CPU_S, MIN_CPU_S, cpu_s_from_env
+
+    assert cpu_s_from_env({}) == DEFAULT_CPU_S == 120
+    assert cpu_s_from_env({"KAMUTAN_SANDBOX_CPU_S": "180"}) == 180
+    assert cpu_s_from_env({"KAMUTAN_SANDBOX_CPU_S": "3600"}) == MAX_CPU_S == 300  # never above the wall limit
+    assert cpu_s_from_env({"KAMUTAN_SANDBOX_CPU_S": "1"}) == MIN_CPU_S
+    assert cpu_s_from_env({"KAMUTAN_SANDBOX_CPU_S": "2m"}) == DEFAULT_CPU_S
+
+
+def test_limits_default_cpu_reads_the_env(monkeypatch):
+    monkeypatch.setenv("KAMUTAN_SANDBOX_CPU_S", "200")
+    assert Limits().cpu_s == 200
+    assert Limits(cpu_s=30).cpu_s == 30  # explicit wins
+    monkeypatch.delenv("KAMUTAN_SANDBOX_CPU_S")
+    assert Limits().cpu_s == 120
+
+
+def test_limits_default_memory_reads_the_env(monkeypatch):
+    monkeypatch.setenv("KAMUTAN_SANDBOX_MEMORY_MB", "2048")
+    assert Limits().memory_mb == 2048
+    assert Limits(memory_mb=1024).memory_mb == 1024  # explicit wins
+    monkeypatch.delenv("KAMUTAN_SANDBOX_MEMORY_MB")
+    assert Limits().memory_mb == 3072
+
+
+def test_memory_limit_message_carries_the_sheet_counts(workdir):
+    with pytest.raises(SandboxError) as e:
+        run_task(
+            "selftest.alloc",
+            {"mb": 100_000, "counts": {"paths": 116270, "segments": 258817, "images": 363}},
+            workdir=workdir,
+            limits=replace(QUICK, memory_mb=512),
+        )
+    assert e.value.code == "parse_memory_limit"
+    assert e.value.message == "parser exceeded the memory limit (512 MB; sheet: 116270 paths, 258817 segments, 363 images)"
+
+
+def test_context_describe_is_counts_only():
+    from kamutan_drawing.sandbox import context
+
+    context.reset()
+    assert context.describe() == ""
+    assert context.memory_limit_message(3072) == "parser exceeded the memory limit (3072 MB)"
+    context.note(images=3, paths=10, textLines=2, inserts=1)
+    assert context.describe() == "sheet: 10 paths, 3 images, 2 textLines, 1 inserts"
+    context.reset()
+
+
+def test_cpu_limit_message_names_the_stage(workdir):
+    with pytest.raises(SandboxError) as e:
+        run_task("selftest.spin", {"stage": "links"}, workdir=workdir, limits=replace(QUICK, cpu_s=2, wall_s=30.0))
+    assert e.value.code == "parse_cpu_limit"
+    assert e.value.message == "parser exceeded the CPU limit (2s; stage links)"

@@ -15,9 +15,18 @@ from typing import Any
 
 from ..ingest.pdf_vector import VectorSheet
 from ..ocr.dictionary import TextSpan
-from ..ocr.textutil import normalize
 from ..scale.detect import ScaleResult, detect_scale
-from ..titleblock.classify import DISCIPLINES, FLOORS, TitleBlock, _best_keyword, classify_sheet, read_title_block
+from ..titleblock.classify import (
+    DISCIPLINES,
+    FLOORS,
+    TitleBlock,
+    _best_keyword,
+    classify_sheet,
+    floor_words_present,
+    fold,
+    read_title_block,
+    read_title_block_cells,
+)
 
 GREEN_MIN = 0.85
 RED_BELOW = 0.5
@@ -37,6 +46,10 @@ R_DPI_UNKNOWN = "רזולוציה לא ידועה (הנחה 300DPI)"
 R_LOW_CONFIDENCE = "ביטחון סיווג נמוך"
 
 _SCALE_RE = re.compile(r"1\s*:\s*(\d{1,4})")
+# Sprint 10: a free-text title says it is a plan ("תכנית חשמל", "ת. תאורה", "תכ' בניה") — the repaired text layer has
+# every note word as its own span ("ראה תכנית בניה" gave "בניה" → construction on a demolition sheet)
+_REFERENCE = re.compile(r"(^|\s)(ראה|ר'|ע\"פ|עפ\"י|לפי)(\s|$)")  # "ראה תכנית בניה" names another plan
+_TITLE_MARK = re.compile(r"(^|\s)(תכנית|תוכנית|תכ['׳י]|ת\.|גיליון)")
 
 
 @dataclass
@@ -88,12 +101,12 @@ def level_of(conf: float, issues: Issues, cap: str | None = None) -> str:
 
 def _floors_in_order(text: str) -> list[str]:
     found = [c for c, _ in _best_keyword(text, FLOORS, 0.75)]
-    t = normalize(text)
-    if "קומה" not in t and "קומת" not in t:
+    t = fold(text)
+    if not floor_words_present(text):
         found = [f for f in found if f not in ("first", "second", "third")]
 
     def pos(code: str) -> int:
-        idx = [t.find(kw) for kw in FLOORS[code][1] if t.find(kw) >= 0]
+        idx = [t.find(fold(kw)) for kw in FLOORS[code][1] if t.find(fold(kw)) >= 0]
         return min(idx) if idx else 10**6
 
     return sorted(found, key=pos)
@@ -105,7 +118,16 @@ def _from_free_text(spans: list[TextSpan]) -> tuple[str, str]:
     for s in spans:
         if len(s.text) > 80 or not s.text.strip():
             continue
-        if _best_keyword(s.text, DISCIPLINES, 0.8):
+        # Sprint 10: labels ("תאור והערות:") and notes ("ע"פ הנחיות יועץ אינסטלציה") are not titles; short keywords
+        # must match exactly here (one wrong letter made "תאור" / "פריסה" a discipline)
+        if (
+            s.text.strip().endswith(":")
+            or len(s.text.split()) > 10
+            or not _TITLE_MARK.search(s.text)
+            or _REFERENCE.search(s.text)
+        ):
+            continue
+        if _best_keyword(s.text, DISCIPLINES, 0.8, exact_up_to=5):
             score = s.height * (1.5 if ("תכנית" in s.text or "ת." in s.text) else 1.0)
             if best is None or score > best[0]:
                 best = (score, s.text)
@@ -127,6 +149,11 @@ def classify_page(
     issues = Issues(yellow=list(extra_yellow or []), red=list(extra_red or []))
     tb = read_title_block(spans, vs)
     source = "titleblock"
+    if tb.bbox is None or not _best_keyword(tb.fields.get("sheet_name", ""), DISCIPLINES, 0.75):
+        # Sprint 10 (Worker-Classify): labels unreadable (outlined SHX font) → the block by its anchors and cells
+        cells = read_title_block_cells(spans, vs)
+        if cells.bbox is not None and cells.fields.get("sheet_name"):
+            tb = cells
     if tb.bbox is None or not tb.fields.get("sheet_name"):
         title, scale_txt = _from_free_text(spans)
         tb = TitleBlock(
@@ -174,6 +201,10 @@ def classify_page(
             conf *= 0.95
     if raster:
         issues.yellow.append(R_RASTER)
+    if source == "titleblock" and cls.disciplines and floors and not issues.red:
+        # Sprint 10: discipline and floor read from the title block — a scale doubt or a weak reading is a yellow
+        # reason for the user, not a red sheet (Yahav: 17/17 red with every discipline and floor right)
+        conf = max(conf, RED_BELOW)
     conf = max(0.0, min(1.0, conf))
     level = level_of(conf, issues, cap="yellow" if raster else None)
     if level != "green" and not issues.yellow and not issues.red:

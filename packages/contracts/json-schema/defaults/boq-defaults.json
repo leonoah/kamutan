@@ -148,7 +148,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_socket_double",
@@ -164,7 +164,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_socket_triple",
@@ -180,7 +180,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_socket_power",
@@ -196,7 +196,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_socket_power_double",
@@ -212,7 +212,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_comms_point",
@@ -231,7 +231,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_socket_box_6",
@@ -247,7 +247,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_speaker",
@@ -263,7 +263,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_heater_feed",
@@ -279,7 +279,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_intercom",
@@ -295,7 +295,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_conduit_cobra",
@@ -311,7 +311,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_socket_3phase",
@@ -327,7 +327,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_doorbell",
@@ -343,7 +343,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_water_heater_feed",
@@ -359,7 +359,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_panel",
@@ -378,7 +378,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_light_single",
@@ -394,7 +394,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_light_two_way",
@@ -410,7 +410,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_light_shared_2",
@@ -426,7 +426,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_light_shared_3",
@@ -442,7 +442,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_light_add_2way",
@@ -460,7 +460,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_light_add_fan",
@@ -478,7 +478,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_light_sensor",
@@ -493,7 +493,7 @@
       "priority": 200,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_install_luminaires",
@@ -520,7 +520,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_ac_drain",
@@ -537,7 +537,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_basin_wall_faucet",
@@ -559,7 +559,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_basin_flower_faucet",
@@ -581,7 +581,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_wc_concealed",
@@ -598,7 +598,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_washing_machine",
@@ -615,7 +615,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_garden_tap",
@@ -632,7 +632,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_wc_monoblock",
@@ -649,7 +649,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_shower_basement",
@@ -670,7 +670,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_shower",
@@ -692,7 +692,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_plumb_bath",
@@ -709,7 +709,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_oneoff_water_feed",
@@ -739,7 +739,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_oneoff_manifold",
@@ -769,7 +769,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_oneoff_heater_feed",
@@ -792,7 +792,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_oneoff_greywater_pump",
@@ -821,7 +821,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_oneoff_rain_pump",
@@ -844,7 +844,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_tile_cladding_wet",
@@ -869,7 +869,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_tile_floor_wet",
@@ -889,7 +889,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_tile_corners",
@@ -906,7 +906,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_waterproofing_wet",
@@ -928,7 +928,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_tile_partial_kitchen",
@@ -947,7 +947,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_tile_partial_other",
@@ -970,7 +970,7 @@
       "wasteFactor": 0.07,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_waterproof_marker",
@@ -986,7 +986,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_note_point",
@@ -1002,7 +1002,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_breaker",
@@ -1018,7 +1018,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_legend_entry",
@@ -1034,7 +1034,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_legend_box",
@@ -1050,7 +1050,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_region",
@@ -1066,7 +1066,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_room",
@@ -1082,7 +1082,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_faucet_basin",
@@ -1098,7 +1098,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_faucet_wall",
@@ -1114,7 +1114,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_floor_tiling",
@@ -1130,7 +1130,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_none_wall_cladding",
@@ -1146,7 +1146,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_auth_sockets",
@@ -1171,7 +1171,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_auth_comms",
@@ -1196,7 +1196,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_auth_feeds",
@@ -1218,7 +1218,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_auth_switches",
@@ -1241,7 +1241,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_auth_luminaires",
@@ -1265,7 +1265,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_auth_fixtures",
@@ -1293,7 +1293,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_auth_ac",
@@ -1318,7 +1318,7 @@
       "priority": 0,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_text_island_conduit",
@@ -1342,7 +1342,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_text_ventilator_feed",
@@ -1365,7 +1365,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_text_comms_panel",
@@ -1393,7 +1393,7 @@
       "priority": 130,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_text_boiler_timer",
@@ -1417,7 +1417,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_text_projector_conduit",
@@ -1441,7 +1441,7 @@
       "priority": 120,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_text_panel_36",
@@ -1468,7 +1468,7 @@
       "priority": 130,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_text_vent_pipe",
@@ -1488,7 +1488,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_retaining_walls",
@@ -1506,7 +1506,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_retaining_walls",
@@ -1531,7 +1531,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_slab_stairs",
@@ -1560,7 +1560,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_opening_closure_block",
@@ -1578,7 +1578,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_opening_closure_block",
@@ -1603,7 +1603,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_stair_treads",
@@ -1621,7 +1621,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_stair_treads",
@@ -1646,7 +1646,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_backsplash",
@@ -1664,7 +1664,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_backsplash",
@@ -1689,7 +1689,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_cladding_partial",
@@ -1707,7 +1707,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_cladding_partial",
@@ -1732,7 +1732,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_courtyard_waterproofing",
@@ -1764,7 +1764,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_gypsum_ceiling",
@@ -1782,7 +1782,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_gypsum_ceiling",
@@ -1807,7 +1807,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_valance_equipment",
@@ -1825,7 +1825,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_valance_equipment",
@@ -1849,7 +1849,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_gypsum_closure",
@@ -1867,7 +1867,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_gypsum_closure",
@@ -1891,7 +1891,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_text_access_panel",
@@ -1911,7 +1911,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_access_panel",
@@ -1936,7 +1936,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_valance_curtain",
@@ -1954,7 +1954,7 @@
       "priority": 110,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_valance_curtain",
@@ -1979,7 +1979,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_gypsum_partition",
@@ -1999,7 +1999,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_gypsum_partition",
@@ -2023,7 +2023,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_gypsum_partition_double",
@@ -2042,7 +2042,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_gypsum_partition_double",
@@ -2067,7 +2067,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_repairs_after_demolition",
@@ -2091,7 +2091,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_geo_plaster_walls",
@@ -2109,7 +2109,7 @@
       "priority": 100,
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_plaster_walls",
@@ -2134,7 +2134,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_paint_interior",
@@ -2165,7 +2165,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_suggest_putty",
@@ -2197,7 +2197,7 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
     },
     {
       "id": "r_template_demolition",
@@ -2220,7 +2220,2855 @@
       ],
       "enabled": true,
       "source": "default",
-      "defaultsVersion": 8
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_addon_waterproof",
+      "kind": "marker_addon",
+      "match": {
+        "hostClasses": [
+          "socket_single",
+          "socket_double",
+          "socket_triple",
+          "socket_power",
+          "socket_power_double",
+          "socket_3phase",
+          "socket_box_6",
+          "switch_single",
+          "switch_2way",
+          "switch_fan",
+          "switch_cross",
+          "switch_shutter",
+          "tv_point",
+          "data_point",
+          "phone_point",
+          "bezek_point",
+          "speaker",
+          "intercom"
+        ],
+        "markerClasses": [
+          "waterproof_marker"
+        ],
+        "markerPatterns": [
+          "מוגנ ?מימ",
+          "ip ?(44|55|65)",
+          "(?<![א-ת])מ\\.?מ\\.?(?![א-ת])"
+        ],
+        "radiusMm": 6,
+        "roomTypes": [
+          "bathroom",
+          "wc",
+          "balcony",
+          "courtyard"
+        ]
+      },
+      "itemCode": "4.29",
+      "itemDescription": "תוספת עבור אביזר מוגן מים",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_addon_usb",
+      "kind": "marker_addon",
+      "match": {
+        "hostClasses": [
+          "socket_single",
+          "socket_double",
+          "socket_triple",
+          "socket_power",
+          "socket_power_double",
+          "socket_3phase",
+          "socket_box_6"
+        ],
+        "markerPatterns": [
+          "usb",
+          "type ?c"
+        ],
+        "radiusMm": 6
+      },
+      "itemCode": "4.30",
+      "itemDescription": "תוספת עבור שקע USB + TYPE C בקופסא קיימת",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_feed_shutter",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "heater_feed",
+          "switch_shutter"
+        ],
+        "labelPatterns": [
+          "תריס"
+        ]
+      },
+      "itemCode": "4.31",
+      "itemDescription": "הזנה לתריס חשמלי",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_feed_smoke",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "heater_feed"
+        ],
+        "labelPatterns": [
+          "גלאי ?עשנ",
+          "גלאי"
+        ]
+      },
+      "itemCode": "4.32",
+      "itemDescription": "הזנה לגלאי עשן",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_supply_smoke",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "heater_feed"
+        ],
+        "labelPatterns": [
+          "גלאי ?עשנ",
+          "גלאי"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.33",
+      "itemDescription": "אספקה והתקנת גלאי עשן",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_feed_awning",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "heater_feed"
+        ],
+        "labelPatterns": [
+          "סוככ",
+          "פרגולה חשמלית"
+        ]
+      },
+      "itemCode": "4.34",
+      "itemDescription": "הזנה לסוכך חשמלי",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_feed_solar_boiler",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "heater_feed",
+          "water_heater_feed"
+        ],
+        "labelPatterns": [
+          "דוד ?שמש",
+          "(?:דוד|חימומ).{0,20}(?:גג|גז)"
+        ]
+      },
+      "itemCode": "4.35",
+      "itemDescription": "הזנה משולבת לדוד שמש ולמכשיר חימום מים על הגג כולל פקט ומפסק",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_supply_heater",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "heater_feed"
+        ],
+        "labelPatterns": [
+          "תנור"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.36",
+      "itemDescription": "התקנת תנור חימום בחדר רחצה",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_supply_bell",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "doorbell"
+        ],
+        "labelPatterns": [
+          ".*"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.37",
+      "itemDescription": "אספקה והתקנת פעמון",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_supply_vent",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "(הזנה|נקודה|נק'?)\\s*ל?(ונטה|מפוח|מאוורר\\s*יניקה)"
+        ],
+        "scope": "any",
+        "qty": "count",
+        "proximityMm": 300,
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ]
+      },
+      "itemCode": "4.38",
+      "itemDescription": "אספקה והתקנת ונטה",
+      "unit": "יחידה",
+      "priority": 119,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_3ph_ac",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_3phase",
+          "socket_power"
+        ],
+        "labelPatterns": [
+          "מזגנ",
+          "מיזוג",
+          "מעבה"
+        ]
+      },
+      "itemCode": "4.39",
+      "itemDescription": "שקע תלת פאזי למזגן",
+      "unit": "יחידה",
+      "priority": 111,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_3ph_induction",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_3phase",
+          "socket_power"
+        ],
+        "labelPatterns": [
+          "אינדוקציה",
+          "כיריימ"
+        ]
+      },
+      "itemCode": "4.40",
+      "itemDescription": "שקע תלת פאזי לכיריים אינדוקציה",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_3ph_jacuzzi",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_3phase",
+          "socket_power"
+        ],
+        "labelPatterns": [
+          "ג'?קוזי"
+        ]
+      },
+      "itemCode": "4.41",
+      "itemDescription": "שקע תלת פאזי לג'קוזי",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_3ph_ev",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_3phase",
+          "socket_power"
+        ],
+        "labelPatterns": [
+          "רכב",
+          "טעינה"
+        ]
+      },
+      "itemCode": "4.42",
+      "itemDescription": "הזנה תלת פאזית עבור שקע טעינה לרכב חשמלי",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_3ph_hydro",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_3phase",
+          "socket_power"
+        ],
+        "labelPatterns": [
+          "היתרו",
+          "חימומ ?מימ"
+        ]
+      },
+      "itemCode": "4.43",
+      "itemDescription": "שקע תלת פאזי למכשיר חימום מים (היתרו)",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_3ph_sauna",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_3phase",
+          "socket_power"
+        ],
+        "labelPatterns": [
+          "סאונה"
+        ]
+      },
+      "itemCode": "4.44",
+      "itemDescription": "שקע תלת פאזי לסאונה",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_3ph_pool",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_3phase",
+          "socket_power"
+        ],
+        "labelPatterns": [
+          "בריכה",
+          "חדר ?מכונות"
+        ]
+      },
+      "itemCode": "4.45",
+      "itemDescription": "הזנה תלת פאזית לחדר מכונות בריכה",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_cobra_32",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "conduit_cobra"
+        ],
+        "labelPatterns": [
+          "32"
+        ],
+        "params": {
+          "length": "label"
+        }
+      },
+      "itemCode": "4.46",
+      "itemDescription": "צינור קוברה 32 מ\"מ",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_marichaf_20",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "מריכפ",
+          "מריחב",
+          "צינור\\s*20\\s*מ\"?מ"
+        ],
+        "scope": "any",
+        "qty": "count",
+        "proximityMm": 300,
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ]
+      },
+      "itemCode": "4.47",
+      "itemDescription": "צינור מריכף 20 מ\"מ חופשי מהרצפה כהכנה",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_solar_conduit",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "סולרי",
+          "פאנלימ\\s*סולר",
+          "הכנה\\s*ל?סולר"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ]
+      },
+      "itemCode": "4.48",
+      "itemDescription": "צינור הזנה עם חוט משיכה מלוח חשמל ראשי עד הגג – הכנה לפאנלים סולריים",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_panel_main",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ],
+        "labelPatterns": [
+          "ראשי"
+        ],
+        "excludeLabelPatterns": [
+          "תקשורת"
+        ]
+      },
+      "itemCode": "4.49",
+      "itemDescription": "אספקה והתקנת לוח חשמל ראשי",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_panel_sub",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ],
+        "labelPatterns": [
+          "משני",
+          "משנה"
+        ],
+        "excludeLabelPatterns": [
+          "תקשורת",
+          "מונה"
+        ]
+      },
+      "itemCode": "4.50",
+      "itemDescription": "אספקה והתקנת לוח חשמל משני",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_panel_submeter",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ],
+        "labelPatterns": [
+          "מונה"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.51",
+      "itemDescription": "אספקה והתקנת מונה משני בלוח חשמל",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_deep_boxes",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "switch_single",
+          "switch_2way",
+          "switch_fan",
+          "switch_cross",
+          "switch_shutter"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.52",
+      "itemDescription": "קופסת עומק למפסקים כוללת קו אפס נוסף",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_smart_home",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "בית ?חכמ",
+            "קופס(?:א|ת|אות) ?עומק"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "4.53",
+      "itemDescription": "הכנה לבית חכם: קופסאות עומק וקו אפס נוסף לכל המפסקים",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_box_d18",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_box_6"
+        ],
+        "labelPatterns": [
+          ".*"
+        ]
+      },
+      "itemCode": "4.71",
+      "itemDescription": "אביזר D18 הכולל 6 שקעים ושלושה צינורות נוספים עם חוט משיכה עד לארון תקשורת",
+      "unit": "יחידה",
+      "priority": 105,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_comms_extra",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "camera",
+          "thermostat",
+          "alarm_detector",
+          "siren",
+          "keypad"
+        ]
+      },
+      "itemCode": "4.05",
+      "itemDescription": "נק' תקשורת (כבלים/ טלפון/ רשת) הכנה עם חוט משיכה",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_shutter_feed",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "shutter_feed"
+        ]
+      },
+      "itemCode": "4.31",
+      "itemDescription": "הזנה לתריס חשמלי",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_smoke_feed",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "smoke_detector"
+        ]
+      },
+      "itemCode": "4.32",
+      "itemDescription": "הזנה לגלאי עשן",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_smoke_supply",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "smoke_detector"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.33",
+      "itemDescription": "אספקה והתקנת גלאי עשן",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_vent_feed",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "ventilator_feed"
+        ]
+      },
+      "itemCode": "4.19",
+      "itemDescription": "הזנה למפוח אוורור (ונטה) כולל מפסק",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_vent_supply",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "ventilator_feed"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.38",
+      "itemDescription": "אספקה והתקנת ונטה",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_popup_socket",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "socket_single",
+          "socket_double",
+          "socket_triple",
+          "socket_power",
+          "socket_power_double",
+          "socket_3phase",
+          "socket_box_6"
+        ],
+        "labelPatterns": [
+          "קופצ"
+        ]
+      },
+      "itemCode": "4.57",
+      "itemDescription": "אספקה והתקנת שקע קופץ באי מטבח",
+      "unit": "יחידה",
+      "priority": 112,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_install_fans",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "ceiling_fan"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.54",
+      "itemDescription": "התקנת מאוורר תקרה",
+      "unit": "יחידה",
+      "priority": 100,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_profile_surface",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_length"
+      },
+      "itemCode": "4.55",
+      "itemDescription": "התקנת פרופיל תאורה חיצוני עה\"ט",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_profile_recessed",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_length"
+      },
+      "itemCode": "4.56",
+      "itemDescription": "התקנת פרופיל תאורה שקוע בתקרת גבס",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_profile_units",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.72",
+      "itemDescription": "התקנת פרופיל תאורה חיצוני עה\"ט באורך לפי תכנית",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_popup_socket",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "שקע\\s*קופצ"
+        ],
+        "scope": "any",
+        "qty": "count",
+        "proximityMm": 300,
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ]
+      },
+      "itemCode": "4.57",
+      "itemDescription": "אספקה והתקנת שקע קופץ באי מטבח",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_pillar_feed",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "פילר"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "לאשר לפי תכנית החשמל"
+      },
+      "itemCode": "4.58",
+      "itemDescription": "ביצוע הזנה חדשה מהפילר ועד לוח חשמל ראשי",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_fiber_feed",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "סיב ?אופטי"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "לאשר לפי תכנית החשמל"
+      },
+      "itemCode": "4.59",
+      "itemDescription": "ביצוע הזנה ראשית לסיב אופטי מהפילר ועד לוח תקשורת ראשי",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_iec_inspection",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "4.60",
+      "itemDescription": "אחריות להעברת ביקורת חברת חשמל",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_storage_feed",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "קו\\s*הזנה.{0,30}מחסנ",
+          "הזנה.{0,20}מחסנ"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "electrical",
+          "lighting"
+        ]
+      },
+      "itemCode": "4.61",
+      "itemDescription": "קו הזנה מלוח חשמל ראשי עד מחסן בגינה",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_waterproof",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.29",
+      "itemDescription": "תוספת עבור אביזר מוגן מים",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_usb",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.30",
+      "itemDescription": "תוספת עבור שקע USB + TYPE C בקופסא קיימת",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_shutter",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.31",
+      "itemDescription": "הזנה לתריס חשמלי",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_smoke",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.32",
+      "itemDescription": "הזנה לגלאי עשן",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_smoke_supply",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.33",
+      "itemDescription": "אספקה והתקנת גלאי עשן",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_awning",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.34",
+      "itemDescription": "הזנה לסוכך חשמלי",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_solar_boiler",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.35",
+      "itemDescription": "הזנה משולבת לדוד שמש ולמכשיר חימום מים על הגג כולל פקט ומפסק",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_heater_install",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.36",
+      "itemDescription": "התקנת תנור חימום בחדר רחצה",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_bell_supply",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.37",
+      "itemDescription": "אספקה והתקנת פעמון",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_vent_supply",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.38",
+      "itemDescription": "אספקה והתקנת ונטה",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_3ph_ac",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.39",
+      "itemDescription": "שקע תלת פאזי למזגן",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_3ph_induction",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.40",
+      "itemDescription": "שקע תלת פאזי לכיריים אינדוקציה",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_3ph_jacuzzi",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.41",
+      "itemDescription": "שקע תלת פאזי לג'קוזי",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_3ph_ev",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.42",
+      "itemDescription": "הזנה תלת פאזית עבור שקע טעינה לרכב חשמלי",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_3ph_hydro",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.43",
+      "itemDescription": "שקע תלת פאזי למכשיר חימום מים (היתרו)",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_3ph_sauna",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.44",
+      "itemDescription": "שקע תלת פאזי לסאונה",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_3ph_pool",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.45",
+      "itemDescription": "הזנה תלת פאזית לחדר מכונות בריכה",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_cobra_32",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.46",
+      "itemDescription": "צינור קוברה 32 מ\"מ",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_cobra_50",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.20",
+      "itemDescription": "צינור קוברה 50 מ\"מ",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_marichaf",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.47",
+      "itemDescription": "צינור מריכף 20 מ\"מ חופשי מהרצפה כהכנה",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_solar_conduit",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.48",
+      "itemDescription": "צינור הזנה עם חוט משיכה מלוח חשמל ראשי עד הגג – הכנה לפאנלים סולריים",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_panel_main",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.49",
+      "itemDescription": "אספקה והתקנת לוח חשמל ראשי",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_panel_sub",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.50",
+      "itemDescription": "אספקה והתקנת לוח חשמל משני",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_panel_comms",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.25",
+      "itemDescription": "אספקה והתקנת לוח תקשורת",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_submeter",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.51",
+      "itemDescription": "אספקה והתקנת מונה משני בלוח חשמל",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_deep_boxes",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.52",
+      "itemDescription": "קופסת עומק למפסקים כוללת קו אפס נוסף",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_d18",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.71",
+      "itemDescription": "אביזר D18 הכולל 6 שקעים ושלושה צינורות נוספים עם חוט משיכה עד לארון תקשורת",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_popup",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "electrical",
+            "lighting"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "4.57",
+      "itemDescription": "אספקה והתקנת שקע קופץ באי מטבח",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_irrigation",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "plumbing"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "3.25",
+      "itemDescription": "נק' הזנה למערכת השקיה",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_heater_water",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "plumbing"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "3.35",
+      "itemDescription": "הזנת מים למכשיר חימום מים / היתרו",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_fb_waterproof_room",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "plumbing"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא זוהה בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "5.09",
+      "itemDescription": "איטום חדר רחצה רטוב בשתי שכבות סיכה, כולל רולקות ובדיקת הצפה",
+      "unit": "חדר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_plumb_kitchen_sink",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_kitchen_sink"
+        ],
+        "perRoom": false,
+        "excludeLabelPatterns": [
+          "חוצ"
+        ]
+      },
+      "itemCode": "3.16",
+      "itemDescription": "נק' מים חמים קרים וניקוז לכיור מטבח, כולל התקנת ברז וסיפון",
+      "unit": "יחידה",
+      "priority": 115,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_plumb_kitchen_sink_outdoor",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_kitchen_sink"
+        ],
+        "perRoom": false,
+        "labelPatterns": [
+          "חוצ",
+          "גינה",
+          "מרפסת"
+        ]
+      },
+      "itemCode": "3.17",
+      "itemDescription": "נק' מים קרים וניקוז לכיור מטבח חוץ",
+      "unit": "יחידה",
+      "priority": 125,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_plumb_shower_3x",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_shower"
+        ],
+        "perRoom": true,
+        "labelPatterns": [
+          "3\\s*x",
+          "x\\s*3",
+          "שלוש",
+          "3 ?יח"
+        ]
+      },
+      "itemCode": "3.18",
+      "itemDescription": "נק' למקלחון הכוללת הזנת חמים וקרים, שלוש יחידות אינטרפוץ 3 דרך, נק' מים ומזלף, ראש גשם ותעלת ניקוז",
+      "unit": "יחידה",
+      "priority": 125,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_plumb_shower_4way",
+      "kind": "plumbing_point",
+      "match": {
+        "fixtureClasses": [
+          "fixture_shower"
+        ],
+        "perRoom": true,
+        "labelPatterns": [
+          "4\\s*דרכ"
+        ]
+      },
+      "itemCode": "3.19",
+      "itemDescription": "נק' למקלחון הכוללת הזנת חמים וקרים, אינטרפוץ 4 דרך, נק' מים ומזלף, ראש גשם וקופסת ניקוז",
+      "unit": "יחידה",
+      "priority": 124,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_manifold_main",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "מרכזי(?:ה|ית)\\s*(?:מימ\\s*)?ראשית"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.22",
+      "itemDescription": "אספקה והתקנת מרכזיית מים ראשית",
+      "unit": "יחידה",
+      "priority": 125,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_manifold_sub",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "מרכזי(?:ה|ית)\\s*(?:מימ\\s*)?משנית"
+        ],
+        "scope": "any",
+        "qty": "count",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.23",
+      "itemDescription": "אספקה והתקנת מרכזיית מים משנית",
+      "unit": "יחידה",
+      "priority": 125,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_roof_heater_feed",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "הזנת?\\s*מימ.{0,30}(?:גג|דוד\\s*שמש|גז)"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.24",
+      "itemDescription": "הזנת מים בגג משולבת לדוד ולמכשיר חימום בגז",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_irrigation_point",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "(?:נק'?|הזנה|הזנת\\s*מימ)\\s*ל?השקיה"
+        ],
+        "scope": "any",
+        "qty": "count",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.25",
+      "itemDescription": "נק' הזנה למערכת השקיה",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_fire_hose_point",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "גלגלונ"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.26",
+      "itemDescription": "נק' מים למערכת גלגלון כיבוי אש",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_fire_hose_supply",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "גלגלונ"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.27",
+      "itemDescription": "אספקה והתקנת מערכת גלגלון כיבוי אש",
+      "unit": "יחידה",
+      "priority": 119,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_pool_feed",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "הזנת?\\s*מימ.{0,20}בריכה",
+          "בריכה"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.28",
+      "itemDescription": "הזנת מים לבריכה לפי הנחיות קבלן הבריכות",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_planter_drain",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "אדנית"
+        ],
+        "scope": "any",
+        "qty": "count",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.29",
+      "itemDescription": "ביצוע ניקוז לאדנית",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_sauna_feed",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "סאונה"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.30",
+      "itemDescription": "הזנת מים וניקוז לסאונה",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_outdoor_shower",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "טוש"
+        ],
+        "scope": "any",
+        "qty": "one",
+        "proximityMm": 300,
+        "disciplines": [
+          "plumbing"
+        ]
+      },
+      "itemCode": "3.31",
+      "itemDescription": "הזנת מים חמים וקרים למערכת טוש רצפתית בחצר, כולל התקנת המערכת",
+      "unit": "יחידה",
+      "priority": 120,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_sewage",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "plumbing"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "3.32",
+      "itemDescription": "ביצוע מערכת ביוב חדשה לפי נספח סניטרי ותכניות האינסטלציה",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_pump_pit",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "בור\\s*(?:משאבה|שאיבה)",
+            "משאבה\\s*טבולה"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "3.33",
+      "itemDescription": "חפירת ויציקת בור משאבה כולל חיבור הדלוחין ואספקת המשאבה",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_main_feed_line",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "קו\\s*הזנה\\s*ראשי",
+            "מהשעונ"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "לאשר לפי תכנית האינסטלציה"
+      },
+      "itemCode": "3.34",
+      "itemDescription": "ביצוע קו הזנה ראשי חדש מהשעון",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_floor_indoor",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "architecture",
+            "architecture_master",
+            "construction",
+            "demolition",
+            "ceiling"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "5.10",
+      "itemDescription": "ריצוף פנים באריחי גרניט פורצלן כולל רובה אקרילית",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_floor_outdoor",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "פיתוח",
+            "ריצופ\\s*חוצ",
+            "חניה",
+            "פטיו"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "5.11",
+      "itemDescription": "ריצוף חוץ באריחי גרניט פורצלן בטיט",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_floor_substrate",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "פרקט",
+            "סוג\\s*ב'?"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "5.12",
+      "itemDescription": "ריצוף אריחי סוג ב' כתשתית לפרקט",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_stone_cladding",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "חיפוי\\s*אבנ",
+            "אבנ"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "5.13",
+      "itemDescription": "חיפוי קירות חוץ באבן כולל כוחלה",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_coping",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "קופינג",
+            "ספ\\s*שיש",
+            "חלונ"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_length"
+      },
+      "itemCode": "5.14",
+      "itemDescription": "התקנת סף שיש (קופינג) לחלון כולל מילוי דבק שיש וליטוש",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_recessed_skirting",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "פאנל\\s*שקוע",
+            "פנל\\s*שקוע"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_length"
+      },
+      "itemCode": "5.15",
+      "itemDescription": "הדבקת פאנל שקוע לפי פרט כולל פרופיל ניתוק",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_terrace_waterproofing",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "מרפסת",
+            "גג"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "5.16",
+      "itemDescription": "איטום מרפסת / גג ביריעות ביטומניות מולחמות לרבות שיפועים ורולקות",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_ground_waterproofing",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "architecture",
+            "architecture_master",
+            "construction",
+            "demolition",
+            "ceiling"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "5.17",
+      "itemDescription": "איטום קירות הבית במפגש עם הקרקע",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_openings_waterproofing",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "architecture",
+            "architecture_master",
+            "construction",
+            "demolition",
+            "ceiling"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "5.18",
+      "itemDescription": "איטום פתחי מערכות אלומיניום בשתי שכבות סיכה",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_laundry_floor",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "חדר\\s*כביסה"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "5.19",
+      "itemDescription": "ריצוף רצפת חדר כביסה באריחי גרניט פורצלן",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_block_walls",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "קיר(?:ות)?\\s*בלוק",
+            "בלוקימ"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "2.04",
+      "itemDescription": "בניית קירות בלוק בטון לפי תכניות האדריכלות",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_window_closure",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "סגירת\\s*(?:פתח\\s*)?חלונ"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "count"
+      },
+      "itemCode": "2.05",
+      "itemDescription": "סגירת פתח חלון קיים בבלוק",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_concrete_works",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "יציק",
+            "קונסטרוק"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "2.06",
+      "itemDescription": "יציקות בטון לפי תכניות ופרטי הקונסטרוקציה",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_white_partitions",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "גבס\\s*לבנ",
+            "מחיצ(?:ה|ות)\\s*גבס"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "7.08",
+      "itemDescription": "מחיצות גבס לבן בעובי 10 ס\"מ כולל בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_blue_partitions",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "גבס\\s*כחול",
+            "נגד\\s*מימ",
+            "גבס\\s*ירוק"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_area"
+      },
+      "itemCode": "7.09",
+      "itemDescription": "בניית מחיצות גבס כחול נגד מים כולל בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_gypsum_niche",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "נישה"
+        ],
+        "scope": "any",
+        "qty": "count",
+        "proximityMm": 300,
+        "disciplines": [
+          "architecture",
+          "architecture_master",
+          "construction",
+          "demolition",
+          "ceiling"
+        ]
+      },
+      "itemCode": "7.10",
+      "itemDescription": "בניית נישה במחיצת גבס לפי תכנית",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_str_profile",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "(?<![a-z])str(?![a-z])",
+            "פרופיל\\s*ניתוק"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_length"
+      },
+      "itemCode": "7.11",
+      "itemDescription": "אספקה והתקנת פרופיל ניתוק STR במפגש תקרת גבס עם קירות",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_text_open_art",
+      "kind": "text_item",
+      "match": {
+        "patterns": [
+          "אופנ\\s*ארט",
+          "open\\s*art"
+        ],
+        "scope": "any",
+        "qty": "count",
+        "proximityMm": 300,
+        "disciplines": [
+          "architecture",
+          "architecture_master",
+          "construction",
+          "demolition",
+          "ceiling"
+        ]
+      },
+      "itemCode": "7.12",
+      "itemDescription": "אספקה והתקנת פתח אופן ארט בגודל 60/60 ס\"מ",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_valance_kitchen",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "סינר.{0,30}מטבח"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_length"
+      },
+      "itemCode": "7.13",
+      "itemDescription": "בניית סינר גבס בחתך לפי תכנית",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_colored_render",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "שליכט"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "8.05",
+      "itemDescription": "שליכט צבעוני על קירות חוץ וחומות כולל טיח שחור ופריימר",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_shelter_door_paint",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "ממ\"?ד",
+            "מקלט"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "לאשר"
+      },
+      "itemCode": "8.06",
+      "itemDescription": "צביעת משקוף ודלת ממ\"ד / מקלט בצבע על בסיס שמן",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_wood_reinforcements",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "חיזוק",
+            "מחיצ(?:ה|ות)\\s*גבס"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "9.04",
+      "itemDescription": "ביצוע חיזוקי עץ במחיצות גבס לפי תכנית",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_bath_accessories",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "sheet_discipline",
+          "disciplines": [
+            "plumbing"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "קומפלט – לאשר"
+      },
+      "itemCode": "9.05",
+      "itemDescription": "התקנת אביזרי חדרי רחצה",
+      "unit": "קומפלט",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_percolation_pit",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "ח[יל]?לחול"
+          ]
+        },
+        "estimate": {
+          "kind": "fixed",
+          "quantity": 1
+        },
+        "reason": "לאשר"
+      },
+      "itemCode": "9.06",
+      "itemDescription": "קידוח בור חלחול כולל שרוול, רשת וצלב הגנה",
+      "unit": "יחידה",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_suggest_pool_channel",
+      "kind": "suggested_item",
+      "match": {
+        "trigger": {
+          "kind": "text",
+          "patterns": [
+            "בריכה"
+          ]
+        },
+        "estimate": null,
+        "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית",
+        "quickAction": "measure_length"
+      },
+      "itemCode": "9.07",
+      "itemDescription": "תעלת ניקוז סמויה תחת הריצוף מסביב לבריכה",
+      "unit": "מ\"א",
+      "priority": 5,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_template_needs_input",
+      "kind": "template_chapter",
+      "match": {
+        "chapters": [
+          "02",
+          "03",
+          "04",
+          "05",
+          "06",
+          "07",
+          "08",
+          "09"
+        ],
+        "importedOnly": true
+      },
+      "itemCode": null,
+      "itemDescription": "סעיפי כתב הכמויות של הלקוח שלא חושבו – להשלמה ידנית",
+      "unit": "יחידה",
+      "priority": 1,
+      "reasons": [
+        "הצעה – לאשר ידנית"
+      ],
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_lighting_circuit",
+      "kind": "lighting_circuit",
+      "match": {
+        "wording": "auto",
+        "includeTimer": true,
+        "includeNoSwitch": true
+      },
+      "itemCode": null,
+      "itemDescription": "נק' מאור לפי מעגלי הדלקה",
+      "unit": "יחידה",
+      "priority": 250,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
     }
   ]
 }

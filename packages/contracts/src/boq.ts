@@ -149,6 +149,17 @@ export function normalizeDescriptionInput(s: string): string {
 /** Effective origin of a line (absent = `detected`, the Sprint 3–5 behaviour). */
 export const lineOrigin = (l: { origin?: LineOrigin | undefined }): LineOrigin => l.origin ?? 'detected';
 
+/** Sprint 10: switching topology of a lighting circuit (Worker-Lighting `CIRCUIT_KINDS`). */
+export const CIRCUIT_KINDS = ['single', 'shared', 'two_way', 'cross', 'timer', 'no_switch'] as const;
+export const CircuitKindSchema = z.enum(CIRCUIT_KINDS);
+export type CircuitKind = z.infer<typeof CircuitKindSchema>;
+/** Sprint 10: `{id, kind, fixtures}` of the circuit(s) behind a lighting-point line (`id` = circuit ids joined by ","). */
+export const BoqLineCircuitSchema = z.object({ id: z.string().min(1).max(500), kind: CircuitKindSchema, fixtures: z.number().int().nonnegative() }).strict();
+export type BoqLineCircuit = z.infer<typeof BoqLineCircuitSchema>;
+
+/** Sprint 10: a line counted in the totals (not a "לא לסיכום" unit-price line). */
+export const countsInTotal = (l: { notForTotal?: boolean | undefined }): boolean => l.notForTotal !== true;
+
 /**
  * orgs/{orgId}/projects/{projectId}/boqLines/{lineId}.
  * Worker-written (boq.build): chapter, code, description, qty, unit, floor, level, reasons, byFloor, evidenceCount,
@@ -257,6 +268,14 @@ export const BoqLineSchema = z.object({
   priceOverrideBy: UidSchema.nullable().optional(),
   priceOverrideAt: TimestampSchema.nullable().optional(),
   priceOverrideReason: z.string().max(500).nullable().optional(),
+  // --- Sprint 10 (Worker-BOQ / Worker-Lighting writes; optional, absent on older lines) ---
+  /**
+   * The line's library item is a "לא לסיכום / לספירה בסוף" line of the client's BOQ (`ItemLibraryItem.notForTotal`): a
+   * unit price only — shown, never counted in chapter / grand totals (BOQ panel, Excel, share snapshot).
+   */
+  notForTotal: z.boolean().optional(),
+  /** The lighting circuit(s) behind a "נק' מאור …" line (Worker-Lighting, `circuits.json.gz`). */
+  circuit: BoqLineCircuitSchema.nullable().optional(),
   // --- Sprint 8 (API-DERIVED on read — GET boq / PATCH line responses; never stored, the worker must not write them) ---
   /** Effective unit price (override ?? library price); null = "ללא מחיר". */
   unitPrice: z.number().finite().nullable().optional(),
@@ -863,6 +882,93 @@ export const LinksArtifactSchema = z
     });
   });
 export type LinksArtifact = z.infer<typeof LinksArtifactSchema>;
+
+// ---------------------------------------------------------------- Sprint 10 (Worker-Lighting): circuits.json.gz
+export const CIRCUITS_SCHEMA = 'kamutan.circuits/1' as const;
+const CircuitBBoxSchema = z
+  .object({ x: z.number().finite(), y: z.number().finite(), w: z.number().finite().nonnegative(), h: z.number().finite().nonnegative() })
+  .strict();
+const CircuitReasonSchema = z.string().min(1).max(64);
+const CircuitIdsSchema = z.array(z.string().max(128)).max(2000);
+/** One piece of evidence of a circuit: the fixture's tag label, a switch list at a position, the timer note, or the
+ * switch glyph beside a wall light with a built-in switch (no tag of its own). */
+export const CircuitEvidenceSchema = z
+  .object({
+    kind: z.enum(['tag', 'switch_list', 'timer_note', 'builtin_switch']),
+    text: z.string().max(300).optional(),
+    bboxMm: CircuitBBoxSchema.optional(),
+    detectionId: z.string().max(128).optional(),
+    positionId: z.string().max(128).optional(),
+    detectionIds: CircuitIdsSchema.optional(),
+    tag: z.string().max(16).optional(),
+    keywordRead: z.boolean().optional(),
+  })
+  .strict();
+/** A switching circuit (`c_<tag>`): the fixtures carrying the tag and the switch positions listing it. */
+export const LightingCircuitSchema = z
+  .object({
+    id: z.string().max(128).regex(/^c_[A-Za-z0-9_*/-]+$/),
+    tag: z.string().min(1).max(16),
+    kind: CircuitKindSchema,
+    fixtureIds: CircuitIdsSchema,
+    switchIds: CircuitIdsSchema,
+    positionIds: CircuitIdsSchema,
+    positions: z.number().int().nonnegative(),
+    fixtures: z.number().int().nonnegative(),
+    floor: z.string().max(32).nullable(),
+    timer: z.boolean(),
+    stairAutomat: z.boolean(),
+    level: z.enum(['green', 'yellow', 'red']),
+    reasons: z.array(CircuitReasonSchema).max(32),
+    evidence: z.array(CircuitEvidenceSchema).max(2000),
+  })
+  .strict();
+/** A switch position (`sp_<n>`): a bank of glyphs, a gang with a range, or a glyph-less switch box. */
+export const SwitchPositionSchema = z
+  .object({
+    id: z.string().max(128).regex(/^sp_[A-Za-z0-9_-]+$/),
+    tags: z.array(z.string().max(16)).max(100),
+    switchIds: CircuitIdsSchema,
+    bboxMm: CircuitBBoxSchema,
+    boxMm: CircuitBBoxSchema.nullable(),
+    texts: z.array(z.string().max(300)).max(100),
+    reasons: z.array(CircuitReasonSchema).max(32),
+  })
+  .strict();
+/** Storage orgs/{o}/projects/{p}/sheets/{s}/versions/{v}/circuits.json.gz (gzip JSON), lighting sheets only.
+ * `unmatched` is never empty-by-omission: untagged fixtures, switch tags without a fixture on the sheet and tag texts
+ * that could not be placed are reported there (they keep the sheet's circuits yellow). `debugTexts` = dev runs only. */
+export const CircuitsArtifactSchema = z
+  .object({
+    schema: z.literal(CIRCUITS_SCHEMA),
+    sheetId: z.string().max(128),
+    circuits: z.array(LightingCircuitSchema).max(5000),
+    positions: z.array(SwitchPositionSchema).max(5000),
+    unmatched: z
+      .object({
+        fixtureIds: CircuitIdsSchema,
+        tags: z
+          .array(z.object({ tag: z.string().max(16), positionIds: CircuitIdsSchema, reason: CircuitReasonSchema, bboxMm: CircuitBBoxSchema }).strict())
+          .max(5000),
+        texts: z.array(z.object({ text: z.string().max(300), bboxMm: CircuitBBoxSchema, tags: z.array(z.string().max(16)).max(100) }).strict()).max(5000),
+      })
+      .strict(),
+    stats: z.record(z.string().max(64), z.unknown()),
+    debugTexts: z.array(z.record(z.string(), z.unknown())).max(20000).optional(),
+  })
+  .strict()
+  .superRefine((a, ctx) => {
+    const seen = new Set<string>();
+    a.circuits.forEach((c, i) => {
+      if (seen.has(c.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['circuits', i, 'id'], message: 'duplicate id' });
+      seen.add(c.id);
+      if (c.level !== 'green' && c.reasons.length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['circuits', i, 'reasons'], message: 'a non-green circuit needs at least one reason' });
+      }
+    });
+  });
+export type CircuitsArtifact = z.infer<typeof CircuitsArtifactSchema>;
+export type LightingCircuit = z.infer<typeof LightingCircuitSchema>;
 
 /** GET /v1/projects/:pid/boq/lines/:lineId/evidence */
 export const BoqLineEvidenceResponseSchema = z.object({

@@ -2970,3 +2970,831 @@ the delete, no final status; progress guard; boq.build of a deleting project (no
 docs, 204); project deleted during aggregation → no evidence / snapshot / lines, build not marked failed; marked_pdf
 and find_similar of a deleting project acked 204 with no write. Plus the dry-run tests (planned = writes, schema
 validation, mode rule).
+
+## Sprint 10 — detection generalisation on Rubel / Achituv / Yahav (Worker-Accuracy)
+
+Brief: `docs/agents/SPRINT10_BRIEF.md` item 4 (owns `symbols/ fixtures/ geometry/ rooms/ ocr/`). Edited: `symbols/template.py`,
+`symbols/match.py`, `symbols/detect.py`; new `symbols/legend_extra.py`, `symbols/rings.py`; tests
+`tests/test_sprint10_accuracy.py` (12). No edit of `pipeline/understand.py` (every "keep" hook untouched), none of
+`legend/ classify/ ingest/ raster_symbols/` (Worker-Legend's; requests below).
+
+**Environment incident (09.11, 17:52):** the box was re-provisioned mid-sprint. `/home/claude/kamutan` came back as a
+fresh checkout of `main` 18a5eed (pre-Sprint-9 tree: no `legend/vocabulary.py`, no `ingest/quality.py`),
+`/home/claude/kamutan-data` (the three projects, Noah samples, GT, my ingest roots) does not exist, the venv and the
+scratchpad were wiped. Every file below was **re-created from session memory** the same evening; the numbers in the
+"Causes → fixes" table are what I measured on the Achituv sheets *before* the reset (stored roots lost) and must be
+re-measured when the data is restored. Not recreated: the scratch tools (re-detect harness on stored primitives,
+template probe, family dump, colour-share dump, per-sheet summary, Hebrew-name → ASCII ingest driver) — small, to be
+rewritten when the data lands; and the before-roots `s10acc/achituv/before`, `s6qa/s10acc_before` (Noah baseline
+run before any edit: exact 61 / within 63, identical to `s9leg_after`).
+
+### What the three projects taught about the drawings (read all 23 Achituv sheets, legends of all three)
+* **The xls side sheets are template leftovers.** `חשמל` (block counts per floor), `אינסטלציה` (fixtures per bathroom)
+  and `שינויים` are **byte-identical in all three workbooks** (same "karka / mgurim / martef" counts, same 4 bathrooms).
+  They are not these projects' counts and cannot be used as a cross-check (Data/QA: do not seed GT from them).
+* **Title blocks are wrong on Achituv's first-floor sheets**: `בניה - קומה א`, `חשמל - קומה א` (and the same for the
+  other disciplines I rendered) carry "קומת קרקע" in שם הגיליון — a designer copy-paste error. The classifier reads
+  them correctly as `ground`; the file name is the truth. Data/QA: floors from the file names, dispute `GT-D-*`
+  "title block says ground on the first-floor sheets". Ground-floor sheets also hit the cold glyph store
+  ("כומת כרכע" → no floor) — the org is new, so this is the real cold-start case.
+* **The legend is 29 rows, colour-coded** (sockets red, comms brackets red, luminaires yellow + green, switches
+  purple, camera light-orange, panel / circled letters orange, smoke detector dark red box "גע", keypad green "KB"):
+  speaker, 3-phase (3 ticks), ראה הערה, שקע בודד / 2X / כח, נק' קצה לכבל רשת / TV / TEL (brackets), צופר (צ), דוקרן,
+  נק' מאור תקרתית, גלאי אזעקה (ג), מאור+מאוורר, מחלף, גוף תאורה מהקיר, מצלב, מתג הפעלה, צינור קוברה, הזנה לתריס
+  חשמלי (M), תנור חימום (zig-zag box), לוח חשמל/תקשורת, קיבורד (KB), גלאי עשן (גע), מצלמה (cone), מפסק לתריס (red box,
+  two dots), פעמון (פ), וונטה (V), תרמוסטט (T). All 29 labels were read and 22 classed by the Sprint-9 legend code; 7
+  had no class (markers) — see fixes.
+* **Circled letters are the same ring with a letter; the letter is drawn two ways**: SHX strokes (legend rows, פ / צ
+  / V on the plan) or a **font text object** (M, ג on the plan: a text span, no path). The legend parser folds a
+  stroke letter into the label when the reader reads it ("ת תרמוסטט" → the T strokes become "texty" and are dropped),
+  so the thermostat template was a bare ring. The ground sheet's Hebrew font maps the drawn ג to U+05E8 ("ר") in the
+  text layer; the first-floor sheet gives "ג".
+* **No waterproof marker row.** 4.08 "תוספת עבור אביזר מוגן מים" (16 / 25 / 28) is not drawn as a mark: it is every
+  socket + switch outdoors or in a wet room → a BOQ rule on `roomId` / room type / outside-the-rooms (Worker-BOQ;
+  detections carry `roomId`, fixtures mark wet rooms).
+* **USB add-on** = "+TYPE C" written beside the socket (Achituv: 2 + 2 = 4 = BOQ 4.17). **D18** is a red "D18" box
+  near the stairs (text, not a legend symbol; Worker-BOQ `text_item`).
+* Plumbing sheets (text-anchored, like Noah) name every shower part separately: "אינטרפוץ 3 דרך H=110" ×2 or ×3,
+  "נק' מים מאחז", "ראש דוש מהתקרה", "תעלת ניקוז מרובעת" / "קופסת ניקוז", "אביק פיית מילוי" (bath), plus
+  "מרכזיית מים שקוע בקיר / מתחת לדק", "נק' גז", "נק' מים וניקוז למכונת כביסה". Ceiling sheets (`תקרה`) are
+  colour-filled regions with a colour legend (lowered ceiling by height, 15 cm ניתוק, STR profile line, AC strip) +
+  "סינר גבס H=-30" notes; construction sheets have a colour legend (grey existing, **green gypsum**, red block,
+  purple reinforcement) — green is "landscape, never a work category" in `geometry/prims.py`. Not implemented this
+  sprint (reset) — see Open.
+* Timing: the A2 electrical sheets took 27–141 s in `understand` on the loaded shared box (the ground sheet's 6.5 k-point
+  camera template and 20 templates × 69–77 candidates); `demo-first` 99 s. The Rubel ground-floor sheets (A1, 110–117 k
+  objects) are the Perf agent's — skipped as instructed.
+
+### Causes → fixes (found on Achituv `חשמל - קומה א` / `קומת קרקע`; re-measured 10.11 after the data restore, below)
+| cause on the sheet | before | fix | after |
+| --- | --- | --- | --- |
+| **One family for every circled letter.** `build_templates` merged M / ג / צ / פ / V (and T) because the mean symmetric chamfer is dominated by the shared ring (d 0.04–0.08 < tol 0.086); the family had ≥ 2 classes → OCR-deferred → unread → plain member (class None) → `unknown` red, or (after classing) every ring = the bare-ring T template = **thermostat** | first floor: 1 red unknown, 0 of 4 M / 7 ג; then 10 "thermostats" | `template.same_drawing`: a family also needs ≤ 8 % of either drawing's points farther than the match tolerance from the other (`FAMILY_UNEXPLAINED`); Noah's two families (socket / 2X, BEZEK / TV / TEL / רשת brackets) unchanged on all 4 lighting / electrical sheets (checked before the reset) | — |
+| **Ring families** (`symbols/rings.py`): templates that are one full ring (r ≥ 1.2 mm, ≤ 60 % ink inside) of the same radius become one ring-only template; per member the inner reference strokes are read from the sheet inside the legend ring (whatever the parser kept) + letter literals (legend inner span, class table M / T / V / ג+ר / צ / פ, label initial). On the plan: inner strokes → best member by chamfer (≤ 0.22 r, ≤ 0.75 × runner-up), else the text span inside → member by literal; nothing inside → not an item; a glyph no member owns → `unknown` + `דומה לסמל אחר` | | | first floor **4 shutter_feed (M) + 7 alarm_detector (ג)** = drawing; ground 4 M, 6 ג, 1 פ, 1 צ, 1 V (all checked on crops); detect 28 s → 9 s on the first floor (5 ring templates → 1) |
+| **No class for the designer's wider catalogue** (`legend_extra.py`): גלאי עשן, מצלמה, תרמוסטט, גלאי אזעקה, צופר, קיבורד → None (markers: "תרמוסטט" ended as an *annotation on a socket*); הזנה לתריס חשמלי and וונטה → `heater_feed` (keyword "הזנה ל" / "ונטה") | | new classes `smoke_detector camera thermostat alarm_detector siren keypad shutter_feed ventilator_feed` set on rows with no class or `heater_feed` only; "מפסק/מתג לתריס" keeps Noah's `switch_single` + annotation `לתריס`. Keywords normalised like the label (final letters: "עשן" → "עשנ" — my first version missed גע for that) | ground: smoke_detector 1 (q 0.90, was dropped as a marker), keypad 1, siren 1, ventilator 1, doorbell 1 |
+| **Camera = wall light.** The yellow `גוף תאורה מהקיר` template (filled disc) posed at scale 0.87 on the orange camera (filled disc + cone) with q 0.78, while the camera template got 0.585 (its fill is exploded differently per instance: 570 legend segs vs 284 on the plan) | ground: 6 false `luminaire_wall`, 0 cameras | `detect.colour_share`: share (by ink length) of the scene strokes under the pose drawn in the legend drawing's colours; < 0.5 → vetoed **before NMS** (`match.spot(accept=…)`, so the loser at that place can still win); `unique_colour_templates`: a template whose *dominant* colour no other legend drawing shares (not black / grey) gets `min_q` 0.5 instead of 0.6; `_nms`: a ring family yields to a containing, more specific drawing within 0.5 quality (`RING_YIELD`) — the bare ring had swallowed the camera's circle. Noah: every legend symbol is black and the scene mask already drops grey furniture → shares 1.0 on the stored Noah detections (checked) | ground **6 cameras** (= drawing), 0 false wall lights |
+| **USB / pop-up add-ons**: "+TYPE C" beside sockets (ground 2, first 2, basement 1 written "+type c") was not an annotation; "שקע קופץ" (Rubel 4.27) neither | — | `annotation_tokens`: `USB` for `USB` / `TYPE C` (not "TYPE3" of the general note), `קופץ`; attached to the nearest *socket* within 7 mm | 5 sockets `USB` = the drawing; BOQ 4.17 says 4 (dispute, below) |
+| **Comms words in the text layer, not in strokes** (found 10.11 on Yahav / Achituv): the word beside a bracket ("רשת", "TEL") is a *font* text object — the text layer holds it cleanly (conf 0.96), but the OCR windows render strokes and see nothing, and the legend rows kept no qualifier, so the span check had nothing to compare → plain member (TV) | Yahav basement 4 of 5 brackets TV; Achituv ground 2 of 4 | `qualifiers.read_from_spans` (pure): before OCR, each deferred bracket is named from nearby text-layer words that equal a member's implied token (רשת / TV / TEL / BEZEK — `entry_tokens`); exact match only, nearest first, one span ↔ one bracket, ties stay unread; OCR runs only for the rest (`detect._resolve_by_ocr(…, spans)`) | see "before2 / after2" below |
+| **Ventilator label refines a socket into a heater feed**: "הזנה לוונטה" (= the V ring beside it) hits the keyword rule "ונטה" → heater_feed, and `REFINES[socket_power]` contains heater_feed (Noah: "הזנה לדוד") | Yahav laundry dryer socket → heater_feed | `_annotate`: a heater-feed label that names a ventilator / shutter feed (`legend_extra.extra_class`) does not refine (`FEED_OWN_SYMBOL`); "הזנה לדוד" still does | |
+| **A classless marker suppresses a real symbol in NMS**: on Yahav's ground plan a power socket's stem + ticks fit the see-note "+" (q 0.831) a little better than the power template (0.807); NMS kept the cross, which is a marker (no item) → the socket vanished (before2 it surfaced as a red `unknown` through the old merged family) | Yahav ground: 2 sockets silently missed | `match._nms(passive=…)`: marker templates are taken after every class-bearing candidate, never replace one, and still count as its runner-up (negative margin → "דומה לסמל אחר", yellow); wired via `spot(passive=…)` from `detect` (`_is_marker`) | re-detect on stored primitives: Noah 4 symbol sheets identical; Yahav ground +2 sockets (yellow) |
+
+### Re-measured 10.11 (data restored; isolated before / after)
+Method: two frozen snapshots of the working tree taken at the same moment (`scratchpad/acc/{before,after}`, own venvs),
+identical except my five files (before = HEAD versions of `template.py` / `match.py` / `detect.py`, no `rings.py` /
+`legend_extra.py`), each run through Data/QA's `benchmark/tools/projects/run_eval.sh <p> acc10_{before,after}` (clean
+ingest + both builds + `kbench eval-boq`), one project at a time. NB Data/QA's own Noah `baseline` (20:45) ran from the
+shared tree, which already held these edits — it is an "after" for this work, not a "before".
+
+**Noah (BOQ level, both builds):** before = after = Data/QA baseline: exact **61**, within **63**, gated 54/66, disputed
+exact 9/11 (no room settings 59 / 60 / 51 / 9) — **no line differs**. **Detection level:** all 223 detections on the 15
+sheets identical before vs after (class, position, level, annotations). Same headline as `s9leg_after` / pre-loss.
+One change vs Sprint 9 in BOTH runs (environment, not this work): 4.05 comms 10 → **9** — the c054fd3a basement
+window-corner "רשת" bracket (45°) is no longer named by the qualifier OCR (Tesseract 5.3.4 on the re-provisioned box);
+a bare bracket is kept only when its word is read (Stage 10 rule). The line was wrong already (truth 11, disputed), so
+exact counts do not move.
+
+**Achituv (BOQ level, patched and original xls identical):** exact **19 → 24**, missing 25 → 22:
+| line | truth | before | after | cause |
+| --- | --- | --- | --- | --- |
+| 4.03 שקע כח בודד | 4 | — | **4** | power vs 3-phase no longer one family |
+| 4.04 שקע כח כפול | 3 | — | **3** | same |
+| 4.21 3-phase induction | 1 | 8 | **1** | same (every filled socket was "3-phase") |
+| 4.15 / 4.16 bell feed / install | 1 / 1 | — / 0 | **1 / 1** | the פ ring member |
+| 4.17 USB add-on | 4 | 3 | 5 | **drawing has 5** (basement "+type c") — dispute |
+| 4.40 / 4.41 fixtures / fans | 62 / 0 | 170 / 8 | 162 / 9 | lighting master sheet duplicates each floor (Lighting / BOQ) |
+
+**Achituv electrical, per class by eye (after run, all 3 sheets; every detection checked on 12–20 px/mm crops,
+full-sheet overlays scanned for misses):**
+| class | TP | FP | FN | P | R | BOQ cross-check |
+| --- | --- | --- | --- | --- | --- | --- |
+| alarm_detector | 15 | 0 | 0 | 1.00 | 1.00 | in 4.07 |
+| shutter_feed | 8 | 0 | 0 | 1.00 | 1.00 | 4.11 = 8 ✓ |
+| camera | 7 | 0 | 0 | 1.00 | 1.00 | in 4.07 |
+| smoke_detector | 3 | 0 | 0 | 1.00 | 1.00 | 4.13 / 4.14 = 3 ✓ |
+| heater_feed | 3 | 0 | 0 | 1.00 | 1.00 | 4.10 = 3 ✓ |
+| doorbell / keypad / siren / ventilator_feed | 1 each | 0 | 0 | 1.00 | 1.00 | 4.15, 4.25 ✓ |
+| socket_triple | 10 | 0 | 0 | 1.00 | 1.00 | 4.05 = 10 ✓ |
+| socket_power_double | 3 | 0 | 0 | 1.00 | 1.00 | 4.04 = 3 ✓ |
+| socket_single | 31 | 1 | 0 | 0.97 | 1.00 | (4.01 = 34) |
+| socket_double | 20 | 0 | 1 | 1.00 | 0.95 | (4.02 = 19, drawing 21) |
+| data_point | 10 | 0 | 3 | 1.00 | 0.77 | |
+| switch_single | 6 | 0 | 1 | 1.00 | 0.86 | |
+| socket_power | 3 | 1 | 1 | 0.75 | 0.75 | 4.03 = 4 (FP + FN cancel) |
+| socket_3phase | 0 | 1 | 1 | 0 | 0 | 4.21 = 1 (cancel) |
+| tv_point / phone_point | 0 | 2 / 1 | 0 | 0 | – | |
+| conduit_cobra | 0 | 0 | 3 | – | 0 | 4.18 + 4.19 = 3 |
+
+Comms on the drawing: data 13 + camera 7 + alarm 15 + siren 1 + keypad 1 = 37 vs 4.07 = 38. Errors by cause:
+* ground d_9 (2 ticks, power) ↔ island d_26 (3 ticks, 3-phase induction) **swapped** — power and 3-phase differ by one
+  tick; rotated poses pick the wrong one. Both carry `דומה לסמל אחר` (yellow). Fix idea: count the ticks across the stem.
+* 3 data brackets read as TV (2, ground) / phone (1, basement): their "רשת" (orange, beside the bracket) was not read
+  by the qualifier OCR → plain member. Same environmental OCR symptom as Noah's 4.05.
+* basement H=120 socket with "X2" ~3.5 mm away → single (the 2X attach gate is max(2.5, 0.8 × size) ≈ 3.0 mm; this
+  designer writes "X2" farther than Noah's). Not loosened on one sample (Noah-tuned).
+* first-floor shutter switch (red two-dot box, `מפסק לתריס`) not detected (thin box + 2 dots, low complexity). The
+  sheet's own note says shutter switches are not to be installed (remotes) — BOQ unaffected.
+* cobra conduits (red dashed arc + end circles on the plan; the legend draws a solid black arc) never match; the BOQ
+  cobra lines come from the text-item path.
+
+**Noah per-symbol GT draft** (`gt/noah/sheets_rebuilt_draft/*.geojson`, `gt_version: rebuilt-draft-s10`, README there;
+builder: scratchpad `tools/build_gt_draft.py`): the frozen `gt/noah/sheets/` is lost. Rebuilt for 5 of the 9 GT sheets
+— eb8be8a3 + c054fd3a (every detection checked by eye on 9–30 px/mm crops, misses added), 8d51ed5a / 24ab0ea0 /
+2a308827 (fixtures, checked against the Sprint-4 per-room record + exact BOQ chapter 03). Added misses: eb8be8a3
+socket_box_6 ("פרט A"); c054fd3a data_point (above), 2 × switch_single (middle of three switches by the panel; second
+bath switch), 3 × socket_box_6 ("פרט A" callouts); 8d51ed5a ac_unit (bay "ניקוז למזגן", unread text). `kbench
+validate`: 0 errors. **Not rebuilt:** the lighting sheets b2046277 / 1bbe4113 (type tags + links — too long to redo by
+eye this round) and the 2 other GT sheets (identity not recoverable on the box). Seeded from the detector, so it
+measures regression + the misses a person found, NOT independent accuracy. `kbench eval --include-draft`: micro-F1
+**0.967 before = 0.967 after** (TP 116, FP 0, FN 8; every class P = 1.0; R < 1: socket_box_6 0/4, switch_single 5/7,
+data_point 3/4, ac_unit 16/17).
+
+### Re-measured again 10.11 night — today's tree (before2 / after2 / after3)
+The shared tree changed under me between runs (other agents: `boq/`, `classify/`, `ocr/glyphs.py`, `parse/`, `sandbox/`,
+`titleblock/`, new `ingest/pdf_text.py`), so a new pair was frozen from ONE copy: `before2` = that copy with my files
+reverted to HEAD (`template.py`, `match.py`, `detect.py`, `qualifiers.py`; no `rings.py` / `legend_extra.py`), `after2` =
+the copy (all fixes but the NMS one), `after3` = after2 + my current files (adds the passive-marker NMS fix).
+**Noah before2 → after2:** exact 61 / within 63 / gated 54 / disputed 9 (no room settings 59 / 60 / 51 / 9) both;
+**detections identical on all 15 sheets**. after3: re-detect on the stored primitives of the 4 symbol sheets is
+identical (59 / 20 / 38 / 43); plumbing / architecture sheets have no legend templates (path not taken).
+**Yahav before2 → after2** (patched and original xls identical): exact **28 → 35**:
+| line | truth | before2 | after2 | cause |
+| --- | --- | --- | --- | --- |
+| 4.11 heater feed | 3 | 6 | **3** | shutter M / vent V rings no longer heater feeds; the dryer socket no longer refined |
+| 4.12 shutter feed | 4 | 0 | **4** | M ring member |
+| 4.15 / 4.16 smoke detector feed / install | 3 / 3 | 0 / 0 | **3 / 3** | "גע" row classed |
+| 4.17 / 4.18 bell feed / install | 1 / 1 | 0 / 0 | **1 / 1** | פ ring member |
+| 4.29 / 4.30 ventilator feed / install | 2 / 2 | 0 / 0 | **2 / 2** | V ring member |
+| 4.46 fixture install | 58 | 0 | 69 | ceiling point and "מאור+מאוורר" were ONE family → every point a fan |
+| 4.47 ceiling fans | 6 | 72 | 4 | same (fans now 4 of 6) |
+| 4.03 power socket | 8 | **8** | 9 | the basement dryer socket is now a power socket (was a heater feed): the drawing has 9 — before2's 8 was luck |
+| 4.07 comms | 25 | 17 | 16 | ground: 3 red `unknown` items (via the old see-note family) gone; basement brackets data 4 / TV 0 (were TV) |
+Yahav basement, by eye (after2): every bracket now data except the "TEL" one (its word is garbled in the text layer:
+"ונז" → still the TV fallback); the 3-phase heat-pump socket by the stairs and the "לוח חשמל עם מונה משני" panel are
+missed in all runs.
+
+### Not done (reset) / open
+* Plumbing fixture parts (interpuz count + way, rain head, hand shower, drain channel vs box, `water_manifold`,
+  washing-machine point) as annotations on the shower / bath detections — designed (per room: count the mixer /
+  rain-head / hand-shower / drain labels, attach to the room's shower or bath), not written.
+* תקרה + בניה areas: colour-legend reader (filled swatch + label → category / lifecycle / height) feeding
+  `geometry.analyze(legend_colours=…)` (the parameter exists, `understand` passes none), `ceiling` in
+  `GEOMETRY_DISCIPLINES`, green as a work colour when the legend says so, סינר (dashed line + "סינר גבס H=") — not
+  written.
+* Per-class P/R (calibration input): measured on Noah (draft GT, 5 sheets) and Achituv electrical (by eye) — tables
+  above. Rubel: the ground-floor sheets do not parse (Perf agent's, skipped as instructed). Yahav: BOQ-level before /
+  after queued behind the other agents' runs. **No class has ≥ 200 items** on these projects (largest: socket_single,
+  Noah 23 + Achituv 31 = 54): the green rule cannot be re-evaluated from four houses. Precision 1.0 per class holds for
+  11 of the Achituv classes with support, and for every Noah draft class (by construction there).
+* Open fixes (measured, not done): power vs 3-phase tick count; the Noah c054fd3a 45° "רשת" (stroke text, OCR on the
+  new box); 2X attach reach for this designer; shutter-switch template; cobra arcs; 6-box "פרט A" callouts (Noah 4);
+  Yahav basement: the 3-phase heat-pump socket by the stairs and the panel "לוח חשמל עם מונה משני" are missed.
+* Yahav `חשמל - קומת קרקע` was classified `demolition` on the 21:27 tree (no detection on the ground electrical sheet);
+  fixed by another agent's `classify/` change by 01:00 (54 detections in both before2 / after2). Achituv
+  `תאורה - קומת מרתף`: the title block is not found, so the filled "לביצוע" status dot is scanned — a false luminaire
+  (before) / ceiling fan (after); `classify/` owner.
+* Noah warm run (second ingest into the same root) not done this round; the glyph-store path is untouched by these edits.
+* Full suite on the shared tree (10.11): 757 passed / 41 skipped / 13 failed — 12 in Worker-BOQ's `test_boq*` /
+  `test_boq_s10` (in progress), 1 `test_pipeline` DXF on `stats.circuits` (Worker-Lighting). None in my files.
+
+### Requests
+* **Contracts / benchmark (orchestrator, `packages/contracts/NOTES.md` "Sprint 10 — REQUEST from Worker-Accuracy")**:
+  add `smoke_detector`, `camera`, `thermostat`, `alarm_detector`, `siren`, `keypad`, `shutter_feed`, `ventilator_feed`
+  (domain electrical, `core: false`) to `benchmark/schema/classes.json` → `SYMBOL_CLASSES`; `annotations` values
+  `USB`, `קופץ`, `לתריס` are plain strings (no contract change).
+* **Worker-Legend (`legend/vocabulary.py`)**: the same eight terms as proper vocabulary rows so the classes come from
+  the legend (my `legend_extra.refine_entries` only fills rows left without a class / `heater_feed`; it can be
+  deleted once the vocabulary gives them). Also: a stroke letter inside a legend ring should not be "texty" when the
+  span that overlaps it is the row's *label* ("ת תרמוסטט") — `legend/parse.py`.
+* **Worker-BOQ**: 4.07 "נק' תקשורת" = tv + phone + data + speaker + intercom + `COMMS_EXTRA` (camera, thermostat,
+  alarm_detector, siren, keypad); 4.19/4.20 smoke detector = `smoke_detector` count (feed + supply); 4.17/4.11/4.12
+  shutter feed = `shutter_feed`; 4.25/4.29 = `ventilator_feed`; USB add-on = sockets annotated `USB`; pop-up =
+  `קופץ`; waterproof add-on = sockets + switches outdoors / in wet rooms (no mark on the drawing); shutter switches
+  carry `לתריס` (exclude from light-switch counts); Worker-Lighting: same.
+* **Data/QA**: floors from file names (title blocks wrong on Achituv first floor); the xls side sheets are template
+  leftovers (identical across the three files) — not GT.
+* **Worker-Legend / classify owner:** Achituv `תאורה - קומת מרתף` title block not found → its status-table dot is
+  read as a luminaire / fan (4.40 / 4.41 ±1).
+* **Data/QA — disputes to record (drawing vs BOQ, Achituv):** 4.17 USB add-on: drawing 5 (ground 2, first 2, basement
+  1 "+type c" at (76, 127) beside the H=90 socket) vs BOQ 4; 4.07 comms: drawing 37 points (data 13, camera 7, alarm
+  15, siren 1, keypad 1) vs BOQ 38; 4.02 double: drawing 21 vs BOQ 19. Noah: the 4.05 drop 10 → 9 in today's baseline is
+  the environment (qualifier OCR on the new box), not a GT change. Also: a "baseline" from the shared tree after 18:00
+  09.11 already includes Worker-Accuracy's edits — for before/after use frozen snapshots (method above).
+
+### Tests / commands
+`tests/test_sprint10_accuracy.py` (17): circled letters are not a family while identical drawings are; ring family
+merge (ring-only template, members with inner references and literals); member by inner strokes / by inner text /
+empty ring = nothing / unknown glyph = ambiguous; a lone circled symbol keeps its template; the catalogue classes
+(final letters, untouched Noah rows, `heater_feed` override, shutter switch); colour share (same / other / near
+colour, no palette = no veto, veto inside `spot()`); unique colour by dominant colour and neutral pens; NMS ring
+yield vs the old rule; USB / pop-up tokens (not "TYPE3") and attachment to sockets only; the `לתריס` annotation;
+text-layer qualifiers (named / garbled / out of reach; one span ↔ one bracket; ties unread; OCR only for the rest);
+the ventilator / shutter label does not refine a power socket while "הזנה לדוד" still does; a classless marker never
+suppresses a class-bearing candidate in NMS (and still is its runner-up; a marker alone is kept).
+Checks (fresh checkout + re-created files): `ruff check` / `ruff format --check` clean on `symbols/` and the test;
+mypy 2.4.0 the CI way: no issues outside `boq/labeled.py` (Worker-BOQ); bandit 1.9.4 `-ll` on `symbols/`: no
+findings; `pytest tests/test_sprint10_accuracy.py`: 12 passed; full suite: see the line below (data-dependent sample
+tests skip or fail for lack of `/home/claude/kamutan-data`).
+
+## Sprint 10 Data/QA — GT + baseline for rubel / achituv / yahav
+
+**Re-created after the 17:52 box re-provisioning** (the data volume and every working-tree edit were lost). Everything
+below is regenerated from code in `benchmark/tools/projects/` + the owner's xls; GT and runs live outside git under
+`$KAMUTAN_DATA_DIR` (`/home/claude/kamutan-data`). Noah's sample sheets / GT are still missing (owner), so Noah evals are
+off; the Noah numbers quoted are the pre-loss `sprint6_s10acc_before_nors` run.
+
+### Tools (`benchmark/tools/projects/`, ruff + format + mypy clean, see its README.md)
+`stage_project.sh <p>` (sample-<p> symlinks by sha8, files.tsv, sheet_meta.json, `benchmark/manifests/<p>.json`) ·
+`build_boq_truth.py <p> <xls>` (→ `gt/<p>/boq_truth.json` + `lines.md`) · `build_aux.py` (→ `designer_counts.json`,
+`disputes.json` seeds GT-D-1xx) · `build_expected_counts.py` (→ `expected_counts.json`) · `patch_xls.py` ·
+`catalogue.py` (kind / group / support per designer line type) · `run_eval.sh <p> <label>` (fresh ingest + build +
+`kbench eval-boq --scope all`, `KAMUTAN_AV_SCAN=off`) · `report.py` (→ `gt/<p>/eval/baseline.md`,
+`gt/eval_sprint10_<label>.md`). Rebuild everything: `for p in rubel achituv yahav; do bash stage_project.sh $p;
+uv run python -I build_boq_truth.py $p "$KAMUTAN_DATA_DIR/projects/$p/"*.xls; done; build_aux.py; build_expected_counts.py`.
+
+### Step 1 — GT (regenerated 09.11 18:30, byte-identical xls → identical GT; `kbench validate` 0 errors)
+| project | scored lines | excluded | units of scored lines | GT-D seeds |
+| --- | --- | --- | --- | --- |
+| rubel | 115 | 8 (5 בוטל: 2.02, 3.17, 5.04, 5.09ᵃ, 5.21; 3 notForTotal: 4.50, 5.25, 9.05) | יחידה 64, קומפלט 22, מ"ר 17, מ"א 8, **סט 3**, **חדר 1** | 101–104 |
+| achituv | 85 | 4 notForTotal (3.16 "אופציה, לא לסיכום", 4.45, 5.07, 5.08) | יחידה 62, קומפלט 9, מ"ר 8, מ"א 5, חדר 1 | 101–103 |
+| yahav | 110 | 0 | יחידה 79, מ"ר 14, קומפלט 12, מ"א 4, חדר 1 | 101–105 |
+
+Format = Noah's `boq_truth.json` (kbench schema) plus:
+* `lines` = **scored** lines only (what `eval-boq` iterates). `excluded_lines` (new top-level array, same shape) = unit
+  **בוטל** (`cancelled: true`, `quantity: 0`, `raw_quantity` keeps the cell — Rubel's cancelled 5.09 still says 19) and
+  **"לא לסיכום / לספירה בסוף / אופציה, לא לסיכום"** (`notForTotal: true`).
+* **Float codes** `4.23999999999999` → `4.24` … (`float_code_repaired`, 27/22/31 lines — the whole tail of chapter 04);
+  `3.1` → `3.10` (`trailing_zero_restored`). Codes are TEXT; `raw_code` keeps the float.
+* **Duplicate codes**: all kept; first scored occurrence keeps the code, later ones get a numeric suffix: Yahav `3.18`
+  (ניקוז לאדנית), `3.18.2` (נק' מים לגלגלון), `3.18.3` (אספקת גלגלון); `7.03` (תקרת גבס, יחידה 77), `7.03.2` (סינר, מ"א 4.5).
+  Flag `duplicate_code:<code>`. **eval-boq pools predicted lines by TEXT code** → only the first can match by code.
+* **Zero-quantity scored lines** (יחידה, qty 0, not בוטל): Rubel 4.06, 4.16; Achituv 4.06, 4.41; Yahav 4.06, 4.14 — kept,
+  flag `zero_quantity`; a missing prediction scores `missing` (GT-D-102/104).
+* Units **חדר** (5.22 / 5.06 / 5.15) and **סט** (Rubel 4.38–4.40) → `category: count`; kbench `unit_kind` = `other:<unit>`,
+  so the predicted unit string must match. Rubel 4.41–4.43 ("סט: שירשור 12/16/17") say יחידה (GT-D-101).
+* Chapter notes as in Noah; 06/07/08 use majors 7/8/9 (`chapter_code_mismatch`). Yahav skips 8.04. Rubel 9.01 = 9.03 text
+  (`duplicate_description`). "בוטל …" inside kept lump-sum text (Rubel 1.01, 7.03, 8.02, 8.03) → `partial_cancellation_in_text`.
+* **Header row has `' '` instead of `סעיף` in column A in all three files.** On the 10:27 tree the library importer then
+  silently picked the שינויים sheet (status `succeeded`, 5 Noah change-order items **with prices**). Worker-BOQ's
+  `_guess_code_column` fix (pre-loss) must be re-created and needs a test.
+* **Designer counts (sheets חשמל / אינסטלציה / שינויים): not usable.** Identical in the three workbooks (content sha256
+  `839cab45…` / `91692e39…` / `37b0f653…`) and equal to Noah's (same block names + counts, same 4-bathroom matrix, same
+  22.12.10 change orders) → `designer_counts.json` `status: not_available`, `per_floor_expected: {}`.
+
+### Step 3 — cross-check GT: `gt/<p>/expected_counts.json` (`kamutan.expected-counts/1`)
+No designer per-floor source exists (above). Instead every countable BOQ line (יחידה/סט/חדר; 68 / 63 / 80 lines) carries
+`expected_total` = the designer's project total, the detection classes that should sum to it (37 / 34 / 37 lines have
+a direct class mapping; the rest a `derivation` note: link topology, text parameter, no class yet) and `per_floor: null`
+(fill from a manual drawing count later). Mind Achituv's "תאורה - כל הקומות" master (3 regions) **plus** three per-floor
+lighting sheets → every lighting symbol is drawn twice. `gt/splits.json` → the three projects are `dev` (same office as
+Noah) — to be re-created when Noah's GT dir is restored (splits.json lived there).
+
+### Step 2 — baselines (`run_eval.sh <p> baseline` → `gt/<p>/eval/baseline.md`, `gt/eval_sprint10_baseline.md`)
+**Pre-loss Rubel run (10:29 tree = main 18a5eed + the other agents' edits of that time; TO RE-RUN):**
+
+| run | lines | present | exact | exact or within | from a suggested default | computed from drawings | suggested right unit | wrong qty/unit | missing |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| rubel (pre-loss) | 115 | 19 | 6 | 6 | 5 | **1** (3.08) | 1 | 12 | **96** |
+| noah (sprint6_s10acc_before_nors, pre-loss) | 77 | 77 | 59 | 60 | 21 | 39 | 3 | 14 | 0 |
+
+* **Ingest: 7 of 19 Rubel sheets failed** — `parse_memory_limit` (3072 MB): חשמל קרקע (A1, 2.7 MB), תאורה קרקע (A1), אינסטלציה
+  מרתף (A2, 117 KB!), אינסטלציה קומה א, אחרי טופס 4; `parse_crashed` (SIGKILL): אינסטלציה קרקע, בניה קרקע → the whole
+  ground floor and all plumbing were absent. Recorded as "failed: memory limit"; owned by the Sprint-10 Perf agent.
+* Classification: הריסה קומה א → floors [], scale None, red; **חשמל- קומה א → discipline `lighting`**, floors []; בניה קומה א
+  → 1:25 red; Achituv חשמל קרקע → floors [] (region `unknown`), 7 `thermostat` detections. No sheet green.
+* Per chapter present/lines: 01 1/1 · 02 0/6 · 03 7/22 · 04 6/49 · 05 3/22 · 06 0/5 · 07 2/6 · 08 0/4.
+* Unmatched (לא משויך): X-2-03 opening closure 105.9 m², X-3-15 rain pump, X-4-02 "אביזר שלישיית שקעים" 3 (Rubel: "שקע
+  משולש (קופסא שש מקום…)" — synonym miss), X-4-15 sensor light ×12 (no such line for this designer), X-5-03 corner cuts,
+  X-7-04 "פתח שירות" (Rubel: "אופן ארט"), X-7-06 partitions 5.8 m² (Rubel 7.02 is קומפלט), X-8-02 plaster 0,
+  **X-thermostat** 3 (no rule; the designer folds thermostats into נק' תקשורת).
+* **Catalogue diff, Rubel (lines missing / lines)**: support **none 63/64**, **partial 19/22**, suggested 3/8, rule 11/21.
+  Biggest "none" groups: tiling areas by location + tile size (9 lines, 320 m²), "סט: שירשור N" chains (6) + lighting
+  profiles מ"א (3) + ceiling fans, feeds (תריס 11, גלאי עשן 4+4, פעמון install, פילר, סיב, מחסן), add-ons (מוגן מים 25, USB 2),
+  deep boxes 26, plumbing feeds (השקיה, בריכה ×2, סאונה, טוש, אדנית, גלגלון ×2, ביוב, היתרו), stone cladding 72 m², STR
+  25 m"א, coping 21 m"א, concrete pool/slab, misc 9.xx. Full three-project table: `gt/eval_sprint10_baseline.md`.
+* Data quirks for Worker-Accuracy / Lighting: the PDF text layer's **Hebrew is garbled** (wrong ToUnicode; e.g. "שיירלה",
+  "קשלר הדיגלה") on every sheet checked, while Latin circuit tags survive ("B1,B2,B4,B5", "A1-A5", "T1"); sheets are A1/A2
+  (Rubel, Yahav) and A2/A3 (Achituv), one page each, /Rotate 90 on the A1s.
+
+### Post-loss re-runs (`benchmark/tools/projects/run_eval.sh <p> baseline`, then `report.py`)
+**Noah — regression anchor restored (09.11 21:00).** `sample-noah/` verified byte-identical to `benchmark/manifests/noah.json`
+(16/16 sha256). `gt/noah/boq_truth.json` + GT-D-001..004 from `scripts/build_noah_draft_gt.py` (coordinator), then
+`tools/projects/noah_disputes_recover.py` re-adds **GT-D-005..008** (reconstructed from benchmark/NOTES.md, this file and
+docs/sprints; marked `reconstructed`) + **GT-D-009** (4.05, 10 drawn vs 11, Worker-Accuracy Sprint 8 proposal) + the
+Sprint-2..8 hypotheses of 001..004. All five carry `lines: []` → gated set unchanged (66 gated / 11 disputed). Still
+LOST: `sheets/*.geojson` (symbol/fixture GT), `links/*.json`, `tiling/`, `s6_lines.json` (computability), `GT_FREEZE.json`
+— `kbench eval` (symbols), `eval-links`, `eval-fixtures`, `tiling-expected` cannot run until they are rebuilt; GT-D-005's
+link-group ids are unknown. `gt/splits.json` re-created by `build_aux.py`.
+
+Fresh ingest 15/15 succeeded (374 s, idle box), tree = main 18a5eed + the agents' re-created working-tree edits at 20:45:
+
+| run | present | exact | exact or within | from a suggested default | computed from drawings | gated exact / exact-or-within (of 66) | disputed exact (of 11) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **noah `baseline`** (demo room settings) | 77/77 | **61** | **63** | 21 | 42 | 52 / **54** | **9** |
+| **noah `baseline_nors`** (no room settings) | 77/77 | **59** | **60** | 21 | 39 | – | – |
+| pre-loss s9leg_after (demo room settings) | 77/77 | 61 | 63 | | | – / 54 | 9 |
+| pre-loss s10acc_before_nors | 77/77 | 59 | 60 | 21 | 39 | | |
+
+Identical to the pre-loss anchor on every headline number (per-line comparison impossible: the pre-loss eval files are
+gone). Report: `gt/noah/eval/baseline.md`; kbench reports `gt/noah/eval/baseline{,_nors}.kbench.md`. **Use
+`run_eval.sh noah <label>` + `report.py --projects noah` from now on** (replaces run_s6_eval.sh / report_s6.py).
+
+**rubel / achituv / yahav — post-loss baselines (09.11 20:52–21:34, same tree as the Noah run above).** Reports:
+`gt/<p>/eval/baseline.md` (ingest, per chapter, catalogue diff, per line), side by side `gt/eval_sprint10_baseline.md`.
+
+| run | lines | present | exact (= exact or within) | from a suggested default | computed from drawings | suggested, right unit | wrong qty/unit | missing | ingest |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| noah (demo room settings) | 77 | 77 | 61 / 63 | 21 | 42 | 1 | 13 | 0 | 15/15, 374 s |
+| rubel | 115 | 73 | 24 | 16 | 8 | 31 | 18 | 42 | **19/19**, 1521 s |
+| achituv | 85 | 63 | 24 | 8 | 16 | 18 | 21 | 22 | 22/22, 553 s |
+| yahav | 110 | 73 | 22 | 12 | 10 | 26 | 25 | 37 | 17/17, 427 s |
+
+* The pre-loss Rubel number (present 19, exact 6, 7 sheets failing) is superseded: with the Perf fix in this tree all 19
+  Rubel sheets ingest (exit 0). `_orig` (xls as shipped) = the header-repaired build in all three: the importer now
+  finds the blank-header BOQ.
+* Gated sets: rubel 112 (GT-D-101 excludes 4.41–4.43), achituv 84 (7.04), yahav 108 (7.03, 5.10); no disputed line exact.
+* Per chapter, present/lines — rubel 01 1/1 · 02 1/6 · 03 16/22 · 04 36/49 · 05 9/22 · 06 2/5 · 07 5/6 · 08 3/4;
+  achituv 1/1 · 1/1 · 8/15 · 41/44 · 3/6 · 3/8 · 4/5 · 2/5; yahav 1/1 · 0/4 · 13/20 · 45/54 · 6/15 · 1/6 · 5/5 · 2/5.
+
+Key lines, BOQ → predicted (✔ exact):
+
+| kind | rubel | achituv | yahav |
+| --- | --- | --- | --- |
+| שקע בודד / כפול | 42→10 / 27→18 | 34→32 / 19→20 | 46→30 / 21→15 |
+| שקע כח בודד / משולש | 8→2 / 7→3 | 4→4✔ / 10→10✔ | 8→3 / 5→3 |
+| נק' תקשורת (aggregated) | 58→13 | 38→13 | 25→9 |
+| תוספת אביזר מוגן מים | 25→0 | 16→0 | 28→0 |
+| הזנה לתריס / גלאי עשן | 11→0 / 4→0 (X-shutter-feed 6, X-smoke-detector 1, X-alarm-detector 12) | 8→0 / 3→0 (X- 8 / 3) | 4→0 / 3→0 (X- 2 / 2) |
+| התקנת גוף תאורה | 96→42 | **62→162** (master "כל הקומות" sheet counted on top of the 3 floor sheets) | 58→69 |
+| נק' מאור בודדה (+מפסק) | 46→34 (bare) | 23→21 | 34→30 |
+| אפס קבוע / 2 מחליפים / 2 נק' משותף | – | 5→5✔ / 4→4✔ / 9→5 | 6→4 / 4→3 / 5→6 |
+| ניקוז למזגן | 10→14 | 9→13 | 9→13 |
+| קופסת עומק | 26→1 | (קומפלט) | – |
+| איטום חדר רחצה (חדר) | 5→3 | 3→2 | 3→2 |
+| תקרת גבס | 25 m²→– | 16.5 יח'→0 | 77 יח'→– |
+
+**Catalogue diff (measured, three projects, 324 scored lines).** "Support" = what main 18a5eed has; this tree also has
+Worker-BOQ's in-progress defaults, so many "none" kinds already produce (mostly suggested) lines. Lines missing / all per
+main-support class: none 60/146, partial 15/72, suggested 6/23, rule 20/69. **Kinds with no line in any project**
+(the real gap left in this tree):
+* areas — tiling: outdoor floors by tile size/thickness (7 lines, 349 m²), recessed skirting מ"א, floating-stair edge
+  מ"א, indoor stairs count; gypsum: white partitions m² (3), valances מ"א (3), double/wet partition קומפלט (Rubel);
+  construction: block walls m² (Yahav 31), concrete slabs / pool (Rubel 150 m²);
+* plumbing: kitchen sink (all 3 — the default rule pools basins + kitchen sinks under one Noah line), outdoor kitchen
+  sink, master shower 3×3-way, sauna;
+* feeds: fibre main, feeds to the garden shed, ventilator feed (rule exists, ends as X-ventilator-feed);
+* misc 9.xx: air filter, percolation pit, polymer panels, project management, steel works, PVC vent pipe; mineral
+  plaster; power triple 4.06 (qty 0 everywhere).
+* **Produced but not matched to the project library (ends in לא משויך):** X-shutter-feed, X-smoke-detector,
+  X-alarm-detector, X-camera, X-siren, X-keypad, X-ventilator-feed, X-light-two-way-3-2 / X-light-cross-3-3 /
+  X-light-shared-3-1 (topology rules fire, library has no line for that N), X-5-01/02/03, X-2-03, X-7-06 → description
+  matching (Worker-BOQ).
+
+**Classification regressed on the new projects (Worker-Legend / classify).** Rubel: 16/19 red, discipline wrong on 7
+(הריסה קרקע/מרתף, בניה קרקע/מרתף, תקרה קרקע, אינסטלציה א → `lighting`; חשמל מרתף → `demolition`), floors empty on 14.
+Achituv: הריסה מרתף → `hvac`, העמדה → `demolition`, three "קומה א" sheets → `ground`; Yahav: 17/17 red, חשמל קרקע →
+`demolition`, הריסה א → `lighting`. Pre-loss (10:29 tree) the Rubel sheets that parsed were classified correctly. Wrong
+disciplines feed lighting / electrical rules with construction sheets, so part of the 04 error is upstream of the BOQ.
+`benchmark/manifests/<p>.json` carry the expected discipline / floors (from the file names) for a classification eval.
+
+## Sprint 10 Perf — `parse_memory_limit` / `parse_cpu_limit` on real customer sheets (Worker-Perf)
+
+Owns `parse/`, `render/`, `sandbox/`. The causes were in the SHX-text stage (`ocr/`) and, for the CPU budget, in
+`symbols/match.py`. Those edits are small, output-identical and marked "Sprint 10 (Perf)". Worker-Classify's hooks
+in `parse/page.py` / `parse/pdf.py` are kept. Nothing in `ingest/`, `legend/`, `classify/`, `raster_symbols/`,
+`boq/`, `lighting/`, `links/` or `pipeline/understand.py` was touched.
+
+### Profile (one sheet at a time; outside the sandbox with `RLIMIT_AS` 3072 MB, then inside it)
+Rubel baseline (`s10qa/rubel/baseline`): 7 of 19 sheets failed, all at `progress.stage = ocr`. They include three
+*small* sheets (117–258 KB, 3 047 paths), so the cause was neither the 115 k paths nor the 363 images.
+
+| where (A1 חשמל קרקע: 116 270 paths, 258 817 segs, 363 images) | cost | note |
+| --- | --- | --- |
+| pdfium object enumeration | 0.5 s, +0 MB | |
+| vector extraction (`ingest/pdf_vector`) | 13 s CPU, peak RSS 260 MB | 9 k paths/s, same rate as Noah |
+| 363 embedded images | 14 MP in total (21×26 … 287×123 px, ~400 dpi) | pdfium renders them with the page: **not** a memory factor. They are not skipped or downsampled; the page result now records them |
+| text layer, `encode_primitives` | 0.1 s / 0.5 s (2.9 MB gz) | |
+| **`ocr/glyphs.extract_text_lines`** | 77 s, **peak 1.7 GB** | `_link_lines` held 7.9 M cKDTree pairs per pass as a Python set + list of tuples (measured 353 → 1 251 MB) |
+| **`ocr/dictionary.collect_votes` → `tess.render_line`** | **`MemoryError`** | 75 % of the 61 963 stroke components are zero-height ticks of the survey underlay. A row of them became a "text line" with `height = 1e-3` mm, rendered at 40 px per line height ×4 supersampling: a 2.7 M × 352 px image (951 MP ≈ 1 GB) |
+| **`understand` → `symbols/match.spot`** (lighting) | **118 s CPU of 120** | `detect` 108 of 128 s (cProfile): `reverse` 18 154× = 35 s, `forward` 31 s, `colour_share` 16 s, `_nms` 11 s. 79 % of the reverse-fitted poses were then vetoed by `accept` (colour) |
+
+### Fixes
+* `ocr/glyphs.py`
+  * `MIN_LINE_HEIGHT_MM = 0.1`: a candidate line lower than this is skipped. Noah's smallest real line is 0.169 mm.
+  * `_link_lines`: above `PAIRS_SET_MAX = 1 M` pairs the pairs stay a `(k, 2)` int array in `(i, j)` order. Up to it
+    the historic `list(set)` order is kept, so ties between small-mark candidates resolve as before. Noah's passes
+    have ≤ 0.35 M pairs; Rubel's survey passes have 3.5–7.9 M.
+* `ocr/tess.py`: `MAX_LINE_RENDER_PX = 64 MP`. Over it, `render_line` returns `(None, to_px)`; callers already skip
+  `None`, and real lines are < 12 MP.
+* `ocr/dictionary.py`: `MAX_CANVAS_PX = 48 MP`. A stacked OCR batch over it is split in two; the largest Noah canvas
+  is 8.6 MP, so the split never runs there.
+* `symbols/match.py` (CPU), all output-identical:
+  * `spot` passes `accept` into `spot_template`, which applies it right after the forward fit, before
+    `reverse` / `fill_difference`. Contract: `accept` may read only the pose and the forward fit. The only caller,
+    `detect.colour_share`, reads `tpl`, `center`, `mat` and `scale`.
+  * `forward` queries the KD tree with `distance_upper_bound = CAP_MM · min(3, max scale)` instead of `3 · CAP_MM`;
+    farther points are capped to `CAP_MM` anyway.
+  * `_nms`: kept candidates' posed points are cached, and a numpy centre-distance prefilter runs ahead of the
+    unchanged scalar test, in the same order.
+* `sandbox/runner.py`
+  * **`KAMUTAN_SANDBOX_MEMORY_MB`**: default **3072**, clamped to [512, **3584**] (4 GB container).
+  * **`KAMUTAN_SANDBOX_CPU_S`**: default **120**, clamped to [10, **300**] (= the wall limit).
+  * Both come in through `Limits` default factories. They warn on clamp or a non-integer value; an explicit
+    `Limits(...)` value wins.
+  * OOM markers in the child's stderr (`MemoryError`, `std::bad_alloc`, `Out of memory`) map to
+    `parse_memory_limit` before the signal mapping.
+* `sandbox/context.py` (new), `child.py`
+  * The task records counts (`note(paths=, segments=, images=, textLines=)`), and the child tracks the last
+    progress stage.
+  * `MemoryError` frame: **`parser exceeded the memory limit (3072 MB; sheet: 116270 paths, 258817 segments, 363
+    images)`**.
+  * A `SIGXCPU` handler (soft limit, 5 s before the kill) writes **`parser exceeded the CPU limit (120s; stage
+    detect; sheet: …)`**.
+  * Counts and stage names only, never content (ING-09).
+* `parse/pdf.py::PdfPageSource.image_summary()`: metadata only, `{count, megapixels, bboxMm, dpiMedian}`.
+  `parse/page.py` adds `stats.images` and a top-level `images` to the page result (PDF only).
+
+### Before / after (2 vCPU shared box; same code except these changes, see "A/B" below)
+**Page task through the sandbox** (default limits, OCR + tiles on, cold store; peak RSS = whole sandbox tree incl.
+Tesseract):
+
+| sheet | before: outcome, wall, peak RSS | after: wall, peak RSS |
+| --- | --- | --- |
+| Rubel חשמל קרקע (A1, 116 270 paths, 363 images) | `parse_memory_limit`, 152 s, 3 964 MB | **ok**, 190 s, **1 077 MB** |
+| Rubel תאורה קרקע (114 145 paths) | `parse_memory_limit`, 176 s, 4 152 MB | **ok**, 156 s, **1 068 MB** |
+| Rubel בניה קרקע (114 641 paths) | `parse_memory_limit`, 226 s, 4 978 MB | **ok**, 110 s, **1 066 MB** |
+| Rubel אינסטלציה קרקע (110 421 paths) | `parse_memory_limit`, 199 s, 3 860 MB | **ok**, 98 s, **1 429 MB** |
+| Noah 08222cb2 (largest, 19 955 paths) | ok, 28.7 s, 425 MB | ok, 11.9 s, 393 MB, same digests |
+| synthetic A1 (54 461 paths, 300 images, survey ticks; `make_a1.py`) | ok, 129 s, 1 731 MB | ok, 50.7 s, 888 MB, same digests |
+
+**Full pipeline, 4 Rubel ground floors** (`cli.ingest_file`, one org, construction first, default limits;
+before = the same snapshot without these changes):
+
+| sheet | before | after: page (wall / CPU) | after: `understand` (wall / CPU) |
+| --- | --- | --- | --- |
+| בניה | page `parse_memory_limit` | ok 94 / 95 s | ok 13 / 12.5 s |
+| חשמל | page `parse_memory_limit` | ok 84 / 85 s | ok 69 / **66.5 s** |
+| תאורה | page `parse_memory_limit` | ok 80 / 80 s | ok 82 / **80.1 s** (was 118.0 s with only the parse fixes: Worker-Lighting's `parse_cpu_limit`) |
+| אינסטלציה | page `parse_memory_limit` | ok 90 / 81 s | ok 16 / 12.1 s |
+
+CPU is child CPU (Python + Tesseract). `RLIMIT_CPU` applies to the Python process, which uses less.
+
+**`understand` A/B on the captured inputs** (in-process, only `match.py` differs):
+
+| sheet | CPU before → after | outputs |
+| --- | --- | --- |
+| תאורה | 114.6 → **78.7 s** | 34 / 34 files identical |
+| חשמל | 89.2 → **63.9 s** | 40 / 40 identical |
+| אינסטלציה | 11.0 → 10.9 s | identical |
+| בניה | 11.9 → 12.2 s | identical except `geometry.stats.seconds` |
+
+### No-regression
+* **Page digests**, 25 sheets (15 Noah + 10 sample10), cold store, before vs after: `primitives.msgpack.gz`,
+  `text.json.gz`, classification, regions, title block and stats are byte-identical on 25 / 25.
+  * The first after-run differed on 7 / 25. The cause was the `(i, j)` pair order changing small-mark tie-breaks,
+    which led to the `PAIRS_SET_MAX` fallback above.
+  * The digests are recorded in `tests/golden/page_digests.json` (sha256 + hashed sheet names only).
+* **Noah eval** (`benchmark/tools/projects/run_eval.sh noah`, `KAMUTAN_AV_SCAN=off`; labels `s10perf_b2` → `s10perf_a2`;
+  two frozen snapshots of the working tree that differ only in these files):
+  * All 77 BOQ lines are identical in code, unit, quantity and confidence, in both builds (`rs` and `_nors`).
+  * The kbench reports are identical except the model-version timestamp and the source path.
+  * Of 120 per-version artifacts, the only diffs are bookkeeping: 8 `geometry.json.gz` (only `stats.seconds`), plus
+    `lines` / `evidence` (build id and timestamps).
+  * Ingest 211 s → 174 s.
+* An earlier A/B (`s10perf_before/after`) is **invalid**: other workers changed `classify/` and `titleblock/` in the
+  live tree between the two runs.
+
+### Tests / commands
+* `tests/test_perf_sprint10.py` (11):
+  * a zero-height tick row is not a line; `render_line` refuses a giant image;
+  * `collect_votes` splits an oversized canvas; `_link_lines` gives the same groups on the set path and the array
+    path;
+  * `image_summary` (3 images: count, MP, bbox, dpi); the page result's `images`;
+  * spot vetoes before the reverse fit, with the same detections as the old order;
+  * golden primitives on 3 Noah sheets + sample10. Text only with `KAMUTAN_PERF_GOLDEN_TEXT=1`: other workers change
+    the text layer on purpose, e.g. Worker-Classify's ToUnicode repair.
+* `tests/test_sandbox.py` (+7):
+  * memory and CPU env: default, clamp, invalid, explicit wins;
+  * the memory-limit message carries counts; the CPU-limit message names the stage; `context.describe`.
+* `scripts/perf_page_digests.py record|check`: re-record the golden digests with the pre-change code, then check.
+* Gates (CI way, live tree, 10.11 ~02:00):
+  * `uvx ruff@0.17.0 check .` and `format --check .`: clean.
+  * `uv run --with mypy==2.4.0 mypy src`: no issues (170 files).
+  * `uvx bandit@1.9.4 -q -r src -ll`: 0 issues.
+  * `pytest --ignore=tests/fuzz`, fork bomb deselected: **882 passed, 27 skipped**.
+  * `tests/test_sandbox.py` alone: **21 passed**, fork bomb included. It flaked once under load (peak 50 > 49 pids)
+    while a digest run held the box; that path is not touched here.
+
+### Requests
+* **API / web**: on `parse_memory_limit` / `parse_cpu_limit`, show "הגיליון כבד מדי" with the counts / stage parsed
+  from the message (`sheet: N paths, N segments, N images`; `stage …`). The page task also offers `stats.images`
+  (int) and `images {count, megapixels, bboxMm, dpiMedian}`. Writing them to the version doc needs the contract
+  (`SheetVersion.stats` is `additionalProperties: false`, and `service/pipeline.py` copies 4 keys).
+* **DevOps**: optional `KAMUTAN_SANDBOX_MEMORY_MB` / `KAMUTAN_SANDBOX_CPU_S` on the worker (request in `infra/NOTES.md`).
+* **Owner of `symbols/`**: please review the three marked `match.py` edits. `detect.colour_share` (16 s on the lighting
+  sheet) is the next cost. It does one ball query + `np.unique` per pose; batching per template would halve it, but
+  `detect.py` was being edited, so I left it.
+* **Worker-Geometry**: `geometry.json.gz` carries `stats.seconds`, so it is never byte-stable between runs (note only).
+
+### Open
+* Rubel page task: ~80–190 s wall on this box; Python CPU stays under 120 s, but the lighting `understand` + page
+  together are close to the 300 s wall when the box is loaded. Next costs: the remaining glyph linking on survey ticks
+  (filter zero-height components before linking: 75 % of them; no effect on Noah), `assign_entries` (27 s) and
+  Tesseract (2 × 4 900 lines).
+* `wall_s` (300) is still fixed; `KAMUTAN_SANDBOX_WALL_S` would follow the same scheme if needed.
+
+## Sprint 10 — catalogue generalisation: description matching, import robustness, new rule kinds (Worker-BOQ)
+
+Brief: `docs/agents/SPRINT10_BRIEF.md` item 3. Contracts landed directly this sprint (`packages/contracts/NOTES.md`
+"Sprint 10 published"; rules v9, library v3). **Recreated after env loss (09.11 17:52 re-provision)** from the session
+transcript: `boq/{hebrew,descmatch,labeled,defaults_s10}.py`, the edits in `boq/{rules,aggregate,plumbing,dedup,units,
+textitems}.py` and `library_import/{parse,importer}.py`, `scripts/catalogue_coverage.py`, `tests/test_boq_s10.py` (survived).
+Not recreated: the scratch eval copies / reports (re-run below on the restored data where noted), the Rubel / Achituv
+rules-only eval numbers are the pre-loss measurements (same code, frozen Data/QA baseline artifacts that no longer exist).
+
+### Modules (`boq/`, pure)
+* `hebrew.py` — `norm_he` (port of contracts `normalizeHebrewText`) moved out of `textitems.py` (import cycle).
+* `descmatch.py` — description identity: `canon` (norm_he + trade synonyms נקודת→נק', תחת הטיח→תה"ט, על הטיח→עה"ט,
+  אספקת→אספקה, עדה פלאסט→d18, שלישיית שקעים→שקע משולש, ניאגרה→מיכל הדחה …), `tokens` (designer boilerplate as stop words),
+  `same_token` (clitic prefix / plural suffix folded), `params` (Ø mm, length bucket m, N דרך, interpuz units, tile size,
+  thickness, kg, modules, N נק' מאור, N מפסקים / ללא מפסק, socket gang, 3-phase, inch), `qualifiers` (wc / faucet / panel
+  role / level / feed target / colour / room / owner / medium water-electric / water kind / conduit kind / switching / mount /
+  in-out), `concept` (feed vs install vs socket vs lighting point …: a clash scores 0), `score`, `desc_key`.
+* `rules.Library.resolve(code, desc, *, params, unit)` — same code → best by `desc_score`; otherwise description over items
+  of a compatible unit kind (`unit_compatible`: a counted rule never lands on a קומפלט item, חדר / סט excepted), score
+  ≥ 0.5, near-ties ranked by measured params (length bucket "עד N מטר" that fits), then fewest unstated qualifiers, fewest
+  unstated words; a generic wording that fits several variants differing in a qualifier both state (שקע תלת פאזי → למזגן /
+  לסאונה / לרכב) is **ambiguous → no item** (the reviewer assigns it). `Item.not_for_total`, `Item.aliases` (codeAliases
+  count for `by_code`); cancelled items are never loaded.
+* `labeled.py` — `class_to_item` label filters (annotations + legend label + OCR lines ≤ 10 mm), `countOnly`, `params`;
+  `marker_addon`; a DEFAULT Sprint-10 rule applies only when the org library has its item (`resolvable`), else it falls
+  through (Noah's heater feeds stay 4.17). Lighting circuits: Worker-Lighting's hook `aggregate._lighting_units` +
+  `lighting/boq.py` (one `r_lighting_circuit` rule, wording auto); covered sheets skip the composite link groups.
+* `plumbing.py` — `labelPatterns` on fixtures (shower 3× / 4-way, kitchen sink outdoor).
+* `aggregate.py` — labels / resolvable / count-only / markers wired; text units of unresolvable S10 defaults dropped; line
+  `notForTotal` + chip `לא לסיכום – מחיר יחידה בלבד`; Worker-Text catalog suggestions now run BEFORE the suggested rules
+  (Noah 4.28 keeps its catalog estimate 1 instead of an S10 needsInput fallback).
+* `defaults_s10.py` — the rules + generic items mirrored in contracts `SPRINT10_RULES` / library v3.
+
+### Import (`library_import/`)
+* `parse.py`: blank code header (`' '` in A4 — all three new BOQs) → code column guessed from the data rows (the
+  שינויים sheet no longer wins); float codes `4.23999…` → `4.24` (number format + sequence); **duplicate codes kept** when
+  the descriptions differ (5.09 / 3.18 / 7.03); unit `בוטל` → `cancelled`, qty 0; "לא לסיכום / לספירה בסוף / אופציה" →
+  `notForTotal`; units חדר / סט kept; stats `cancelled / notForTotal / duplicateCodes`; chapter notes unchanged.
+* `importer.py`: `descKey` per item; the same description from another BOQ (another code) **reuses the existing item**
+  (its code + wording stay, the new code goes to `codeAliases`); `cancelled` / `notForTotal` stored; wording verbatim.
+
+### Measurements
+* **Catalogue coverage** (`scripts/catalogue_coverage.py`, no drawings; lines of the BOQ reached by ≥ 1 default rule,
+  cancelled lines excluded), Sprint 9 → Sprint 10: Rubel 16 → 84 / 118, Achituv 23 → 70 / 89, Yahav 19 → 83 / 110, Noah
+  67 → 67 / 77. Still without a rule: lump-sum construction / demolition texts (2.0x pool, slabs), lighting chains "סט:
+  שירשור N" beyond 4 (Worker-Lighting resolves them structurally, not by rule code), profiles priced per unit with a length,
+  tiling by location + tile size (5.01 / 5.02 / 5.08 / 5.13 …: one generic suggested line per kind, the BOQ has several),
+  coping polish, project management, "תיבת נח", polymer cladding.
+* **Rules-only eval on Data/QA's frozen baseline ingest** (pre-loss, `kbench eval-boq`, empty room settings, project BOQ
+  as library): Rubel present 19 → 60 / 115, exact 6 → 14, missing 96 → 55; Achituv present ? → 58 / 85, exact 16, missing
+  27 (baseline report for Achituv was not finished when measured). Most of the new "present" lines are suggested
+  (`needsInput`, right unit: 32 / 24); exact needs the detection work (the baseline lost the ground-floor sheets to
+  `parse_memory_limit`).
+* **Noah**: before the loss, frozen root `s6qa/s9leg_after` rebuilt with this code → 77 / 77 lines, **0 differences** in
+  qty / unit / description / level / origin / needsInput / byFloor / ruleId / itemId. After the loss: to be re-run with
+  `benchmark/tools/projects/run_eval.sh noah …` (Data/QA) once the box is free.
+
+### Tests / gates
+`tests/test_boq_s10.py` (26): descmatch params / qualifiers / concepts / score separation on the designer's wording,
+resolution (variant, ambiguity, length bucket, unit kinds), cancelled / aliases, the designer's xlsx layout (blank header,
+float codes, duplicates, בוטל, לא לסיכום, חדר / סט), description-keyed import, label feeds / 3-phase, fall-through, marker
+add-ons + deep boxes, panels by role + notForTotal chip, plumbing 4-way variant, lighting hook quiet without an artifact,
+default items vs rule codes. Mirror tests strict (rules v9).
+```
+cd workers/drawing
+uv run ruff check src tests scripts && uv run ruff format --check src tests scripts
+uv run --with mypy==2.4.0 mypy src
+uv run --with bandit bandit -q -ll -r src
+KAMUTAN_AV_SCAN=off uv run pytest -q --ignore=tests/fuzz
+pnpm --filter @kamutan/contracts gen && pnpm turbo run lint typecheck test --filter=@kamutan/contracts --filter=@kamutan/api
+```
+
+### Open
+* API: honour line `notForTotal` in totals (GET boq, Excel, share); show `cancelled` items as such in the library UI.
+* Several client lines per generic suggested rule (tiling by location / size, profiles by length): one rule fills one
+  item; the rest stay missing until per-location area rules exist (Worker-Accuracy geometry by room name).
+* Owner questions: Rubel 4.41–4.43 "סט" lines in unit יחידה (GT-D-101); zero-qty scored lines (4.06 / 4.16 …).
+
+## Sprint 10 — lighting circuits from circuit tags (Worker-Lighting, new `lighting/`)
+
+Brief: `docs/agents/SPRINT10_BRIEF.md` item 2. Package `kamutan_drawing.lighting` (pure; `__init__.circuits_for_sheet` is
+the only entry that touches a `VectorSheet`). **Re-created from session memory after the 09.11 17:52 re-provisioning**
+(every uncommitted file was lost); see "Not recreated" at the end.
+
+### The convention (read off the rubel / achituv / yahav תאורה sheets, 100–300 dpi renders)
+* Every fixture carries a **tag** = letter + number (`A1`, `D6`, `P10`, `i1`, `T2A`), real PDF text (TrueType, ~2 mm high)
+  0.5–3 mm beside the symbol; LED profiles / strips get theirs inside a leader note ("הזנה לשנאי עבור פרופיל לד A1 H=200",
+  5–12 mm away). Letters are per floor (ground A–D, first F/G/K/L/N, basement J/M/P), re-used on far-apart floors
+  (achituv L on basement and first).
+* **Switch positions**, three drawings: a bank of glyphs each with its tag (yahav), glyphs + a range at a gang in an
+  orange frame (achituv `A1-A4 / B1-B5 / D5`), or an orange box with rows of comma lists and **no glyphs** (rubel
+  `D1,D2,D3,D4 / B1,B2,B3 / B5, פנוי / מיזוג,מיזוג / A1-A5 / T1`, stacked boxes sharing edges). A stair push-button gets
+  its tag through a leader note ("לחצן אוטומט חדר מדרגות C8").
+* **Timer** circuits are listed in a boxed note ("תאורות שנדלקות ע"י שעון שבת (טיימר) בלוח חשמל: D6 D3", "תאורות A4 A3
+  A1 - נדלקות ע"י שעון שבת") and have no switch position. **אפס קבוע** = a tag at no position and not in the timer note.
+  **Two-way** = one tag at two positions (a stair's positions are on two floors' sheets, its fixtures drawn on both);
+  **cross** = three (achituv K1 / K2). A wall light "מפסק מובנה קבוע" has no tag; the glyph beside it carries the room's.
+* The BOQ wording: per topology (achituv / yahav, Noah 4.09–4.16) — "N נק' מאור כוללות M מפסקים …", "ללא מפסק (אפס
+  קבוע)" counted **per fixture** (achituv 4.32 = 5 = P1 1 + P2 2 + P3 2), timer lines per circuit with the count in the
+  wording ("שבע נק' מאור כוללות מפסק טיימר משותף בלוח חשמל" = D3's 7), garden spikes "הזנות נק' מאור לתאורות דוקרנים …";
+  OR (rubel) "נק' מאור בודדה" once per circuit + "סט: שירשור N נק' מאור משותפות במעגל הדלקה אחד" per circuit of N ≥ 2.
+
+### Flow (`pipeline/understand.py::_circuits`, after links, lighting sheets; block "Sprint 10 (Worker-Lighting) — keep")
+```
+lighting/tags.py      parse_tags(text) -> TagRead(tags, is_list, corrected, words): ranges, comma lists, list words,
+                      lookalike folds (0/O, 1/I/l/|, 8/B, 5/S; a Hebrew letter for a Latin capital) in ONE slot only,
+                      dates / scales rejected, numbers ≥ 1
+lighting/circuits.py  build_circuits(spans, dets, rects, leaders, regions, exclude, debug) -> kamutan.circuits/1
+lighting/__init__.py  circuits_for_sheet(vs, …): rects = small closed paths (boxes / note frames), leaders = open
+                      polylines ≤ 4 segments ≥ 6 mm
+lighting/boq.py       circuit_units(sheets: [CircuitSheet], rules, library) -> CircuitResult(units, covered, stats)
+```
+Roles of every tag text (1–4 mm high, outside legend / title block): **fixture** = a single tag whose nearest luminaire /
+fan is ≤ 4.5 mm (no switch glyph nearer); 2nd pass ≤ 12 mm for still-untagged fixtures (leader notes); a symbol of
+another class (rubel's spots detect as `alarm_detector` / `unknown`) with a single clean tag ≤ 3.5 mm is re-tagged as a
+fixture (`סמל סווג אחרת — תג המעגל מצביע על גוף תאורה`, yellow; `NEVER_FIXTURE` classes excluded). **switch** = a glyph
+≤ 6 mm, or a frame ≥ 7 mm wide without Hebrew prose (the text centre must be inside it), or a comma list / range inside
+the plan regions. **note** = a frame with prose, the same row as prose, outside the plan, or a timer / stair keyword
+≤ 60 mm. Otherwise **unplaced** (reported, never guessed). Switch texts ≤ 7 mm apart or in one frame = one **position**;
+a single-tag text takes the nearest glyph of the bank, a range / row stands for all. A tag-less glyph whose leader ends
+at a note tag takes it (`תג המפסק נקרא מהערה עם קו מוביל`). Timer / stair notes: keywords ≤ 15 mm decide which (the
+glyph reader reads "שעון שבת" / "(טיימר)" cold; stair = "אוטומט" + `מדר.{1,2}ות|[לכ]חצנ`); a timer list with no readable
+keyword is still a timer, yellow `רשימת טיימר ללא מילת מפתח קריאה`; a tag in a prose row is a mention, never a timer.
+Kind: 0 positions → `timer` / `no_switch`, 1 → `single` / `shared`, 2 → `two_way`, ≥ 3 → `cross`; `stairAutomat`.
+Reported under `unmatched`: untagged luminaires (fans excluded), switch tags with no fixture on the sheet (`תג מפסק ללא
+גוף תאורה בגיליון`, kept as position-only views for the merge), unplaced texts. Any untagged fixture puts `בגיליון גופי
+תאורה ללא תג` on every circuit of the sheet (yellow). Artifact + contracts: packages/contracts/NOTES.md "Sprint 10
+published (Worker-Lighting …)" (`CircuitsArtifactSchema`, `artifacts.circuits`, `stats.circuits`, overlay URL).
+`service/pipeline.py` uploads `circuitsFile` next to `links.json.gz` (one block, "keep").
+
+### BOQ (`lighting/boq.py`; hook `boq/aggregate._lighting_units`, called before the composite loop — "keep")
+* **Merge across sheets**: per tag, views = sheets carrying it (circuits or position-only unmatched tags). A sheet whose
+  tags cover ≥ 80 % of another's and more ("תאורה - כל הקומות") is a *compilation*, used only for tags no floor sheet has.
+  Non-adjacent floors = different circuits (`L1/1`, `L1/2`). Equal fixture counts on two sheets = the same fixtures drawn
+  twice (stairs, counted once); different counts = distinct, summed + `ספירת גופים שונה בין גיליונות`. Positions sum
+  across sheets. `dropped_by` detections skipped. A sheet tagging < 50 % of its luminaires is not priced
+  (`skippedSheets`; Noah's SHX noise "L1" on 1bbe4113) and keeps its composite link groups.
+* **Wording** (`match.wording` auto | topology | set; auto = *set* when the org library has "סט: שירשור" lines). Library
+  items are parsed **structurally** (`parse_light_item`: count word before "נק' מאור"; "ללא מפסק"/"אפס קבוע"/timer → 0
+  switches, "מפסק" 1, "מחליפים" 2, "מצלבים" 3; timer, "אוטומט … מדרגות", "חיישן/גלאי", "דוקרנים" (any count), "קיימת"
+  excluded) and matched by (fixtures, positions, timer, stair), never by similarity. Fallbacks, each with a reason: stair →
+  plain two-way line; timer without a line of that count → garden-spike timer line, else the same-count no-switch line;
+  no_switch of N → the 1-fixture "ללא מפסק" line × N; nothing fits → **unmatched red line** in the designer's wording
+  (`describe`). Set wording: base line per circuit + `describe_set(N)` per circuit of N ≥ 2.
+* Members = fixture + switch Dets (+ a `text` evidence item per glyph-less position box) → line evidence. `Unit.circuit`
+  → `Contribution.circuit` → `Line.circuit` (`computed_fields` → `boqLines.circuit`) when all contributions share kind +
+  count; absent on the set-wording base line. Covered sheets skip their composite link groups.
+
+### Results — measured on 09.11 before the data loss (direct runs: `understand(discipline="lighting")` on the תאורה
+PDFs, cold glyph store; Data/QA baseline had every "נק' מאור" line at 0 / missing). **To be re-measured** with
+`benchmark/tools/projects/run_eval.sh` — see the sprint report for the post-restore numbers.
+| project | lines exact (GT 0 → module) | notes |
+| --- | --- | --- |
+| achituv | 0/9 → **7/9** (4.31 23, 4.32 5, 4.34 4, 4.35 2, 4.37 3, 4.38 1, 4.39 1 exact) | 4.33 6 vs 9, 4.36 2 vs 1 (disputes below) |
+| yahav | 0/11 → **6/11** (4.39–4.43 exact incl. the stair automat C8) | 4.35 30/34, 4.36 4/6, 4.38 3/4 (undetected fixtures); A4 6-fixture timer → 4.45 (5 outdoor lights undetected); A6 3-pendant circuit has no BOQ line |
+| rubel | 0/7 → **3/7** (4.40, 4.42 exact; 4.38 12/13, 4.39 3/4) | 4.37 56 vs 46: first-floor box tags (T1–T5, N, P) whose fixtures are undetected become singles; D1 11 vs 12, D3 19 vs 17 |
+**Production path (10.11, `run_eval.sh <p> baseline` by Data/QA on 09.11 20:45–21:27, which already ran with `lighting/`
+re-created at 20:32 — so it is an "after", not a before; the pre-sprint state had every per-topology line missing):**
+achituv 5/9 exact as classified (4.31 21, 4.33 5, 4.37 2 + two unmatched 3-fixture lines): the first-floor תאורה sheet
+was classified floor `ground` and the basement got no floor, so the basement `L` and first-floor `L` circuits merged and
+the stair two-ways lost their second floor. Re-merging the **stored** circuits with the file-name floors
+(`sample-achituv/sheet_meta.json`) gives **7/9** again — the module is right, the floor is wrong (classify / the user's
+floor confirmation). yahav **6/11**, identical to the direct runs. rubel 1/7 (4.37 34, 4.38 8, 4.40 1): the ground תאורה
+sheet failed `understand` on `parse_cpu_limit` (Perf) → no circuits for the largest floor; the other 5 sheets classified
+`lighting` (demolition / construction / plumbing / ceiling) carry empty circuit docs and price nothing.
+Unmatched: achituv untagged 3+1+1 (emergency lights, a sensor light — legitimately untagged); yahav untagged 6, unplaced
+10 (A4 wall-light labels without a detected symbol); rubel untagged 10, unplaced 32 (garden pins / first-floor fixtures
+with no symbol detection). Noah: 0 circuits priced (no tags; 1bbe4113 below the coverage gate) → link graph unchanged.
+
+### Disputes (drawing vs BOQ, for Data/QA's disputes.json)
+* achituv 4.33 / 4.36: drawn 6 two-fixture and 2 three-fixture one-switch circuits (A2 = 3 island pendants, N3); BOQ 9 / 1.
+* yahav 4.37: 6 drawn (A7 A10 C4 D1 D3 D5) vs 5; A6 (3 pendants, one switch) has no BOQ line.
+* rubel 4.41 / 4.43: garden chains D1 = 11 and D3 = 15 (+4 on the first floor) drawn vs 12 / 17; 4.41–4.43 unit יחידה (GT-D-101).
+
+### Tests / commands
+`tests/test_lighting.py` (60): tag grammar (ranges, lists, list words, lower-case i, T2A, one-slot folds, dates / scales /
+L0 rejected), the six kinds + a timer note, keyword-less timer (yellow) + untagged reporting, lone tag unplaced, rubel
+glyph-less boxes, stacked boxes, unmatched switch tags, built-in switch + leader-tagged stair button, leader note → strip
+(not a timer), re-tag of a mis-classified symbol (never a thermostat), rect / leader helpers, library parsing of every
+wording (incl. Noah's), `describe`, both wordings (אפס קבוע × N, garden fallback, unmatched red line), explicit wording,
+the coverage gate, merges (stairs, position-only floor, differing counts, far floors split, compilation sheet), an
+end-to-end `boq.aggregate` (line `circuit`, evidence, composite group suppressed; unchanged without the artifact) and a
+doc validated against `json-schema/CircuitsArtifact.json`.
+```
+uv run pytest tests/test_lighting.py -q
+uv run ruff check src/kamutan_drawing/lighting tests/test_lighting.py && uv run ruff format --check src/kamutan_drawing/lighting
+uv run --with "mypy==2.4.0" mypy src ; uvx bandit@1.9.4 -q -r src -ll
+cd packages/contracts && pnpm run typecheck && pnpm gen && pnpm exec vitest run
+```
+
+### Edits outside `lighting/` (additive, marked "Sprint 10 (Worker-Lighting)")
+`pipeline/understand.py` (`CIRCUITS_FILE`, stage + `_circuits` + `circuitsFile` / `circuitStats`), `service/pipeline.py`
+(upload block, `CIRCUITS_FILE`, `CIRCUIT_STAT_KEYS`), `boq/rules.py` (`KINDS` += `lighting_circuit`), `boq/units.py`
+(`Unit.circuit`), `boq/aggregate.py` (`SheetInput.circuits`, `Contribution.circuit`, `Line.circuit`, `_line_circuit`,
+`_lighting_units` + call), `boq/build.py` (`CIRCUITS_FILE` loader). Contracts: `boq.ts` `CircuitsArtifactSchema` & co.,
+`registry.ts`, `sheets.ts`, `understanding.ts`, `test/sprint10_lighting.test.ts`, regenerated `json-schema/`.
+
+### Not recreated after the reset / open
+* The scratch study tools (direct runner, `study2.py` circuits → merge → lines vs `boq_truth.json`) and their outputs are
+  gone; the numbers above are from the session record. Re-measure through the production path (`run_eval.sh`).
+* Ingest of the new projects (Accuracy / Legend / Perf): yahav's תאורה sheets classified `hvac` (no detection → no
+  circuits); rubel ground תאורה hit the 3 GB sandbox limit; rubel spots detect as `alarm_detector` / nothing, yahav's
+  outdoor wall lights (A4) not at all. Circuits can only be as complete as the symbol detection.
+* "תאורה - כל הקומות" compilation sheet: the install count / symbol lines double (achituv 4.40 = 170 vs 62) — a
+  same-discipline duplicate-sheet rule is needed in dedup (Worker-BOQ / Accuracy); the circuits merge already ignores it.
+* Gate notes (10.11): `test_integration_sample[1bbe4113-lighting]` fails with discipline `None` in the page task's
+  classification (before `understand`; parse / ocr / classify are being edited by other agents); `test_partition_convention`
+  7.06 48.41 vs 40.46 (Worker-BOQ / Geometry). Neither touches `lighting/`.
+
+### Round 2 (10.11, coordinator items a–d after Data/QA's baseline)
+* (a) **Worker-Accuracy's new classes**: added to `benchmark/schema/classes.json` → contracts `SYMBOL_CLASSES` (smoke_detector,
+  camera, thermostat, alarm_detector, siren, keypad, shutter_feed, ventilator_feed; `gen:taxonomy`). Rules: comms extras →
+  the נק' תקשורת line; shutter_feed → הזנה לתריס; smoke_detector → feed + supply (countOnly); ventilator_feed → feed +
+  supply; socket labelled "קופץ" → pop-up socket. Matcher: lighting wording without a count = 1 point; qualifier `action`
+  (הוספת / החלפת / העתקת) and required group `layers` (דו-קרומי) block false joins; `faucet: any` for "ברז פרח/קיר".
+  The 3-point lighting topologies still unassigned (X-light-…) are Worker-Lighting's structural match: the clients'
+  libraries have no such wording.
+* (b) Kitchen sink: `r_plumb_kitchen_sink` priority 115 (above the basin rules); on Noah's library it falls through.
+  On the frozen baseline ingest no kitchen sink reaches the build (Rubel's ground-floor plumbing sheet failed to ingest), so
+  3.02 stays a "להשלמה ידנית" line there; unit-tested.
+* (c) Waterproof add-on: `marker_addon.roomTypes` — sockets / switches / comms in a bathroom / WC / balcony / courtyard
+  count (the designer draws no mark). Still 0 on the baseline: electrical-sheet rooms come out typed `other` and do not map
+  to the construction plan's bathrooms — rooms / Worker-Accuracy.
+* (d) Catch-all `r_template_needs_input` (template_chapter, no quantity, `importedOnly`): every imported item no rule
+  produced appears as "להשלמה ידנית" in its own unit (never `notForTotal`, never cancelled). Default rules without a drawn
+  symbol whose item the imported library lacks make no "לא משויך" line any more (nor any qty-0 unmatched line).
+* Worker-Text catalog items resolve by description when the code's item is another project's line (Rubel 4.06 "שקע כח
+  משולש" no longer gets the 6-socket count).
+* **Eval on the frozen Data/QA baseline ingest** (`run_eval.sh <p> boq10b --skip-ingest`, rules only): present / exact /
+  missing — Rubel 73 → 114 / 24 → 25 / 42 → 1; Achituv 63 → 85 / 24 → 30 / 22 → 0; Yahav 73 → 107 / 22 → 23 / 37 → 3
+  (3.18.2 / 3.18.3 / 7.03.2 = duplicate codes, eval pools by code); **Noah 77 / 61 / 63 within, 0 line differences**.
+  Most new present lines are needsInput (right unit: 69 / 35 / 57); exact needs detection.
+* Contracts: `MarkerAddonMatch.roomTypes`, `TemplateChapterMatch.quantity` optional + `importedOnly`; rules v9 regenerated.
+
+## Sprint 10 Worker-Classify — sheet discipline / floors, title blocks, garbled Hebrew, duplicate coverage
+
+Owns `classify/`, `titleblock/`, `legend/` (not touched), `ingest/` (new `ingest/pdf_text.py`). Marked one-line hooks in
+other agents' files (all "Sprint 10 (Worker-Classify) — keep"): `parse/pdf.py` (text layer reads a repaired copy),
+`parse/page.py` (`apply_label_floors`, `src: "pdf"` on text-layer lines), `service/pipeline.py` (`_reconcile_project`
+after every ingest job), `boq/build.py` (skip `coverage.status == overview`; `remap_floors` for `floorCheck`). No edit of
+`pipeline/understand.py`. Contracts landed (additive, `packages/contracts/NOTES.md` "Sprint 10 published (Worker-Classify)").
+
+### Root cause of the garbled Hebrew (and why Noah worked)
+Noah's 15 sheets have **no font at all**: every letter is SHX strokes, read by the glyph dictionary. The three new projects
+also carry **TrueType text** (room names, notes, legend labels, dimensions): AutoCAD embeds the full **ArialMT as a CID
+TrueType font, `Identity-H` (char code = glyph id), `CIDSystemInfo (PDFAUTOCAD)(Indentity0)`, and writes a wrong,
+many-to-one `/ToUnicode` CMap** for the Hebrew glyphs (`uni05D0` א → U+05D5 ו, ב → ו, ק → פ, י → ע, ה → ת …; digits /
+Latin / punctuation map right — hence the circuit tags survived). pdfium trusts the CMap, so the text layer was a different
+word for every Hebrew word ("מזגן" survived because its letters map to themselves). The glyph dictionary never sees this
+text (it reads vector strokes only). The font is not subset and its own `cmap` table is correct, so
+`ingest/pdf_text.py` rebuilds each such font's ToUnicode from the font's cmap (only when ≥ 3 and ≥ 20 % of its entries
+disagree) and returns the PDF as a pypdf **incremental update** (original bytes + new CMap objects); `PdfPageSource.
+text_layer()` reads that copy when the page's text has Hebrew. Measured: "חלועח יעחלם" → "תכנית פיתוח", "יעעלפ" → "פירוק",
+legend / note words all right on the 58 sheets checked; < 1 s per A1 sheet; any error → original text layer.
+
+Second, independent cause on the **title blocks**: the newer template draws the labels ("שם הגיליון:", "שם הפרויקט:",
+"תאריך:", "סטטוס:", "תאור והערות:") in an **outlined (hollow) SHX font**, read as "רO תעיPיחRP" — the label cells were never
+found, the classifier fell back to the biggest "discipline" word on the page, and that was the 5.7 mm label
+"תאור והערות:" ≈ "תאורה" (ratio 0.8) → **lighting** on Rubel's demolition / construction / ceiling sheets; "פריסה" (an
+elevation) ≈ "הריסה" → demolition on electrical sheets; "מיזוה" → hvac. Third: the cold glyph store confuses ק with כ / ל
+("כומת כרכע", "לומת לרלע") → no floor on 14 Rubel sheets.
+
+### What changed
+* `titleblock/classify.py` — `fold()` (normalise + final letters + ק/כ/ל) on both sides of every keyword match;
+  `_best_keyword(…, exact_up_to=)` (free text: keywords ≤ 5 letters must match exactly), split-word candidates ("הר סה"),
+  glued prefix ("תהתאורה" = "ת.תאורה", title-block values only); **`read_title_block_cells`**: the block located by its
+  anchors (≥ 2 status words לעיון / לתמחור / לביצוע, else one date + scale "1:N" pair), cells cut at the vertical rules,
+  label rows dropped (": ", label-like, or taller than the values; never a row that names a discipline / floor), notes cells
+  skipped, the sheet-name cell = the one naming a discipline (+ floor); `parse_scale` reads "50: ו" (1:50 right-to-left);
+  disciplines **`pool`** (בריכה) and **`post_permit`** (אחרי טופס 4), furniture += "העמדה"; reading confidence = the
+  keyword-carrying spans, not the weakest span of the cell (a stray "|" or "N" at 0.4 made correct sheets red).
+* `classify/sheet.py` — label path first (Noah unchanged), cells when its sheet name names no discipline, free text last and
+  strict (needs "תכנית / תכ' / ת. / גיליון", not "ראה … / ע"פ …", ≤ 10 words, no label); discipline + floor read from the
+  title block ⇒ confidence ≥ 0.5 (scale doubts stay yellow reasons, not red).
+* `classify/regions.py` — `label_phrases` joins text-layer words of one line ("קומת" + "קרקע"); a title without floors
+  and ≥ 2 distinct floor labels next to drawings → unlabelled drawings (legend) join their nearest labelled one;
+  `apply_label_floors` gives the sheet those floors ("קומות לפי הכיתוב ליד השרטוטים").
+* `classify/project.py` (new, pure + one orchestrator glue `apply_to_project`) — project-level, from the **font text**
+  of each sheet (`text.json.gz` lines with `src: "pdf"`, title block excluded; SHX readings vary with the glyph store,
+  so an SHX-only project like Noah is never touched):
+  * **Duplicate-coverage rule:** sheet S is an *overview* when ≥ 2 other current sheets of S's discipline, each of one
+    distinct floor, are contained in S (≥ 70 % of their text found in S at one offset, each at a different offset; S
+    holds ≥ 1.2× their text). S is marked `coverage {status: overview, coveredBy, floors, contentShare, reason
+    "גיליון מרוכז: התוכן מופיע בגיליונות … — לא נספר בכתב הכמויות"}`, its floors = the floors it repeats, level ≤ yellow;
+    `boq/build.py` skips it (`skippedSheets[sid] = "overview"`). Never dropped silently; recomputed after every job
+    (cleared when it no longer applies).
+  * **Floor clashes:** two sheets of one discipline claiming the same single floor while the discipline has no sheet for
+    another project floor → the injective assignment to {claimed} ∪ {missing floors} with the best text overlap
+    ("support") with sheets of *other* disciplines whose floor is not disputed, accepted when every moved sheet has
+    support ≥ 0.15 and the best assignment beats the next by 0.15; else a yellow reason "שני גיליונות … לאותה קומה" — or,
+    when the two contain each other (≥ 50 %), "ייתכן שזה אותו גיליון פעמיים" (Yahav's two pool sheets: two versions, one
+    date unreadable). The moved sheet: `floors` + region floors updated, `floorCheck {titleFloors, floors, support,
+    reason}`, reason "קומה לפי השוואה לגיליונות אחרים בפרויקט (בכותרת: …)" + the Stage-10 drawing-vs-title chip;
+    `classification.floors` keeps the title. Confirmed sheets never move. The BOQ re-labels the version's detections /
+    lighting circuits of the title floor in memory (`remap_floors`), since they were floored at ingest.
+
+### Confusion tables (discipline; floors) — before = Data/QA `baseline` sheet docs, after = fresh ingest `cls10`

@@ -263,6 +263,107 @@
                   }
                 ]
               },
+              "coverage": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "const": "overview"
+                      },
+                      "coveredBy": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128,
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        },
+                        "maxItems": 16
+                      },
+                      "floors": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                        },
+                        "maxItems": 16
+                      },
+                      "contentShare": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reason": {
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "coveredBy",
+                      "floors",
+                      "contentShare",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "floorCheck": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "titleFloors": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                        },
+                        "maxItems": 16
+                      },
+                      "floors": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+                        },
+                        "maxItems": 16
+                      },
+                      "support": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reason": {
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": [
+                      "titleFloors",
+                      "floors",
+                      "support",
+                      "reason"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "currentVersion": {
                 "anyOf": [
                   {

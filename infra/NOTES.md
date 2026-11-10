@@ -178,3 +178,12 @@ DAST לא מאומת (משתמשים) עד שיש staging; `deploy.yml` עדיי
 
 לא אומת מכאן: build של התמונה (Docker Hub חסום) — ה-job `docker` ב-CI הוא הבדיקה הראשונה; הרשאות ה-deploy ל-onSchedule/Eventarc
 (`cloudscheduler.admin`, `pubsub.viewer`, `eventarc.developer`) — לאמת בפריסה הראשונה ולצמצם אם אפשר.
+
+### Request from Worker-Perf (Sprint 10) — new worker env `KAMUTAN_SANDBOX_MEMORY_MB`, `KAMUTAN_SANDBOX_CPU_S` (optional)
+| var | service | value |
+| --- | --- | --- |
+| `KAMUTAN_SANDBOX_MEMORY_MB` | worker-drawing (Cloud Run, 4 GiB) | optional. The parser sandbox's `RLIMIT_AS` in MB. Default **3072** (unchanged). Clamped to 512–**3584**, so the orchestrator keeps ≥ 512 MB of the 4 GiB container. Leave unset unless a sheet fails with `parse_memory_limit`. |
+| `KAMUTAN_SANDBOX_CPU_S` | worker-drawing | optional. The sandbox's `RLIMIT_CPU` per task (page, understand) in seconds. Default **120** (unchanged, SEC-17). Clamped to 10–**300** (= the sandbox wall limit). Leave unset unless a sheet fails with `parse_cpu_limit`. |
+
+Details: `workers/drawing/NOTES.md` → "Sprint 10 Perf". No other infra change is needed: after the fixes the four
+heavy Rubel sheets complete parse and understand within the default limits.

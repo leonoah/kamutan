@@ -25,6 +25,9 @@ from .glyphs import TextLine
 from .tess import ocr_boxes, render_line
 from .textutil import visual_to_logical
 
+# Sprint 10 (Perf): pixel cap of one stacked OCR canvas (grey, 1 byte/px); a batch over it is split in two.
+MAX_CANVAS_PX = 48_000_000
+
 # cosine distance under which exact-key groups are merged. 0 = exact keys only:
 # the spike showed that any tolerant merge mixes Hebrew look-alikes (ה/ח/ק, ב/כ/נ).
 FEAT_MERGE_DIST = 0.0
@@ -235,6 +238,9 @@ class GlyphDictionary:
             gap = 30
             W = max(im.size[0] for _, im, _ in chunk) + 2 * gap
             Ht = sum(im.size[1] + gap for _, im, _ in chunk) + gap
+            if W * Ht > MAX_CANVAS_PX and len(chunk) > 1:  # Sprint 10 (Perf): one very wide line must not size the batch
+                half = len(chunk) // 2
+                return job(chunk[:half]) + job(chunk[half:])
             canvas = Image.new("L", (W, Ht), 255)
             spans, y = [], gap
             for _, im, _ in chunk:

@@ -156,6 +156,26 @@
             }
           ]
         },
+        "circuits": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "thumbs": {
           "type": "object",
           "additionalProperties": {
@@ -359,6 +379,36 @@
                     "read",
                     "used"
                   ],
+                  "additionalProperties": false
+                },
+                "circuits": {
+                  "type": "object",
+                  "properties": {
+                    "circuits": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "fixtures": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "taggedFixtures": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "untaggedFixtures": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "positions": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unmatchedTags": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
                   "additionalProperties": false
                 }
               },

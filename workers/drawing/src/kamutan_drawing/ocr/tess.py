@@ -15,6 +15,9 @@ from PIL import Image, ImageDraw, ImageOps
 from .glyphs import TextLine
 
 TESSERACT = os.environ.get("TESSERACT_CMD", "tesseract")
+# Sprint 10 (Perf): hard cap on one rendered line (supersampled pixels). Real lines are < 12 MP (a 2 mm line across
+# a whole A1 sheet); a degenerate line (height ~0) would ask for gigabytes. Over the cap the line is not rendered.
+MAX_LINE_RENDER_PX = 64_000_000
 
 
 @dataclass
@@ -67,10 +70,11 @@ def render_line(
     mirror: bool = False,
     glyph_ids: list[int] | None = None,
     supersample: int = 4,
-) -> tuple[Image.Image, Callable[[float], float]]:
+) -> tuple[Image.Image | None, Callable[[float], float]]:
     """Render the line's glyph strokes alone (no drawing clutter), text horizontal.
 
-    Returns image and a function mapping line-frame x (mm) -> pixel x.
+    Returns image and a function mapping line-frame x (mm) -> pixel x. The image is ``None`` when the line would
+    need more than ``MAX_LINE_RENDER_PX`` pixels (``to_px`` is still valid).
     """
     H = line.height
     ss = max(1, supersample)
@@ -83,6 +87,13 @@ def render_line(
     y1 = line.baseline + (0.4 + pad_h) * H
     W = int(np.ceil((x1 - x0) * s))
     Hh = int(np.ceil((y1 - y0) * s))
+    if max(W, 8) * max(Hh, 8) > MAX_LINE_RENDER_PX:
+        s_final = s / ss
+
+        def to_px_unrendered(x: float) -> float:
+            return (x - x0) * s_final
+
+        return None, to_px_unrendered
     img = Image.new("L", (max(W, 8), max(Hh, 8)), 255)
     dr = ImageDraw.Draw(img)
     for g in gl:

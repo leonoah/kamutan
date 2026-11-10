@@ -43,6 +43,7 @@ from typing import Any
 
 from .. import errors as E
 from ..boq.contracts import LibraryImportJob
+from ..boq.descmatch import desc_key
 from ..errors import IngestError
 from ..sandbox.runner import Limits, run_task
 from ..service.scan import Scanner, infected_error, infected_mark, quarantine, scan_upload, scanner_from_env
@@ -289,6 +290,13 @@ def write_library(org_id: str, source_ref: str, parsed: dict[str, Any], docs: Do
     out = ImportOutcome("succeeded", parsed=parsed)
     seen: set[str] = set()
     codes: set[str] = set()  # codes this import brings (written or already identical)
+    # Sprint 10: the same description in another project's BOQ (another code) is the SAME library item — looked up by
+    # its description key (stored as `descKey`; computed for older docs). Default items are never reused this way.
+    by_desc: dict[str, tuple[str, dict[str, Any]]] = {}
+    for iid0, d0 in _list(docs, base):
+        if isinstance(d0, dict) and d0.get("active") is not False and d0.get("description") and d0.get("source") != "default":
+            k0 = str(d0.get("descKey") or desc_key(str(d0["description"])))
+            by_desc.setdefault(k0, (iid0, d0))
     for it in (parsed.get("items") or [])[:MAX_ITEMS]:
         if not isinstance(it, dict):
             out.skipped += 1
@@ -300,6 +308,13 @@ def write_library(org_id: str, source_ref: str, parsed: dict[str, Any], docs: Do
             out.skipped += 1
             continue
         iid = item_id(code, desc)
+        dkey = desc_key(desc)
+        cur = docs.get(f"{base}/{iid}")
+        alias: str | None = None
+        if cur is None and dkey in by_desc:
+            # same wording, another code: reuse the existing item (its id stays), remember the code as an alias
+            iid, cur = by_desc[dkey]
+            alias = code
         if iid in seen:
             out.skipped += 1
             continue
@@ -308,19 +323,37 @@ def write_library(org_id: str, source_ref: str, parsed: dict[str, Any], docs: Do
         out.flags.extend(f"{code}:{f}" for f in flags if f.startswith("ambiguous"))
         if "ambiguous_code" in flags:
             out.ambiguous_codes.append(code)
+        cancelled = it.get("cancelled") is True or "cancelled" in flags
+        unit = _s(it.get("unit"), 32)
+        if cancelled:
+            unit = str((cur or {}).get("unit") or "") if cur else ""
         fields: dict[str, Any] = {
-            "code": code,
-            "chapter": chapter,
-            "chapterTitle": _s(it.get("chapterTitle"), 200),
-            "description": desc,
-            "unit": _s(it.get("unit"), 32) or DEFAULT_UNIT,
+            "code": code if cur is None or alias is None else str(cur["code"]),
+            "chapter": chapter if alias is None or cur is None else str(cur.get("chapter") or chapter),
+            "chapterTitle": _s(it.get("chapterTitle"), 200)
+            if alias is None or cur is None
+            else str(cur.get("chapterTitle") or ""),
+            # the designer's wording is kept verbatim (a description-keyed reuse keeps the first project's wording)
+            "description": desc if alias is None or cur is None else str(cur["description"]),
+            "unit": unit or DEFAULT_UNIT,
             "source": "import",
             "sourceRef": _s(source_ref, 256),
             "importFlags": flags,
+            "descKey": dkey[:512],
+            # Sprint 10 (contracts ItemLibraryItem additive): a cancelled line ("בוטל") never produces a BOQ line; a
+            # "לא לסיכום / לספירה בסוף" line is a unit price only (never counted in the totals)
+            "cancelled": cancelled,
+            "notForTotal": it.get("notForTotal") is True or "not_for_total" in flags,
         }
-        cur = docs.get(f"{base}/{iid}")
+        if alias is not None and cur is not None:
+            aliases = [str(a) for a in cur.get("codeAliases") or [] if isinstance(a, str)]
+            if alias not in aliases and alias != fields["code"]:
+                aliases.append(alias)
+            fields["codeAliases"] = aliases[:16]
+            fields["cancelled"] = bool(cur.get("cancelled")) and cancelled  # a live occurrence revives the item
         if cur is None:
             docs.set(f"{base}/{iid}", {**fields, "tags": [], "active": True, "updatedAt": SERVER_TIMESTAMP}, merge=False)
+            by_desc.setdefault(dkey, (iid, {**fields, "active": True}))
             out.created += 1
         elif cur.get("source") == "manual":
             out.skipped += 1
@@ -331,6 +364,8 @@ def write_library(org_id: str, source_ref: str, parsed: dict[str, Any], docs: Do
             docs.set(f"{base}/{iid}", {**fields, **act, "updatedAt": SERVER_TIMESTAMP})
             out.updated += 1
         codes.add(code)
+        if alias is not None:
+            codes.add(str(fields["code"]))
         out.items += 1
     out.defaults_deactivated = deactivate_defaults(docs, base, codes, seen)
     if not _list(docs, f"orgs/{org_id}/boqTemplates"):

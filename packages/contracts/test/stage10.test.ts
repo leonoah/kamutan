@@ -48,7 +48,7 @@ describe('Stage 10 — default item library + generic template (A-LIVE-01)', () 
       expect(ItemLibraryItemSchema.safeParse({ ...it, updatedAt: null }).success, it.code).toBe(true);
       expect(it.id).toBe(itemIdFor(it.code, it.description));
       expect(it).toMatchObject({ source: 'default', active: true });
-      expect([1, 2]).toContain(it.defaultsVersion);
+      expect([1, 2, 3]).toContain(it.defaultsVersion);
       expect(codes.has(it.code)).toBe(false);
       codes.add(it.code);
       expect(it.description).not.toMatch(/(^|[\s(])נח($|[\s),.])|₪|\d+\s*ש"ח|עדה פלאסט|גוויס|תמי 4|נירוקריל|אורבונד/);
@@ -64,7 +64,7 @@ describe('Stage 10 — default item library + generic template (A-LIVE-01)', () 
       expect(it, r.itemCode).toBeTruthy();
       expect(similarity(r.itemDescription ?? '', it?.description ?? ''), r.itemCode).toBeGreaterThanOrEqual(0.6);
       if (r.unit === 'מ"ר' || r.unit === 'מ"א' || r.unit === 'קומפלט') expect(it?.unit, r.itemCode).toBe(r.unit);
-      else expect([DEFAULT_UNITS.count, DEFAULT_UNITS.lumpSum], r.itemCode).toContain(it?.unit);
+      else expect([DEFAULT_UNITS.count, DEFAULT_UNITS.lumpSum, DEFAULT_UNITS.room, DEFAULT_UNITS.set], r.itemCode).toContain(it?.unit);
     }
     expect(defaultUnitFor('יחידה')).toBe("יח'");
     expect(defaultUnitFor('מ"ר')).toBe('מ"ר');
@@ -80,7 +80,7 @@ describe('Stage 10 — default item library + generic template (A-LIVE-01)', () 
 
   it('json-schema/defaults/library-defaults.json is up to date', () => {
     const f = JSON.parse(readFileSync(join(__dirname, '..', 'json-schema', 'defaults', 'library-defaults.json'), 'utf8')) as { version: number; items: unknown[]; template: unknown };
-    expect(f.version).toBe(2);
+    expect(f.version).toBe(3);
     expect(f.items).toEqual(JSON.parse(JSON.stringify(DEFAULT_ITEM_LIBRARY)));
     expect(f.template).toEqual(JSON.parse(JSON.stringify(DEFAULT_BOQ_TEMPLATE)));
   });

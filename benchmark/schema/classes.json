@@ -252,6 +252,46 @@
       "core": false,
       "he": "מסגרת מקרא"
     },
+    "smoke_detector": {
+      "domain": "electrical",
+      "core": false,
+      "he": "גלאי עשן"
+    },
+    "camera": {
+      "domain": "electrical",
+      "core": false,
+      "he": "מצלמה"
+    },
+    "thermostat": {
+      "domain": "electrical",
+      "core": false,
+      "he": "תרמוסטט"
+    },
+    "alarm_detector": {
+      "domain": "electrical",
+      "core": false,
+      "he": "גלאי אזעקה"
+    },
+    "siren": {
+      "domain": "electrical",
+      "core": false,
+      "he": "צופר"
+    },
+    "keypad": {
+      "domain": "electrical",
+      "core": false,
+      "he": "לוח מקשים (קיבורד)"
+    },
+    "shutter_feed": {
+      "domain": "electrical",
+      "core": false,
+      "he": "הזנה לתריס חשמלי"
+    },
+    "ventilator_feed": {
+      "domain": "electrical",
+      "core": false,
+      "he": "הזנה לונטה"
+    },
     "unknown": {
       "domain": "other",
       "core": false,

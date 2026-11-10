@@ -24,6 +24,7 @@ Regions excluded: legend tables (and their symbols), fixture tables, the title b
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -41,6 +42,7 @@ CHUNK_POINTS = 1_500_000
 MIN_FWD_COV = 0.72
 TERMINATOR_MM = 0.8  # a filled path this small is a leader's dot / arrowhead, not symbol ink
 RUN_ON_MM = 1.0  # a leader's path reaches at least this far past the posed symbol box
+RING_YIELD = 0.5  # Sprint 10: a ring family yields to a containing, more specific drawing within this quality gap
 
 
 @dataclass
@@ -247,7 +249,10 @@ def forward(
     for s0 in range(0, P, per):
         sl = slice(s0, min(P, s0 + per))
         q = np.einsum("pij,nj->pni", mats[sl], tpl.pts) + centers[sl][:, None, :]
-        d, _ = scene.tree.query(q.reshape(-1, 2), k=1, distance_upper_bound=CAP_MM * 3)
+        # Sprint 10 (Perf): a scene point farther than CAP_MM · scale is capped to CAP_MM below anyway, so the search
+        # stops there (was 3 · CAP_MM for every pose; same values, ~3x fewer KD nodes visited on dense sheets)
+        bound = CAP_MM * min(3.0, float(scales[sl].max()))
+        d, _ = scene.tree.query(q.reshape(-1, 2), k=1, distance_upper_bound=bound)
         d = d.reshape(-1, n) / scales[sl][:, None]
         d = np.minimum(d, CAP_MM)
         fwd[sl] = d.mean(axis=1)
@@ -312,7 +317,11 @@ def quality(fwd: float, cov: float, rev: float, rev_cov: float, fill_diff: float
     return float((0.6 * q_f + 0.4 * q_r) * max(0.0, 1.0 - 4.0 * fill_diff))
 
 
-def spot_template(tpl: Template, scene: Scene, scale: float = 1.0) -> list[Candidate]:
+def spot_template(
+    tpl: Template, scene: Scene, scale: float = 1.0, accept: Callable[[Candidate], bool] | None = None
+) -> list[Candidate]:
+    """``accept`` (Sprint 10 (Perf)): the pose veto of :func:`spot`, applied before the reverse fit — it may only
+    read the pose (``tpl``, ``center``, ``mat``, ``scale``) and the forward fit (``fwd``, ``cov``)."""
     centers, mats, scales = propose(tpl, scene, scale)
     if len(centers) == 0:
         return []
@@ -320,10 +329,12 @@ def spot_template(tpl: Template, scene: Scene, scale: float = 1.0) -> list[Candi
     ok = np.where(cov >= MIN_FWD_COV)[0]
     out: list[Candidate] = []
     for i in ok[np.argsort(-cov[ok])][:5000]:
-        rv, rc = reverse(tpl, scene, centers[i], mats[i], float(scales[i]))
-        c = Candidate(
-            tpl, (float(centers[i][0]), float(centers[i][1])), mats[i], float(scales[i]), float(fwd[i]), float(cov[i]), rv, rc
-        )
+        c = Candidate(tpl, (float(centers[i][0]), float(centers[i][1])), mats[i], float(scales[i]), float(fwd[i]), float(cov[i]))
+        # Sprint 10 (Perf): the veto first — on a sheet with a survey underlay it rejects ~80 % of the poses, whose
+        # reverse fit was the largest single cost of `understand` (Rubel ground floors: parse_cpu_limit)
+        if accept is not None and not accept(c):
+            continue
+        c.rev, c.rev_cov = reverse(tpl, scene, centers[i], mats[i], float(scales[i]))
         c.fill_diff = fill_difference(tpl, scene, centers[i], mats[i], float(scales[i]))
         c.quality = quality(c.fwd, c.cov, c.rev, c.rev_cov, c.fill_diff)
         out.append(c)
@@ -341,30 +352,47 @@ def _posed(c: Candidate) -> np.ndarray:
     return np.asarray(c.tpl.pts @ c.mat.T + np.array(c.center))
 
 
-def _nms(cands: list[Candidate], min_quality: float) -> list[Candidate]:
+def _nms(cands: list[Candidate], min_quality: float, passive: frozenset[str] = frozenset()) -> list[Candidate]:
     """Non-maximum suppression on *shared strokes*, not on centre distance.
 
     Two candidates are the same instance when ≥ 50 % of either one's posed template lies on the
     other's (a 2-way switch contains the strokes of a single switch; two switches of a bank 2 mm
     apart share none, so both survive). Of two overlapping candidates the more specific template —
     clearly more strokes, all of the other's explained — wins unless its fit is much worse; the
-    loser's quality becomes the winner's runner-up (→ margin)."""
-    cands = sorted(cands, key=lambda c: -c.quality)
+    loser's quality becomes the winner's runner-up (→ margin).
+
+    ``passive`` (Sprint 10): template ids of classless *markers* ("ראה הערה" cross, "מוגן מים" mark). They only
+    annotate, so they never suppress a class-bearing symbol: they are taken after every other candidate, never
+    replace a kept one, and still count as its runner-up (a marker that fits better leaves a negative margin →
+    "דומה לסמל אחר"). Yahav: a power socket's stem + ticks fitted the "+" of the see-note cross a little better, and
+    the socket was lost."""
+    cands = sorted(cands, key=lambda c: (c.tpl.id in passive, -c.quality))
     kept: list[Candidate] = []
     trees: list[cKDTree] = []
+    # Sprint 10 (Perf): per kept candidate its posed points, centre and half diagonal, so the centre-distance test is
+    # one numpy expression and the posed points are not recomputed for every overlap (same order, same results)
+    posed: list[np.ndarray] = []
+    kxy = np.zeros((0, 2))
+    khalf = np.zeros(0)
     tol = 0.25
     for c in cands:
         pc = _posed(c)
         tc: cKDTree | None = None
         hit = None
-        for k, (kc, tk) in enumerate(zip(kept, trees, strict=True)):
+        if kept:
+            dist = np.hypot(kxy[:, 0] - c.center[0], kxy[:, 1] - c.center[1])
+            near = np.flatnonzero(dist <= 0.5 * c.tpl.diag * c.scale + khalf + 1e-9)  # loose: the scalar test decides
+        else:
+            near = np.zeros(0, dtype=np.int64)
+        for k in near.tolist():
+            kc, tk = kept[k], trees[k]
             reach = 0.5 * (c.tpl.diag * c.scale + kc.tpl.diag * kc.scale)
             if math.hypot(c.center[0] - kc.center[0], c.center[1] - kc.center[1]) > reach:
-                continue
+                continue  # the exact scalar test, as before (the numpy prefilter only narrows the loop)
             share_c = float((tk.query(pc, k=1, distance_upper_bound=tol)[0] <= tol).mean())
             if tc is None:
                 tc = cKDTree(pc)
-            share_k = float((tc.query(_posed(kc), k=1, distance_upper_bound=tol)[0] <= tol).mean())
+            share_k = float((tc.query(posed[k], k=1, distance_upper_bound=tol)[0] <= tol).mean())
             if share_c >= 0.5 or share_k >= 0.5:
                 hit = (k, share_c, share_k)
                 break
@@ -372,14 +400,28 @@ def _nms(cands: list[Candidate], min_quality: float) -> list[Candidate]:
             if c.quality >= min_quality:
                 kept.append(c)
                 trees.append(tc if tc is not None else cKDTree(pc))
+                posed.append(pc)
+                kxy = np.vstack([kxy, [c.center]])
+                khalf = np.append(khalf, 0.5 * c.tpl.diag * c.scale)
             continue
         k, share_c, share_k = hit
         kc = kept[k]
         more_specific = len(c.tpl.pts) >= 1.25 * len(kc.tpl.pts) and share_k >= 0.7
-        if c.tpl.id != kc.tpl.id and more_specific and c.quality >= max(min_quality, kc.quality - 0.15):
+        # Sprint 10: a bare ring (circled-letter family) fits every circle; a drawing that contains the ring and
+        # explains more ink (a camera: circle + cone) wins whenever it fits acceptably
+        slack = RING_YIELD if getattr(kc.tpl, "ring", None) is not None else 0.15
+        if (
+            c.tpl.id != kc.tpl.id
+            and more_specific
+            and c.tpl.id not in passive
+            and c.quality >= max(min_quality, kc.quality - slack)
+        ):
             c.runner_up, c.runner_up_id = kc.quality, kc.tpl.id
             kept[k] = c
             trees[k] = tc if tc is not None else cKDTree(pc)
+            posed[k] = pc
+            kxy[k] = c.center
+            khalf[k] = 0.5 * c.tpl.diag * c.scale
             continue
         if c.tpl.id != kc.tpl.id and c.quality > kc.runner_up:
             kc.runner_up = c.quality
@@ -405,19 +447,32 @@ def estimate_scale(templates: list[Template], scene: Scene) -> float | None:
     return float(2 ** ((edges[k] + edges[k + 1]) / 2))
 
 
-def spot(templates: list[Template], scene: Scene, *, min_quality: float = 0.45) -> SpotResult:
+def spot(
+    templates: list[Template],
+    scene: Scene,
+    *,
+    min_quality: float = 0.45,
+    accept: Callable[[Candidate], bool] | None = None,
+    passive: frozenset[str] = frozenset(),
+) -> SpotResult:
+    """``accept``: a per-candidate veto applied *before* NMS (Sprint 10: colour consistency), so a rejected
+    candidate never suppresses the right template at the same place. It sees the pose and the forward fit only
+    (it runs before the reverse fit, see :func:`spot_template`)."""
     res = SpotResult()
-    cands: list[Candidate] = []
-    for t in templates:
-        cands.extend(spot_template(t, scene, 1.0))
+
+    def run(scale: float) -> list[Candidate]:
+        out: list[Candidate] = []
+        for t in templates:
+            out.extend(spot_template(t, scene, scale, accept))
+        return out
+
+    cands = run(1.0)
     strong = sum(1 for c in cands if c.quality >= 0.7)
     if strong < 2:  # the legend may be drawn at another size than the plan symbols
         k = estimate_scale(templates, scene)
         if k is not None and abs(math.log2(k)) > 0.15:
-            alt: list[Candidate] = []
-            for t in templates:
-                alt.extend(spot_template(t, scene, k))
+            alt = run(k)
             if sum(1 for c in alt if c.quality >= 0.7) > strong:
                 cands, res.scale, res.scale_estimated = alt, k, True
-    res.detections = _nms(cands, min_quality)
+    res.detections = _nms(cands, min_quality, passive)
     return res

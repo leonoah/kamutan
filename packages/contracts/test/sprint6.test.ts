@@ -96,7 +96,7 @@ describe('Sprint 6 — rule kinds', () => {
 
 describe('Sprint 6 — default library v2 + template v3', () => {
   it('additions: chapters 02 / 06 (7.xx) / 07 (8.xx), defaultsVersion 2, titles from the template', () => {
-    const add = DEFAULT_ITEM_LIBRARY_ADDITIONS;
+    const add = DEFAULT_ITEM_LIBRARY_ADDITIONS.filter((i) => i.defaultsVersion === 2); // v3 = Sprint 10 (sprint10.test.ts)
     expect(add.length).toBe(23);
     expect(add.every((i) => i.defaultsVersion === 2)).toBe(true);
     expect(DEFAULT_ITEM_LIBRARY.find((i) => i.code === '7.01')?.chapter).toBe('06');
@@ -113,7 +113,7 @@ describe('Sprint 6 — default library v2 + template v3', () => {
     const ids = new Set(v1.map((i) => i.id));
     const taken = new Set([...v1.map((i) => i.code), '7.01']);
     const plan = planDefaultLibrarySeed({ empty: false, hasDefault: true, existingIds: ids, takenCodes: taken });
-    expect(plan).toHaveLength(22);
+    expect(plan.filter((i) => i.defaultsVersion === 2)).toHaveLength(22);
     expect(plan.some((i) => i.code === '7.01')).toBe(false);
     expect(planDefaultLibrarySeed({ empty: false, hasDefault: false, existingIds: none, takenCodes: none })).toEqual([]);
     const all = new Set(DEFAULT_ITEM_LIBRARY.map((i) => i.id));

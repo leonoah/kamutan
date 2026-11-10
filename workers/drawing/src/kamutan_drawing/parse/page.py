@@ -13,13 +13,14 @@ from pathlib import Path
 from typing import Any
 
 from .. import errors as E
-from ..classify.regions import assign_floors
+from ..classify.regions import apply_label_floors, assign_floors
 from ..classify.sheet import R_DPI_UNKNOWN, R_DXF_UNITS, R_LOW_RES, classify_page, span_from_line, span_to_line
 from ..errors import IngestError
 from ..ingest.pdf_vector import VectorSheet
 from ..ocr.dictionary import TextSpan
 from ..pipeline.artifacts import encode_primitives, encode_text
 from ..render.tiles import Pyramid, write_pyramid, write_thumbnail
+from ..sandbox import context  # Sprint 10 (Perf): counts for the memory-limit message
 
 Progress = Callable[[str, int], None]
 
@@ -54,6 +55,8 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
         t = now
 
     progress("ingest", 1)
+    context.reset()
+    images: dict[str, Any] | None = None
     extra_yellow: list[str] = []
     inserts: list[dict[str, Any]] = []
     direct_lines: list[dict[str, Any]] = []
@@ -71,6 +74,8 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
         render = src.render
         w_mm, h_mm, rotation = src.width_mm, src.height_mm, src.rotation
         direct_lines = src.text_layer()
+        images = src.image_summary()
+        context.note(paths=vs.n_paths, segments=vs.n_segs, images=images["count"])
     elif kind == "dxf":
         from .dxf import extract_page, load_doc
         from .vectors import VectorPainter
@@ -101,6 +106,7 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             extra_yellow.append(R_LOW_RES)
     else:
         raise IngestError(E.UNSUPPORTED_FORMAT, f"unsupported kind {kind}")
+    context.note(paths=vs.n_paths, segments=vs.n_segs)
     lap("ingest")
 
     try:
@@ -123,6 +129,7 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
         glyph_delta: dict[str, Any] | None = None
         text_stats: dict[str, Any] = {}
         source = "none"
+        n_shx = 0
         if kind == "pdf":
             from ..ocr.glyphs import extract_text_lines
             from ..ocr.reader import read_page_text
@@ -137,6 +144,7 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
                 glyph_delta = pt.delta.to_obj()
                 text_stats = pt.stats
                 source = "shx-glyph-dictionary"
+            n_shx = len(spans)
             if direct_lines:
                 spans += [span_from_line(ln) for ln in direct_lines]
                 source = "pdf-text" if source == "none" else "mixed"
@@ -147,6 +155,7 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             direct_lines = rs.ocr_lines(vs)
             spans = [span_from_line(ln) for ln in direct_lines]
             source = "tesseract"
+        context.note(textLines=len(spans))
         lap("ocr")
 
         # ---------------------------------------------------------------- classify
@@ -159,6 +168,7 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
         # ---------------------------------------------------------------- regions + scale
         progress("scale", STAGE_PCT["scale"])
         reg = assign_floors(vs, spans, cls.floors, cls.scale_den, exclude_paths=set(text_paths), title_block=cls.title_block_bbox)
+        apply_label_floors(cls, reg)  # Sprint 10 (Worker-Classify) — keep: no floor in the title → the drawings' labels
         if reg.yellow:
             cls.reasons = list(dict.fromkeys(cls.reasons + reg.yellow))
             if cls.level == "green":
@@ -170,6 +180,9 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             encode_primitives(vs, rotation=rotation, inserts=inserts, text_paths=text_paths)
         )
         lines_out = [span_to_line(s) for s in spans]
+        if kind == "pdf":  # Sprint 10 (Worker-Classify) — keep: font text vs SHX readings (classify.project prints)
+            for ln in lines_out[n_shx:]:
+                ln["src"] = "pdf"
         (out / "text.json.gz").write_bytes(encode_text(lines_out, source))
         lap("write")
     finally:
@@ -201,7 +214,9 @@ def process_page(args: dict[str, Any], progress: Progress) -> dict[str, Any]:
             "textLines": len(spans),
             "glyphs": int(text_stats.get("glyphs", 0)),
             "inserts": len(inserts),
+            "images": int(images["count"]) if images else 0,
         },
+        "images": images,  # Sprint 10 (Perf): embedded raster images {count, megapixels, bboxMm, dpiMedian} (PDF only)
         "textStats": text_stats,
         "textSource": source,
         "glyphDelta": glyph_delta,

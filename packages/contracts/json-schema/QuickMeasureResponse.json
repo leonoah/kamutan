@@ -139,7 +139,15 @@
                     "conduit_cobra",
                     "water_heater_feed",
                     "legend_entry",
-                    "legend_box"
+                    "legend_box",
+                    "smoke_detector",
+                    "camera",
+                    "thermostat",
+                    "alarm_detector",
+                    "siren",
+                    "keypad",
+                    "shutter_feed",
+                    "ventilator_feed"
                   ]
                 },
                 {
@@ -1017,6 +1025,47 @@
                 {
                   "type": "string",
                   "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "notForTotal": {
+              "type": "boolean"
+            },
+            "circuit": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "single",
+                        "shared",
+                        "two_way",
+                        "cross",
+                        "timer",
+                        "no_switch"
+                      ]
+                    },
+                    "fixtures": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "fixtures"
+                  ],
+                  "additionalProperties": false
                 },
                 {
                   "type": "null"

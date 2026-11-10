@@ -62,6 +62,23 @@ export const ItemLibraryItemSchema = z.object({
   defaultsVersion: z.number().int().positive().optional(),
   /** Sprint 8: the org's unit price of the item (₪). Absent / null = no price ("ללא מחיר"). */
   price: ItemPriceSchema.nullable().optional(),
+  /**
+   * Sprint 10 (Worker-BOQ import): the client's line was cancelled (unit "בוטל" in the imported BOQ). The item stays in
+   * the library (history, prices) but never produces a BOQ line and is never resolved by a rule.
+   */
+  cancelled: z.boolean().optional(),
+  /**
+   * Sprint 10: a "לא לסיכום / לספירה בסוף / אופציה" line of the client's BOQ — a unit price only (qty placeholder). A
+   * BOQ line resolved to it carries `notForTotal: true` and is never counted in the totals.
+   */
+  notForTotal: z.boolean().optional(),
+  /**
+   * Sprint 10: identity of the description across imports (`descKey`: normalised tokens + parameters, worker-computed)
+   * and the other codes the same description carried in other imported BOQs (codes drift between projects: the same
+   * description in two BOQs is ONE item; a rule or user code matching an alias resolves to it).
+   */
+  descKey: z.string().max(512).optional(),
+  codeAliases: z.array(ItemCodeSchema).max(16).optional(),
 });
 export type ItemLibraryItem = z.infer<typeof ItemLibraryItemSchema>;
 
@@ -221,14 +238,36 @@ export const BOQ_RULE_KINDS = [
   'area_item',
   'length_item',
   'suggested_item',
+  // Sprint 10 (Worker-BOQ / Worker-Lighting)
+  'marker_addon',
+  'lighting_circuit',
 ] as const;
 export const BoqRuleKindSchema = z.enum(BOQ_RULE_KINDS);
 export type BoqRuleKind = z.infer<typeof BoqRuleKindSchema>;
 
 const ClassesSchema = z.array(SymbolClassSchema).min(1).max(32);
 
-/** Every detection of one of `classes` counts 1 toward the rule's item. */
-export const ClassToItemMatchSchema = z.object({ classes: ClassesSchema }).strict();
+/**
+ * Every detection of one of `classes` counts 1 toward the rule's item.
+ * Sprint 10 (optional): the detection's *label* — its annotations, its legend entry's label and the text lines within
+ * `labelRadiusMm` paper mm (default 10), normalised like `normalizeHebrewText` — must match one of `labelPatterns` and
+ * none of `excludeLabelPatterns` ("הזנה לתריס", "שקע תלת פאזי למזגן", "לוח משני"); rules are tried by priority and the
+ * first whose label matches takes the detection (a bare class rule of lower priority is the fallback). `countOnly`:
+ * the detection is counted but NOT consumed — another rule still counts it (one deep box per switch while the switch
+ * still builds its lighting point). `params.length` / `params.diameter` = "label": the length / diameter written next
+ * to the symbol (else the drawn run length) is passed to the item resolution, which picks the library item whose
+ * stated bucket fits ("קוברה 50 מ"מ באורך עד 6 מטר"). A DEFAULT rule whose item the org's library lacks is skipped.
+ */
+export const ClassToItemMatchSchema = z
+  .object({
+    classes: ClassesSchema,
+    labelPatterns: z.array(TextPatternSchema).min(1).max(16).optional(),
+    excludeLabelPatterns: z.array(TextPatternSchema).max(16).optional(),
+    labelRadiusMm: z.number().finite().positive().max(100).optional(),
+    countOnly: z.boolean().optional(),
+    params: z.object({ length: z.literal('label').optional(), diameter: z.literal('label').optional() }).strict().optional(),
+  })
+  .strict();
 
 /**
  * A switch↔luminaire link group (kamutan.links/1) of `groupKind` (and, when given, exactly `pointCount` points /
@@ -299,6 +338,10 @@ export const PlumbingPointMatchSchema = z
     roomNamePatterns: RoomNamePatternsSchema.optional(),
     floors: FloorsFilterSchema.optional(),
     perRoom: z.boolean(),
+    /** Sprint 10: label of the fixture (as in `ClassToItemMatch`): "אינטרפוץ 4 דרך", "3x", "מטבח חוץ" pick the variant. */
+    labelPatterns: z.array(TextPatternSchema).min(1).max(16).optional(),
+    excludeLabelPatterns: z.array(TextPatternSchema).max(16).optional(),
+    labelRadiusMm: z.number().finite().positive().max(100).optional(),
   })
   .strict();
 
@@ -368,8 +411,11 @@ export const TemplateChapterMatchSchema = z
   .object({
     chapters: z.array(ChapterCodeSchema).min(1).max(16),
     disciplines: z.array(DisciplineSchema).max(8).optional(),
-    quantity: z.number().finite().positive().max(1000),
+    /** Sprint 10: absent = "להשלמה ידנית" (needsInput, qty 0, the item's own unit). */
+    quantity: z.number().finite().positive().max(1000).optional(),
     excludeCodes: z.array(ItemCodeSchema).max(64).optional(),
+    /** Sprint 10: only the org's imported items (`source: 'import'`), never a `notForTotal` one. */
+    importedOnly: z.boolean().optional(),
   })
   .strict();
 
@@ -535,6 +581,43 @@ export const SuggestedItemMatchSchema = z
   .strict();
 export type SuggestedItemMatch = z.infer<typeof SuggestedItemMatchSchema>;
 
+/**
+ * Sprint 10 (Worker-BOQ): an add-on line counted per HOST detection that carries a marker — a detection of
+ * `markerClasses` within `radiusMm` paper mm (default 6), or a label (as in `ClassToItemMatch`) matching one of
+ * `markerPatterns` ("מוגן מים", "IP44", "USB"). Hosts are never consumed (the socket is still a socket; the add-on is a
+ * second line): "תוספת עבור אביזר מוגן מים" = waterproof sockets AND switches, "תוספת עבור שקע USB".
+ */
+export const MarkerAddonMatchSchema = z
+  .object({
+    hostClasses: ClassesSchema,
+    markerClasses: z.array(SymbolClassSchema).max(8).optional(),
+    markerPatterns: z.array(TextPatternSchema).max(16).optional(),
+    radiusMm: z.number().finite().positive().max(100).optional(),
+    /** A host inside a room of these types counts without a marker (the designer marks no waterproof symbol). */
+    roomTypes: RoomTypesSchema.optional(),
+  })
+  .strict()
+  .refine((m) => (m.markerClasses?.length ?? 0) > 0 || (m.markerPatterns?.length ?? 0) > 0 || (m.roomTypes?.length ?? 0) > 0, {
+    message: 'markerClasses, markerPatterns or roomTypes is required',
+    path: ['markerClasses'],
+  });
+
+/** Wording of the lighting-point lines: one line per switching topology, or "נק' מאור בודדה" + "סט: שירשור N". */
+export const LIGHTING_WORDINGS = ['auto', 'topology', 'set'] as const;
+/**
+ * Sprint 10 (Worker-Lighting, `circuits.json.gz`): the "נק' מאור …" lines from the circuit tags. `wording: auto` takes
+ * the org library's wording (per topology vs בודדה + סט שירשור); library items are matched structurally (fixtures,
+ * switch positions, timer / stair words). `itemCode` is null (every topology has its own item). Sheets covered by the
+ * circuits skip their composite link groups.
+ */
+export const LightingCircuitMatchSchema = z
+  .object({
+    wording: z.enum(LIGHTING_WORDINGS),
+    includeTimer: z.boolean().optional(),
+    includeNoSwitch: z.boolean().optional(),
+  })
+  .strict();
+
 const ruleBase = {
   id: DocIdSchema,
   /** Target item (TEXT). null for authority rules. */
@@ -575,6 +658,8 @@ export const BoqRuleSchema = z.discriminatedUnion('kind', [
   z.object({ ...ruleBase, kind: z.literal('area_item'), match: GeometryItemMatchSchema }),
   z.object({ ...ruleBase, kind: z.literal('length_item'), match: GeometryItemMatchSchema }),
   z.object({ ...ruleBase, kind: z.literal('suggested_item'), match: SuggestedItemMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('marker_addon'), match: MarkerAddonMatchSchema }),
+  z.object({ ...ruleBase, kind: z.literal('lighting_circuit'), match: LightingCircuitMatchSchema }),
 ]);
 export type BoqRule = z.infer<typeof BoqRuleSchema>;
 
@@ -894,6 +979,219 @@ const SPRINT6_RULES: readonly RuleSeed[] = [
   suggested('r_suggest_putty', { trigger: BUILD_SHEETS, estimate: { kind: 'fixed', quantity: 1 }, reason: 'קומפלט – לאשר את היקף ההחלקה', level: 'red' }, '8.04', 'החלקת קירות ותקרות בשפכטל בשלוש שכבות', 'קומפלט'),
 ];
 
+// GENERATED-ONCE from workers/drawing/src/kamutan_drawing/boq/defaults_s10.py (the worker mirror is diffed by test)
+const SPRINT10_RULES: readonly RuleSeed[] = [
+  {"id": "r_addon_waterproof", "kind": "marker_addon", "match": {"hostClasses": ["socket_single", "socket_double", "socket_triple", "socket_power", "socket_power_double", "socket_3phase", "socket_box_6", "switch_single", "switch_2way", "switch_fan", "switch_cross", "switch_shutter", "tv_point", "data_point", "phone_point", "bezek_point", "speaker", "intercom"], "markerClasses": ["waterproof_marker"], "markerPatterns": ["מוגנ ?מימ", "ip ?(44|55|65)", "(?<![א-ת])מ\\.?מ\\.?(?![א-ת])"], "radiusMm": 6, "roomTypes": ["bathroom", "wc", "balcony", "courtyard"]}, "itemCode": "4.29", "itemDescription": "תוספת עבור אביזר מוגן מים", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_addon_usb", "kind": "marker_addon", "match": {"hostClasses": ["socket_single", "socket_double", "socket_triple", "socket_power", "socket_power_double", "socket_3phase", "socket_box_6"], "markerPatterns": ["usb", "type ?c"], "radiusMm": 6}, "itemCode": "4.30", "itemDescription": "תוספת עבור שקע USB + TYPE C בקופסא קיימת", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_feed_shutter", "kind": "class_to_item", "match": {"classes": ["heater_feed", "switch_shutter"], "labelPatterns": ["תריס"]}, "itemCode": "4.31", "itemDescription": "הזנה לתריס חשמלי", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_feed_smoke", "kind": "class_to_item", "match": {"classes": ["heater_feed"], "labelPatterns": ["גלאי ?עשנ", "גלאי"]}, "itemCode": "4.32", "itemDescription": "הזנה לגלאי עשן", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_supply_smoke", "kind": "class_to_item", "match": {"classes": ["heater_feed"], "labelPatterns": ["גלאי ?עשנ", "גלאי"], "countOnly": true}, "itemCode": "4.33", "itemDescription": "אספקה והתקנת גלאי עשן", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_feed_awning", "kind": "class_to_item", "match": {"classes": ["heater_feed"], "labelPatterns": ["סוככ", "פרגולה חשמלית"]}, "itemCode": "4.34", "itemDescription": "הזנה לסוכך חשמלי", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_feed_solar_boiler", "kind": "class_to_item", "match": {"classes": ["heater_feed", "water_heater_feed"], "labelPatterns": ["דוד ?שמש", "(?:דוד|חימומ).{0,20}(?:גג|גז)"]}, "itemCode": "4.35", "itemDescription": "הזנה משולבת לדוד שמש ולמכשיר חימום מים על הגג כולל פקט ומפסק", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_supply_heater", "kind": "class_to_item", "match": {"classes": ["heater_feed"], "labelPatterns": ["תנור"], "countOnly": true}, "itemCode": "4.36", "itemDescription": "התקנת תנור חימום בחדר רחצה", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_supply_bell", "kind": "class_to_item", "match": {"classes": ["doorbell"], "labelPatterns": [".*"], "countOnly": true}, "itemCode": "4.37", "itemDescription": "אספקה והתקנת פעמון", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_supply_vent", "kind": "text_item", "match": {"patterns": ["(הזנה|נקודה|נק'?)\\s*ל?(ונטה|מפוח|מאוורר\\s*יניקה)"], "scope": "any", "qty": "count", "proximityMm": 300, "disciplines": ["electrical", "lighting"]}, "itemCode": "4.38", "itemDescription": "אספקה והתקנת ונטה", "unit": "יחידה", "priority": 119} as RuleSeed,
+  {"id": "r_3ph_ac", "kind": "class_to_item", "match": {"classes": ["socket_3phase", "socket_power"], "labelPatterns": ["מזגנ", "מיזוג", "מעבה"]}, "itemCode": "4.39", "itemDescription": "שקע תלת פאזי למזגן", "unit": "יחידה", "priority": 111} as RuleSeed,
+  {"id": "r_3ph_induction", "kind": "class_to_item", "match": {"classes": ["socket_3phase", "socket_power"], "labelPatterns": ["אינדוקציה", "כיריימ"]}, "itemCode": "4.40", "itemDescription": "שקע תלת פאזי לכיריים אינדוקציה", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_3ph_jacuzzi", "kind": "class_to_item", "match": {"classes": ["socket_3phase", "socket_power"], "labelPatterns": ["ג'?קוזי"]}, "itemCode": "4.41", "itemDescription": "שקע תלת פאזי לג'קוזי", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_3ph_ev", "kind": "class_to_item", "match": {"classes": ["socket_3phase", "socket_power"], "labelPatterns": ["רכב", "טעינה"]}, "itemCode": "4.42", "itemDescription": "הזנה תלת פאזית עבור שקע טעינה לרכב חשמלי", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_3ph_hydro", "kind": "class_to_item", "match": {"classes": ["socket_3phase", "socket_power"], "labelPatterns": ["היתרו", "חימומ ?מימ"]}, "itemCode": "4.43", "itemDescription": "שקע תלת פאזי למכשיר חימום מים (היתרו)", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_3ph_sauna", "kind": "class_to_item", "match": {"classes": ["socket_3phase", "socket_power"], "labelPatterns": ["סאונה"]}, "itemCode": "4.44", "itemDescription": "שקע תלת פאזי לסאונה", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_3ph_pool", "kind": "class_to_item", "match": {"classes": ["socket_3phase", "socket_power"], "labelPatterns": ["בריכה", "חדר ?מכונות"]}, "itemCode": "4.45", "itemDescription": "הזנה תלת פאזית לחדר מכונות בריכה", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_cobra_32", "kind": "class_to_item", "match": {"classes": ["conduit_cobra"], "labelPatterns": ["32"], "params": {"length": "label"}}, "itemCode": "4.46", "itemDescription": "צינור קוברה 32 מ\"מ", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_text_marichaf_20", "kind": "text_item", "match": {"patterns": ["מריכפ", "מריחב", "צינור\\s*20\\s*מ\"?מ"], "scope": "any", "qty": "count", "proximityMm": 300, "disciplines": ["electrical", "lighting"]}, "itemCode": "4.47", "itemDescription": "צינור מריכף 20 מ\"מ חופשי מהרצפה כהכנה", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_text_solar_conduit", "kind": "text_item", "match": {"patterns": ["סולרי", "פאנלימ\\s*סולר", "הכנה\\s*ל?סולר"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["electrical", "lighting"]}, "itemCode": "4.48", "itemDescription": "צינור הזנה עם חוט משיכה מלוח חשמל ראשי עד הגג – הכנה לפאנלים סולריים", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_panel_main", "kind": "class_to_item", "match": {"classes": ["panel"], "labelPatterns": ["ראשי"], "excludeLabelPatterns": ["תקשורת"]}, "itemCode": "4.49", "itemDescription": "אספקה והתקנת לוח חשמל ראשי", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_panel_sub", "kind": "class_to_item", "match": {"classes": ["panel"], "labelPatterns": ["משני", "משנה"], "excludeLabelPatterns": ["תקשורת", "מונה"]}, "itemCode": "4.50", "itemDescription": "אספקה והתקנת לוח חשמל משני", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_panel_submeter", "kind": "class_to_item", "match": {"classes": ["panel"], "labelPatterns": ["מונה"], "countOnly": true}, "itemCode": "4.51", "itemDescription": "אספקה והתקנת מונה משני בלוח חשמל", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_deep_boxes", "kind": "class_to_item", "match": {"classes": ["switch_single", "switch_2way", "switch_fan", "switch_cross", "switch_shutter"], "countOnly": true}, "itemCode": "4.52", "itemDescription": "קופסת עומק למפסקים כוללת קו אפס נוסף", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_suggest_smart_home", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["בית ?חכמ", "קופס(?:א|ת|אות) ?עומק"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "4.53", "itemDescription": "הכנה לבית חכם: קופסאות עומק וקו אפס נוסף לכל המפסקים", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_box_d18", "kind": "class_to_item", "match": {"classes": ["socket_box_6"], "labelPatterns": [".*"]}, "itemCode": "4.71", "itemDescription": "אביזר D18 הכולל 6 שקעים ושלושה צינורות נוספים עם חוט משיכה עד לארון תקשורת", "unit": "יחידה", "priority": 105} as RuleSeed,
+  {"id": "r_comms_extra", "kind": "class_to_item", "match": {"classes": ["camera", "thermostat", "alarm_detector", "siren", "keypad"]}, "itemCode": "4.05", "itemDescription": "נק' תקשורת (כבלים/ טלפון/ רשת) הכנה עם חוט משיכה", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_shutter_feed", "kind": "class_to_item", "match": {"classes": ["shutter_feed"]}, "itemCode": "4.31", "itemDescription": "הזנה לתריס חשמלי", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_smoke_feed", "kind": "class_to_item", "match": {"classes": ["smoke_detector"]}, "itemCode": "4.32", "itemDescription": "הזנה לגלאי עשן", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_smoke_supply", "kind": "class_to_item", "match": {"classes": ["smoke_detector"], "countOnly": true}, "itemCode": "4.33", "itemDescription": "אספקה והתקנת גלאי עשן", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_vent_feed", "kind": "class_to_item", "match": {"classes": ["ventilator_feed"]}, "itemCode": "4.19", "itemDescription": "הזנה למפוח אוורור (ונטה) כולל מפסק", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_vent_supply", "kind": "class_to_item", "match": {"classes": ["ventilator_feed"], "countOnly": true}, "itemCode": "4.38", "itemDescription": "אספקה והתקנת ונטה", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_popup_socket", "kind": "class_to_item", "match": {"classes": ["socket_single", "socket_double", "socket_triple", "socket_power", "socket_power_double", "socket_3phase", "socket_box_6"], "labelPatterns": ["קופצ"]}, "itemCode": "4.57", "itemDescription": "אספקה והתקנת שקע קופץ באי מטבח", "unit": "יחידה", "priority": 112} as RuleSeed,
+  {"id": "r_install_fans", "kind": "class_to_item", "match": {"classes": ["ceiling_fan"], "countOnly": true}, "itemCode": "4.54", "itemDescription": "התקנת מאוורר תקרה", "unit": "יחידה", "priority": 100} as RuleSeed,
+  {"id": "r_suggest_profile_surface", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["lighting"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_length"}, "itemCode": "4.55", "itemDescription": "התקנת פרופיל תאורה חיצוני עה\"ט", "unit": "מ\"א", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_profile_recessed", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["lighting"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_length"}, "itemCode": "4.56", "itemDescription": "התקנת פרופיל תאורה שקוע בתקרת גבס", "unit": "מ\"א", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_profile_units", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["lighting"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.72", "itemDescription": "התקנת פרופיל תאורה חיצוני עה\"ט באורך לפי תכנית", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_text_popup_socket", "kind": "text_item", "match": {"patterns": ["שקע\\s*קופצ"], "scope": "any", "qty": "count", "proximityMm": 300, "disciplines": ["electrical", "lighting"]}, "itemCode": "4.57", "itemDescription": "אספקה והתקנת שקע קופץ באי מטבח", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_suggest_pillar_feed", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["פילר"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "לאשר לפי תכנית החשמל"}, "itemCode": "4.58", "itemDescription": "ביצוע הזנה חדשה מהפילר ועד לוח חשמל ראשי", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_fiber_feed", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["סיב ?אופטי"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "לאשר לפי תכנית החשמל"}, "itemCode": "4.59", "itemDescription": "ביצוע הזנה ראשית לסיב אופטי מהפילר ועד לוח תקשורת ראשי", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_iec_inspection", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "4.60", "itemDescription": "אחריות להעברת ביקורת חברת חשמל", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_text_storage_feed", "kind": "text_item", "match": {"patterns": ["קו\\s*הזנה.{0,30}מחסנ", "הזנה.{0,20}מחסנ"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["electrical", "lighting"]}, "itemCode": "4.61", "itemDescription": "קו הזנה מלוח חשמל ראשי עד מחסן בגינה", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_fb_waterproof", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.29", "itemDescription": "תוספת עבור אביזר מוגן מים", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_usb", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.30", "itemDescription": "תוספת עבור שקע USB + TYPE C בקופסא קיימת", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_shutter", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.31", "itemDescription": "הזנה לתריס חשמלי", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_smoke", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.32", "itemDescription": "הזנה לגלאי עשן", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_smoke_supply", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.33", "itemDescription": "אספקה והתקנת גלאי עשן", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_awning", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.34", "itemDescription": "הזנה לסוכך חשמלי", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_solar_boiler", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.35", "itemDescription": "הזנה משולבת לדוד שמש ולמכשיר חימום מים על הגג כולל פקט ומפסק", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_heater_install", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.36", "itemDescription": "התקנת תנור חימום בחדר רחצה", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_bell_supply", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.37", "itemDescription": "אספקה והתקנת פעמון", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_vent_supply", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.38", "itemDescription": "אספקה והתקנת ונטה", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_3ph_ac", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.39", "itemDescription": "שקע תלת פאזי למזגן", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_3ph_induction", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.40", "itemDescription": "שקע תלת פאזי לכיריים אינדוקציה", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_3ph_jacuzzi", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.41", "itemDescription": "שקע תלת פאזי לג'קוזי", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_3ph_ev", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.42", "itemDescription": "הזנה תלת פאזית עבור שקע טעינה לרכב חשמלי", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_3ph_hydro", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.43", "itemDescription": "שקע תלת פאזי למכשיר חימום מים (היתרו)", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_3ph_sauna", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.44", "itemDescription": "שקע תלת פאזי לסאונה", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_3ph_pool", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.45", "itemDescription": "הזנה תלת פאזית לחדר מכונות בריכה", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_cobra_32", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.46", "itemDescription": "צינור קוברה 32 מ\"מ", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_cobra_50", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.20", "itemDescription": "צינור קוברה 50 מ\"מ", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_marichaf", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.47", "itemDescription": "צינור מריכף 20 מ\"מ חופשי מהרצפה כהכנה", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_solar_conduit", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.48", "itemDescription": "צינור הזנה עם חוט משיכה מלוח חשמל ראשי עד הגג – הכנה לפאנלים סולריים", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_panel_main", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.49", "itemDescription": "אספקה והתקנת לוח חשמל ראשי", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_panel_sub", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.50", "itemDescription": "אספקה והתקנת לוח חשמל משני", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_panel_comms", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.25", "itemDescription": "אספקה והתקנת לוח תקשורת", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_submeter", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.51", "itemDescription": "אספקה והתקנת מונה משני בלוח חשמל", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_deep_boxes", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.52", "itemDescription": "קופסת עומק למפסקים כוללת קו אפס נוסף", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_d18", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.71", "itemDescription": "אביזר D18 הכולל 6 שקעים ושלושה צינורות נוספים עם חוט משיכה עד לארון תקשורת", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_popup", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["electrical", "lighting"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "4.57", "itemDescription": "אספקה והתקנת שקע קופץ באי מטבח", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_irrigation", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["plumbing"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "3.25", "itemDescription": "נק' הזנה למערכת השקיה", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_heater_water", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["plumbing"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "3.35", "itemDescription": "הזנת מים למכשיר חימום מים / היתרו", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_fb_waterproof_room", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["plumbing"]}, "estimate": null, "reason": "לא זוהה בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "5.09", "itemDescription": "איטום חדר רחצה רטוב בשתי שכבות סיכה, כולל רולקות ובדיקת הצפה", "unit": "חדר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_plumb_kitchen_sink", "kind": "plumbing_point", "match": {"fixtureClasses": ["fixture_kitchen_sink"], "perRoom": false, "excludeLabelPatterns": ["חוצ"]}, "itemCode": "3.16", "itemDescription": "נק' מים חמים קרים וניקוז לכיור מטבח, כולל התקנת ברז וסיפון", "unit": "יחידה", "priority": 115} as RuleSeed,
+  {"id": "r_plumb_kitchen_sink_outdoor", "kind": "plumbing_point", "match": {"fixtureClasses": ["fixture_kitchen_sink"], "perRoom": false, "labelPatterns": ["חוצ", "גינה", "מרפסת"]}, "itemCode": "3.17", "itemDescription": "נק' מים קרים וניקוז לכיור מטבח חוץ", "unit": "יחידה", "priority": 125} as RuleSeed,
+  {"id": "r_plumb_shower_3x", "kind": "plumbing_point", "match": {"fixtureClasses": ["fixture_shower"], "perRoom": true, "labelPatterns": ["3\\s*x", "x\\s*3", "שלוש", "3 ?יח"]}, "itemCode": "3.18", "itemDescription": "נק' למקלחון הכוללת הזנת חמים וקרים, שלוש יחידות אינטרפוץ 3 דרך, נק' מים ומזלף, ראש גשם ותעלת ניקוז", "unit": "יחידה", "priority": 125} as RuleSeed,
+  {"id": "r_plumb_shower_4way", "kind": "plumbing_point", "match": {"fixtureClasses": ["fixture_shower"], "perRoom": true, "labelPatterns": ["4\\s*דרכ"]}, "itemCode": "3.19", "itemDescription": "נק' למקלחון הכוללת הזנת חמים וקרים, אינטרפוץ 4 דרך, נק' מים ומזלף, ראש גשם וקופסת ניקוז", "unit": "יחידה", "priority": 124} as RuleSeed,
+  {"id": "r_text_manifold_main", "kind": "text_item", "match": {"patterns": ["מרכזי(?:ה|ית)\\s*(?:מימ\\s*)?ראשית"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.22", "itemDescription": "אספקה והתקנת מרכזיית מים ראשית", "unit": "יחידה", "priority": 125} as RuleSeed,
+  {"id": "r_text_manifold_sub", "kind": "text_item", "match": {"patterns": ["מרכזי(?:ה|ית)\\s*(?:מימ\\s*)?משנית"], "scope": "any", "qty": "count", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.23", "itemDescription": "אספקה והתקנת מרכזיית מים משנית", "unit": "יחידה", "priority": 125} as RuleSeed,
+  {"id": "r_text_roof_heater_feed", "kind": "text_item", "match": {"patterns": ["הזנת?\\s*מימ.{0,30}(?:גג|דוד\\s*שמש|גז)"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.24", "itemDescription": "הזנת מים בגג משולבת לדוד ולמכשיר חימום בגז", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_text_irrigation_point", "kind": "text_item", "match": {"patterns": ["(?:נק'?|הזנה|הזנת\\s*מימ)\\s*ל?השקיה"], "scope": "any", "qty": "count", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.25", "itemDescription": "נק' הזנה למערכת השקיה", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_text_fire_hose_point", "kind": "text_item", "match": {"patterns": ["גלגלונ"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.26", "itemDescription": "נק' מים למערכת גלגלון כיבוי אש", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_text_fire_hose_supply", "kind": "text_item", "match": {"patterns": ["גלגלונ"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.27", "itemDescription": "אספקה והתקנת מערכת גלגלון כיבוי אש", "unit": "יחידה", "priority": 119} as RuleSeed,
+  {"id": "r_text_pool_feed", "kind": "text_item", "match": {"patterns": ["הזנת?\\s*מימ.{0,20}בריכה", "בריכה"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.28", "itemDescription": "הזנת מים לבריכה לפי הנחיות קבלן הבריכות", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_text_planter_drain", "kind": "text_item", "match": {"patterns": ["אדנית"], "scope": "any", "qty": "count", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.29", "itemDescription": "ביצוע ניקוז לאדנית", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_text_sauna_feed", "kind": "text_item", "match": {"patterns": ["סאונה"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.30", "itemDescription": "הזנת מים וניקוז לסאונה", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_text_outdoor_shower", "kind": "text_item", "match": {"patterns": ["טוש"], "scope": "any", "qty": "one", "proximityMm": 300, "disciplines": ["plumbing"]}, "itemCode": "3.31", "itemDescription": "הזנת מים חמים וקרים למערכת טוש רצפתית בחצר, כולל התקנת המערכת", "unit": "יחידה", "priority": 120} as RuleSeed,
+  {"id": "r_suggest_sewage", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["plumbing"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "3.32", "itemDescription": "ביצוע מערכת ביוב חדשה לפי נספח סניטרי ותכניות האינסטלציה", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_pump_pit", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["בור\\s*(?:משאבה|שאיבה)", "משאבה\\s*טבולה"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "3.33", "itemDescription": "חפירת ויציקת בור משאבה כולל חיבור הדלוחין ואספקת המשאבה", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_main_feed_line", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["קו\\s*הזנה\\s*ראשי", "מהשעונ"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "לאשר לפי תכנית האינסטלציה"}, "itemCode": "3.34", "itemDescription": "ביצוע קו הזנה ראשי חדש מהשעון", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_floor_indoor", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["architecture", "architecture_master", "construction", "demolition", "ceiling"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "5.10", "itemDescription": "ריצוף פנים באריחי גרניט פורצלן כולל רובה אקרילית", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_floor_outdoor", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["פיתוח", "ריצופ\\s*חוצ", "חניה", "פטיו"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "5.11", "itemDescription": "ריצוף חוץ באריחי גרניט פורצלן בטיט", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_floor_substrate", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["פרקט", "סוג\\s*ב'?"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "5.12", "itemDescription": "ריצוף אריחי סוג ב' כתשתית לפרקט", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_stone_cladding", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["חיפוי\\s*אבנ", "אבנ"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "5.13", "itemDescription": "חיפוי קירות חוץ באבן כולל כוחלה", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_coping", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["קופינג", "ספ\\s*שיש", "חלונ"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_length"}, "itemCode": "5.14", "itemDescription": "התקנת סף שיש (קופינג) לחלון כולל מילוי דבק שיש וליטוש", "unit": "מ\"א", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_recessed_skirting", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["פאנל\\s*שקוע", "פנל\\s*שקוע"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_length"}, "itemCode": "5.15", "itemDescription": "הדבקת פאנל שקוע לפי פרט כולל פרופיל ניתוק", "unit": "מ\"א", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_terrace_waterproofing", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["מרפסת", "גג"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "5.16", "itemDescription": "איטום מרפסת / גג ביריעות ביטומניות מולחמות לרבות שיפועים ורולקות", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_ground_waterproofing", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["architecture", "architecture_master", "construction", "demolition", "ceiling"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "5.17", "itemDescription": "איטום קירות הבית במפגש עם הקרקע", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_openings_waterproofing", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["architecture", "architecture_master", "construction", "demolition", "ceiling"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "5.18", "itemDescription": "איטום פתחי מערכות אלומיניום בשתי שכבות סיכה", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_laundry_floor", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["חדר\\s*כביסה"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "5.19", "itemDescription": "ריצוף רצפת חדר כביסה באריחי גרניט פורצלן", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_block_walls", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["קיר(?:ות)?\\s*בלוק", "בלוקימ"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "2.04", "itemDescription": "בניית קירות בלוק בטון לפי תכניות האדריכלות", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_window_closure", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["סגירת\\s*(?:פתח\\s*)?חלונ"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "count"}, "itemCode": "2.05", "itemDescription": "סגירת פתח חלון קיים בבלוק", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_concrete_works", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["יציק", "קונסטרוק"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "2.06", "itemDescription": "יציקות בטון לפי תכניות ופרטי הקונסטרוקציה", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_white_partitions", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["גבס\\s*לבנ", "מחיצ(?:ה|ות)\\s*גבס"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "7.08", "itemDescription": "מחיצות גבס לבן בעובי 10 ס\"מ כולל בידוד צמר סלעים", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_blue_partitions", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["גבס\\s*כחול", "נגד\\s*מימ", "גבס\\s*ירוק"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_area"}, "itemCode": "7.09", "itemDescription": "בניית מחיצות גבס כחול נגד מים כולל בידוד צמר סלעים", "unit": "מ\"ר", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_text_gypsum_niche", "kind": "text_item", "match": {"patterns": ["נישה"], "scope": "any", "qty": "count", "proximityMm": 300, "disciplines": ["architecture", "architecture_master", "construction", "demolition", "ceiling"]}, "itemCode": "7.10", "itemDescription": "בניית נישה במחיצת גבס לפי תכנית", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_suggest_str_profile", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["(?<![a-z])str(?![a-z])", "פרופיל\\s*ניתוק"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_length"}, "itemCode": "7.11", "itemDescription": "אספקה והתקנת פרופיל ניתוק STR במפגש תקרת גבס עם קירות", "unit": "מ\"א", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_text_open_art", "kind": "text_item", "match": {"patterns": ["אופנ\\s*ארט", "open\\s*art"], "scope": "any", "qty": "count", "proximityMm": 300, "disciplines": ["architecture", "architecture_master", "construction", "demolition", "ceiling"]}, "itemCode": "7.12", "itemDescription": "אספקה והתקנת פתח אופן ארט בגודל 60/60 ס\"מ", "unit": "יחידה", "priority": 110} as RuleSeed,
+  {"id": "r_suggest_valance_kitchen", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["סינר.{0,30}מטבח"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_length"}, "itemCode": "7.13", "itemDescription": "בניית סינר גבס בחתך לפי תכנית", "unit": "מ\"א", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_colored_render", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["שליכט"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "8.05", "itemDescription": "שליכט צבעוני על קירות חוץ וחומות כולל טיח שחור ופריימר", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_shelter_door_paint", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["ממ\"?ד", "מקלט"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "לאשר"}, "itemCode": "8.06", "itemDescription": "צביעת משקוף ודלת ממ\"ד / מקלט בצבע על בסיס שמן", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_wood_reinforcements", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["חיזוק", "מחיצ(?:ה|ות)\\s*גבס"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "9.04", "itemDescription": "ביצוע חיזוקי עץ במחיצות גבס לפי תכנית", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_bath_accessories", "kind": "suggested_item", "match": {"trigger": {"kind": "sheet_discipline", "disciplines": ["plumbing"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "קומפלט – לאשר"}, "itemCode": "9.05", "itemDescription": "התקנת אביזרי חדרי רחצה", "unit": "קומפלט", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_percolation_pit", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["ח[יל]?לחול"]}, "estimate": {"kind": "fixed", "quantity": 1}, "reason": "לאשר"}, "itemCode": "9.06", "itemDescription": "קידוח בור חלחול כולל שרוול, רשת וצלב הגנה", "unit": "יחידה", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_suggest_pool_channel", "kind": "suggested_item", "match": {"trigger": {"kind": "text", "patterns": ["בריכה"]}, "estimate": null, "reason": "לא נמצאה כמות בשרטוט – להשלמה ידנית", "quickAction": "measure_length"}, "itemCode": "9.07", "itemDescription": "תעלת ניקוז סמויה תחת הריצוף מסביב לבריכה", "unit": "מ\"א", "priority": 5, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_template_needs_input", "kind": "template_chapter", "match": {"chapters": ["02", "03", "04", "05", "06", "07", "08", "09"], "importedOnly": true}, "itemCode": null, "itemDescription": "סעיפי כתב הכמויות של הלקוח שלא חושבו – להשלמה ידנית", "unit": "יחידה", "priority": 1, "reasons": ["הצעה – לאשר ידנית"]} as RuleSeed,
+  {"id": "r_lighting_circuit", "kind": "lighting_circuit", "match": {"wording": "auto", "includeTimer": true, "includeNoSwitch": true}, "itemCode": null, "itemDescription": "נק' מאור לפי מעגלי הדלקה", "unit": "יחידה", "priority": 250} as RuleSeed,
+];
+const SPRINT10_ITEM_SEEDS_TEXT = [
+  { code: "4.29", description: "תוספת עבור אביזר מוגן מים", unit: "יח'", since: 3 } as const,
+  { code: "4.30", description: "תוספת עבור שקע USB + TYPE C בקופסא קיימת", unit: "יח'", since: 3 } as const,
+  { code: "4.31", description: "הזנה לתריס חשמלי", unit: "יח'", since: 3 } as const,
+  { code: "4.32", description: "הזנה לגלאי עשן", unit: "יח'", since: 3 } as const,
+  { code: "4.33", description: "אספקה והתקנת גלאי עשן", unit: "יח'", since: 3 } as const,
+  { code: "4.34", description: "הזנה לסוכך חשמלי", unit: "יח'", since: 3 } as const,
+  { code: "4.35", description: "הזנה משולבת לדוד שמש ולמכשיר חימום מים על הגג כולל פקט ומפסק", unit: "יח'", since: 3 } as const,
+  { code: "4.36", description: "התקנת תנור חימום בחדר רחצה", unit: "יח'", since: 3 } as const,
+  { code: "4.37", description: "אספקה והתקנת פעמון", unit: "יח'", since: 3 } as const,
+  { code: "4.38", description: "אספקה והתקנת ונטה", unit: "יח'", since: 3 } as const,
+  { code: "4.39", description: "שקע תלת פאזי למזגן", unit: "יח'", since: 3 } as const,
+  { code: "4.40", description: "שקע תלת פאזי לכיריים אינדוקציה", unit: "יח'", since: 3 } as const,
+  { code: "4.41", description: "שקע תלת פאזי לג'קוזי", unit: "יח'", since: 3 } as const,
+  { code: "4.42", description: "הזנה תלת פאזית עבור שקע טעינה לרכב חשמלי", unit: "יח'", since: 3 } as const,
+  { code: "4.43", description: "שקע תלת פאזי למכשיר חימום מים (היתרו)", unit: "יח'", since: 3 } as const,
+  { code: "4.44", description: "שקע תלת פאזי לסאונה", unit: "יח'", since: 3 } as const,
+  { code: "4.45", description: "הזנה תלת פאזית לחדר מכונות בריכה", unit: "יח'", since: 3 } as const,
+  { code: "4.46", description: "צינור קוברה 32 מ\"מ", unit: "יח'", since: 3 } as const,
+  { code: "4.47", description: "צינור מריכף 20 מ\"מ חופשי מהרצפה כהכנה", unit: "יח'", since: 3 } as const,
+  { code: "4.48", description: "צינור הזנה עם חוט משיכה מלוח חשמל ראשי עד הגג – הכנה לפאנלים סולריים", unit: "יח'", since: 3 } as const,
+  { code: "4.49", description: "אספקה והתקנת לוח חשמל ראשי", unit: "יח'", since: 3 } as const,
+  { code: "4.50", description: "אספקה והתקנת לוח חשמל משני", unit: "יח'", since: 3 } as const,
+  { code: "4.51", description: "אספקה והתקנת מונה משני בלוח חשמל", unit: "יח'", since: 3 } as const,
+  { code: "4.52", description: "קופסת עומק למפסקים כוללת קו אפס נוסף", unit: "יח'", since: 3 } as const,
+  { code: "4.53", description: "הכנה לבית חכם: קופסאות עומק וקו אפס נוסף לכל המפסקים", unit: "קומפלט", since: 3 } as const,
+  { code: "4.71", description: "אביזר D18 הכולל 6 שקעים ושלושה צינורות נוספים עם חוט משיכה עד לארון תקשורת", unit: "יח'", since: 3 } as const,
+  { code: "4.54", description: "התקנת מאוורר תקרה", unit: "יח'", since: 3 } as const,
+  { code: "4.55", description: "התקנת פרופיל תאורה חיצוני עה\"ט", unit: "מ\"א", since: 3 } as const,
+  { code: "4.56", description: "התקנת פרופיל תאורה שקוע בתקרת גבס", unit: "מ\"א", since: 3 } as const,
+  { code: "4.72", description: "התקנת פרופיל תאורה חיצוני עה\"ט באורך לפי תכנית", unit: "יח'", since: 3 } as const,
+  { code: "4.57", description: "אספקה והתקנת שקע קופץ באי מטבח", unit: "יח'", since: 3 } as const,
+  { code: "4.58", description: "ביצוע הזנה חדשה מהפילר ועד לוח חשמל ראשי", unit: "יח'", since: 3 } as const,
+  { code: "4.59", description: "ביצוע הזנה ראשית לסיב אופטי מהפילר ועד לוח תקשורת ראשי", unit: "יח'", since: 3 } as const,
+  { code: "4.60", description: "אחריות להעברת ביקורת חברת חשמל", unit: "קומפלט", since: 3 } as const,
+  { code: "4.61", description: "קו הזנה מלוח חשמל ראשי עד מחסן בגינה", unit: "יח'", since: 3 } as const,
+  { code: "4.62", description: "נק' מאור בודדה ללא מפסק (אפס קבוע)", unit: "יח'", since: 3 } as const,
+  { code: "4.63", description: "נק' מאור בודדה כוללת שלושה מפסקים מצלבים", unit: "יח'", since: 3 } as const,
+  { code: "4.64", description: "שתי נק' מאור כוללות שני מפסקים מחליפים", unit: "יח'", since: 3 } as const,
+  { code: "4.65", description: "שלוש נק' מאור כוללות מפסק טיימר משותף בלוח חשמל", unit: "יח'", since: 3 } as const,
+  { code: "4.66", description: "שלוש נק' מאור כוללות שני מפסקים מחליפים עם אוטומט חדר מדרגות", unit: "יח'", since: 3 } as const,
+  { code: "4.67", description: "נק' מאור בודדה", unit: "יח'", since: 3 } as const,
+  { code: "4.68", description: "סט: שירשור שתי נק' מאור משותפות במעגל הדלקה אחד", unit: "סט", since: 3 } as const,
+  { code: "4.69", description: "סט: שירשור שלוש נק' מאור משותפות במעגל הדלקה אחד", unit: "סט", since: 3 } as const,
+  { code: "4.70", description: "סט: שירשור ארבע נק' מאור משותפות במעגל הדלקה אחד", unit: "סט", since: 3 } as const,
+  { code: "3.25", description: "נק' הזנה למערכת השקיה", unit: "יח'", since: 3 } as const,
+  { code: "3.35", description: "הזנת מים למכשיר חימום מים / היתרו", unit: "יח'", since: 3 } as const,
+  { code: "5.09", description: "איטום חדר רחצה רטוב בשתי שכבות סיכה, כולל רולקות ובדיקת הצפה", unit: "חדר", since: 3 } as const,
+  { code: "3.16", description: "נק' מים חמים קרים וניקוז לכיור מטבח, כולל התקנת ברז וסיפון", unit: "יח'", since: 3 } as const,
+  { code: "3.17", description: "נק' מים קרים וניקוז לכיור מטבח חוץ", unit: "יח'", since: 3 } as const,
+  { code: "3.18", description: "נק' למקלחון הכוללת הזנת חמים וקרים, שלוש יחידות אינטרפוץ 3 דרך, נק' מים ומזלף, ראש גשם ותעלת ניקוז", unit: "יח'", since: 3 } as const,
+  { code: "3.19", description: "נק' למקלחון הכוללת הזנת חמים וקרים, אינטרפוץ 4 דרך, נק' מים ומזלף, ראש גשם וקופסת ניקוז", unit: "יח'", since: 3 } as const,
+  { code: "3.20", description: "נק' למקלחון הכוללת הזנת חמים וקרים, שתי יחידות אינטרפוץ 3 דרך, נק' מים ומזלף, ראש גשם ותעלת ניקוז", unit: "יח'", since: 3 } as const,
+  { code: "3.21", description: "נק' לאמבטיה הכוללת הזנות מים חמים קרים וניקוז, שלוש יחידות אינטרפוץ 3 דרך, מזלף, ראש גשם והתקנת האמבטיה", unit: "יח'", since: 3 } as const,
+  { code: "3.22", description: "אספקה והתקנת מרכזיית מים ראשית", unit: "יח'", since: 3 } as const,
+  { code: "3.23", description: "אספקה והתקנת מרכזיית מים משנית", unit: "יח'", since: 3 } as const,
+  { code: "3.24", description: "הזנת מים בגג משולבת לדוד ולמכשיר חימום בגז", unit: "יח'", since: 3 } as const,
+  { code: "3.26", description: "נק' מים למערכת גלגלון כיבוי אש", unit: "יח'", since: 3 } as const,
+  { code: "3.27", description: "אספקה והתקנת מערכת גלגלון כיבוי אש", unit: "יח'", since: 3 } as const,
+  { code: "3.28", description: "הזנת מים לבריכה לפי הנחיות קבלן הבריכות", unit: "יח'", since: 3 } as const,
+  { code: "3.29", description: "ביצוע ניקוז לאדנית", unit: "יח'", since: 3 } as const,
+  { code: "3.30", description: "הזנת מים וניקוז לסאונה", unit: "יח'", since: 3 } as const,
+  { code: "3.31", description: "הזנת מים חמים וקרים למערכת טוש רצפתית בחצר, כולל התקנת המערכת", unit: "יח'", since: 3 } as const,
+  { code: "3.32", description: "ביצוע מערכת ביוב חדשה לפי נספח סניטרי ותכניות האינסטלציה", unit: "קומפלט", since: 3 } as const,
+  { code: "3.33", description: "חפירת ויציקת בור משאבה כולל חיבור הדלוחין ואספקת המשאבה", unit: "קומפלט", since: 3 } as const,
+  { code: "3.34", description: "ביצוע קו הזנה ראשי חדש מהשעון", unit: "יח'", since: 3 } as const,
+  { code: "5.10", description: "ריצוף פנים באריחי גרניט פורצלן כולל רובה אקרילית", unit: "מ\"ר", since: 3 } as const,
+  { code: "5.11", description: "ריצוף חוץ באריחי גרניט פורצלן בטיט", unit: "מ\"ר", since: 3 } as const,
+  { code: "5.12", description: "ריצוף אריחי סוג ב' כתשתית לפרקט", unit: "מ\"ר", since: 3 } as const,
+  { code: "5.13", description: "חיפוי קירות חוץ באבן כולל כוחלה", unit: "מ\"ר", since: 3 } as const,
+  { code: "5.14", description: "התקנת סף שיש (קופינג) לחלון כולל מילוי דבק שיש וליטוש", unit: "מ\"א", since: 3 } as const,
+  { code: "5.15", description: "הדבקת פאנל שקוע לפי פרט כולל פרופיל ניתוק", unit: "מ\"א", since: 3 } as const,
+  { code: "5.16", description: "איטום מרפסת / גג ביריעות ביטומניות מולחמות לרבות שיפועים ורולקות", unit: "מ\"ר", since: 3 } as const,
+  { code: "5.17", description: "איטום קירות הבית במפגש עם הקרקע", unit: "קומפלט", since: 3 } as const,
+  { code: "5.18", description: "איטום פתחי מערכות אלומיניום בשתי שכבות סיכה", unit: "קומפלט", since: 3 } as const,
+  { code: "5.19", description: "ריצוף רצפת חדר כביסה באריחי גרניט פורצלן", unit: "מ\"ר", since: 3 } as const,
+  { code: "2.04", description: "בניית קירות בלוק בטון לפי תכניות האדריכלות", unit: "מ\"ר", since: 3 } as const,
+  { code: "2.05", description: "סגירת פתח חלון קיים בבלוק", unit: "יח'", since: 3 } as const,
+  { code: "2.06", description: "יציקות בטון לפי תכניות ופרטי הקונסטרוקציה", unit: "קומפלט", since: 3 } as const,
+  { code: "7.08", description: "מחיצות גבס לבן בעובי 10 ס\"מ כולל בידוד צמר סלעים", unit: "מ\"ר", since: 3 } as const,
+  { code: "7.09", description: "בניית מחיצות גבס כחול נגד מים כולל בידוד צמר סלעים", unit: "מ\"ר", since: 3 } as const,
+  { code: "7.10", description: "בניית נישה במחיצת גבס לפי תכנית", unit: "יח'", since: 3 } as const,
+  { code: "7.11", description: "אספקה והתקנת פרופיל ניתוק STR במפגש תקרת גבס עם קירות", unit: "מ\"א", since: 3 } as const,
+  { code: "7.12", description: "אספקה והתקנת פתח אופן ארט בגודל 60/60 ס\"מ", unit: "יח'", since: 3 } as const,
+  { code: "7.13", description: "בניית סינר גבס בחתך לפי תכנית", unit: "מ\"א", since: 3 } as const,
+  { code: "8.05", description: "שליכט צבעוני על קירות חוץ וחומות כולל טיח שחור ופריימר", unit: "קומפלט", since: 3 } as const,
+  { code: "8.06", description: "צביעת משקוף ודלת ממ\"ד / מקלט בצבע על בסיס שמן", unit: "יח'", since: 3 } as const,
+  { code: "9.04", description: "ביצוע חיזוקי עץ במחיצות גבס לפי תכנית", unit: "קומפלט", since: 3 } as const,
+  { code: "9.05", description: "התקנת אביזרי חדרי רחצה", unit: "קומפלט", since: 3 } as const,
+  { code: "9.06", description: "קידוח בור חלחול כולל שרוול, רשת וצלב הגנה", unit: "יח'", since: 3 } as const,
+  { code: "9.07", description: "תעלת ניקוז סמויה תחת הריצוף מסביב לבריכה", unit: "מ\"א", since: 3 } as const,
+];
+
 /**
  * Default rule set (Sprint 3 brief "Domain rules"). Item codes follow the sample BOQ (chapter 04 + 9.01); when an
  * org's library lacks a code the worker may resolve the item by `itemDescription`. Rule ids are stable (seeding is
@@ -1037,6 +1335,10 @@ export const DEFAULT_BOQ_RULES: readonly RuleSeed[] = Object.freeze([
     priority: 10,
     reasons: [ONE_OFF_SUGGESTION_REASON],
   } as RuleSeed,
+  // Sprint 10 (Worker-BOQ + Worker-Lighting): every line type of the designer's catalogue (label-qualified feeds,
+  // 3-phase, panels, conduits; marker add-ons; count-only installs; plumbing variants; text items; "להשלמה ידנית"
+  // fallbacks) + the one lighting_circuit rule. A default Sprint-10 rule whose item the org's library lacks is skipped.
+  ...SPRINT10_RULES,
 ]);
 
 /**
@@ -1058,8 +1360,10 @@ export const DEFAULT_BOQ_RULES: readonly RuleSeed[] = Object.freeze([
  *     needsInput. 7.04 unchanged (counts explicit service-opening notes only; open).
  * 8 = owner decision 05.11: 7.06 gypsum partitions = length × full storey height × both faces (`faces: 2`,
  *     `heightMode: 'storey'`; a lining against a wall counts one face, a low wall keeps its drawn height). 7.07 unchanged.
+ * 9 = Sprint 10: the designer's full catalogue (`SPRINT10_RULES`: kinds marker_addon / lighting_circuit, class_to_item
+ *     label filters / countOnly / params, plumbing label variants; generic items of library v3).
  */
-export const DEFAULT_BOQ_RULES_VERSION = 8;
+export const DEFAULT_BOQ_RULES_VERSION = 9;
 
 /** A seeded rule doc. */
 export const defaultRuleDoc = (r: RuleSeed): Omit<BoqRule, 'updatedAt' | 'updatedBy'> =>
@@ -1081,10 +1385,19 @@ export const ruleNeedsReseed = (stored: { source?: string; defaultsVersion?: num
  * default library (any `source: 'default'` item) get the newer items added (`planDefaultLibrarySeed`): create-if-missing
  * by id, skipping codes the org already has (an import or a manual item of that code wins).
  */
-export const DEFAULT_ITEM_LIBRARY_VERSION = 2;
+export const DEFAULT_ITEM_LIBRARY_VERSION = 3;
 
 /** Units used by the defaults (Hebrew trade abbreviations). */
-export const DEFAULT_UNITS = Object.freeze({ count: "יח'", area: 'מ"ר', length: 'מ"א', lumpSum: 'קומפלט' });
+export const DEFAULT_UNITS = Object.freeze({
+  count: "יח'",
+  area: 'מ"ר',
+  length: 'מ"א',
+  lumpSum: 'קומפלט',
+  /** Sprint 10: per wet room (waterproofing "לחדר רחצה רטוב"). */
+  room: 'חדר',
+  /** Sprint 10: a lighting chain ("סט: שירשור N נק' מאור"). */
+  set: 'סט',
+});
 
 type DefaultItemSeed = { code: string; description: string; unit: string; since?: number };
 const U = DEFAULT_UNITS;
@@ -1184,6 +1497,8 @@ const DEFAULT_ITEM_SEEDS: readonly DefaultItemSeed[] = [
   { code: '8.04', description: 'החלקת קירות ותקרות בשפכטל בשלוש שכבות', unit: U.lumpSum, since: 2 },
   // 09 — misc
   { code: '9.03', description: 'התקנת צינור אוורור 4" למפוח ונטה', unit: U.count, since: 2 },
+  // --- Sprint 10 (library v3): generic items of every new line type (a client import overrides by description)
+  ...SPRINT10_ITEM_SEEDS_TEXT,
 ];
 
 /** Chapter of a default item: the template chapter whose `codePrefixes` contain the code's major (7.01 → 06), else the major padded. */
@@ -1235,6 +1550,7 @@ export const DEFAULT_ITEM_LIBRARY_ADDITIONS: readonly Omit<ItemLibraryItem, 'upd
 export function defaultUnitFor(ruleUnit: string | null | undefined): string {
   if (!ruleUnit) return U.count;
   const u = ruleUnit.trim();
+  if (u === U.room || u === U.set) return u;
   if (['יחידה', "יח'", 'יח', 'unit'].includes(u)) return U.count;
   if (['מ"ר', 'm2', 'מ״ר'].includes(u)) return U.area;
   if (['מ"א', "מ'", 'm', 'מ״א'].includes(u)) return U.length;

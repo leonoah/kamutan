@@ -30,12 +30,12 @@ from __future__ import annotations
 
 import math
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 
 from .dedup import Det
+from .hebrew import norm_he
 from .rules import Rule
 
 TEXT_ITEMS_SCHEMA = "kamutan.text-items/1"  # contracts (takeoff.ts)
@@ -49,27 +49,6 @@ MAX_TEXTS_PER_SHEET = 20_000
 MAX_PATTERN_LEN = 200
 CONSUME_NEAR_MAX_MM = 8.0  # consumeNear takes a detection only this close to the text (paper mm; 0.4 m at 1:50)
 ANCHOR_SAME_MM = 1.0  # a catalog item's anchor this close to a detection's centre is that detection (paper mm)
-
-_FINALS = str.maketrans({"ך": "כ", "ם": "מ", "ן": "נ", "ף": "פ", "ץ": "צ"})
-_NIQQUD = re.compile("[\u0591-\u05bd\u05bf-\u05c7]")
-_DASH = re.compile("[\u05be\u2013\u2014]")
-_GERESH = re.compile("[\u05f3\u2019\u2018`\u00b4]")
-_GERSHAYIM = re.compile("[\u05f4\u201d\u201c\u201e]")
-_WS = re.compile("[\\s\u00a0\u200e\u200f]+")
-
-
-def norm_he(s: str) -> str:
-    """Port of contracts ``normalizeHebrewText`` (same order): NFC → niqqud / cantillation removed (maqaf kept) → maqaf /
-    en / em dash → "-" → final letters → regular → geresh variants → "'" → gershayim variants and "''" → '"' → lower
-    case → whitespace runs (NBSP, LRM, RLM incl.) → one space, trimmed."""
-    t = unicodedata.normalize("NFC", s)
-    t = _NIQQUD.sub("", t)
-    t = _DASH.sub("-", t)
-    t = t.translate(_FINALS)
-    t = _GERESH.sub("'", t)
-    t = _GERSHAYIM.sub('"', t).replace("''", '"')
-    t = t.lower()
-    return _WS.sub(" ", t).strip()
 
 
 @lru_cache(maxsize=2048)

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..stores.base import SERVER_TIMESTAMP, DocStore
+from . import defaults_s10, descmatch
 
 KINDS = (
     "class_to_item",
@@ -50,6 +51,10 @@ KINDS = (
     "area_item",
     "length_item",
     "suggested_item",
+    # Sprint 10 (Worker-Lighting, `lighting/boq.py`): "נק' מאור …" lines from the circuit tags
+    "lighting_circuit",
+    # Sprint 10 (Worker-BOQ, contracts request): waterproof / USB add-ons = hosts with a marker
+    "marker_addon",
 )
 TILING_KINDS = ("tiling_floor", "tiling_cladding", "tiling_corner", "waterproofing")
 
@@ -87,6 +92,8 @@ R_MEASURED = "נמדד ידנית"
 R_UNMATCHED_CORR = "תיקון לא הותאם"
 # Sprint 6: a suggested line whose quantity a person must enter (contracts NEEDS_INPUT_HE)
 R_NEEDS_INPUT = "להשלמה ידנית"
+# Sprint 10: the client's "לא לסיכום / לספירה בסוף" line (unit price only)
+R_NOT_FOR_TOTAL = "לא לסיכום – מחיר יחידה בלבד"
 
 # Label-keyword refinement (worker rules, applied unless the user confirmed the class): (class, keywords any-of,
 # excluded words, new class). The label is the nearest Hebrew text within LABEL_RADIUS_MM of the symbol, or the
@@ -843,8 +850,20 @@ SPRINT6_RULE_IDS = frozenset(r["id"] for r in _SPRINT6_RULES)
 
 
 # contracts DEFAULT_BOQ_RULES_VERSION: bump with every change of DEFAULT_RULES (outdated default docs are replaced)
-DEFAULT_RULES_VERSION = 8  # contracts rules v8 (owner decision 05.11: 7.06 faces 2 + storey height)
+DEFAULT_RULES_VERSION = 9  # contracts rules v9 (Sprint 10: the designer's full catalogue, SPRINT10_RULES)
 DEFAULT_DOC_FIELDS: dict[str, Any] = {"enabled": True, "source": "default", "defaultsVersion": DEFAULT_RULES_VERSION}
+
+# Sprint 10 (Worker-Lighting, `lighting/boq.py` DEFAULT_RULE_DOC): the one `lighting_circuit` rule (wording auto);
+# pending in contracts
+_LIGHTING_CIRCUIT_RULE: dict[str, Any] = {
+    "id": "r_lighting_circuit",
+    "kind": "lighting_circuit",
+    "match": {"wording": "auto", "includeTimer": True, "includeNoSwitch": True},
+    "itemCode": None,
+    "itemDescription": "נק' מאור לפי מעגלי הדלקה",
+    "unit": "יחידה",
+    "priority": 250,
+}
 
 # Mirror of contracts DEFAULT_BOQ_RULES (tests/test_boq_contracts.py diffs it against boq-defaults.json).
 DEFAULT_RULES: list[dict[str, Any]] = [
@@ -952,7 +971,12 @@ DEFAULT_RULES: list[dict[str, Any]] = [
         "reasons": [R_TEMPLATE],
     },
     *_SPRINT6_RULES,
+    # Sprint 10 (local mirror of the contracts request): label-qualified feeds / 3-phase / panels / conduits, marker
+    # add-ons, count-only installs, lighting circuits, plumbing variants, suggested fallbacks for every new line type
+    *defaults_s10.RULES,
+    _LIGHTING_CIRCUIT_RULE,
 ]
+SPRINT10_RULE_IDS = defaults_s10.RULE_IDS | {_LIGHTING_CIRCUIT_RULE["id"]}
 
 # class_to_item counts new work only
 NOT_NEW_LIFECYCLES = frozenset({"existing", "demolish"})
@@ -1078,6 +1102,95 @@ def containment(short: str, long: str) -> float:
 
 CODE_MATCH_MIN = 0.45  # same code: the description must still look alike (another org's numbering)
 SIMILAR_MIN = 0.6
+# Sprint 10: description-based resolution (descmatch.score: synonyms, soft tokens, parameters, qualifiers, concept gate)
+# — a generic rule wording resolves to the client's item at this score; parameters a rule carries (a drawn conduit
+# length, a diameter) pick the matching bucket among several candidate items
+DESC_MIN = 0.5
+
+
+def desc_score(a: str, b: str) -> float:
+    """Sprint 10 description similarity: the better of the Sprint-3 trigram Dice and :func:`descmatch.score` (zero on a
+    concept clash, halved on a parameter / qualifier conflict — both apply whatever the trigram score)."""
+    ds = descmatch.score(a, b)
+    if ds == 0.0 and descmatch.concept(a) and descmatch.concept(b) and descmatch.concept(a) != descmatch.concept(b):
+        return 0.0
+    tri = similarity(a, b)
+    if descmatch.conflicts(a, b):
+        tri *= 0.5
+    return max(ds, tri)
+
+
+_AREA_U = ('מ"ר', "מר", "m2", "מ״ר", "sqm")
+_LEN_U = ('מ"א', "מא", "מ'", "m", "מ״א", "מטר")
+_LUMP_U = ("קומפלט", "קומפ'", "lump", "קומ'")
+
+
+def unit_class(unit: str | None) -> str:
+    """area | length | lump | count (incl. יחידה, סט, חדר) of a BOQ unit; "" when unknown."""
+    if not unit:
+        return ""
+    u = unit.replace("״", '"').replace("׳", "'").replace("''", '"').replace(" ", "").lower()
+    if u in _AREA_U:
+        return "area"
+    if u in _LEN_U:
+        return "length"
+    if u in _LUMP_U:
+        return "lump"
+    return "count"
+
+
+def _room_or_set(*units: str | None) -> bool:
+    return any((u or "").replace(" ", "") in ("חדר", "סט") for u in units)
+
+
+def unit_compatible(rule_unit: str | None, item_unit: str | None) -> bool:
+    """A counted / measured rule never lands on a קומפלט item and vice versa (except חדר / סט, which the designer prices
+    like a lump per room / chain); count / area / length mix (the designer writes "תקרת גבס … יחידה" for an area,
+    "פרופיל … באורך 800 ס"מ" per unit — the line takes the item's unit)."""
+    a, b = unit_class(rule_unit), unit_class(item_unit)
+    if not a or not b or a == b:
+        return True
+    return "lump" not in (a, b) or _room_or_set(rule_unit, item_unit)
+
+
+def _ambiguous(description: str, cands: list[Item], params: dict[str, float] | None) -> bool:
+    """A generic rule wording ("שקע תלת פאזי", "חיפוי קירות חדרי רחצה") that fits several items which differ only in a
+    qualifier the rule does not state (למזגן / לסאונה / לרכב; הורים / ילדים / אורחים) is ambiguous — unless the measured
+    parameters single one out."""
+    q = descmatch.qualifiers(description)
+    fits = [c for c in cands if _fits_params(c, params)[0] == 0] or cands
+    if len(fits) < 2:
+        return False
+    top = fits[0]
+    groups: set[str] = set()
+    for c in fits[1:]:
+        qa, qb = descmatch.qualifiers(top.description), descmatch.qualifiers(c.description)
+        diff = {g for g in set(qa) & set(qb) if qa[g] != qb[g] and g not in q}  # both state a value, different ones
+        if not diff:
+            return False  # a plain near-duplicate wording: the ranking picks
+        groups |= diff
+    return bool(groups)
+
+
+def _fits_params(item: Item, want: dict[str, float] | None) -> tuple[int, float]:
+    """Sort key: how well an item's stated parameters fit the measured ones (lower is better). A length bucket
+    ("עד 6 מטר") fits when the measured length is ≤ it (the smallest such bucket wins); a diameter must be equal."""
+    if not want:
+        return (0, 0.0)
+    p = item.params
+    bad = 0
+    slack = 0.0
+    if "diameter_mm" in want and p.diameter_mm is not None and abs(p.diameter_mm - want["diameter_mm"]) > 0.5:
+        bad += 1
+    if "length_m" in want and p.length_m is not None:
+        if p.length_m + 1e-6 < want["length_m"]:
+            bad += 1
+        else:
+            slack = p.length_m - want["length_m"]
+    for k in ("ways", "points", "switches", "interpuz", "gang"):
+        if k in want and getattr(p, k) is not None and getattr(p, k) != want[k]:
+            bad += 1
+    return (bad, slack)
 
 
 def price_amount(v: Any) -> float | None:
@@ -1104,6 +1217,15 @@ class Item:
     # item added by an admin). Resolved by exact code (its wording is expected to differ from the rule's) and preferred
     # over any other item of the same code.
     manual: bool = False
+    # Sprint 10: "לא לסיכום / לספירה בסוף" line of the client's BOQ (unit price only — a line of it is never counted in
+    # the totals); `aliases` = codes the same description carried in other imported BOQs (description-keyed identity)
+    not_for_total: bool = False
+    aliases: tuple[str, ...] = ()
+    imported: bool = False  # Sprint 10: `source: 'import'` (the client's own BOQ line)
+
+    @property
+    def params(self) -> descmatch.Params:
+        return descmatch.params(self.description)
 
 
 @dataclass(frozen=True)
@@ -1123,6 +1245,8 @@ class Library:
         for iid, d in rows:
             if not isinstance(d, dict) or d.get("active") is False or not d.get("code"):
                 continue
+            if d.get("cancelled") is True:
+                continue  # Sprint 10: a cancelled ("בוטל") line of the client's BOQ never becomes a BOQ line
             items.append(
                 Item(
                     iid,
@@ -1133,6 +1257,9 @@ class Library:
                     str(d.get("unit") or ""),
                     d.get("source") == "default" or isinstance(d.get("defaultsVersion"), int | float),
                     d.get("source") == "manual",
+                    d.get("notForTotal") is True,
+                    tuple(str(a) for a in (d.get("codeAliases") or []) if isinstance(a, str))[:16],
+                    d.get("source") == "import",
                 )
             )
         items.sort(key=lambda i: (i.chapter, i.code, i.id))
@@ -1155,7 +1282,7 @@ class Library:
         return sorted(out, key=lambda i: (_code_sort(i.code), i.id))
 
     def by_code(self, code: str) -> list[Item]:
-        return [i for i in self.items if i.code == code]
+        return [i for i in self.items if i.code == code or code in i.aliases]
 
     def preferred(self, code: str) -> Item | None:
         """The item that names ``code`` for this org: a ``manual`` one first (the org's own wording), then by id."""
@@ -1167,7 +1294,15 @@ class Library:
         keys = [norm_text(k) for k in keywords if k]
         return [i for i in self.items if any(k and k in norm_text(i.description) for k in keys)]
 
-    def resolve(self, code: str | None, description: str, *, trust_code: bool = False) -> Resolution | None:
+    def resolve(
+        self,
+        code: str | None,
+        description: str,
+        *,
+        trust_code: bool = False,
+        params: dict[str, float] | None = None,
+        unit: str | None = None,
+    ) -> Resolution | None:
         """Map a rule's reference (code + description) to an org item. ``trust_code`` (user-chosen codes from
         legend confirmations / symbol mappings, user rules): an exact code wins whatever the description.
 
@@ -1188,18 +1323,41 @@ class Library:
                 def code_sim(i: Item) -> float:
                     if not description:
                         return 0.0
-                    return max(similarity(description, i.description), containment(description, i.description) - 0.2)
+                    return max(desc_score(description, i.description), containment(description, i.description) - 0.2)
 
-                best = max(same, key=lambda i: (code_sim(i), i.id))
+                best = max(same, key=lambda i: (code_sim(i), tuple(-x for x in _fits_params(i, params)), i.id))
                 s = code_sim(best)
                 if trust_code or not description or s >= CODE_MATCH_MIN or best.default:
                     return Resolution(best, "user_code" if trust_code else "code", s)
         if not description:
             return None
-        scored = [(similarity(description, i.description), i.id, i) for i in self.items]
+        # Sprint 10: by description only among items of a compatible unit kind (a counted rule never lands on the
+        # client's קומפלט line — "קופסת עומק למפסקים" × 26 vs "הכנה לבית חכם … קומפלט" × 1 are two different lines)
+        pool = [i for i in self.items if unit_compatible(unit, i.unit)]
+        scored = [(desc_score(description, i.description), i) for i in pool]
         if not scored:
             return None
-        s, _, best = max(scored, key=lambda t: (t[0], t[1]))
-        if s >= SIMILAR_MIN:
-            return Resolution(best, "similarity", s)
-        return None
+        top = max(sc for sc, _ in scored)
+        if top < DESC_MIN:
+            return None
+        # near-ties (the client's "עד 4 מטר" / "עד 6 מטר" buckets, "ראשי" / "משני" panels): the measured parameters
+        # decide, then the fewest words the rule did not say, then the score, then the id
+        cands = [(sc, i) for sc, i in scored if sc >= top - 0.1]
+        q_toks = descmatch.tokens(description)
+
+        q_qual = descmatch.qualifiers(description)
+
+        def _extra_tokens(i: Item) -> int:
+            return sum(1 for t in set(descmatch.tokens(i.description)) if not any(descmatch.same_token(t, q) for q in q_toks))
+
+        def _extra_qualifiers(i: Item) -> int:
+            """Qualifiers the item states and the rule does not (מרתף / הורים / חוץ): the plain variant first."""
+            return sum(1 for g in descmatch.qualifiers(i.description) if g not in q_qual and g != "medium")
+
+        ranked = sorted(cands, key=lambda t: (_fits_params(t[1], params), _extra_qualifiers(t[1]), _extra_tokens(t[1]), -t[0],
+                                              t[1].id))  # fmt: skip
+        best = ranked[0][1]
+        if len(ranked) > 1 and _ambiguous(description, [i for _, i in ranked], params):
+            return None  # several variants of one concept the rule does not tell apart: the reviewer assigns the line
+        s = next(sc for sc, i in scored if i is best)
+        return Resolution(best, "similarity", s)

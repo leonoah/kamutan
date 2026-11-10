@@ -7,6 +7,7 @@ opened. Only geometry, the text layer and the rendered pixels are used.
 
 from __future__ import annotations
 
+import ctypes
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,6 +66,7 @@ class PdfPageSource:
     width_mm: float
     height_mm: float
     rotation: int
+    path: str = ""  # Sprint 10 (Worker-Classify) — keep: the text layer re-opens a ToUnicode-repaired copy
 
     @classmethod
     def open(cls, path: str, index: int) -> PdfPageSource:
@@ -72,7 +74,7 @@ class PdfPageSource:
         if not 0 <= index < len(doc):
             raise IngestError(E.FILE_UNREADABLE, "PDF page out of range")
         page = doc[index]
-        return cls(doc, page, index, page.get_width() * PT_TO_MM, page.get_height() * PT_TO_MM, page.get_rotation() % 360)
+        return cls(doc, page, index, page.get_width() * PT_TO_MM, page.get_height() * PT_TO_MM, page.get_rotation() % 360, path)
 
     def close(self) -> None:
         self.page.close()
@@ -96,6 +98,42 @@ class PdfPageSource:
         bmp.close()
         return img
 
+    def image_summary(self) -> dict[str, Any]:
+        """Sprint 10 (Perf): the embedded raster images of the page — count, pixels, paper bbox, dpi.
+
+        Site-survey underlays arrive as hundreds of small images (Rubel: 363 per ground-floor sheet). They are
+        rendered by pdfium like any other object and are *not* extracted; this record lets the failure message,
+        the quality gate and the viewer know what the page carries. Metadata only, no pixels are decoded.
+        """
+        to_mm, _, _ = _page_to_mm(self.page)
+        n = 0
+        px = 0
+        dpis: list[float] = []
+        bbox: list[float] | None = None
+        meta = pdfium_c.FPDF_IMAGEOBJ_METADATA()
+        l, b, r, t = (ctypes.c_float() for _ in range(4))
+        for obj in self.page.get_objects(max_depth=15):
+            if obj.type != pdfium_c.FPDF_PAGEOBJ_IMAGE:
+                continue
+            n += 1
+            if pdfium_c.FPDFImageObj_GetImageMetadata(obj.raw, self.page.raw, ctypes.byref(meta)):
+                px += int(meta.width) * int(meta.height)
+                if meta.horizontal_dpi > 0:
+                    dpis.append(float(meta.horizontal_dpi))
+            if pdfium_c.FPDFPageObj_GetBounds(obj.raw, ctypes.byref(l), ctypes.byref(b), ctypes.byref(r), ctypes.byref(t)):
+                pts = np.array([[l.value, b.value, 1.0], [r.value, t.value, 1.0]]) @ to_mm.T
+                x0, y0 = float(pts[:, 0].min()), float(pts[:, 1].min())
+                x1, y1 = float(pts[:, 0].max()), float(pts[:, 1].max())
+                bbox = (
+                    [x0, y0, x1, y1] if bbox is None else [min(bbox[0], x0), min(bbox[1], y0), max(bbox[2], x1), max(bbox[3], y1)]
+                )
+        return {
+            "count": n,
+            "megapixels": round(px / 1e6, 2),
+            "bboxMm": [round(v, 2) for v in bbox] if bbox is not None else None,
+            "dpiMedian": round(float(np.median(dpis))) if dpis else None,
+        }
+
     def text_layer(self) -> list[dict[str, Any]]:
         """Real text objects (TrueType etc.) as lines in paper mm; empty for SHX-only drawings."""
         to_mm, _, _ = _page_to_mm(self.page)
@@ -104,6 +142,23 @@ class PdfPageSource:
             tp = self.page.get_textpage()
         except pdfium.PdfiumError:
             return out
+        # Sprint 10 (Worker-Classify) — keep: AutoCAD writes wrong /ToUnicode CMaps for its embedded ArialMT (garbled
+        # Hebrew); a page with Hebrew text is read from an incremental update whose CMaps are rebuilt from the font
+        fdoc: pdfium.PdfDocument | None = None
+        fpage: pdfium.PdfPage | None = None
+        if self.path and has_hebrew(tp.get_text_range()):
+            from ..ingest.pdf_text import repaired_pdf
+
+            fixed = repaired_pdf(self.path, self.index)
+            if fixed is not None:
+                try:
+                    fdoc = pdfium.PdfDocument(fixed)
+                    fpage = fdoc[self.index]
+                    tp2 = fpage.get_textpage()
+                    tp.close()
+                    tp = tp2
+                except pdfium.PdfiumError:
+                    pass
         try:
             n = tp.count_rects()
             for i in range(min(n, 20000)):
@@ -126,4 +181,12 @@ class PdfPageSource:
                 )
         finally:
             tp.close()
+            if fpage is not None:
+                fpage.close()
+            if fdoc is not None:
+                fdoc.close()
         return out
+
+
+def has_hebrew(text: str) -> bool:
+    return any("\u0590" <= ch <= "\u05ff" for ch in text)

@@ -1156,6 +1156,47 @@
                   }
                 ]
               },
+              "notForTotal": {
+                "type": "boolean"
+              },
+              "circuit": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "single",
+                          "shared",
+                          "two_way",
+                          "cross",
+                          "timer",
+                          "no_switch"
+                        ]
+                      },
+                      "fixtures": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "fixtures"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "unitPrice": {
                 "anyOf": [
                   {

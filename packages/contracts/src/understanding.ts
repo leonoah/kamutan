@@ -414,6 +414,8 @@ export const OverlayManifestSchema = z.object({
   walls: SignedUrlRefSchema.nullable().optional(),
   /** Sprint 6: geometry.json.gz (kamutan.geometry/1, hatches / wall runs / stairs); null when absent. Always set by the API. */
   geometry: SignedUrlRefSchema.nullable().optional(),
+  /** Sprint 10: circuits.json.gz (kamutan.circuits/1, Worker-Lighting); null when absent. Optional until the API sets it. */
+  circuits: SignedUrlRefSchema.nullable().optional(),
   /** Crop URLs keyed by legend entry id (`le_…`) or unknown cluster id (`u_…`). */
   thumbs: z.record(z.string().regex(/^(le|u)_[A-Za-z0-9_-]+$/), z.string().url()),
   stats: VersionStatsSchema.nullable(),

@@ -90,6 +90,7 @@ PENDING_CONTRACT_FIELDS = ("priceOverride", "priceOverrideBy", "priceOverrideAt"
 MAX_ATTEMPTS = 5
 TEXT_ITEMS_FILE = "text_items.json.gz"  # Worker-Text (Sprint 6), under the version prefix
 GEOMETRY_FILE = "geometry.json.gz"  # Worker-Geometry (Sprint 6), under the version prefix
+CIRCUITS_FILE = "circuits.json.gz"  # Worker-Lighting (Sprint 10), under the version prefix (lighting sheets)
 
 
 @dataclass
@@ -176,6 +177,11 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
         disc = s.get("discipline")
         if not isinstance(disc, str) or not disc:
             continue
+        # Sprint 10 (Worker-Classify) — keep: an all-floors sheet repeating the per-floor sheets (classify.project) is
+        # not counted; the sheet stays listed with its reason
+        if isinstance(s.get("coverage"), dict) and s["coverage"].get("status") == "overview":
+            skipped[sid] = "overview"
+            continue
         vid = s.get("currentVersionId")
         if not vid:
             skipped[sid] = "no_version"
@@ -224,6 +230,16 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
         if want_geo:
             gp = arts.get("geometry") or pre + GEOMETRY_FILE
             geometry = _gz_json(blobs, str(gp)) if str(gp).startswith(pre) else None
+        circuits: Any = None  # Sprint 10 (Worker-Lighting) — keep: circuits.json.gz of lighting sheets
+        if disc == "lighting":
+            cp = arts.get("circuits") or pre + CIRCUITS_FILE
+            circuits = _gz_json(blobs, str(cp)) if str(cp).startswith(pre) else None
+            if not isinstance(circuits, dict):
+                circuits = None
+        if s.get("floorCheck"):  # Sprint 10 (Worker-Classify) — keep: the worker moved the sheet to another floor
+            from ..classify.project import remap_floors
+
+            dets, circuits = remap_floors(s, dets, circuits)
         rp = arts.get("rooms") or pre + "rooms.json.gz"
         robj = _gz_json(blobs, str(rp)) if str(rp).startswith(pre) else None
         cap("rooms", robj, raster)
@@ -255,6 +271,7 @@ def load_inputs(org_id: str, project_id: str, blobs: BlobStore, docs: DocStore, 
                 text_items,
                 legends,
                 geometry,
+                circuits,
             )
         )
     corrections, ccounts = parse_corrections(_list(docs, f"{proj}/corrections"))

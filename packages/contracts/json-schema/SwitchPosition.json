@@ -1,0 +1,119 @@
+{
+  "$ref": "#/definitions/SwitchPosition",
+  "definitions": {
+    "SwitchPosition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^sp_[A-Za-z0-9_-]+$"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 16
+          },
+          "maxItems": 100
+        },
+        "switchIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 2000
+        },
+        "bboxMm": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "w": {
+              "type": "number",
+              "minimum": 0
+            },
+            "h": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "w",
+            "h"
+          ],
+          "additionalProperties": false
+        },
+        "boxMm": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "w": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "h": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "x",
+                "y",
+                "w",
+                "h"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "texts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "maxItems": 100
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "id",
+        "tags",
+        "switchIds",
+        "bboxMm",
+        "boxMm",
+        "texts",
+        "reasons"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/SwitchPosition.json"
+}

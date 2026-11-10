@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "templateVersion": 3,
   "template": {
     "id": "tpl_default",
@@ -1290,6 +1290,1356 @@
       "sourceRef": "kamutan-defaults/library-v2",
       "active": true,
       "defaultsVersion": 2
+    },
+    {
+      "id": "it_4-29_5884e7c1e2ee789f",
+      "code": "4.29",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "תוספת עבור אביזר מוגן מים",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-30_b68e80c9ee7ab1e4",
+      "code": "4.30",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "תוספת עבור שקע USB + TYPE C בקופסא קיימת",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-31_93e8f9085a87d0fa",
+      "code": "4.31",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "הזנה לתריס חשמלי",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-32_c77613bd9e35bc5a",
+      "code": "4.32",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "הזנה לגלאי עשן",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-33_4596b988d891a329",
+      "code": "4.33",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת גלאי עשן",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-34_2b4fbb1661d78f72",
+      "code": "4.34",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "הזנה לסוכך חשמלי",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-35_3ced05681a898fe0",
+      "code": "4.35",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "הזנה משולבת לדוד שמש ולמכשיר חימום מים על הגג כולל פקט ומפסק",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-36_5a81dc9784616693",
+      "code": "4.36",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "התקנת תנור חימום בחדר רחצה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-37_89d60b7825cab017",
+      "code": "4.37",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת פעמון",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-38_7df3a72059ed90a4",
+      "code": "4.38",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת ונטה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-39_1e417c1075c05e44",
+      "code": "4.39",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "שקע תלת פאזי למזגן",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-40_3c5688caaac523b5",
+      "code": "4.40",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "שקע תלת פאזי לכיריים אינדוקציה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-41_b75ffc4bdd7a234d",
+      "code": "4.41",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "שקע תלת פאזי לג'קוזי",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-42_83ced9c19073196b",
+      "code": "4.42",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "הזנה תלת פאזית עבור שקע טעינה לרכב חשמלי",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-43_db72ebdf7dc0e964",
+      "code": "4.43",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "שקע תלת פאזי למכשיר חימום מים (היתרו)",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-44_d6393f76988c4ad9",
+      "code": "4.44",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "שקע תלת פאזי לסאונה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-45_a13a532007215918",
+      "code": "4.45",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "הזנה תלת פאזית לחדר מכונות בריכה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-46_f548f39de0e0d941",
+      "code": "4.46",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "צינור קוברה 32 מ\"מ",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-47_5e85e169055134f4",
+      "code": "4.47",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "צינור מריכף 20 מ\"מ חופשי מהרצפה כהכנה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-48_9de9543f76e3ed9f",
+      "code": "4.48",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "צינור הזנה עם חוט משיכה מלוח חשמל ראשי עד הגג – הכנה לפאנלים סולריים",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-49_0117e4fca3e0f07b",
+      "code": "4.49",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת לוח חשמל ראשי",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-50_885ebf7a8c71d958",
+      "code": "4.50",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת לוח חשמל משני",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-51_92c751139a5552d3",
+      "code": "4.51",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת מונה משני בלוח חשמל",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-52_43befa3a9346672a",
+      "code": "4.52",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "קופסת עומק למפסקים כוללת קו אפס נוסף",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-53_04e4ae153ee78dbc",
+      "code": "4.53",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "הכנה לבית חכם: קופסאות עומק וקו אפס נוסף לכל המפסקים",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-71_e9bf7b1717bb7e50",
+      "code": "4.71",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אביזר D18 הכולל 6 שקעים ושלושה צינורות נוספים עם חוט משיכה עד לארון תקשורת",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-54_8c55694890677aba",
+      "code": "4.54",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "התקנת מאוורר תקרה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-55_309981ebbf230cfd",
+      "code": "4.55",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "התקנת פרופיל תאורה חיצוני עה\"ט",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-56_d59abbf1d53a3e44",
+      "code": "4.56",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "התקנת פרופיל תאורה שקוע בתקרת גבס",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-72_0d0bc9ad91194020",
+      "code": "4.72",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "התקנת פרופיל תאורה חיצוני עה\"ט באורך לפי תכנית",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-57_0d753858ac4f8aae",
+      "code": "4.57",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אספקה והתקנת שקע קופץ באי מטבח",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-58_c94d38830ce6b048",
+      "code": "4.58",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "ביצוע הזנה חדשה מהפילר ועד לוח חשמל ראשי",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-59_7f9b457ab5fa580d",
+      "code": "4.59",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "ביצוע הזנה ראשית לסיב אופטי מהפילר ועד לוח תקשורת ראשי",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-60_3574c5ae73a0b722",
+      "code": "4.60",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "אחריות להעברת ביקורת חברת חשמל",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-61_f7e42d6848a22fc8",
+      "code": "4.61",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "קו הזנה מלוח חשמל ראשי עד מחסן בגינה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-62_2d6e249fa1be1294",
+      "code": "4.62",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "נק' מאור בודדה ללא מפסק (אפס קבוע)",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-63_91e294bd0674f5d8",
+      "code": "4.63",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "נק' מאור בודדה כוללת שלושה מפסקים מצלבים",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-64_5284da4c434f762e",
+      "code": "4.64",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "שתי נק' מאור כוללות שני מפסקים מחליפים",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-65_d3af07f8faa6ca30",
+      "code": "4.65",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "שלוש נק' מאור כוללות מפסק טיימר משותף בלוח חשמל",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-66_5b22f23d067b4081",
+      "code": "4.66",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "שלוש נק' מאור כוללות שני מפסקים מחליפים עם אוטומט חדר מדרגות",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-67_6c12c9edd3a66856",
+      "code": "4.67",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "נק' מאור בודדה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-68_8d52d9d3d258df75",
+      "code": "4.68",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "סט: שירשור שתי נק' מאור משותפות במעגל הדלקה אחד",
+      "unit": "סט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-69_5d92323f01dad64a",
+      "code": "4.69",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "סט: שירשור שלוש נק' מאור משותפות במעגל הדלקה אחד",
+      "unit": "סט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_4-70_7e59bc4b2abbc683",
+      "code": "4.70",
+      "chapter": "04",
+      "chapterTitle": "פרק 04 – עבודות חשמל",
+      "description": "סט: שירשור ארבע נק' מאור משותפות במעגל הדלקה אחד",
+      "unit": "סט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-25_f707dcfa3f55e836",
+      "code": "3.25",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "נק' הזנה למערכת השקיה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-35_afc0fa2b67653ff7",
+      "code": "3.35",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "הזנת מים למכשיר חימום מים / היתרו",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-09_8a64b971f50f79d6",
+      "code": "5.09",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "איטום חדר רחצה רטוב בשתי שכבות סיכה, כולל רולקות ובדיקת הצפה",
+      "unit": "חדר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-16_9a4b05357ebb2bbc",
+      "code": "3.16",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "נק' מים חמים קרים וניקוז לכיור מטבח, כולל התקנת ברז וסיפון",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-17_b314f5c98191a750",
+      "code": "3.17",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "נק' מים קרים וניקוז לכיור מטבח חוץ",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-18_bc668209683c84df",
+      "code": "3.18",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "נק' למקלחון הכוללת הזנת חמים וקרים, שלוש יחידות אינטרפוץ 3 דרך, נק' מים ומזלף, ראש גשם ותעלת ניקוז",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-19_879b4bbeaa9ab26a",
+      "code": "3.19",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "נק' למקלחון הכוללת הזנת חמים וקרים, אינטרפוץ 4 דרך, נק' מים ומזלף, ראש גשם וקופסת ניקוז",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-20_d747e038df4f0385",
+      "code": "3.20",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "נק' למקלחון הכוללת הזנת חמים וקרים, שתי יחידות אינטרפוץ 3 דרך, נק' מים ומזלף, ראש גשם ותעלת ניקוז",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-21_70ab6ffb79285ba5",
+      "code": "3.21",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "נק' לאמבטיה הכוללת הזנות מים חמים קרים וניקוז, שלוש יחידות אינטרפוץ 3 דרך, מזלף, ראש גשם והתקנת האמבטיה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-22_35ecab37f93a5674",
+      "code": "3.22",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "אספקה והתקנת מרכזיית מים ראשית",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-23_95ac492067452de3",
+      "code": "3.23",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "אספקה והתקנת מרכזיית מים משנית",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-24_8a758062dfba2f18",
+      "code": "3.24",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "הזנת מים בגג משולבת לדוד ולמכשיר חימום בגז",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-26_e211007cbefe9ea6",
+      "code": "3.26",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "נק' מים למערכת גלגלון כיבוי אש",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-27_3255cced3045ada6",
+      "code": "3.27",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "אספקה והתקנת מערכת גלגלון כיבוי אש",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-28_2165ee1ed4f3b85b",
+      "code": "3.28",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "הזנת מים לבריכה לפי הנחיות קבלן הבריכות",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-29_48f66c07e9e1d4eb",
+      "code": "3.29",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "ביצוע ניקוז לאדנית",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-30_8c1fc7baa6124e01",
+      "code": "3.30",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "הזנת מים וניקוז לסאונה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-31_52b766312438f45e",
+      "code": "3.31",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "הזנת מים חמים וקרים למערכת טוש רצפתית בחצר, כולל התקנת המערכת",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-32_beea7e4c51998791",
+      "code": "3.32",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "ביצוע מערכת ביוב חדשה לפי נספח סניטרי ותכניות האינסטלציה",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-33_1b5c49d306b23dbd",
+      "code": "3.33",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "חפירת ויציקת בור משאבה כולל חיבור הדלוחין ואספקת המשאבה",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_3-34_fb3f99d9848f00af",
+      "code": "3.34",
+      "chapter": "03",
+      "chapterTitle": "פרק 03 – עבודות אינסטלציה",
+      "description": "ביצוע קו הזנה ראשי חדש מהשעון",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-10_2f22a50f4eb7d51b",
+      "code": "5.10",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "ריצוף פנים באריחי גרניט פורצלן כולל רובה אקרילית",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-11_a6d549db5a03ff58",
+      "code": "5.11",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "ריצוף חוץ באריחי גרניט פורצלן בטיט",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-12_802b08474d8150e8",
+      "code": "5.12",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "ריצוף אריחי סוג ב' כתשתית לפרקט",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-13_62f451deff87b544",
+      "code": "5.13",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "חיפוי קירות חוץ באבן כולל כוחלה",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-14_7e41cfa31289db58",
+      "code": "5.14",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "התקנת סף שיש (קופינג) לחלון כולל מילוי דבק שיש וליטוש",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-15_9d9f049acb03f7ef",
+      "code": "5.15",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "הדבקת פאנל שקוע לפי פרט כולל פרופיל ניתוק",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-16_5f41cef0c2762368",
+      "code": "5.16",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "איטום מרפסת / גג ביריעות ביטומניות מולחמות לרבות שיפועים ורולקות",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-17_2791ec7ebb068909",
+      "code": "5.17",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "איטום קירות הבית במפגש עם הקרקע",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-18_7b7304867328b816",
+      "code": "5.18",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "איטום פתחי מערכות אלומיניום בשתי שכבות סיכה",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_5-19_45e2e6bd0b169bbe",
+      "code": "5.19",
+      "chapter": "05",
+      "chapterTitle": "פרק 05 – עבודות ריצוף, חיפוי ואיטום",
+      "description": "ריצוף רצפת חדר כביסה באריחי גרניט פורצלן",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_2-04_753d20172df3944c",
+      "code": "2.04",
+      "chapter": "02",
+      "chapterTitle": "פרק 02 – עבודות בנייה ובטון",
+      "description": "בניית קירות בלוק בטון לפי תכניות האדריכלות",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_2-05_6e674b54c2a88d77",
+      "code": "2.05",
+      "chapter": "02",
+      "chapterTitle": "פרק 02 – עבודות בנייה ובטון",
+      "description": "סגירת פתח חלון קיים בבלוק",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_2-06_ad6b5d0f47227785",
+      "code": "2.06",
+      "chapter": "02",
+      "chapterTitle": "פרק 02 – עבודות בנייה ובטון",
+      "description": "יציקות בטון לפי תכניות ופרטי הקונסטרוקציה",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_7-08_5a358d9270319ec2",
+      "code": "7.08",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "מחיצות גבס לבן בעובי 10 ס\"מ כולל בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_7-09_4d1c189c20ccf4f1",
+      "code": "7.09",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "בניית מחיצות גבס כחול נגד מים כולל בידוד צמר סלעים",
+      "unit": "מ\"ר",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_7-10_8d157ac4a9419552",
+      "code": "7.10",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "בניית נישה במחיצת גבס לפי תכנית",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_7-11_c1f520bd4713960f",
+      "code": "7.11",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "אספקה והתקנת פרופיל ניתוק STR במפגש תקרת גבס עם קירות",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_7-12_3224f8106f3cea68",
+      "code": "7.12",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "אספקה והתקנת פתח אופן ארט בגודל 60/60 ס\"מ",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_7-13_fccca2c325d92015",
+      "code": "7.13",
+      "chapter": "06",
+      "chapterTitle": "פרק 06 – עבודות גבס",
+      "description": "בניית סינר גבס בחתך לפי תכנית",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_8-05_332aa0ef8cd79d60",
+      "code": "8.05",
+      "chapter": "07",
+      "chapterTitle": "פרק 07 – עבודות טיח, שפכטל וצבע",
+      "description": "שליכט צבעוני על קירות חוץ וחומות כולל טיח שחור ופריימר",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_8-06_7807e5569aa65063",
+      "code": "8.06",
+      "chapter": "07",
+      "chapterTitle": "פרק 07 – עבודות טיח, שפכטל וצבע",
+      "description": "צביעת משקוף ודלת ממ\"ד / מקלט בצבע על בסיס שמן",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_9-04_362f311da62db1fd",
+      "code": "9.04",
+      "chapter": "09",
+      "chapterTitle": "פרק 09 – תאורה ושונות",
+      "description": "ביצוע חיזוקי עץ במחיצות גבס לפי תכנית",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_9-05_a1093169a831324f",
+      "code": "9.05",
+      "chapter": "09",
+      "chapterTitle": "פרק 09 – תאורה ושונות",
+      "description": "התקנת אביזרי חדרי רחצה",
+      "unit": "קומפלט",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_9-06_c399c358453af69e",
+      "code": "9.06",
+      "chapter": "09",
+      "chapterTitle": "פרק 09 – תאורה ושונות",
+      "description": "קידוח בור חלחול כולל שרוול, רשת וצלב הגנה",
+      "unit": "יח'",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
+    },
+    {
+      "id": "it_9-07_c9e2431c2cdadaa9",
+      "code": "9.07",
+      "chapter": "09",
+      "chapterTitle": "פרק 09 – תאורה ושונות",
+      "description": "תעלת ניקוז סמויה תחת הריצוף מסביב לבריכה",
+      "unit": "מ\"א",
+      "tags": [
+        "ברירת מחדל"
+      ],
+      "source": "default",
+      "sourceRef": "kamutan-defaults/library-v3",
+      "active": true,
+      "defaultsVersion": 3
     }
   ]
 }

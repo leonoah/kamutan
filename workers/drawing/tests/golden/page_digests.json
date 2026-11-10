@@ -1,0 +1,106 @@
+{
+ "_comment": "Sprint 10 Perf: sha256 of the page task outputs (process_page, OCR on, tiles off, cold glyph store) recorded with the pre-Sprint-10 code (main 1f5b794); tests/test_perf_sprint10.py + scripts/perf_page_digests.py",
+ "tesseract": "tesseract 5.3.4",
+ "sheets": {
+  "sheet_08222cb2.pdf": {
+   "primitives": "21ff2ce999d9017fc1fcddef5bda401b1a2bd9d7ea546ce36eed53c8317de30c",
+   "text": "87982a42fecc473b31dcbaecdf1f74be1d5420ccd9bf08b1494c4961e08e231a"
+  },
+  "sheet_1470f005.pdf": {
+   "primitives": "f6989ca44a01e28337d781a6c9b2a1627c9b968de4486bef05d902ded5b24d2f",
+   "text": "e39e6d8c5be57150a74ad7d107bd7f5ecc8c6c9b41ffbaa0f37bba739ba346ee"
+  },
+  "sheet_1bbe4113.pdf": {
+   "primitives": "6ce39197522ce19e78f06e35279fb0b40efba164373f9e1a55246fb1af33ee45",
+   "text": "3097c4c1d5ec4e86e7d9c0dc7b0f23400236b384ceb442bbd0f7922e23405ce7"
+  },
+  "sheet_24ab0ea0.pdf": {
+   "primitives": "ed866db5685bd731944bdc9ea42ecdf70bce4de668cc4e462d1547afbc80bcb0",
+   "text": "9dca0d23eaa6234770b25e6b6df508060a708bec5049a20227fe614f01249039"
+  },
+  "sheet_2a308827.pdf": {
+   "primitives": "45339ccbee5251b3eb8063a0e4135132349769d8c767fee976e08043a1150c3e",
+   "text": "bc17631ac4e3a2f675774b233803d548e22a9453a93d1735dca03e26687dc7d0"
+  },
+  "sheet_6fa88f92.pdf": {
+   "primitives": "ba4af2ed127b2c8d152635d27231db01366b160257ed511989e77c02908ca7fe",
+   "text": "a9b450edb5c58b01a9df7cae7a0de6c1abe32ae1f563a6eda0a7a79d59fb6681"
+  },
+  "sheet_70a5c3e0.pdf": {
+   "primitives": "ee457b1e4a63fc04008ff6bb86e4acd3d53140e9821f29723e85637247acfde6",
+   "text": "1eb9f4e567c37586d4a19a5f20a29c65e5d9314627251b22668464dfbf948c21"
+  },
+  "sheet_8099ab2c.pdf": {
+   "primitives": "a358df56ae3a0686849b53c99d21d5edbfdcb6483ce473f206a43548eb3d9c5b",
+   "text": "0dbad243237f5f1a7f8eeced2ce87cf9aac191ee0b0f0c9e4bd196f4d87fb5e9"
+  },
+  "sheet_8d51ed5a.pdf": {
+   "primitives": "86f8626c8edbe8de246a5f760c831b3e97f1b2dcf9efd7df8f2da63e17c0af6f",
+   "text": "80f69140a3cb2d251e5d1300b602dc2df2e517e3d623c4901f31f342ccadad3f"
+  },
+  "sheet_ad257a1c.pdf": {
+   "primitives": "262bc33a26459482284d52f4d22a99a00bf6f136a2d20d44747f7a3fa49b8315",
+   "text": "306b03be939cdd64d6de5d8515e22b315af38365ad8be2aa2ca8e4be9768677d"
+  },
+  "sheet_af849ec4.pdf": {
+   "primitives": "5d3826430b53d67f8a8885910fac86287d8eb4ea55a440eb473003d9aa1f00fb",
+   "text": "a2491114968975e218728ff976b5aecc9d08ba0744a56fa1794a0c7035cb4219"
+  },
+  "sheet_b2046277.pdf": {
+   "primitives": "427d7492a81a0971a0b9d5d8089a0cb4908bbc88baccb8fde9f2c9e6ae50c888",
+   "text": "d38ccd091bbc570225408c2700c5ad8debf3b2a5687f5c13e48f789fbb422152"
+  },
+  "sheet_c054fd3a.pdf": {
+   "primitives": "068a7dd05431b377f918c0a0ad524fec50d0ea1a3545d975c60ffc73c2fe159b",
+   "text": "a0447607ee701eac73d64494470f5acb5f9ed593cf8cae2b48eabda07caa539a"
+  },
+  "sheet_eb8be8a3.pdf": {
+   "primitives": "a66b041098c64c60a7e6e2e12d4fbac914b85bd53aa132ddaef1d45a184c7996",
+   "text": "a5b3f4aec35604d2abad4708950b2c230aedb0cbd8c5d598e3c20d57460c2a40"
+  },
+  "sheet_f14c7573.pdf": {
+   "primitives": "ec02c026bb371deaea409791713c1e7fda1dfcbb52ba7aac486f66bbd4f62185",
+   "text": "c9b6f885cf5b5a66c10afa5b9875ac305a103b5c077a3628d39a7fc22bd89ddb"
+  },
+  "syn9001-0000.pdf": {
+   "primitives": "2e012f7446ad8afcfff7c02c6549cd47087e104c8cc9e25f0adadb02fd4537b1",
+   "text": "82e0e147bd508ff6bb44c32ff54ce72f10fa9a2ce11c76ec71b39898a6d04ea8"
+  },
+  "syn9001-0001.pdf": {
+   "primitives": "2cc4e1f30d79979e28af5b899cf6b27dc140068e2a217d2e8d959871f58f8add",
+   "text": "0e5b23f4d94204d4ffc1f9ebc69799c706e9192b0e0689518113639dd5cf54b6"
+  },
+  "syn9001-0002.pdf": {
+   "primitives": "92d4e208a296f1ed2835510c5c16f249e6dfaea85c9096f345670b88987e76e0",
+   "text": "f6b99f2d4fff1227bfd0b346ac470130806581f7a82eeef3dbc1369da15ac1fc"
+  },
+  "syn9001-0003.pdf": {
+   "primitives": "9d75c06e3bfd7a434da62bc21c98ee012019fc1710851d73b9379f3f1486e62e",
+   "text": "30c12cb2bbea06244358dd52154b34bd0f1cb5aef1c3c4f8b2f68e6e12324f68"
+  },
+  "syn9001-0004.pdf": {
+   "primitives": "b2634f9e24da6077b397540897ecef87a68b5605fa2b135626d0611243eda86f",
+   "text": "514a6e5040a35938068740645f4e7dd683cf2f9caae4b573e11ad95297902d5d"
+  },
+  "syn9001-0005.pdf": {
+   "primitives": "fd8b2dcbf53d0e1037dc51b00099b2dfa75b60a13d865859a25d6969a72e3302",
+   "text": "8e3ce10dc4b3b38b9fb8f4a4197ba1ffbe3a2fa7b078b31eaa966ef229e45b7c"
+  },
+  "syn9001-0006.pdf": {
+   "primitives": "d257da6710337aba125d79465124a87937eca279fe0071a5296427b850a6df68",
+   "text": "27d1926e7d49af6f68db2eb30882becaa1243466fd8ce276456ff6ddadad1c40"
+  },
+  "syn9001-0007.pdf": {
+   "primitives": "f1ff005455318b42b6594cdb2861adcde18cb01b5ef3bdbc168d46935dcef4c5",
+   "text": "cf21329c83762313e72e350323354e8135654038c2037a24e5300c5d038e825c"
+  },
+  "syn9001-0008.pdf": {
+   "primitives": "a02efdf90e8f4a0b1ff9de5c6506c412fd3cdb2b692b01f33d943959dc05eea0",
+   "text": "2e45eed1cd9b4dbd6234b577bb010b9ef4414c3ef782e5c788a0fa205eac5a48"
+  },
+  "syn9001-0009.pdf": {
+   "primitives": "7a80eccd5bcb8019201004d5d7e1d2f22624198683341b49631171e7928db57e",
+   "text": "f19784a454adc488f17823f6b905d4525ee6e431bcaba5ded23857fc6bc13b3a"
+  }
+ }
+}

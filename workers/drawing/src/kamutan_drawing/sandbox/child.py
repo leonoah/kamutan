@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import os
 import resource
+import signal
 import sys
 from typing import Any
 
@@ -94,8 +95,19 @@ def main(argv: list[str] | None = None) -> int:
         write_frame(out, {"t": "error", "code": E.INTERNAL, "message": f"sandbox isolation failed ({type(e).__name__})"})
         return 6
 
+    from . import context  # Sprint 10 (Perf): stage + counts for the limit messages
+
     def progress(stage: str, pct: int) -> None:
+        context.STAGE[0] = str(stage)
         write_frame(out, {"t": "progress", "stage": stage, "pct": int(pct)})
+
+    def on_xcpu(signum: int, frame: object) -> None:  # soft RLIMIT_CPU; the hard limit kills 5 s later
+        try:
+            write_frame(out, {"t": "error", "code": E.PARSE_CPU_LIMIT, "message": context.cpu_limit_message(a.cpu_s)})
+        finally:
+            os._exit(8)
+
+    signal.signal(signal.SIGXCPU, on_xcpu)
 
     try:
         req = read_frame(sys.stdin.buffer)
@@ -112,6 +124,12 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except MemoryError:
         del reserve  # free the reserve so the frame can be written
+        try:  # Sprint 10 (Perf): say how big the sheet was (counts recorded by the task in sandbox.context)
+            from .context import memory_limit_message
+
+            mem_frame = pack({"t": "error", "code": E.PARSE_MEMORY_LIMIT, "message": memory_limit_message(a.memory_mb)})
+        except Exception:  # noqa: BLE001, S110 - still out of memory: the pre-packed frame
+            pass
         out.write(mem_frame)
         return 3
     except RecursionError:

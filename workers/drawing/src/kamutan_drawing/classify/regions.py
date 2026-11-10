@@ -44,6 +44,62 @@ class RegionResult:
     regions: list[dict[str, Any]]
     yellow: list[str] = field(default_factory=list)
     info: list[str] = field(default_factory=list)
+    label_floors: list[str] = field(default_factory=list)  # Sprint 10: floors read from labels next to the drawings
+
+
+R_FLOORS_FROM_LABELS = "קומות לפי הכיתוב ליד השרטוטים (אין קומה בכותרת)"
+
+
+def label_phrases(spans: list[TextSpan]) -> list[TextSpan]:
+    """Sprint 10 (Worker-Classify): the PDF text layer gives one span per word ("קומת", "קרקע"); words of one line
+    (same height ±25 %, same baseline, gap ≤ 1.8 × height) are joined right to left so "קומת קרקע" reads as a label.
+    SHX lines are already lines and pass through unchanged."""
+    words = sorted((s for s in spans if s.rotation == 0 and s.text.strip()), key=lambda s: (round(s.bbox[3], 0), -s.bbox[2]))
+    used = [False] * len(words)
+    out: list[TextSpan] = []
+    for i, s in enumerate(words):
+        if used[i]:
+            continue
+        used[i] = True
+        group = [s]
+        changed = True
+        while changed:
+            changed = False
+            left = min(g.bbox[0] for g in group)
+            for j, t in enumerate(words):
+                if used[j] or len(group) >= 8:
+                    continue
+                h = max(s.height, 0.5)
+                if abs(t.height - s.height) > 0.25 * h or abs(t.bbox[3] - s.bbox[3]) > 0.4 * h:
+                    continue
+                gap = left - t.bbox[2]
+                if -0.2 * h <= gap <= 1.8 * h:
+                    group.append(t)
+                    used[j] = True
+                    changed = True
+                    break
+        if len(group) == 1:
+            out.append(s)
+            continue
+        group.sort(key=lambda g: -g.bbox[2])
+        bb = (
+            min(g.bbox[0] for g in group),
+            min(g.bbox[1] for g in group),
+            max(g.bbox[2] for g in group),
+            max(g.bbox[3] for g in group),
+        )
+        out.append(
+            TextSpan(
+                sheet=s.sheet,
+                bbox=bb,
+                text=" ".join(g.text for g in group),
+                conf=min(g.conf for g in group),
+                height=s.height,
+                rotation=0,
+                n_glyphs=sum(g.n_glyphs for g in group),
+            )
+        )
+    return out
 
 
 def _inside(b: tuple[float, float, float, float], box: tuple[float, float, float, float] | None, pad: float = 0.0) -> bool:
@@ -219,7 +275,7 @@ def assign_floors(
     if not boxes:
         H = title_block[1] if (title_block and title_block[1] > 0.5 * vs.height_mm) else vs.height_mm
         boxes = [(0.0, 0.0, vs.width_mm, H)]
-    free = [s for s in spans if not _inside(s.bbox, title_block, 1.0)]
+    free = label_phrases([s for s in spans if not _inside(s.bbox, title_block, 1.0)])
     label_floor: list[str | None] = []
     for bb in boxes:
         best: tuple[float, str] | None = None
@@ -247,6 +303,24 @@ def assign_floors(
         and len(set(label_floor)) == len(label_floor)
         and (not floors or set(label_floor) <= set(floors))
     )
+    labelled = [f for f in label_floor if f]
+    if not floors and len(boxes) > 1 and not distinct_labels and len(labelled) >= 2 and len(set(labelled)) == len(labelled):
+        # Sprint 10: the title names no floor ("תאורה - כל הקומות") and several drawings carry distinct floor labels:
+        # an unlabelled drawing (legend, notes, detail) joins its nearest labelled drawing
+        keep_i = [i for i, f in enumerate(label_floor) if f]
+        for i in [i for i, f in enumerate(label_floor) if not f]:
+            a = boxes[i]
+            j = min(
+                keep_i,
+                key=lambda k: np.hypot(
+                    (a[0] + a[2] - boxes[k][0] - boxes[k][2]) / 2, (a[1] + a[3] - boxes[k][1] - boxes[k][3]) / 2
+                ),
+            )
+            b = boxes[j]
+            boxes[j] = (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+        boxes = [boxes[i] for i in keep_i]
+        label_floor = [label_floor[i] for i in keep_i]
+        distinct_labels = True
     if len(boxes) > 1 and not distinct_labels:
         # fewer floors named than drawings found: merge the smallest drawing into its nearest
         # neighbour until the counts match (one named floor -> one region)
@@ -262,6 +336,8 @@ def assign_floors(
     if distinct_labels:
         assigned = [f for f in label_floor if f]
         res.info.append(R_FLOOR_LABEL)
+        if not floors:
+            res.label_floors = list(dict.fromkeys(assigned))
     elif len(boxes) == 1:
         assigned = [floors[0] if floors else (label_floor[0] or "unknown")]
         if len(floors) > 1:
@@ -285,3 +361,15 @@ def assign_floors(
             continue
         res.regions.append({"id": f"r{i}", "floor": floor[:32], "polygonMm": _poly(bb), "scaleDenominator": int(den)})
     return res
+
+
+def apply_label_floors(cls: Any, reg: RegionResult) -> None:
+    """Sprint 10 (Worker-Classify): a title without a floor ("תאורה" on the all-floors sheet) takes the floors of the
+    labelled drawings (reading order); the "קומה לא זוהתה" reason is replaced by where the floors came from. Mutates
+    the :class:`~kamutan_drawing.classify.sheet.Classification`."""
+    from .sheet import R_NO_FLOOR
+
+    if cls.floors or not reg.label_floors:
+        return
+    cls.floors = list(reg.label_floors)
+    cls.reasons = [r for r in cls.reasons if r != R_NO_FLOOR] + [R_FLOORS_FROM_LABELS]

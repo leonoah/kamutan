@@ -1,0 +1,191 @@
+{
+  "$ref": "#/definitions/LightingCircuit",
+  "definitions": {
+    "LightingCircuit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^c_[A-Za-z0-9_*/-]+$"
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "single",
+            "shared",
+            "two_way",
+            "cross",
+            "timer",
+            "no_switch"
+          ]
+        },
+        "fixtureIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 2000
+        },
+        "switchIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 2000
+        },
+        "positionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 2000
+        },
+        "positions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fixtures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "floor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 32
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timer": {
+          "type": "boolean"
+        },
+        "stairAutomat": {
+          "type": "boolean"
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "green",
+            "yellow",
+            "red"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "maxItems": 32
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tag",
+                  "switch_list",
+                  "timer_note",
+                  "builtin_switch"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "bboxMm": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  },
+                  "w": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "h": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "w",
+                  "h"
+                ],
+                "additionalProperties": false
+              },
+              "detectionId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "positionId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "detectionIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "maxItems": 2000
+              },
+              "tag": {
+                "type": "string",
+                "maxLength": 16
+              },
+              "keywordRead": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 2000
+        }
+      },
+      "required": [
+        "id",
+        "tag",
+        "kind",
+        "fixtureIds",
+        "switchIds",
+        "positionIds",
+        "positions",
+        "fixtures",
+        "floor",
+        "timer",
+        "stairAutomat",
+        "level",
+        "reasons",
+        "evidence"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/LightingCircuit.json"
+}

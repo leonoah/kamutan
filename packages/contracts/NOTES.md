@@ -586,3 +586,99 @@ Additive only. New module **`quality.ts`**; `json-schema/` regenerated (**204 sc
 - API: `quality` is on every version DTO (`GET …/sheets/:sid`, versions, reprocess) and on `SheetSummary.currentVersion`
   (sheet list / gallery). **Never in share snapshots / public share DTOs.**
 - `firebase/model.ts` (DB agent): please mirror `SheetVersionDoc.quality?` (worker-only write; rules unchanged).
+
+## Sprint 10 published (Worker-BOQ, landed directly — API agent not active this sprint) — API / Web / Worker-Lighting read this
+
+`DEFAULT_BOQ_RULES_VERSION` 8 → **9**, `DEFAULT_ITEM_LIBRARY_VERSION` 2 → **3**; `pnpm gen` regenerated `json-schema/`
+(incl. `defaults/boq-defaults.json`, `defaults/library-defaults.json`). Worker mirror: `workers/drawing/src/kamutan_drawing/
+boq/defaults_s10.py` (the `SPRINT10_RULES` literal in library.ts was generated once from it; `tests/test_boq_contracts.py`
+diffs every rule strictly). Tests: `test/sprint10.test.ts` + version pins in corrections / sprint6 / stage10.
+
+* **library.ts — rule kinds** `marker_addon` (`MarkerAddonMatchSchema {hostClasses, markerClasses?, markerPatterns?,
+  radiusMm?}`, one unit per host with a marker, hosts never consumed: waterproof / USB add-ons) and `lighting_circuit`
+  (`LightingCircuitMatchSchema {wording: auto|topology|set, includeTimer?, includeNoSwitch?}`, Worker-Lighting,
+  `itemCode: null`).
+* **`ClassToItemMatchSchema`** (additive, optional): `labelPatterns`, `excludeLabelPatterns`, `labelRadiusMm`, `countOnly`,
+  `params {length?: 'label', diameter?: 'label'}` (semantics in the schema comment). **`PlumbingPointMatchSchema`**:
+  `labelPatterns`, `excludeLabelPatterns`, `labelRadiusMm`.
+* **`ItemLibraryItemSchema`** (additive): `cancelled` (unit "בוטל" in the imported BOQ — never a line, never resolved),
+  `notForTotal` ("לא לסיכום / לספירה בסוף / אופציה"), `descKey` (description identity across imports), `codeAliases`
+  (other codes the same description carried; codes drift between projects).
+* **boq.ts — `BoqLineSchema`** (additive): `notForTotal` (unit price only: the API / Excel / share snapshot must leave the
+  line out of chapter and grand totals — helper `countsInTotal(line)`), `circuit {id, kind, fixtures}` (`CIRCUIT_KINDS`
+  single / shared / two_way / cross / timer / no_switch; Worker-Lighting). **API follow-up (not done here):** honour
+  `notForTotal` in the totals of `GET boq`, the Excel export and the share snapshot.
+* **Units**: `unit` stays a free string; `DEFAULT_UNITS` gains `room: 'חדר'`, `set: 'סט'`; `defaultUnitFor` keeps them.
+* **Defaults**: `SPRINT10_RULES` (108 + `r_lighting_circuit`): label-qualified feeds (תריס / גלאי עשן / סוכך / דוד שמש),
+  supply-install count-only lines (גלאי עשן, תנור, פעמון), 3-phase by appliance, cobra 32 with the length bucket, panels
+  ראשי / משני / מונה, deep switch boxes (countOnly) vs the בית-חכם קומפלט, D18, fans, marker add-ons, plumbing variants
+  (kitchen sink indoor / outdoor, shower 3× / 4-way), text items (מריכף, solar, popup socket, manifolds, גלגלון, בריכה,
+  סאונה, אדנית, טוש, נישה, אופן ארט …) and "להשלמה ידנית" suggested fallbacks with the right unit for every line type the
+  drawings cannot produce yet. Each has a generic library-v3 item (codes 2.04–2.06, 3.16–3.35, 4.29–4.72, 5.09–5.19,
+  7.08–7.13, 8.05–8.06, 9.04–9.07). Worker behaviour: a DEFAULT Sprint-10 rule whose item the org library lacks is skipped
+  (falls through to the older rule) — no "לא משויך" noise on orgs with an imported BOQ.
+
+## Sprint 10 published (Worker-Lighting, landed directly, coordinated with Worker-BOQ's section above) — API / Web read this
+
+Worker-BOQ already landed the BOQ side (`CIRCUIT_KINDS`, `BoqLine.circuit {id, kind, fixtures}`, rule kind
+`lighting_circuit` + `LightingCircuitMatchSchema`, default rule `r_lighting_circuit`, unit `סט`). This adds the per-version
+artifact the worker writes (`pnpm gen` rerun; test `test/sprint10_lighting.test.ts`; the worker validates a real document
+against `json-schema/CircuitsArtifact.json` in `workers/drawing/tests/test_lighting.py`):
+
+* **boq.ts `CircuitsArtifactSchema`** (`CIRCUITS_SCHEMA = 'kamutan.circuits/1'`, strict) — Storage
+  `…/versions/{v}/circuits.json.gz`, lighting sheets only, written by the `understand` task next to `links.json.gz`:
+  `{schema, sheetId, circuits: LightingCircuit[], positions: SwitchPosition[], unmatched: {fixtureIds, tags: [{tag,
+  positionIds, reason, bboxMm}], texts: [{text, bboxMm, tags}]}, stats, debugTexts?}`.
+  `LightingCircuit = {id 'c_<tag>' (a built-in wall switch is 'c_<tag>*', a tag split by far-apart floors is merged at BOQ
+  time only), tag, kind: CircuitKind, fixtureIds, switchIds, positionIds, positions, fixtures, floor|null, timer,
+  stairAutomat, level green|yellow|red (non-green ⇒ ≥ 1 reason), reasons (≤ 64 chars), evidence: [{kind tag|switch_list|
+  timer_note|builtin_switch, text?, bboxMm?, detectionId?, positionId?, detectionIds?, tag?, keywordRead?}]}`;
+  `SwitchPosition = {id 'sp_<n>', tags, switchIds, bboxMm, boxMm|null, texts, reasons}` (a glyph-less switch box has
+  `switchIds: []` and the reason "מיקום מפסק ללא סמל מפסק").
+* **sheets.ts**: `VersionArtifactsSchema.circuits?: string` (path), `VersionStatsSchema.circuits?: {circuits, fixtures,
+  taggedFixtures, untaggedFixtures, positions, unmatchedTags}` (strict, non-negative ints; the service writes only these).
+* **understanding.ts**: `OverlayManifestSchema.circuits?: SignedUrlRef | null` — **API follow-up (not done here):** sign it
+  in `GET …/overlay` like `links`, so the viewer can draw tag ↔ switch-position pairs and the "unmatched" list.
+* Web follow-up: show `BoqLine.circuit` on "נק' מאור" lines (kind + fixtures) and open the evidence (fixtures + switch
+  glyphs; a glyph-less position is a `kind: 'text'` evidence item with `bboxMm`).
+
+## Sprint 10 — REQUEST from Worker-Accuracy (detection classes) — orchestrator / Bench please adopt
+The three Sprint-10 projects' legends draw items Noah never had; the worker now emits them as detection classes
+(`workers/drawing/src/kamutan_drawing/symbols/legend_extra.py`, mirrored there until adopted):
+
+| class id | he | domain | core | drawn as (this designer) |
+| --- | --- | --- | --- | --- |
+| `smoke_detector` | גלאי עשן | electrical | false | red box "גע" |
+| `camera` | מצלמה | electrical | false | light-orange disc + cone |
+| `thermostat` | תרמוסטט | electrical | false | ring with T |
+| `alarm_detector` | גלאי אזעקה | electrical | false | ring with ג |
+| `siren` | צופר | electrical | false | ring with צ |
+| `keypad` | קיבורד (לוח מקשים) | electrical | false | green box "KB" |
+| `shutter_feed` | הזנה לתריס חשמלי | electrical | false | ring with M |
+| `ventilator_feed` | הזנה לונטה | electrical | false | ring with V |
+
+Please add them to `benchmark/schema/classes.json` (→ `taxonomy.ts` `SYMBOL_CLASSES` via `gen-taxonomy`, and the
+`Detection.json` class enum) and Hebrew labels to web `features/understanding/taxonomy.ts` `CLASS_INFO`. Effect until then
+(checked 10.11): nothing crashes — the web casts detection artifacts without validation and shows such an item without a
+Hebrew label; the API maps an unknown legend `suggestedClass` to null; a reviewer cannot pick these classes in a correction
+(`SymbolClassSchema`); `DetectionSchema.class` would reject them only if someone parses detections strictly. Annotation strings added (no contract change, `annotations` is free text ≤ 32):
+`USB` (socket with "+TYPE C" / "USB"), `קופץ` (pop-up socket), `לתריס` (a switch that is a shutter switch).
+BOQ mapping is Worker-BOQ's (requests in `workers/drawing/NOTES.md` "Sprint 10 — detection generalisation").
+
+## Sprint 10 published (Worker-Classify, landed directly, additive) — API / Web read this
+
+* **sheets.ts `DISCIPLINE_CODES`** gains `pool` ("בריכה") and `post_permit` ("אחרי טופס 4") — the worker classifier
+  emits them for the designer's pool and after-occupancy sheets (open set; `DisciplineSchema` unchanged). Web: Hebrew
+  labels "בריכה" / "אחרי טופס 4" in the discipline picker.
+* **`SheetSchema.coverage`** `{status: 'overview', coveredBy: sheetId[], floors, contentShare 0..1, reason}` | null —
+  worker-written (`classify/project.py`, after every ingest job) while a sheet repeats other current sheets of its
+  discipline (Achituv "תאורה - כל הקומות" = the three per-floor lighting sheets). The BOQ build skips it
+  (`skippedSheets[id] = 'overview'`); the per-floor sheets are counted. **Web follow-up:** show `coverage.reason` on the
+  sheet card / gallery ("גיליון מרוכז … לא נספר בכתב הכמויות") and link `coveredBy`. **API follow-up:** a user override
+  ("count this sheet anyway") is not in this sprint — today the only way out is deleting the overview sheet.
+* **`SheetSchema.floorCheck`** `{titleFloors, floors, support 0..1, reason}` | null — worker-written while the worker moved
+  the sheet to another floor than its title block names (two sheets of one discipline claimed the same floor; Achituv's
+  four first-floor sheets say "קומת קרקע"/"קומת מרתף"). `Sheet.floors` follows it; `classification.floors` keeps the
+  title's reading and the reasons say both. Confirmed sheets are never moved.
+* `text.json.gz` lines from the PDF text layer carry `src: "pdf"` (SHX readings have no `src`). Additive, no schema.
+* Test: `test/sprint10_classify.test.ts`; `pnpm --filter @kamutan/contracts gen` rerun.

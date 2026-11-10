@@ -56,6 +56,14 @@ export const SYMBOL_CLASSES = [
   "water_heater_feed",
   "legend_entry",
   "legend_box",
+  "smoke_detector",
+  "camera",
+  "thermostat",
+  "alarm_detector",
+  "siren",
+  "keypad",
+  "shutter_feed",
+  "ventilator_feed",
 ] as const;
 
 export type SymbolClass = (typeof SYMBOL_CLASSES)[number];
@@ -118,6 +126,14 @@ export const SYMBOL_CLASS_INFO: Readonly<Record<SymbolClass, SymbolClassInfo>> =
   water_heater_feed: { domain: "electrical", core: false, he: "הזנה לדוד חשמל" },
   legend_entry: { domain: "other", core: false, he: "שורת מקרא" },
   legend_box: { domain: "other", core: false, he: "מסגרת מקרא" },
+  smoke_detector: { domain: "electrical", core: false, he: "גלאי עשן" },
+  camera: { domain: "electrical", core: false, he: "מצלמה" },
+  thermostat: { domain: "electrical", core: false, he: "תרמוסטט" },
+  alarm_detector: { domain: "electrical", core: false, he: "גלאי אזעקה" },
+  siren: { domain: "electrical", core: false, he: "צופר" },
+  keypad: { domain: "electrical", core: false, he: "לוח מקשים (קיבורד)" },
+  shutter_feed: { domain: "electrical", core: false, he: "הזנה לתריס חשמלי" },
+  ventilator_feed: { domain: "electrical", core: false, he: "הזנה לונטה" },
 });
 
 /** A class a user may assign (confirm / reassign / resolve). Never "unknown". */

@@ -178,11 +178,60 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "minItems": 1,
                         "maxItems": 32
+                      },
+                      "labelPatterns": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "minItems": 1,
+                        "maxItems": 16
+                      },
+                      "excludeLabelPatterns": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "maxItems": 16
+                      },
+                      "labelRadiusMm": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
+                      },
+                      "countOnly": {
+                        "type": "boolean"
+                      },
+                      "params": {
+                        "type": "object",
+                        "properties": {
+                          "length": {
+                            "type": "string",
+                            "const": "label"
+                          },
+                          "diameter": {
+                            "type": "string",
+                            "const": "label"
+                          }
+                        },
+                        "additionalProperties": false
                       }
                     },
                     "required": [
@@ -393,7 +442,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "maxItems": 8
@@ -592,7 +649,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "minItems": 1,
@@ -652,7 +717,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "maxItems": 32
@@ -878,7 +951,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "minItems": 1,
@@ -1102,7 +1183,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "minItems": 1,
@@ -1162,7 +1251,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "maxItems": 8
@@ -1221,7 +1318,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "maxItems": 8
@@ -1272,6 +1377,30 @@
                       },
                       "perRoom": {
                         "type": "boolean"
+                      },
+                      "labelPatterns": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "minItems": 1,
+                        "maxItems": 16
+                      },
+                      "excludeLabelPatterns": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "maxItems": 16
+                      },
+                      "labelRadiusMm": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
                       }
                     },
                     "required": [
@@ -1995,7 +2124,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "maxItems": 8
@@ -2192,7 +2329,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "maxItems": 32
@@ -2408,11 +2553,13 @@
                           "pattern": "^[0-9A-Za-z.\\-/]+$"
                         },
                         "maxItems": 64
+                      },
+                      "importedOnly": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
-                      "chapters",
-                      "quantity"
+                      "chapters"
                     ],
                     "additionalProperties": false
                   }
@@ -2599,7 +2746,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "minItems": 2,
@@ -2893,7 +3048,15 @@
                             "conduit_cobra",
                             "water_heater_feed",
                             "legend_entry",
-                            "legend_box"
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
                           ]
                         },
                         "maxItems": 16
@@ -3934,6 +4097,460 @@
                     "required": [
                       "trigger",
                       "reason"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "itemCode",
+                  "priority",
+                  "enabled",
+                  "source",
+                  "updatedAt",
+                  "kind",
+                  "match"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "itemCode": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32,
+                        "pattern": "^[0-9A-Za-z.\\-/]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "itemDescription": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "unit": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "minimum": -1000,
+                    "maximum": 1000
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "maxItems": 8
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "default",
+                      "user",
+                      "custom"
+                    ]
+                  },
+                  "defaultsVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "wasteFactor": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 0.5
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "updatedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "updatedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "marker_addon"
+                  },
+                  "match": {
+                    "type": "object",
+                    "properties": {
+                      "hostClasses": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "socket_single",
+                            "socket_double",
+                            "socket_triple",
+                            "socket_power",
+                            "socket_power_double",
+                            "socket_3phase",
+                            "socket_box_6",
+                            "socket_prep",
+                            "data_point",
+                            "tv_point",
+                            "phone_point",
+                            "speaker",
+                            "intercom",
+                            "doorbell",
+                            "heater_feed",
+                            "panel",
+                            "breaker",
+                            "switch_single",
+                            "switch_2way",
+                            "switch_fan",
+                            "luminaire_ceiling",
+                            "luminaire_wall",
+                            "luminaire_pendant",
+                            "luminaire_strip",
+                            "luminaire_outdoor",
+                            "ceiling_fan",
+                            "fixture_wc_concealed",
+                            "fixture_wc_monoblock",
+                            "fixture_basin",
+                            "faucet_basin",
+                            "faucet_wall",
+                            "fixture_shower",
+                            "fixture_bath",
+                            "fixture_kitchen_sink",
+                            "fixture_washing_machine",
+                            "garden_tap",
+                            "ac_unit",
+                            "room",
+                            "floor_tiling",
+                            "wall_cladding",
+                            "region",
+                            "note_point",
+                            "bezek_point",
+                            "waterproof_marker",
+                            "switch_cross",
+                            "switch_shutter",
+                            "conduit_cobra",
+                            "water_heater_feed",
+                            "legend_entry",
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
+                          ]
+                        },
+                        "minItems": 1,
+                        "maxItems": 32
+                      },
+                      "markerClasses": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "socket_single",
+                            "socket_double",
+                            "socket_triple",
+                            "socket_power",
+                            "socket_power_double",
+                            "socket_3phase",
+                            "socket_box_6",
+                            "socket_prep",
+                            "data_point",
+                            "tv_point",
+                            "phone_point",
+                            "speaker",
+                            "intercom",
+                            "doorbell",
+                            "heater_feed",
+                            "panel",
+                            "breaker",
+                            "switch_single",
+                            "switch_2way",
+                            "switch_fan",
+                            "luminaire_ceiling",
+                            "luminaire_wall",
+                            "luminaire_pendant",
+                            "luminaire_strip",
+                            "luminaire_outdoor",
+                            "ceiling_fan",
+                            "fixture_wc_concealed",
+                            "fixture_wc_monoblock",
+                            "fixture_basin",
+                            "faucet_basin",
+                            "faucet_wall",
+                            "fixture_shower",
+                            "fixture_bath",
+                            "fixture_kitchen_sink",
+                            "fixture_washing_machine",
+                            "garden_tap",
+                            "ac_unit",
+                            "room",
+                            "floor_tiling",
+                            "wall_cladding",
+                            "region",
+                            "note_point",
+                            "bezek_point",
+                            "waterproof_marker",
+                            "switch_cross",
+                            "switch_shutter",
+                            "conduit_cobra",
+                            "water_heater_feed",
+                            "legend_entry",
+                            "legend_box",
+                            "smoke_detector",
+                            "camera",
+                            "thermostat",
+                            "alarm_detector",
+                            "siren",
+                            "keypad",
+                            "shutter_feed",
+                            "ventilator_feed"
+                          ]
+                        },
+                        "maxItems": 8
+                      },
+                      "markerPatterns": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "maxItems": 16
+                      },
+                      "radiusMm": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 100
+                      },
+                      "roomTypes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "bathroom",
+                            "wc",
+                            "kitchen",
+                            "bedroom",
+                            "living",
+                            "corridor",
+                            "balcony",
+                            "courtyard",
+                            "storage",
+                            "stairs",
+                            "other",
+                            "niche"
+                          ]
+                        },
+                        "maxItems": 16
+                      }
+                    },
+                    "required": [
+                      "hostClasses"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "itemCode",
+                  "priority",
+                  "enabled",
+                  "source",
+                  "updatedAt",
+                  "kind",
+                  "match"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "itemCode": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32,
+                        "pattern": "^[0-9A-Za-z.\\-/]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "itemDescription": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "unit": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "minimum": -1000,
+                    "maximum": 1000
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "maxItems": 8
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "default",
+                      "user",
+                      "custom"
+                    ]
+                  },
+                  "defaultsVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "wasteFactor": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 0.5
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "updatedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "updatedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "pattern": "^[A-Za-z0-9_-]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "lighting_circuit"
+                  },
+                  "match": {
+                    "type": "object",
+                    "properties": {
+                      "wording": {
+                        "type": "string",
+                        "enum": [
+                          "auto",
+                          "topology",
+                          "set"
+                        ]
+                      },
+                      "includeTimer": {
+                        "type": "boolean"
+                      },
+                      "includeNoSwitch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "wording"
                     ],
                     "additionalProperties": false
                   }

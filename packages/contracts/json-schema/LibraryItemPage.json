@@ -171,6 +171,26 @@
                     "type": "null"
                   }
                 ]
+              },
+              "cancelled": {
+                "type": "boolean"
+              },
+              "notForTotal": {
+                "type": "boolean"
+              },
+              "descKey": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "codeAliases": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^[0-9A-Za-z.\\-/]+$"
+                },
+                "maxItems": 16
               }
             },
             "required": [

@@ -44,6 +44,12 @@ from .spaces import Room
 from .units import Unit, room_det
 
 DEFAULT_FAUCET_RADIUS_MM = 600.0
+# the Sprint-4 plumbing rules keep their pre-Sprint-10 behaviour (an unresolved item is a "לא משויך" line)
+_S4_PLUMB_IDS = frozenset({
+    "r_plumb_ac_drain", "r_plumb_basin_wall_faucet", "r_plumb_basin_flower_faucet", "r_plumb_wc_concealed",
+    "r_plumb_washing_machine", "r_plumb_garden_tap", "r_plumb_wc_monoblock", "r_plumb_shower_basement", "r_plumb_shower",
+    "r_plumb_bath",
+})  # fmt: skip
 DEFAULT_SCALE = 50
 FAUCET_CLASSES = frozenset({"faucet_basin", "faucet_wall"})
 
@@ -66,11 +72,20 @@ def consumed_classes(rules: list[Rule]) -> set[str]:
     return out
 
 
-def _match(r: Rule, f: Det, room: Room | None, faucets: list[Det], scale: int | None) -> tuple[bool, list[str]]:
+def _match(
+    r: Rule, f: Det, room: Room | None, faucets: list[Det], scale: int | None, labeler: Any = None
+) -> tuple[bool, list[str]]:
     m = r.match
     if f.cls not in (m.get("fixtureClasses") or []):
         return False, []
     reasons: list[str] = []
+    # Sprint 10 (contracts request): `labelPatterns` / `excludeLabelPatterns` on the fixture's label (annotations +
+    # nearby text: "אינטרפוץ 4 דרך", "קופסת ניקוז", "3 דרך x2") pick the shower / bath line variant
+    if labeler is not None and (m.get("labelPatterns") or m.get("excludeLabelPatterns")):
+        from .labeled import label_matches, label_radius
+
+        if not label_matches(r, labeler(f, label_radius(r))):
+            return False, []
     floors = m.get("floors")
     if floors and f.floor not in floors:
         return False, []
@@ -107,7 +122,12 @@ def plumbing_units(
     rules: list[Rule],
     rooms: dict[tuple[str, str], Room],
     scales: dict[str, int | None],
+    labeler: Any = None,
+    resolvable: Any = None,
 ) -> tuple[list[Unit], dict[str, Any]]:
+    """``labeler(det, radius)`` / ``resolvable(rule) -> bool`` (Sprint 10): label-qualified variants; a default
+    Sprint-10 rule whose item the library lacks falls through to the next matching rule (Noah's kitchen sinks stay on
+    its basin lines)."""
     prules = [r for r in rules if r.kind == "plumbing_point"]
     fixture_classes = {str(c) for r in prules for c in r.match.get("fixtureClasses") or []}
     live = sorted((d for d in dets if _live(d)), key=lambda d: d.key)
@@ -122,7 +142,9 @@ def plumbing_units(
         room = rooms.get((f.sheet_id, f.room_id)) if f.room_id else None
         hit: tuple[Rule, list[str]] | None = None
         for r in prules:
-            ok, reasons = _match(r, f, room, faucets, scales.get(f.sheet_id))
+            ok, reasons = _match(r, f, room, faucets, scales.get(f.sheet_id), labeler)
+            if ok and r.source == "default" and resolvable is not None and r.id not in _S4_PLUMB_IDS and not resolvable(r):
+                continue
             if ok:
                 hit = (r, reasons)
                 break

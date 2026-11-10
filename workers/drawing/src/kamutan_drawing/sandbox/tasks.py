@@ -152,6 +152,10 @@ def _selftest_echo(args: dict[str, Any], progress: Progress) -> Any:
 
 
 def _selftest_alloc(args: dict[str, Any], progress: Progress) -> Any:
+    if args.get("counts"):  # Sprint 10 (Perf): the memory-limit message carries what the task recorded
+        from . import context
+
+        context.note(**{str(k): int(v) for k, v in dict(args["counts"]).items()})
     blocks = []
     for _ in range(int(args.get("mb", 100000))):
         blocks.append(bytearray(1024 * 1024))
@@ -159,6 +163,8 @@ def _selftest_alloc(args: dict[str, Any], progress: Progress) -> Any:
 
 
 def _selftest_spin(args: dict[str, Any], progress: Progress) -> Any:
+    if args.get("stage"):  # Sprint 10 (Perf): the CPU-limit message names the last stage
+        progress(str(args["stage"]), 50)
     x = 0
     while True:
         x += 1

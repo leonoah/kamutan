@@ -141,7 +141,15 @@
                       "conduit_cobra",
                       "water_heater_feed",
                       "legend_entry",
-                      "legend_box"
+                      "legend_box",
+                      "smoke_detector",
+                      "camera",
+                      "thermostat",
+                      "alarm_detector",
+                      "siren",
+                      "keypad",
+                      "shutter_feed",
+                      "ventilator_feed"
                     ]
                   },
                   {
