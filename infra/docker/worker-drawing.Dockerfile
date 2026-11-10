@@ -40,8 +40,10 @@ FROM python:3.12-slim AS runtime
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Debian packages track the base image security updates; reproducibility comes from the
 # base-image digest pin (TODO above), not from per-package versions.
-# hadolint ignore=DL3008
+# `upgrade` picks up Debian security fixes the base image has not been rebuilt with yet (Trivy gate: zlib1g).
+# hadolint ignore=DL3008,DL3005
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends \
       tesseract-ocr tesseract-ocr-heb tesseract-ocr-eng \
       util-linux \

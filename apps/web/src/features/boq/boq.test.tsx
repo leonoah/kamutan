@@ -97,8 +97,9 @@ describe("BOQ panel (Sprint 3)", { timeout: 40_000 }, () => {
     await openBuilt();
     const code = COMPOSITE.find((c) => row(c))!;
     await user.click(within(row(code)).getByRole("button", { name: new RegExp(`^בחר שורה ${code.replace(".", "\\.")}`) }));
+    // the toast first: it auto-dismisses, and on a slow runner the lazy viewer can take longer than its lifetime
+    await waitFor(() => expect(toasts()).toContain("עברת לגיליון ת. תאורה / קומת קרקע"), LAZY);
     await screen.findByRole("application", { name: /^שרטוט ת\. תאורה \/ קומת קרקע/ }, LAZY);
-    await waitFor(() => expect(toasts()).toContain("עברת לגיליון ת. תאורה / קומת קרקע"));
     await waitFor(() => expect(seen.props!.focusIds!.length).toBeGreaterThan(1), LAZY);
     const focus = new Set(seen.props!.focusIds);
     expect(markers().filter((m) => focus.has(m.id)).length).toBe(focus.size);
