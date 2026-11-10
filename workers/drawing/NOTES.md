@@ -3131,6 +3131,103 @@ Yahav basement, by eye (after2): every bracket now data except the "TEL" one (it
 "ונז" → still the TV fallback); the 3-phase heat-pump socket by the stairs and the "לוח חשמל עם מונה משני" panel are
 missed in all runs.
 
+### Final measurements 10.11 morning — before2 → after3 on all four projects (frozen pair, `run_eval.sh <p> acc10_{before2,after3}`)
+after3 = the files committed as 8841ffe (`symbols/` byte-identical to the tree); before2 = the same copy with my files at
+their pre-sprint versions. The tree moved on in `boq/build.py` and `classify/` after the freeze, so absolute numbers of a
+fresh `baseline` run can differ; the pair isolates this work. Patched and original xls give the same numbers everywhere.
+
+| project | exact before2 | exact after3 | lines that changed |
+| --- | --- | --- | --- |
+| Noah | 61 (within 63, gated 54, disputed 9) | **61** (same) | none; detections identical on 15/15 sheets |
+| Achituv | 21 / 85 | **30** | below |
+| Yahav | 28 / 107 | **35** | table above (after2) + 4.03 below |
+| Rubel | 27 / 114 | **30** | below |
+
+**Achituv before2 → after3** (after2 = after3 on every line and detection):
+| line | truth | before2 | after3 | cause |
+| --- | --- | --- | --- | --- |
+| 4.03 / 4.04 power single / double | 4 / 3 | 0 / 0 | **4 / 3** | power vs 3-phase are no longer one family |
+| 4.21 3-phase induction | 1 | 8 | **1** | same |
+| 4.07 comms | 38 | 14 | **38** | camera 7 + alarm 15 + siren + keypad classed (drawing: 37, see disputes) |
+| 4.11 shutter feed | 8 | 0 | **8** | M ring member |
+| 4.13 / 4.14 smoke detector | 3 / 3 | 0 / 0 | **3 / 3** | "גלאי עשן" row classed |
+| 4.16 bell install, 4.25 / 4.26 ventilator | 1, 1 / 1 | 0 | **1** each | פ / V ring members |
+| 4.15 bell feed | 1 | **1** | 2 | regression: the text item "פעמון" (note) AND the פ symbol both count — Worker-BOQ (dedupe text item vs class) |
+| 4.17 USB add-on | 4 | 3 | 5 | the drawing has 5 (dispute) |
+| 4.40 fixtures | 62 | 88 | 81 | lighting master sheet duplicates the floors (Lighting / BOQ) |
+
+**Rubel before2 → after3** (all 19 sheets ingest, incl. the ground-floor ones — Perf's fix; 14 sheets identical):
+| line | truth | before2 | after3 | cause |
+| --- | --- | --- | --- | --- |
+| 4.19 / 4.20 smoke detector feed / install | 4 / 4 | 0 / 0 | **4 / 4** | row classed |
+| 4.22 bell install | 1 | 0 | **1** | פ ring member |
+| 4.16 bathroom heater feed | 0 | 15 | 1 | circled-letter rings were all heater feeds |
+| 4.17 shutter feed | 11 | 3 | 10 | M ring member (1 missed) |
+| 4.07 comms | 58 | 33 | 50 | alarm detectors (23) classed; 13 `tv_point` detections gone (not checked by eye; 5 were on a lighting sheet) |
+| 4.03 / 4.04 power single / double | 8 / 4 | 0 / 0 | 7 / 2 | family split; 3-phase 15 → 6 detections (expected 6) |
+| 4.08 waterproof add-on | 25 | 12 | 10 | by room type (Worker-BOQ's rule); 2 fewer hosts = removed TV false hits |
+| 4.25 cobra 50 mm | 2 | 0 | 0 | unchanged line; one `conduit_cobra` detection lost on the ground sheet (3 → 2) — not examined |
+| 4.45 ceiling fans | 6 | 41 | 41 | NOT fixed on Rubel: identical in both runs (cause not examined; Yahav's point / fan split does not apply here) |
+
+**Yahav 4.03** (after3 13, truth 8, before2 8 by luck): the passive-marker NMS fix recovers 4 real filled sockets that a
+"ראה הערה" cross used to suppress. They are drawn as power sockets; the BOQ counts them under the 3-phase / dedicated
+lines (4.10, 4.23–4.28) because a leader note names the appliance, and Yahav's legend has no 3-phase row. Following
+leader notes to re-class a socket is the top open item (it would also fix `socket_3phase` 0 / 6 there).
+
+### Per-class precision / recall (calibration input)
+Three sources, strongest first. **No class reaches 200 checked items** (largest: socket_single 23 + 31 per-symbol) —
+the green rule cannot be re-evaluated; no calibration change made.
+1. **Noah, per symbol, rebuilt-draft GT** (5 sheets, `kbench eval --include-draft`): micro-F1 0.967 before = after; TP
+   116, FP 0, FN 8; every class P 1.00; R: socket_box_6 0 / 4, switch_single 5 / 7, data_point 3 / 4, ac_unit 16 / 17,
+   all other classes 1.00. Seeded from the detector → a regression measure, not independent accuracy.
+2. **Achituv electrical, per symbol, by eye** (3 sheets, after): table in "Re-measured 10.11" — 123 TP, 6 FP, 10 FN →
+   micro P 0.95, R 0.92.
+3. **Count level, all three new projects** (scratchpad `tools/class_counts.py`: live detections per class over all
+   sheets vs `gt/<p>/expected_counts.json`; count-P = min(pred, exp) / pred, count-R = min / exp — an UPPER bound, a
+   miss and a false hit cancel; raw detections are not de-duplicated across sheets, so ac_unit / fixtures / Achituv
+   luminaires read ~2× by construction):
+
+| class (lines) | Achituv exp / before2 / after3 | Yahav exp / b2 / a3 | Rubel exp / b2 / a3 |
+| --- | --- | --- | --- |
+| socket_single | 34 / 32 / 32 | 46 / 46 / 46 | 42 / 31 / 31 |
+| socket_double | 19 / 20 / 20 | 21 / 24 / 24 | 27 / 29 / 29 |
+| socket_power | 4 / 0 / **4** | 8 / 8 / 13 | 8 / 0 / **7** |
+| socket_power_double | 3 / 0 / **3** | 3 / 2 / 2 | 4 / 0 / 2 |
+| socket_triple + box_6 | 10 / 10 / 10 | 5 / 6 / 6 | 7 / 5 / 5 |
+| socket_3phase | 4 / 8 / 1 | 6 / 0 / 0 | 6 / 15 / **6** |
+| comms (tv / phone / data / …) | 38 / 13 / 13 (+24 new classes = 37) | 25 / 16 / 16 | 58 / 36 / 26 (+23 alarm = 49) |
+| heater_feed | 6 / 3 / 3 | 6 / 6 / 3 | 0 / 18 / 1 |
+| shutter_feed (lines "switch_shutter") | 8 / 0 / **8** | 4 / 0 / **4** | 11 / 0 / 10 |
+| smoke_detector | 3 / 0 / **3** | 3 / 0 / **3** | 4 / 0 / **4** |
+| doorbell (feed + install = 2 lines, 1 symbol) | 1 / 0 / **1** | 1 / 0 / **1** | 1 / 0 / **1** |
+| conduit_cobra | 3 / 0 / 0 | 3 / 0 / 0 | 3 / 3 / 2 |
+| panel | 4 / 0 / 0 | 5 / 0 / 0 | 4 / 0 / 0 |
+| luminaires | 62 / 166 / 159 (drawn twice) | 58 / 0 / 68 | 96 / 103 / 103 |
+| ceiling_fan | 0 / 8 / 8 | 6 / 72 / 4 | 6 / 41 / 41 |
+| micro count-P / count-R (mapped classes) | 0.55 / 0.68 → 0.58 / 0.70 | 0.62 / 0.53 → **0.85 / 0.75** | 0.69 / 0.67 → 0.75 / 0.67 |
+
+The expected-counts class map predates the new classes (shutter lines map to `switch_shutter`, comms lines lack camera /
+alarm / siren / keypad, smoke detector lines have no class) — Data/QA: please remap; the micro rows above use the OLD
+map, so they under-state the after column. Yahav and Rubel were NOT checked symbol by symbol (Yahav basement only).
+
+### Waterproof add-on (4.08 / 4.29 "תוספת עבור אביזר מוגן מים") — diagnosed, not fixed
+Asked: why electrical-sheet rooms come out `other`. Measured with scratchpad `tools/wet_probe.py` on the after3 runs:
+* Worker-BOQ's rule works where rooms exist: Rubel gives 10 of 25. Achituv 0 of 16, Yahav 0 of 28.
+* **Room segmentation, not typing, is the gap.** Achituv: 0 rooms on ALL ground-floor sheets, 5 on the first floor (one
+  is a 37.9 m² merge named "חדר כביסה" / 'ממ"ד' depending on the sheet), 2 in the basement. Yahav: electrical 7 / 2 / 2
+  rooms, construction 7 / 3 / 0. Rubel: construction 12 / 4 / 5. Of the electrical hosts, 0 of 63 (Achituv ground) and
+  5 of 57 (Yahav ground) sit in any room at all.
+* Electrical rooms are `other` because the sheet has no fixtures and mostly no room names; the type must come from the
+  canonical room. `match_room` needs the same floor + area within 15 %: the polygons ARE the same rooms (Achituv first
+  floor: 12.3 / 6.9 / 19.8 / 37.9 / 5.0 m² on plumbing, electrical and lighting alike), but the electrical / lighting /
+  construction first-floor sheets carry floor `ground` (wrong title blocks) while plumbing says `first`, and the
+  canonical source (construction) typed 2 of the 5.
+* Sheets of one floor are NOT in the same paper position (offsets of 40–90 mm between disciplines), so a point lookup
+  across sheets needs a registration step (translate by matching the identical room polygons).
+* Outdoor accessories (garden, pergola, balcony — most of the 16 / 25 / 28) have no room polygon at all.
+Not written by me: it needs `rooms/` segmentation on these plans + floors from file names (`classify/`) + a translation
+in `boq/spaces.py`; a detection-side guess would not get near the truth and would touch Noah's marker path.
+
 ### Not done (reset) / open
 * Plumbing fixture parts (interpuz count + way, rain head, hand shower, drain channel vs box, `water_manifold`,
   washing-machine point) as annotations on the shower / bath detections — designed (per room: count the mixer /
@@ -3139,21 +3236,18 @@ missed in all runs.
   `geometry.analyze(legend_colours=…)` (the parameter exists, `understand` passes none), `ceiling` in
   `GEOMETRY_DISCIPLINES`, green as a work colour when the legend says so, סינר (dashed line + "סינר גבס H=") — not
   written.
-* Per-class P/R (calibration input): measured on Noah (draft GT, 5 sheets) and Achituv electrical (by eye) — tables
-  above. Rubel: the ground-floor sheets do not parse (Perf agent's, skipped as instructed). Yahav: BOQ-level before /
-  after queued behind the other agents' runs. **No class has ≥ 200 items** on these projects (largest: socket_single,
-  Noah 23 + Achituv 31 = 54): the green rule cannot be re-evaluated from four houses. Precision 1.0 per class holds for
-  11 of the Achituv classes with support, and for every Noah draft class (by construction there).
+* Per-class P/R: section above (Noah per symbol on the draft GT, Achituv per symbol by eye, count level on all three).
 * Open fixes (measured, not done): power vs 3-phase tick count; the Noah c054fd3a 45° "רשת" (stroke text, OCR on the
   new box); 2X attach reach for this designer; shutter-switch template; cobra arcs; 6-box "פרט A" callouts (Noah 4);
+  leader notes naming a socket's appliance (Yahav 4.03 / 3-phase); Rubel ceiling point vs fan (41 fans, truth 6);
   Yahav basement: the 3-phase heat-pump socket by the stairs and the panel "לוח חשמל עם מונה משני" are missed.
 * Yahav `חשמל - קומת קרקע` was classified `demolition` on the 21:27 tree (no detection on the ground electrical sheet);
   fixed by another agent's `classify/` change by 01:00 (54 detections in both before2 / after2). Achituv
   `תאורה - קומת מרתף`: the title block is not found, so the filled "לביצוע" status dot is scanned — a false luminaire
   (before) / ceiling fan (after); `classify/` owner.
 * Noah warm run (second ingest into the same root) not done this round; the glyph-store path is untouched by these edits.
-* Full suite on the shared tree (10.11): 757 passed / 41 skipped / 13 failed — 12 in Worker-BOQ's `test_boq*` /
-  `test_boq_s10` (in progress), 1 `test_pipeline` DXF on `stats.circuits` (Worker-Lighting). None in my files.
+* Gates on the committed tree 8841ffe (10.11 07:30): ruff / format clean (257 files), mypy 2.4.0 CI way: no issues in
+  170 files, bandit `-ll` clean, `tests/test_sprint10_accuracy.py` 17 passed; full suite per the coordinator: 883 passed.
 
 ### Requests
 * **Contracts / benchmark (orchestrator, `packages/contracts/NOTES.md` "Sprint 10 — REQUEST from Worker-Accuracy")**:
@@ -3164,7 +3258,7 @@ missed in all runs.
   the legend (my `legend_extra.refine_entries` only fills rows left without a class / `heater_feed`; it can be
   deleted once the vocabulary gives them). Also: a stroke letter inside a legend ring should not be "texty" when the
   span that overlaps it is the row's *label* ("ת תרמוסטט") — `legend/parse.py`.
-* **Worker-BOQ**: 4.07 "נק' תקשורת" = tv + phone + data + speaker + intercom + `COMMS_EXTRA` (camera, thermostat,
+* **Worker-BOQ**: Achituv 4.15 bell feed = 2 (text item "פעמון" + the פ symbol; count once). 4.07 "נק' תקשורת" = tv + phone + data + speaker + intercom + `COMMS_EXTRA` (camera, thermostat,
   alarm_detector, siren, keypad); 4.19/4.20 smoke detector = `smoke_detector` count (feed + supply); 4.17/4.11/4.12
   shutter feed = `shutter_feed`; 4.25/4.29 = `ventilator_feed`; USB add-on = sockets annotated `USB`; pop-up =
   `קופץ`; waterproof add-on = sockets + switches outdoors / in wet rooms (no mark on the drawing); shutter switches
@@ -3189,10 +3283,7 @@ yield vs the old rule; USB / pop-up tokens (not "TYPE3") and attachment to socke
 text-layer qualifiers (named / garbled / out of reach; one span ↔ one bracket; ties unread; OCR only for the rest);
 the ventilator / shutter label does not refine a power socket while "הזנה לדוד" still does; a classless marker never
 suppresses a class-bearing candidate in NMS (and still is its runner-up; a marker alone is kept).
-Checks (fresh checkout + re-created files): `ruff check` / `ruff format --check` clean on `symbols/` and the test;
-mypy 2.4.0 the CI way: no issues outside `boq/labeled.py` (Worker-BOQ); bandit 1.9.4 `-ll` on `symbols/`: no
-findings; `pytest tests/test_sprint10_accuracy.py`: 12 passed; full suite: see the line below (data-dependent sample
-tests skip or fail for lack of `/home/claude/kamutan-data`).
+Checks: see "Gates on the committed tree" above.
 
 ## Sprint 10 Data/QA — GT + baseline for rubel / achituv / yahav
 
