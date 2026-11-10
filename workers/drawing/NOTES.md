@@ -3247,7 +3247,9 @@ in `boq/spaces.py`; a detection-side guess would not get near the truth and woul
   (before) / ceiling fan (after); `classify/` owner.
 * Noah warm run (second ingest into the same root) not done this round; the glyph-store path is untouched by these edits.
 * Gates on the committed tree 8841ffe (10.11 07:30): ruff / format clean (257 files), mypy 2.4.0 CI way: no issues in
-  170 files, bandit `-ll` clean, `tests/test_sprint10_accuracy.py` 17 passed; full suite per the coordinator: 883 passed.
+  170 files, bandit `-ll` clean, `tests/test_sprint10_accuracy.py` 17 passed; full suite 07:50: 882 passed / 27 skipped / 1 failed —
+  `test_sandbox::test_fork_bomb_ends_typed_and_leaves_no_processes` (`51 <= 48 + 1`: counts processes on the shared box
+  while other agents run; not in my files; the coordinator's run had 883 passed).
 
 ### Requests
 * **Contracts / benchmark (orchestrator, `packages/contracts/NOTES.md` "Sprint 10 — REQUEST from Worker-Accuracy")**:
