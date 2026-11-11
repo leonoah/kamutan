@@ -186,8 +186,15 @@ def _parse_symbol_table(
     th = float(np.median([sp.height for sp in labels])) if labels else 2.0
 
     def texty(g: Group) -> bool:
-        return any(bbox_overlap_share(g.bbox, sp.bbox) >= 0.8 for sp in labels) and max(g.w, g.h) <= 1.6 * th
+        # Sprint 11 (Worker-Accuracy) — keep: a letter is as tall as ITS span, not as the legend's labels. A note in
+        # larger letters boxed right above the legend (Rubel ground lighting: "יש לבצע חיזוקי עץ לכל המאווררים")
+        # gave "big" groups all along the table's width, which chained the two symbol columns into one 42 mm wide
+        return any(bbox_overlap_share(g.bbox, sp.bbox) >= 0.8 and max(g.w, g.h) <= 1.6 * max(th, sp.height) for sp in labels)
 
+    # Sprint 11 (Worker-Accuracy) — keep: a group nearly as wide as the table is a frame, not a symbol (the note box
+    # above Rubel's ground-lighting legend is drawn 0.3 mm out of level, so its long sides are not "rules"; centred
+    # between the two symbol columns it joined them into one)
+    groups = [g for g in groups if g.w < 0.45 * table.width]
     big = [g for g in groups if max(g.w, g.h) > 1.3 * th and not texty(g)]
     if len(big) < 2:
         return [], 0.0

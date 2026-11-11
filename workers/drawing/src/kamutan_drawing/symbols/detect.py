@@ -44,6 +44,7 @@ from .match import Candidate, Scene, build_scene, spot
 from .rings import merge_ring_families, resolve_member
 from .tags import Tag, find_tags
 from .template import Template, build_templates
+from .ticks import resolve_by_ticks
 
 log = logging.getLogger(__name__)
 
@@ -668,6 +669,9 @@ def detect_symbols(
         else None
     )
     cands: list[Candidate] = sp.detections if sp else []
+    if cands:
+        # Sprint 11: power (two ticks) vs 3-phase (three) — the count is read on the plan, not left to the fit
+        resolve_by_ticks(cands, templates, scene, vs)
     if sp is not None:
         res.scale, res.scale_estimated = sp.scale, sp.scale_estimated
     scale_uncertain = res.scale_estimated or scale_den is None

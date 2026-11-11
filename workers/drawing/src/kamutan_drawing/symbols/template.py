@@ -60,6 +60,7 @@ class Template:
     symmetric: bool  # mirror image equals itself (checked numerically)
     fill_area: float = 0.0  # mm² of filled (solid) parts, e.g. the power socket's half disc
     tree: Any = field(repr=False, default=None)  # cKDTree of ``pts``
+    fill_pieces: int = 0  # Sprint 11: number of filled paths (≥ :data:`.match.EXPLODED_FILL` = an exploded fill)
     ring: Any = None  # Sprint 10: :class:`.rings.RingInfo` when this is a circled-glyph family (letter decides)
 
     @property
@@ -85,10 +86,19 @@ def _best_orient_distance(a: np.ndarray, b: np.ndarray) -> float:
     return min(_chamfer_sym(a @ orient_matrix(ang, mir).T, b) for ang, mir in ORIENTS)
 
 
+def _distinct(pts: np.ndarray) -> np.ndarray:
+    _, first = np.unique(np.round(np.asarray(pts) / STEP).astype(np.int64), axis=0, return_index=True)
+    return np.asarray(pts)[np.sort(first)]
+
+
 def _unexplained_share(a: np.ndarray, b: np.ndarray, tol: float) -> float:
     """Largest share of points of either drawing that lie farther than ``tol`` from the other (best orientation)."""
     if len(a) == 0 or len(b) == 0:
         return 1.0
+    # Sprint 11: shares of distinct ink (one point per STEP cell) — a dot whose fill is exported as many pieces has
+    # hundreds of points, and the cross switch's third tail was under 8 % of them (Achituv: "מחלף" and "מצלב" were
+    # one family and every cross switch came out a two-way)
+    a, b = _distinct(a), _distinct(b)
     best = 1.0
     tb = cKDTree(b)
     for ang, mir in ORIENTS:
@@ -165,6 +175,7 @@ def build_template(tid: str, entry: LegendEntry, vs: VectorSheet) -> Template | 
     fills = path_fill_areas(vs.segs, vs.seg_path, vs.path_fill_mode, vs.n_paths)
     t = Template(
         fill_area=float(fills[paths].sum()),
+        fill_pieces=int((fills[paths] > 0).sum()),
         id=tid,
         entries=[entry],
         segs=segs,

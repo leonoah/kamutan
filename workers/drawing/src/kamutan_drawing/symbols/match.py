@@ -42,6 +42,14 @@ CHUNK_POINTS = 1_500_000
 MIN_FWD_COV = 0.72
 TERMINATOR_MM = 0.8  # a filled path this small is a leader's dot / arrowhead, not symbol ink
 RUN_ON_MM = 1.0  # a leader's path reaches at least this far past the posed symbol box
+# Sprint 11 (Worker-Accuracy): a "more specific" drawing may replace a kept one only when the strokes it adds are
+# really drawn here — at least this share of its points that the kept drawing does not explain lie on ink
+EXTRA_ON_INK = 0.6
+EXTRA_MIN_SHARE = 0.03  # fewer added points than this share of the drawing: nothing to check
+EXTRA_INK_TOL = 0.35  # mm
+EXPLODED_FILL = 6  # filled paths in one legend drawing from which its solid counts as exploded
+EXPLODED_FILL_BAND = 0.4  # share of the template's solid area that an exploded instance may differ by
+INK_CELL = 0.2  # mm: grid on which a drawing's distinct ink is counted (an exploded fill repeats the same strokes)
 RING_YIELD = 0.5  # Sprint 10: a ring family yields to a containing, more specific drawing within this quality gap
 
 
@@ -297,17 +305,25 @@ def reverse(tpl: Template, scene: Scene, center: np.ndarray, mat: np.ndarray, sc
 
 
 def fill_difference(tpl: Template, scene: Scene, center: np.ndarray, mat: np.ndarray, scale: float) -> float:
-    if scene.fill_tree is None:
-        found = 0.0
-    else:
+    found = 0.0
+    pieces = 0
+    if scene.fill_tree is not None:
         idx = scene.fill_tree.query_ball_point(center, 0.5 * tpl.diag * scale + 0.2)
-        found = 0.0
         if idx:
             idx = np.asarray(idx)
             q = (scene.fill_xy[idx] - center) @ np.linalg.inv(mat).T
             inside = (np.abs(q[:, 0]) <= tpl.w / 2 + 0.1) & (np.abs(q[:, 1]) <= tpl.h / 2 + 0.1)
             found = float(scene.fill_area[idx][inside].sum()) / max(scale * scale, 1e-9)
-    return abs(found - tpl.fill_area) / max(tpl.w * tpl.h, 1e-6)
+            pieces = int(inside.sum())
+    diff = abs(found - tpl.fill_area)
+    n_tpl = getattr(tpl, "fill_pieces", 0)
+    if n_tpl >= EXPLODED_FILL and pieces >= EXPLODED_FILL and pieces != n_tpl:
+        # Sprint 11: a solid exported as many small filled pieces, cut differently here than in the legend (another
+        # number of pieces — Rubel / Yahav cameras: 8.0 mm² in the legend, 5.6–10.4 mm² on the plan): only a
+        # difference beyond the band says "another drawing". A copy cut the same way (same pieces) is compared
+        # exactly, as before — the power / 3-phase sockets' half discs.
+        diff = max(0.0, diff - EXPLODED_FILL_BAND * tpl.fill_area)
+    return diff / max(tpl.w * tpl.h, 1e-6)
 
 
 def quality(fwd: float, cov: float, rev: float, rev_cov: float, fill_diff: float = 0.0) -> float:
@@ -352,7 +368,34 @@ def _posed(c: Candidate) -> np.ndarray:
     return np.asarray(c.tpl.pts @ c.mat.T + np.array(c.center))
 
 
-def _nms(cands: list[Candidate], min_quality: float, passive: frozenset[str] = frozenset()) -> list[Candidate]:
+def _ink_cells(t: Template) -> int:
+    """Distinct ink of a template: occupied :data:`INK_CELL` cells of its points (cached on the template)."""
+    n = getattr(t, "_ink_cells", None)
+    if n is None:
+        n = len(np.unique(np.round(np.asarray(t.pts) / INK_CELL).astype(np.int64), axis=0)) if len(t.pts) else 0
+        try:
+            t._ink_cells = n  # type: ignore[attr-defined]
+        except AttributeError:  # pragma: no cover - slotted / frozen template
+            pass
+    return int(n)
+
+
+def _extra_on_ink(pc: np.ndarray, tk: cKDTree, scene: Scene | None, tol: float) -> float:
+    """Share of the posed points ``pc`` that the kept drawing (``tk``) does not explain and that lie on scene ink.
+    1.0 when there is no scene or (almost) nothing is added."""
+    if scene is None or scene.n == 0 or len(pc) == 0:
+        return 1.0
+    # distinct ink again: the added strokes are few points beside an exploded fill's thousands
+    cells = np.unique(np.round(pc / INK_CELL).astype(np.int64), axis=0) * INK_CELL
+    extra = cells[tk.query(cells, k=1, distance_upper_bound=2 * tol)[0] > 2 * tol]
+    if len(extra) < EXTRA_MIN_SHARE * len(cells):
+        return 1.0
+    return float((scene.tree.query(extra, k=1, distance_upper_bound=EXTRA_INK_TOL)[0] <= EXTRA_INK_TOL).mean())
+
+
+def _nms(
+    cands: list[Candidate], min_quality: float, passive: frozenset[str] = frozenset(), scene: Scene | None = None
+) -> list[Candidate]:
     """Non-maximum suppression on *shared strokes*, not on centre distance.
 
     Two candidates are the same instance when ≥ 50 % of either one's posed template lies on the
@@ -365,7 +408,11 @@ def _nms(cands: list[Candidate], min_quality: float, passive: frozenset[str] = f
     annotate, so they never suppress a class-bearing symbol: they are taken after every other candidate, never
     replace a kept one, and still count as its runner-up (a marker that fits better leaves a negative margin →
     "דומה לסמל אחר"). Yahav: a power socket's stem + ticks fitted the "+" of the see-note cross a little better, and
-    the socket was lost."""
+    the socket was lost.
+
+    ``scene`` (Sprint 11): with it, the more specific template replaces a kept one only when its *added* strokes are
+    on ink (:data:`EXTRA_ON_INK`). Rubel: a plain ceiling point (circle + cross) was replaced by "point + fan" — the
+    same drawing plus a thin box that is 6 % of its points, so its fit stayed within the slack — 41 fans for 6."""
     cands = sorted(cands, key=lambda c: (c.tpl.id in passive, -c.quality))
     kept: list[Candidate] = []
     trees: list[cKDTree] = []
@@ -389,6 +436,16 @@ def _nms(cands: list[Candidate], min_quality: float, passive: frozenset[str] = f
             reach = 0.5 * (c.tpl.diag * c.scale + kc.tpl.diag * kc.scale)
             if math.hypot(c.center[0] - kc.center[0], c.center[1] - kc.center[1]) > reach:
                 continue  # the exact scalar test, as before (the numpy prefilter only narrows the loop)
+            # Sprint 11: a solid made of many filled pieces fits anywhere inside itself (its own points land on fill
+            # ink), and such shifted poses share < 50 % of their points with the right one: two poses of the same
+            # exploded drawing whose boxes overlap are one instance (Rubel: 2–3 cameras per camera)
+            if (
+                c.tpl.id == kc.tpl.id
+                and getattr(c.tpl, "fill_pieces", 0) >= EXPLODED_FILL
+                and math.hypot(c.center[0] - kc.center[0], c.center[1] - kc.center[1]) < c.tpl.size * max(c.scale, kc.scale)
+            ):
+                hit = (k, 1.0, 1.0)
+                break
             share_c = float((tk.query(pc, k=1, distance_upper_bound=tol)[0] <= tol).mean())
             if tc is None:
                 tc = cKDTree(pc)
@@ -406,7 +463,10 @@ def _nms(cands: list[Candidate], min_quality: float, passive: frozenset[str] = f
             continue
         k, share_c, share_k = hit
         kc = kept[k]
-        more_specific = len(c.tpl.pts) >= 1.25 * len(kc.tpl.pts) and share_k >= 0.7
+        # Sprint 11: "clearly more strokes" counts distinct ink, not sample points — a disc whose fill is exploded
+        # into many small paths has thousands of points on the same ink (Rubel: the wall light, 3757 points / 339
+        # cells, was "more specific" than the ceiling point, 2403 / 319, and took 61 + 38 of them)
+        more_specific = _ink_cells(c.tpl) >= 1.25 * _ink_cells(kc.tpl) and share_k >= 0.7
         # Sprint 10: a bare ring (circled-letter family) fits every circle; a drawing that contains the ring and
         # explains more ink (a camera: circle + cone) wins whenever it fits acceptably
         slack = RING_YIELD if getattr(kc.tpl, "ring", None) is not None else 0.15
@@ -415,6 +475,7 @@ def _nms(cands: list[Candidate], min_quality: float, passive: frozenset[str] = f
             and more_specific
             and c.tpl.id not in passive
             and c.quality >= max(min_quality, kc.quality - slack)
+            and _extra_on_ink(pc, trees[k], scene, tol) >= EXTRA_ON_INK
         ):
             c.runner_up, c.runner_up_id = kc.quality, kc.tpl.id
             kept[k] = c
@@ -474,5 +535,5 @@ def spot(
             alt = run(k)
             if sum(1 for c in alt if c.quality >= 0.7) > strong:
                 cands, res.scale, res.scale_estimated = alt, k, True
-    res.detections = _nms(cands, min_quality, passive)
+    res.detections = _nms(cands, min_quality, passive, scene)
     return res

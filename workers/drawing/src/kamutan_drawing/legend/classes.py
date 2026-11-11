@@ -96,7 +96,8 @@ RULES: tuple[Rule, ...] = (
     # --- switches
     _r("switch_2way", 0.85, "מחליף"),
     _r("switch_2way", 0.8, "מחלף"),
-    _r("switch_2way", 0.6, "מצלב"),
+    # Sprint 11 (Worker-Accuracy) — keep: the cross switch is its own class (three hooked tails; "מפסקים מצלבים" lines)
+    _r("switch_cross", 0.8, "מצלב"),
     _r("switch_single", 0.75, "מתג"),
     _r("switch_single", 0.75, "מפסק"),
     _r("switch_single", 0.6, "לחצן"),
