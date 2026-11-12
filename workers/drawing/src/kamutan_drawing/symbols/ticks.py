@@ -153,3 +153,141 @@ def resolve_by_ticks(cands: list[Candidate], templates: list[Template], scene: S
             c.runner_up_id, c.tpl = c.tpl.id, hit[0]
             swaps += 1
     return swaps
+
+
+# ----------------------------------------------------------------------------- lines across a solid disc
+# Sprint 11: the ceiling point is a filled disc with a cross through its centre; the wall light is the same disc with
+# one line through the centre and a bar TANGENT to it (on the wall side). Their fits differ by < 0.01. The position of
+# the lines relative to the disc is read directly.
+CENTRE_MAX = 0.3  # a line passing within this share of the radius of the disc's centre goes "through the centre"
+TANGENT_MIN, TANGENT_MAX = 0.7, 1.35  # … and one at about one radius is a tangent bar
+DISC_LINE_MIN, DISC_LINE_MAX = 0.9, 3.4  # line length in radii
+DISC_REACH = 0.3  # mm beyond the expected radius: a filled piece centred farther from the candidate is a neighbour's
+
+
+@dataclass(frozen=True)
+class DiscSignature:
+    radius: float  # mm, from the solid's area
+    centre: int  # distinct lines through the centre
+    tangent: int  # distinct tangent bars
+
+
+def _disc_lines(lines: np.ndarray, c: np.ndarray, r: float) -> tuple[int, int]:
+    if len(lines) == 0 or r <= 0:
+        return 0, 0
+    d = lines[:, 2:] - lines[:, :2]
+    ln = np.hypot(d[:, 0], d[:, 1])
+    mid = (lines[:, :2] + lines[:, 2:]) / 2
+    ok = (ln >= DISC_LINE_MIN * r) & (ln <= DISC_LINE_MAX * r) & (np.hypot(mid[:, 0] - c[0], mid[:, 1] - c[1]) <= 1.5 * r)
+    if not ok.any():
+        return 0, 0
+    d, ln, mid = d[ok], ln[ok], mid[ok]
+    u = d / ln[:, None]
+    off = (mid[:, 0] - c[0]) * -u[:, 1] + (mid[:, 1] - c[1]) * u[:, 0]  # signed distance of the line from the centre
+    ang = np.degrees(np.arctan2(u[:, 1], u[:, 0])) % 180.0
+    seen: list[tuple[float, float]] = []
+    n_c = n_t = 0
+    for a, o in zip(ang.tolist(), off.tolist(), strict=True):
+        key_o = abs(o)
+        if any(min(abs(a - a2), 180.0 - abs(a - a2)) <= ANGLE_TOL_DEG and abs(key_o - o2) <= OFFSET_MERGE for a2, o2 in seen):
+            continue
+        seen.append((a, key_o))
+        if key_o <= CENTRE_MAX * r:
+            n_c += 1
+        elif TANGENT_MIN * r <= key_o <= TANGENT_MAX * r:
+            n_t += 1
+    return n_c, n_t
+
+
+def _fill_centre(vs: VectorSheet, paths: np.ndarray, seg_ids: np.ndarray | None = None) -> tuple[np.ndarray, float] | None:
+    """(centre, radius) of the solid made of the filled ``paths`` (bbox centre of their ink; radius from the bbox).
+    ``seg_ids``: use only these segments of the paths."""
+    filled = paths[vs.path_fill_mode[paths] != 0]
+    if len(filled) == 0:
+        return None
+    if seg_ids is None:
+        s = vs.segs[np.isin(vs.seg_path, filled)]
+    else:
+        s = vs.segs[seg_ids[np.isin(vs.seg_path[seg_ids], filled)]]
+    if len(s) == 0:
+        return None
+    x0, x1 = float(min(s[:, 0].min(), s[:, 2].min())), float(max(s[:, 0].max(), s[:, 2].max()))
+    y0, y1 = float(min(s[:, 1].min(), s[:, 3].min())), float(max(s[:, 1].max(), s[:, 3].max()))
+    if abs((x1 - x0) - (y1 - y0)) > 0.15 * max(x1 - x0, y1 - y0):
+        return None  # not a disc
+    return np.array([(x0 + x1) / 2, (y0 + y1) / 2]), (x1 - x0 + y1 - y0) / 4
+
+
+def disc_signature(t: Template, vs: VectorSheet) -> DiscSignature | None:
+    if not t.entries:
+        return None
+    idx = np.asarray(t.entries[0].seg_idx, dtype=np.int64)
+    if len(idx) == 0:
+        return None
+    got = _fill_centre(vs, np.unique(vs.seg_path[idx]))
+    if got is None:
+        return None
+    c, r = got
+    stroke = (vs.path_fill_mode[vs.seg_path[idx]] == 0) & (vs.seg_kind[idx] == 0)
+    n_c, n_t = _disc_lines(np.asarray(vs.segs[idx][stroke], dtype=np.float64), c, r)
+    return DiscSignature(r, n_c, n_t) if n_c + n_t else None
+
+
+def disc_lines_at(sig: DiscSignature, c: Candidate, scene: Scene, vs: VectorSheet) -> tuple[int, int] | None:
+    """(lines through the centre, tangent bars) drawn at the candidate; None when no disc of that size is there."""
+    x0, y0, x1, y1 = c.bbox()
+    s = scene.segs
+    mid = (s[:, :2] + s[:, 2:]) / 2
+    inside = (mid[:, 0] >= x0 - PAD) & (mid[:, 0] <= x1 + PAD) & (mid[:, 1] >= y0 - PAD) & (mid[:, 1] <= y1 + PAD)
+    if not inside.any():
+        return None
+    # the disc's own pieces only: a neighbouring fitting 3 mm away must not stretch the solid's box
+    r_want = sig.radius * c.scale
+    ids_in = scene.seg_ids[inside]
+    paths_in = vs.seg_path[ids_in]
+    keep_paths = [
+        int(pth)
+        for pth in np.unique(paths_in)
+        if vs.path_fill_mode[pth] != 0
+        and float(np.hypot(*(mid[inside][paths_in == pth].mean(axis=0) - np.asarray(c.center)))) <= r_want + DISC_REACH
+    ]
+    ids = ids_in[np.isin(paths_in, keep_paths)]
+    got = _fill_centre(vs, np.asarray(keep_paths, dtype=np.int64), ids) if keep_paths else None
+    if got is None:
+        return None
+    centre, r = got
+    if abs(r - sig.radius * c.scale) > 0.2 * sig.radius * c.scale:
+        return None
+    near = np.hypot(mid[:, 0] - centre[0], mid[:, 1] - centre[1]) <= 2.0 * r
+    ids2 = scene.seg_ids[near]
+    stroke = (vs.path_fill_mode[vs.seg_path[ids2]] == 0) & (vs.seg_kind[ids2] == 0)
+    return _disc_lines(np.asarray(s[near][stroke], dtype=np.float64), centre, r)
+
+
+def resolve_by_disc_lines(cands: list[Candidate], templates: list[Template], scene: Scene, vs: VectorSheet) -> int:
+    """Swap a candidate to the sibling disc drawing (same radius, similar size) whose line layout the plan shows."""
+    sigs = {t.id: disc_signature(t, vs) for t in templates}
+    swaps = 0
+    for c in cands:
+        mine = sigs.get(c.tpl.id)
+        if mine is None:
+            continue
+        sibs = [
+            o
+            for o in templates
+            if o.id != c.tpl.id
+            and (so := sigs.get(o.id)) is not None
+            and (so.centre, so.tangent) != (mine.centre, mine.tangent)
+            and abs(so.radius - mine.radius) <= 0.1 * mine.radius
+            and abs(o.size - c.tpl.size) <= SIBLING_SIZE * max(o.size, c.tpl.size)
+        ]
+        if not sibs:
+            continue
+        seen = disc_lines_at(mine, c, scene, vs)
+        if seen is None or seen == (mine.centre, mine.tangent):
+            continue
+        hit = [o for o in sibs if (so := sigs[o.id]) is not None and (so.centre, so.tangent) == seen]
+        if len(hit) == 1:
+            c.runner_up_id, c.tpl = c.tpl.id, hit[0]
+            swaps += 1
+    return swaps

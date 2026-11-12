@@ -44,7 +44,7 @@ TERMINATOR_MM = 0.8  # a filled path this small is a leader's dot / arrowhead, n
 RUN_ON_MM = 1.0  # a leader's path reaches at least this far past the posed symbol box
 # Sprint 11 (Worker-Accuracy): a "more specific" drawing may replace a kept one only when the strokes it adds are
 # really drawn here — at least this share of its points that the kept drawing does not explain lie on ink
-EXTRA_ON_INK = 0.6
+EXTRA_ON_INK = 0.8
 EXTRA_MIN_SHARE = 0.03  # fewer added points than this share of the drawing: nothing to check
 EXTRA_INK_TOL = 0.35  # mm
 EXPLODED_FILL = 6  # filled paths in one legend drawing from which its solid counts as exploded

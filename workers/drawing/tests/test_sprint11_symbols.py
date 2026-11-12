@@ -178,3 +178,88 @@ def test_cross_switch_is_its_own_class_and_its_own_drawing() -> None:
     two, three = _tpl(vs, list(range(14)), "two"), _tpl(vs, list(range(14, 29)), "three")
     assert not TP.same_drawing(two, three)
     assert TP.same_drawing(two, _tpl(vs, list(range(14)), "again"))
+
+
+def _disc(s: Sheet, cx: float, cy: float, r: float = 1.9) -> None:
+    import math
+
+    pts = [(cx + r * math.cos(2 * math.pi * k / 24), cy + r * math.sin(2 * math.pi * k / 24)) for k in range(24)]
+    s.fill(pts, (255, 255, 0))
+
+
+def _ceiling(s: Sheet, cx: float, cy: float) -> None:
+    _disc(s, cx, cy)
+    s.line([(cx - 2.7, cy), (cx + 2.7, cy)], BLACK)
+    s.line([(cx, cy - 2.7), (cx, cy + 2.7)], BLACK)
+
+
+def _wall(s: Sheet, cx: float, cy: float, side: float = 1.0) -> None:
+    _disc(s, cx, cy)
+    s.line([(cx - 2.7, cy), (cx + 2.7, cy)], BLACK)
+    s.line([(cx + side * 2.0, cy - 2.3), (cx + side * 2.0, cy + 2.3)], BLACK)  # the bar on the wall side, tangent
+
+
+def test_lines_across_the_disc_tell_a_ceiling_point_from_a_wall_light() -> None:
+    """Rubel / Yahav / Achituv: disc + cross through the centre = ceiling point, disc + line + tangent bar = wall
+    light (bar on either side); the fits differ by < 0.01."""
+    from kamutan_drawing.legend.parse import LegendEntry
+    from kamutan_drawing.symbols import ticks as TK
+
+    s = Sheet()
+    _ceiling(s, 20.0, 20.0)  # paths 0..2
+    _wall(s, 40.0, 20.0)  # paths 3..5
+    _ceiling(s, 100.0, 100.0)
+    _wall(s, 140.0, 100.0, side=-1.0)
+    _wall(s, 180.0, 100.0)
+    _wall(s, 184.5, 100.0)  # a second fitting right beside it
+    vs = s.build()
+
+    def tpl(paths: list[int], tid: str) -> TP.Template:
+        t = _tpl(vs, paths, tid)
+        idx = np.where(np.isin(vs.seg_path, paths))[0]
+        t.entries = [LegendEntry(0, "lg0", "symbol", (0, 0, 1, 1), None, tid, 0.9, "", idx, None, 0.0, tid)]
+        return t
+
+    ceil_t, wall_t = tpl([0, 1, 2], "ceiling"), tpl([3, 4, 5], "wall")
+    sc, sw = TK.disc_signature(ceil_t, vs), TK.disc_signature(wall_t, vs)
+    assert sc is not None and sw is not None and (sc.centre, sc.tangent) == (2, 0) and (sw.centre, sw.tangent) == (1, 1)
+    scene = MA.build_scene(vs, [(0.0, 0.0, 60.0, 40.0)])
+    a, b = _cand(wall_t, (100.0, 100.0), 0.86), _cand(ceil_t, (140.0, 100.0), 0.86)
+    c, d = _cand(ceil_t, (180.0, 100.0), 0.86), _cand(wall_t, (140.0, 100.0), 0.86)
+    assert TK.resolve_by_disc_lines([a, b, c, d], [ceil_t, wall_t], scene, vs) == 3
+    assert [x.tpl.id for x in (a, b, c, d)] == ["ceiling", "wall", "wall", "wall"]
+    # nothing drawn there (no disc): the candidate is left alone
+    e = _cand(wall_t, (300.0, 200.0), 0.86)
+    assert TK.resolve_by_disc_lines([e], [ceil_t, wall_t], scene, vs) == 0 and e.tpl.id == "wall"
+
+
+def test_a_note_box_against_the_legend_is_a_frame_not_a_symbol() -> None:
+    """Rubel ground lighting: a note boxed right above the legend, drawn 0.3 mm out of level, is not a "rule"; as a
+    symbol group centred between the two symbol columns it chained them into one (rows 42 mm wide, a bogus row for
+    the box). A group nearly as wide as the table is a frame."""
+    from kamutan_drawing.legend.parse import parse_legends
+    from kamutan_drawing.ocr.dictionary import TextSpan
+
+    s = Sheet()
+    spans: list[TextSpan] = []
+    x0, x1, y0, rows = 100.0, 180.0, 50.0, 5
+    s.rect(x0, y0, x1, y0 + 6.0 * rows, BLACK)
+    for r in range(1, rows):
+        s.line([(x0, y0 + 6.0 * r), (x1, y0 + 6.0 * r)], BLACK)
+    labels = ["שקע בודד", "שקע כח", "מתג הפעלה", "נק' רמקול", "פעמון", "מצלמה", "קיבורד", "גלאי עשן", "וונטה", "תרמוסטט"]
+    k = 0
+    for r in range(rows):
+        cy = y0 + 6.0 * r + 3.0
+        for cx, lx in ((175.0, 150.0), (135.0, 110.0)):
+            s.line([(cx - 2, cy - 2), (cx + 2, cy - 2), (cx + 2, cy + 2), (cx - 2, cy + 2), (cx - 2, cy - 2)], RED)
+            s.line([(cx - 2, cy - 2 + 0.5 * (k % 5)), (cx + 2, cy + 2)], RED)
+            spans.append(TextSpan("s", (lx, cy - 1.0, lx + 16.0, cy + 1.0), labels[k], 0.9, 2.0, 0, 8))
+            k += 1
+    spans.append(TextSpan("s", (168.0, y0 - 11.0, 180.0, y0 - 8.0), "מקרא:", 0.9, 2.5, 0, 5))
+    # the note box: long sides 0.3 mm out of level, touching the table's top
+    s.line([(x0 + 0.5, y0 - 6.5), (x1, y0 - 6.8), (x1, y0 - 0.8), (x0 + 0.5, y0 - 0.5), (x0 + 0.5, y0 - 6.5)], RED)
+    spans.append(TextSpan("s", (x0 + 4.0, y0 - 5.5, x1 - 4.0, y0 - 2.0), "יש לבצע חיזוקי עץ לכל המאווררים", 0.9, 3.5, 0, 26))
+    leg = parse_legends(s.build(), spans)
+    entries = [e for lg in leg.legends for e in lg.entries]
+    assert sorted(e.label for e in entries) == sorted(labels)
+    assert all(abs((e.symbol_bbox[2] - e.symbol_bbox[0]) - 4.0) < 0.3 for e in entries)
