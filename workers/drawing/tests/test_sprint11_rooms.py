@@ -263,3 +263,88 @@ def test_room_floors_follow_a_floor_fix():
     assert rooms[0]["floor"] == "ground"  # in memory only
     assert remap_room_floors({**sheet, "confirmed": True}, rooms) is rooms
     assert remap_room_floors({}, rooms) is rooms
+
+
+# ----------------------------------------------------------------------------------------------- round 2
+def _one_way_hatch(c, ps, x0, y0, x1, y1, step=0.63):
+    w, h = x1 - x0, y1 - y0
+    k = -h
+    while k < w:
+        a = (x0 + max(k, 0.0), y0 + max(-k, 0.0))
+        b = (x0 + min(k + h, w), y0 + min(h, w - k))
+        if b[0] - a[0] > 0.5:
+            stroke_line(c, a, b, ps, 0.04, (0.73, 0.73, 0.73))
+        k += step
+
+
+def _pier_facade(c, ps):
+    """Yahav ground floor: the east side is two windows (four frame lines each) either side of a hatched pier."""
+    _shell(c, ps, east=False)
+    x0, x1 = RX1 - T, RX1
+    py0, py1 = 128.0, 138.0  # the pier: 0.5 m of wall drawn with a one-way hatch, no fill
+    for a, b in (((x0, py0), (x1, py0)), ((x0, py1), (x1, py1)), ((x0, py0), (x0, py1)), ((x1, py0), (x1, py1))):
+        stroke_line(c, a, b, ps, 0.17)
+    _one_way_hatch(c, ps, x0, py0, x1, py1)
+    for ya, yb in ((RY0 + T, py0), (py1, RY1 - T)):
+        for x in (x0, x0 + 2.1, x0 + 3.0, x1):
+            stroke_line(c, (x, ya), (x, yb), ps, 0.17)
+
+
+def test_hatched_pier_between_two_windows_closes_the_facade():
+    vs = _vs(_pier_facade)
+    piers: list = []
+    hatched_walls(vs, BOX, M, piers)
+    assert len(piers) == 1 and abs(piers[0].bounds[1] - 128.0) < 1.0 and abs(piers[0].bounds[3] - 138.0) < 1.0
+    rooms = segment(vs, [SimpleText((130, 130, 150, 134), "סלון", 0.95)], [REGION], 50)
+    assert [r.name for r in rooms] == ["סלון"] and 11.0 < rooms[0].area_m2 < 13.5
+
+
+def test_open_ground_labels_and_plot_sized_faces_are_not_rooms():
+    from kamutan_drawing.rooms.names import is_outdoor_label
+    from kamutan_drawing.rooms.segment import MAX_OPEN_ROOM_M2
+
+    assert is_outdoor_label("דשא") and is_outdoor_label("ערוגה עם צמחייה") and is_outdoor_label("שטח מרוצף")
+    assert not is_outdoor_label("סלון") and not is_outdoor_label("מיקום מדויק יסומן בשטח")
+    assert 100.0 < MAX_OPEN_ROOM_M2 <= 200.0
+
+
+def test_fixture_without_an_own_room_lands_in_the_canonical_room_by_registration():
+    from kamutan_drawing.boq.aggregate import _room_fixtures
+    from kamutan_drawing.boq.dedup import Det
+
+    canon, plumb = _floor("con"), _floor("pl", dx=62.5, dy=-41.0, types=("other",) * 3)
+    loc = FloorLocator({"con": canon, "pl": plumb}, canon, {"con": 50, "pl": 50})
+    d = Det("pl", "v1", "d1", "fixture_shower", 120 + 62.5, 125 - 41.0, "yellow", [], "first", "new", None, "plumbing")
+    fx, floors = _room_fixtures([d], {}, canon, loc)
+    assert fx == {"con__r_1": frozenset({"fixture_shower"})} and floors == {"first"}
+    assert _room_fixtures([d], {}, canon)[0] == {}  # without the locator: no room on its own sheet, no mapping
+
+
+def test_outline_registration_when_the_sheets_closed_different_rooms():
+    from kamutan_drawing.rooms.crosssheet import register_outlines
+
+    canon = _floor("con")
+    # the electrical sheet lacks the bath / bedroom partition: one merged room, no equal-area pair with the canon
+    merged = R("el", "r_1", "first", 18.0, _box(100 + 30, 100 + 50, 124, 60))
+    living = R("el", "r_2", "first", 28.0, _box(100 + 30, 164 + 50, 120, 96))
+    assert register([merged, living], canon) is None
+    sh = register_outlines([merged, living], canon)
+    assert sh is not None and abs(sh.dx + 30.0) < 1.5 and abs(sh.dy + 50.0) < 2.5
+    loc = FloorLocator({"con": canon, "el": [merged, living]}, canon, {"con": 50, "el": 50})
+    assert loc.locate("el", "first", 120 + 30, 125 + 50)[1].type == "bathroom"
+    assert register_outlines([R("x", "r_1", "first", 3.0, _box(0, 0, 30, 40))], canon) is None  # too little to trust
+
+
+def test_an_open_plan_floor_holding_the_guest_wc_is_not_a_bathroom():
+    from kamutan_drawing.rooms.types import room_type
+
+    assert room_type("מזווה", ["fixture_wc_concealed", "fixture_basin", "fixture_kitchen_sink"], 71.8) == ("storage", False, [])
+    assert room_type(None, ["fixture_wc_concealed"], 71.8)[:2] == ("other", False)
+    assert room_type(None, ["fixture_wc_concealed", "fixture_basin"], 3.0)[:2] == ("wc", True)
+    assert room_type("חדר רחצה", ["fixture_shower"], 30.0)[:2] == ("bathroom", True)  # named: its size does not matter
+
+
+def test_real_words_are_not_fuzzy_room_names():
+    for w in ("מדפסת", "מסנן", "שירות", "עבור"):
+        assert match_room_name(w) is None, w
+    assert match_room_name("מרפסח").name == "מרפסת"  # a misread letter still matches

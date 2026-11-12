@@ -28,7 +28,7 @@ from shapely.geometry.base import BaseGeometry
 from ..ingest.pdf_vector import VectorSheet
 from ..types_sprint2 import Region, Room, level_for
 from .geometry import envelope_of, room_geometry
-from .names import NameMatch, match_room_name
+from .names import NameMatch, is_outdoor_label, match_room_name
 from .niches import NICHE_TYPE, R_NICHE_FIXTURES, R_NICHE_SHAPE, NicheCandidate, niche_candidates, niche_evidence, shape_hits_in
 from .reference import ReferenceWalls, align_reference
 from .types import is_laundry, room_type, type_from_name
@@ -41,6 +41,9 @@ MIN_AREA_M2 = 1.0
 MIN_WIDTH_M = 0.5
 MAX_OPEN_SHARE = 0.15  # of the perimeter not bounded by walls -> exterior, dropped
 MAX_ROOM_SHARE = 0.6  # of the region area -> exterior / background
+MAX_OPEN_ROOM_M2 = 150.0  # a not-closed face above this is not a room
+OPEN_PLAN_M2 = 25.0  # above this a storage label (pantry, wardrobe) names a piece of furniture, not the room
+OUTDOOR_MIN_LABELS = 2  # open-ground labels inside a not-closed face that make it a garden, not a room
 TEXT_CONF_DEFAULT = 0.7  # text items without a confidence (raw OCR TextLine)
 
 R_NOT_CLOSED = "חדר לא סגור"
@@ -116,39 +119,49 @@ def _faces(ws: WallSet, bx: Polygon, mm_per_m: float) -> tuple[list[_Face], Base
     big_r = ENVELOPE_GAP_M * mm_per_m
     out: list[_Face] = []
     glazing = shapely.union_all([g.buffer(0.2, join_style="mitre") for g in ws.glazing]) if ws.glazing else None
-    leaking: list[tuple[Polygon, bool]] = []  # (space, cut by a glazing band)
-    for f in _polys(free):
-        if not f.intersects(border):
-            out.append(_Face(f, True, 0.0))
-            continue
-        if glazing is None or not f.intersects(glazing):
-            leaking.append((f, False))
-            continue
-        # Sprint 11: a space that leaks to the outside is cut by the glazing bands (vitrines whose leaves / broken
-        # frame lines no line pair spans): the pieces that no longer reach the border are closed rooms
-        pieces = _polys(f.difference(glazing))
-        if all(piece.intersects(border) for piece in pieces):
-            leaking.append((f, False))  # the bands close nothing here: the space stays as it was
-            continue
-        for piece in pieces:
-            if piece.intersects(border):
-                leaking.append((piece, True))
-            else:
-                out.append(_Face(piece, True, 0.0))
-    # what bounds a leaking space: the walls — plus the glazing bands for the spaces they cut (rooms that are closed
-    # without them, and leaking spaces they do not touch, never see them)
     shells: dict[bool, tuple[BaseGeometry, BaseGeometry]] = {}
-    for f, cut in leaking:
+    room_mm2 = MIN_AREA_M2 * mm_per_m**2
+
+    def open_faces(f: Polygon, cut: bool) -> list[_Face]:
+        """The pieces of a leaking space inside the building envelope, with the share of their outline not on a wall.
+        ``cut``: the glazing bands count as walls."""
         if cut not in shells:
             sh = w1c.union(glazing) if cut and glazing is not None else w1c
             shells[cut] = (_fill_holes(sh.buffer(big_r, quad_segs=4).buffer(-big_r, quad_segs=4)), sh.buffer(0.5))
         env, wb = shells[cut]
+        res: list[_Face] = []
         for piece in _polys(f.intersection(env)):
             if piece.area <= 0:
                 continue
             per = piece.exterior.length
             walled = piece.exterior.intersection(wb).length
-            out.append(_Face(piece, False, max(0.0, 1.0 - walled / max(per, 1e-6))))
+            res.append(_Face(piece, False, max(0.0, 1.0 - walled / max(per, 1e-6))))
+        return res
+
+    for f in _polys(free):
+        if not f.intersects(border):
+            out.append(_Face(f, True, 0.0))
+            continue
+        plain = open_faces(f, False)
+        if glazing is None or not f.intersects(glazing):
+            out.extend(plain)
+            continue
+        if any(p.poly.area >= room_mm2 and p.open_share <= MAX_OPEN_SHARE for p in plain):
+            out.extend(plain)  # the walls alone already give a room here: the bands are not needed
+            continue
+        # Sprint 11: a space that leaks to the outside and yields no room is cut by the glazing bands (vitrines whose
+        # leaves / broken frame lines no line pair spans, hatched piers): pieces that no longer reach the border are
+        # closed rooms, the others are judged against walls + bands
+        cut_faces: list[_Face] = []
+        for piece in _polys(f.difference(glazing)):
+            if piece.intersects(border):
+                cut_faces.extend(open_faces(piece, True))
+            else:
+                cut_faces.append(_Face(piece, True, 0.0))
+        if any(c.poly.area >= room_mm2 and (c.closed or c.open_share <= MAX_OPEN_SHARE) for c in cut_faces):
+            out.extend(cut_faces)
+        else:
+            out.extend(plain)  # the bands give no room either: the space stays as it was
     return out, w1c
 
 
@@ -167,6 +180,11 @@ def _names_in(p: Polygon, texts: list[tuple[Point, str, float]]) -> list[tuple[N
             found.append((m, m.score * conf))
     found.sort(key=lambda t: -t[1])
     return found
+
+
+def _outdoor_labels(p: Polygon, texts: list[tuple[Point, str, float]]) -> int:
+    pp = shapely.prepared.prep(p)
+    return sum(1 for pt, text, _ in texts if is_outdoor_label(text) and pp.contains(pt))
 
 
 def _simplify(p: Polygon) -> list[tuple[float, float]]:
@@ -259,6 +277,10 @@ def segment(
                 continue
             if not f.closed and f.open_share > MAX_OPEN_SHARE:
                 continue
+            if not f.closed and a_m2 > MAX_OPEN_ROOM_M2:
+                continue  # Sprint 11: larger than any open-plan floor — a plot inside its garden walls (Rubel 315 m²)
+            if not f.closed and _outdoor_labels(f.poly, texts) >= OUTDOOR_MIN_LABELS:
+                continue  # Sprint 11: a plot enclosed by garden walls (lawn, planting, paving labels) is not a room
             kept.append((f, a_m2))
         # reading order: top to bottom, right to left
         kept.sort(key=lambda fa: (round(fa[0].poly.centroid.y / 20.0), -fa[0].poly.centroid.x))
@@ -269,6 +291,9 @@ def segment(
             if not f.closed:
                 reasons.append(R_NOT_CLOSED)
             names = _names_in(f.poly, texts)
+            if a_m2 > OPEN_PLAN_M2:
+                # Sprint 11: "מזווה" / "ארונות" inside an open-plan floor label a cupboard, not the floor
+                names = [n for n in names if type_from_name(n[0].name) != "storage"]
             distinct: list[tuple[NameMatch, float]] = []
             for m, c in names:
                 if all(m.name != d[0].name for d in distinct):

@@ -26,11 +26,13 @@ HATCH_STROKE_MM = (1.5, 40.0)  # hatch stroke length, paper mm
 HATCH_WALL_T_M = (0.08, 0.45)  # thickness of a hatched wall, real metres
 HATCH_WALL_MIN_LEN_M = 0.6
 HATCH_MAX_SEGS = 60000
+PIER_MAX_M2 = 1.0
 
 BAND_PX_PER_MM = 4.0
 BAND_MIN_LEN_M = 0.5  # shortest glazing band
 BAND_MAX_LEN_M = 9.0
 BAND_MAX_M = 0.2  # the leaves / frame lines of one glazing lie within this width
+BAND_TOTAL_M = 0.4  # … and the whole bundle (sills at both wall faces) within this
 BAND_STROKE_MIN_M = 0.3  # a stroke shorter than this is not a frame line
 BAND_REACH_M = 0.12  # a band end this close to a wall touches it
 BAND_MAX_PX = 60_000_000
@@ -44,8 +46,14 @@ def _poly_parts(g: BaseGeometry) -> list[Polygon]:
     return [p for p in getattr(g, "geoms", []) if isinstance(p, Polygon)]
 
 
-def hatched_walls(vs: VectorSheet, bx: tuple[float, float, float, float], mm_per_m: float) -> list[Polygon]:
-    """Wall-thick regions filled with a diagonal cross hatch (concrete walls drawn without a fill) inside ``bx``."""
+def hatched_walls(
+    vs: VectorSheet, bx: tuple[float, float, float, float], mm_per_m: float, piers: list[Polygon] | None = None
+) -> list[Polygon]:
+    """Wall-thick regions filled with a diagonal cross hatch (concrete walls drawn without a fill) inside ``bx``.
+
+    ``piers`` (out): rectangular, wall-thick regions of at most ``PIER_MAX_M2`` with a *one-way* diagonal hatch — the
+    wall ends / columns between the windows of a facade (Yahav ground floor); the caller keeps the ones that touch a
+    filled wall."""
     from ..geometry.hatches import hatch_families, hatch_regions
     from ..geometry.prims import stroked_segments
 
@@ -62,6 +70,19 @@ def hatched_walls(vs: VectorSheet, bx: tuple[float, float, float, float], mm_per
             continue
         for reg in hatch_regions(hatch_families(segs, sel)):
             if reg.pattern != "cross":
+                if piers is not None and reg.pattern == "lines":
+                    # a pier / wall end drawn with a one-way diagonal hatch (kept only where it touches a filled wall)
+                    g = reg.poly.buffer(-0.25 * float(reg.spacing or 0.0), join_style="mitre")
+                    for p in _poly_parts(g):
+                        t = 2.0 * p.area / max(p.length, 1e-6)
+                        rect = p.minimum_rotated_rectangle
+                        if (
+                            HATCH_WALL_T_M[0] * mm_per_m <= t <= HATCH_WALL_T_M[1] * mm_per_m
+                            and p.area <= PIER_MAX_M2 * mm_per_m**2
+                            and rect.area > 0
+                            and p.area / rect.area >= 0.8
+                        ):
+                            piers.append(rect if isinstance(rect, Polygon) else p)
                 continue
             # the outline lies half a hatch spacing outside the strokes' ends: back to the wall faces
             g = reg.poly.buffer(-0.25 * float(reg.spacing or 0.0), join_style="mitre")
@@ -85,6 +106,8 @@ def _bands_h(lines: np.ndarray, walls: np.ndarray, px_per_m: float) -> list[tupl
     h, w = lines.shape
     gap = max(2, round(BAND_MAX_M * px_per_m))
     reach = max(2, round(BAND_REACH_M * px_per_m))
+    # the outline strokes of the walls themselves are not glazing: without them a band ends where its opening ends
+    lines = lines & ~ndimage.binary_dilation(walls, structure=np.ones((3, 3), bool))
     # strokes closer than the band width (across) merge into one blob; along the band small breaks (mullions) close
     blob = ndimage.binary_closing(np.pad(lines, gap), structure=np.ones((gap, 1), bool))[gap:-gap, gap:-gap]
     blob = ndimage.binary_closing(np.pad(blob, reach), structure=np.ones((1, reach), bool))[reach:-reach, reach:-reach]
@@ -100,7 +123,7 @@ def _bands_h(lines: np.ndarray, walls: np.ndarray, px_per_m: float) -> list[tupl
         ln = x1 - x0
         if not (BAND_MIN_LEN_M * px_per_m <= ln <= BAND_MAX_LEN_M * px_per_m):
             continue
-        if not (2 <= y1 - y0 <= gap + 2):
+        if not (2 <= y1 - y0 <= round(BAND_TOTAL_M * px_per_m) + 2):
             continue
         comp = lab[y0:y1, x0:x1] == k
         rows = (lines[y0:y1, x0:x1] & comp).sum(axis=1)

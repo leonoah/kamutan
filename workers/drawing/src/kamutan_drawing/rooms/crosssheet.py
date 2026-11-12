@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import shapely
+import shapely.affinity
 from shapely.geometry import Point, Polygon
 from shapely.geometry.base import BaseGeometry
 
@@ -36,9 +37,11 @@ SINGLE_BOX_TOL_MM = 0.6
 WALL_GROW_M = 0.25  # the building outline = the rooms grown by this (walls between and around them)
 OUTLINE_CLOSE_M = 1.0  # … and closed by this radius (stair wells, shafts, unsegmented corners)
 NEAR_ROOM_MM = 1.0
-TRUST_MIN_ROOMS = 3  # "outside the outline = outdoors" needs a floor model that is a building, not one closed room
+TRUST_MIN_ROOMS = 2  # "outside the outline = outdoors" needs a floor model that is a building, not one closed room
 TRUST_MIN_M2 = 30.0
-TRUST_MIN_SHARE = 0.6
+TRUST_MIN_SHARE = 0.5  # the majority of the sheet's accessories are inside the building
+OUTLINE_MIN_IOU = 0.6
+OUTLINE_MIN_M2 = 20.0
 DEFAULT_SCALE = 50
 
 
@@ -129,6 +132,31 @@ def register(src: Sequence[RoomLike], dst: Sequence[RoomLike]) -> Shift | None:
     return Shift(round(best[2], 3), round(best[3], 3), best[0])
 
 
+def register_outlines(src: Sequence[RoomLike], dst: Sequence[RoomLike]) -> Shift | None:
+    """Fallback registration when the two sheets closed their rooms differently (a partition missing on one of them, so
+    no two rooms have equal areas): the translation that best overlays the room *outlines* (``align.align_polygons``),
+    accepted when the moved rooms and the target rooms overlap by ``OUTLINE_MIN_IOU`` and both sides have at least
+    ``OUTLINE_MIN_M2`` of rooms."""
+    from .align import align_polygons
+
+    if sum(r.area_m2 for r in src) < OUTLINE_MIN_M2 or sum(r.area_m2 for r in dst) < OUTLINE_MIN_M2:
+        return None
+    pa = [list(r.polygon) for r in src if len(r.polygon) >= 3]
+    pb = [list(r.polygon) for r in dst if len(r.polygon) >= 3]
+    if not pa or not pb:
+        return None
+    al = align_polygons(pa, pb)
+    if al is None:
+        return None
+    # ``al.iou`` is the overlap of the outlines; what must agree is the floor area the two sheets cover
+    ua = shapely.affinity.translate(shapely.union_all([Polygon(q).buffer(0) for q in pa]), al.dx, al.dy)
+    ub = shapely.union_all([Polygon(q).buffer(0) for q in pb])
+    union = ua.union(ub).area
+    if union <= 0 or ua.intersection(ub).area / union < OUTLINE_MIN_IOU:
+        return None
+    return Shift(round(al.dx, 3), round(al.dy, 3), 0)
+
+
 def _fill_holes(g: BaseGeometry) -> BaseGeometry:
     polys = [g] if isinstance(g, Polygon) else [p for p in getattr(g, "geoms", []) if isinstance(p, Polygon)]
     return shapely.union_all([Polygon(p.exterior) for p in polys]) if polys else g
@@ -184,7 +212,10 @@ class FloorLocator:
                 tgt = [r for r in canon if not getattr(r, "niche", False)]
                 s_own, s_tgt = self._scales.get(sheet_id), self._scales.get(canon[0].sheet_id)
                 same_scale = not (s_own and s_tgt) or s_own == s_tgt
-                self._shift[key] = register(own, tgt) if same_scale else None
+                sh = register(own, tgt) if same_scale else None
+                if sh is None and same_scale:
+                    sh = register_outlines(own, tgt)
+                self._shift[key] = sh
             self.stats["registered" if self._shift[key] is not None else "unregistered"] += 1
         return self._shift[key]
 
@@ -249,4 +280,14 @@ def remap_room_floors(sheet_doc: Mapping[str, Any], room_docs: list[dict[str, An
     return [{**r, "floor": new[0]} if r.get("floor") == old[0] else r for r in room_docs]
 
 
-__all__ = ["INSIDE", "OUTDOOR", "UNKNOWN", "FloorLocator", "Shift", "building_outline", "register", "remap_room_floors"]
+__all__ = [
+    "INSIDE",
+    "OUTDOOR",
+    "UNKNOWN",
+    "FloorLocator",
+    "Shift",
+    "building_outline",
+    "register",
+    "register_outlines",
+    "remap_room_floors",
+]

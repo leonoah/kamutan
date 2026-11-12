@@ -61,6 +61,9 @@ _DIGITS = re.compile(r"[0-9]+")
 _QUALIFIERS = {normalise(w) for w in ("כללי", "הורים", "ילדים", "ראשי", "ראשית", "משפחתי", "קיים", "חדש", "קטן", "גדול")}
 
 
+_NOT_NAMES = {normalise(w) for w in ("מדפסת", "מסנן", "שירות", "עבור", "מקרר", "מדיח", "מיקרו", "מזגן", "מחשב", "מסך")}
+
+
 @dataclass(frozen=True)
 class NameMatch:
     name: str  # canonical
@@ -115,7 +118,10 @@ def match_room_name(text: str) -> NameMatch | None:
             best = NameMatch(canon, score, text)
     if best is not None:
         return best
-    # OCR noise: fuzzy match of the whole label
+    # OCR noise: fuzzy match of the whole label — never for a word that is itself something else (Sprint 11: the
+    # "מדפסת" in a study was read as מרפסת, the pool's "מסנן" as מחסן, "שירות" as שירותים)
+    if core in _NOT_NAMES:
+        return None
     for v, canon in _VARIANTS:
         if len(v) < 3 or abs(len(v) - len(core)) > max(2, len(v) // 3):
             continue
@@ -123,3 +129,18 @@ def match_room_name(text: str) -> NameMatch | None:
         if sim >= 0.75 and (best is None or sim > best.score):
             best = NameMatch(canon, sim * 0.9, text)
     return best
+
+
+# Sprint 11: labels of open ground (a face holding one of them is a garden / terrace, not a room of the house)
+OUTDOOR_WORDS: tuple[str, ...] = tuple(
+    normalise(w) for w in ("דשא", "צמחייה", "צמחיה", "ערוגה", "גינה", "בריכה", "ריצוף חוץ", "שטח מרוצף", "גבול מגרש", "קו מגרש")
+)
+
+
+def is_outdoor_label(text: str) -> bool:
+    """A text that labels open ground ("דשא", "ערוגה עם צמחייה", "שטח מרוצף")."""
+    if not text or not _HEB.search(text) or len(text) > 40:
+        return False
+    n = _DIGITS.sub("", normalise(text))
+    bounds = _word_bounds(text)
+    return any(_at_word_bounds(n, w, bounds) for w in OUTDOOR_WORDS)

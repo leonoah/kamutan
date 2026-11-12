@@ -45,6 +45,7 @@ NAME_TYPES: dict[str, str] = {
 _ORDER = ("bathroom", "wc", "kitchen", "bedroom", "living", "storage", "corridor", "stairs", "balcony", "courtyard", "other")
 WET_TYPES = frozenset({"bathroom", "wc"})
 WET_FIXTURES = frozenset({"fixture_wc_concealed", "fixture_wc_monoblock", "fixture_basin", "fixture_shower", "fixture_bath"})
+MAX_FIXTURE_TYPED_M2 = 25.0  # sanitary fixtures type / wet a room only up to this size
 DRY_NAMED = frozenset({"bedroom", "living", "corridor", "stairs", "storage", "balcony"})
 
 
@@ -74,6 +75,11 @@ def room_type(name: str | None, fixture_classes: Iterable[str], area_m2: float) 
     t = by_name or "other"
     has_wc = bool(cls & {"fixture_wc_concealed", "fixture_wc_monoblock"})
     has_wash = bool(cls & {"fixture_shower", "fixture_bath"})
+    if area_m2 > MAX_FIXTURE_TYPED_M2 and by_name not in WET_TYPES:
+        # Sprint 11: an open-plan floor that holds the guest WC (its partition not closed) is not a bathroom — a room
+        # this large is typed by its name only (Achituv ground plumbing: 71.8 m² "bathroom" took the kitchen sink)
+        has_wc = has_wash = False
+        cls = cls - WET_FIXTURES
     if has_wash and t not in ("bathroom",):
         if by_name in (None, "wc", "other", "storage"):
             t = "bathroom"

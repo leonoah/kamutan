@@ -42,6 +42,7 @@ WINDOW_STRAIGHT_M = 0.15  # a frame / glass polyline stays within this of its ch
 WINDOW_PATH_RATIO = 1.35  # … and its path is at most this × its chord
 WALL_T_M = (0.06, 0.6)  # wall thickness range, real metres
 BORROW_TOL_MM = 1.0  # reference walls closer than this to own walls are the same wall (alignment noise)
+PIER_NEAR_M = 3.0  # a hatched pier this close to a filled wall belongs to the same building
 DOMINANT_WALL_SHARE = 0.5  # of the largest fill colour's area must be wall-shaped for it to be "the walls"
 
 
@@ -185,16 +186,24 @@ def extract_walls(
         stats["fillPaths"] = float(len(parts))
         stats["dominantFill"] = float(dom[0] * 65536 + dom[1] * 256 + dom[2])
 
+    soft_piers: list[Polygon] = []
     # Sprint 11: concrete walls drawn as a cross hatch between two thin lines (no fill) — only next to the filled
     # walls of a drawing (a hatched detail elsewhere on the sheet is not a wall of the plan)
     if parts:
         try:
-            hatched = hatched_walls(vs, box, mm_per_m)
+            piers: list[Polygon] = []
+            hatched = hatched_walls(vs, box, mm_per_m, piers)
         except Exception:  # noqa: BLE001 - best effort: a geometry error must not lose the filled walls
-            hatched = []
-        if hatched:
-            near_fill = shapely.union_all([p.buffer(0.05) for p in parts]).buffer(0.5 * mm_per_m)
+            hatched, piers = [], []
+        if hatched or piers:
+            fill_u = shapely.union_all([p.buffer(0.05) for p in parts])
+            near_fill = fill_u.buffer(0.5 * mm_per_m)
             keep_h = [g for g in hatched if g.intersects(near_fill)]
+            # a hatched pier continues a filled wall: it stands by one and is not itself already filled. Piers are soft
+            # evidence (a hatched sill looks the same): like the glazing bands they only close spaces that leak
+            # (the pier between two windows of a facade touches no filled wall: within ``PIER_NEAR_M`` of one)
+            touch = fill_u.buffer(PIER_NEAR_M * mm_per_m)
+            soft_piers = [g for g in piers if g.intersects(touch) and g.intersection(fill_u).area < 0.3 * g.area]
             parts.extend(keep_h)
             stats["hatchedWalls"] = float(len(keep_h))
 
@@ -238,8 +247,8 @@ def extract_walls(
     _add_doors(vs, inbox, ws, mm_per_m)
     _add_windows(vs, inbox, ws, mm_per_m)
     try:
-        closed = shapely.union_all([walls, *ws.bridges]) if ws.bridges else walls
-        ws.glazing = list(glazing_bands(vs, closed, box, mm_per_m, ex))
+        closed = shapely.union_all([walls, *ws.bridges, *soft_piers]) if (ws.bridges or soft_piers) else walls
+        ws.glazing = [*glazing_bands(vs, closed, box, mm_per_m, ex), *soft_piers]
     except Exception:  # noqa: BLE001 - best effort
         ws.glazing = []
     if ws.glazing:

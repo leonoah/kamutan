@@ -545,7 +545,7 @@ def _room_outlines(s: SheetInput) -> list[tuple[str | None, list[tuple[float, fl
 
 
 def _room_fixtures(
-    dets: list[Det], room_index: dict[tuple[str, str], Room], canon: list[Room]
+    dets: list[Det], room_index: dict[tuple[str, str], Room], canon: list[Room], locator: Any = None
 ) -> tuple[dict[str, frozenset[str]], set[str]]:
     """Fixture classes per canonical room (any sheet's fixture mapped by :func:`match_room`, dropped copies
     included: they tell what the room holds) and the floors that have fixture information at all."""
@@ -558,9 +558,14 @@ def _room_fixtures(
         if d.floor:
             floors.add(d.floor)
         r = room_index.get((d.sheet_id, d.room_id)) if d.room_id else None
-        if r is None:
-            continue
-        c = r if r.key in ckeys else match_room(r, canon)
+        c = r if r is not None and r.key in ckeys else None
+        if c is None and locator is not None:
+            # Sprint 11 (Worker-Rooms) — keep: the fixture's point in the canonical sheet's frame (rooms.crosssheet)
+            # says which canonical room holds it; the floor + area match is the fallback (two bathrooms of 5.0 and
+            # 5.4 m² swap under an area match)
+            c = locator.locate(d.sheet_id, d.floor, d.x, d.y)[1]
+        if c is None and r is not None:
+            c = match_room(r, canon)
         if c is not None:
             out[c.key].add(d.cls)
     return {k: frozenset(v) for k, v in out.items()}, floors
@@ -921,7 +926,11 @@ def aggregate(
     # --- tiling (chapter 05) from the canonical rooms + roomSettings
     rs = settings_by_room(room_settings or {}, rooms_by_sheet, canon)
     ceilings = ceiling_heights(canon, {s.sheet_id: s.texts for s in sheets if s.texts}, scales)
-    room_fx, fx_floors = _room_fixtures(all_dets, room_index, canon)
+    # Sprint 11 (Worker-Rooms) — keep: one locator for the build (fixtures → canonical rooms, accessories → room type)
+    from ..rooms.crosssheet import OUTDOOR, FloorLocator
+
+    locator = FloorLocator(rooms_by_sheet, canon, scales)
+    room_fx, fx_floors = _room_fixtures(all_dets, room_index, canon, locator)
     t_units, t_stats = tiling_units(
         rules, canon, rs, tiling_params, ceilings=ceilings, room_fixtures=room_fx, fixture_floors=fx_floors
     )
@@ -942,9 +951,7 @@ def aggregate(
 
     # Sprint 11 (Worker-Rooms) — keep: the room type of an accessory comes from the canonical room it stands in (its
     # sheet registered onto the floor's canonical sheet, rooms.crosssheet); outside the building outline = outdoors
-    from ..rooms.crosssheet import OUTDOOR, FloorLocator
-
-    locator = FloorLocator(rooms_by_sheet, canon, scales)
+    WET_BY_FIXTURES_M2 = 25.0  # rooms.types.MAX_FIXTURE_TYPED_M2: an open-plan floor holding the guest WC is not wet
     wet_fx = {"fixture_shower", "fixture_bath", "fixture_wc_concealed", "fixture_wc_monoblock"}
     pts_by: dict[tuple[str, str | None], list[tuple[float, float]]] = defaultdict(list)
     for d in all_dets:
@@ -955,7 +962,8 @@ def aggregate(
     def det_room_type(d: Det) -> str | None:
         where, cr = locator.locate(d.sheet_id, d.floor, d.x, d.y)
         if cr is not None:
-            return "bathroom" if cr.type not in ("bathroom", "wc") and room_fx.get(cr.key, frozenset()) & wet_fx else cr.type
+            by_fx = cr.area_m2 <= WET_BY_FIXTURES_M2 and bool(room_fx.get(cr.key, frozenset()) & wet_fx)
+            return "bathroom" if cr.type not in ("bathroom", "wc") and by_fx else cr.type
         r = room_index.get((d.sheet_id, d.room_id)) if d.room_id else None
         if r is None:
             return "courtyard" if where == OUTDOOR and outdoor_ok.get((d.sheet_id, d.floor)) else None

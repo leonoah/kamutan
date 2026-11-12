@@ -4220,3 +4220,55 @@ the orchestrator's `s11int` run is the confirmation.
 shutter switch, intercom, D18 boxes, garden spikes, "X2" reach, cobra arcs, `unknown` false hits.
 Gates: ruff / format clean; mypy 2.4.0 CI way: no issues in 172 files; bandit `-ll` on `symbols/` + `legend/` clean; pytest
 917 passed on the re-run (one run under eval load had 1 failure that did not repeat; not identified).
+
+### Sprint 11 Worker-Rooms — round 2 (after the orchestrator's `s11int` evals; IN PROGRESS)
+`s11int` vs `warmfix_cold` (orchestrator's runs): Noah identical on 77 lines cold + warm; 4.08 Rubel 10→10, Achituv 4→13,
+Yahav 1→15 (truth 25 / 16 / 28); Achituv bathroom floors 41.97→14.59 (17.5), walls 155→62.6 (72.5); Yahav 10.95→14.99
+(15.5), 51.9→72.6 (70.5); waterproofing per חדר exact on Rubel and Yahav.
+
+**Why Rubel 4.08 stays 10 and Yahav stops at 15 (measured on the `s11int` roots, `FloorLocator` per electrical sheet):**
+both **ground floors have no building model** — Rubel ground construction closes 3 rooms (WC 5.0, shed 13.7, 2.6 m²),
+Yahav 3 (1.1, 4.6, 1.5 m²); the open-plan living floors are not rooms. So 46 of 51 (Rubel) and 43 of 45 (Yahav) ground
+accessories are "outside", `outdoor_trusted` is rightly false and none is counted. First floors / basements register
+(3–5 rooms agree) and are trusted. Rubel basement electrical: 1 room → unregistered.
+
+Causes on the drawings and fixes (all Noah-checked with the 15-sheet room snapshot):
+* **Yahav ground: the wall ends between the facade windows are hatched piers (one-way 45° hatch, no fill)**, so a window
+  runs from a wall to "nothing". `closure.hatched_walls(…, piers=)` returns rectangular wall-thick one-way-hatched
+  regions ≤ 1 m²; `walls.extract_walls` keeps those within 3 m of a filled wall as *soft* evidence in `WallSet.glazing`
+  (a hatched sill looks the same — on Noah, hard piers changed 4 sheets by 0.01–0.1 m²).
+* **Glazing bands swallowed the wall outlines**: wall polygons are stroked too, so the frame lines of a window merged
+  with the outline of the wall it sits in (blobs 9 m × 0.6 m, rejected). The strokes inside the walls are masked first;
+  the bundle may be 0.4 m wide in total (sills at both wall faces).
+* **When the bands apply** (`segment._faces`): only for a leaking space where the walls alone give no room (no piece
+  ≥ 1 m² with open share ≤ 15 %), and only if walls + bands then give one. Yahav ground: 0 → **89.3 m²** open-plan room
+  (סלון + פ.אוכל + מטבח). Noah: the ground-floor living room on the *demolition* sheet now appears (70.1 m², same room
+  the construction sheet has; demolition sheets are not room sources) — the only Noah room difference; to be confirmed
+  line by line on the eval.
+* **Rubel ground: the plot is enclosed by filled garden walls**, and the house still leaks into it (purple top vitrine,
+  west "ארגז תריס" side, pivot door not bridged) → one 315 m² "room". Guards: a not-closed face > 150 m² is not a room;
+  a not-closed face holding ≥ 2 open-ground labels (דשא, צמחייה, ערוגה, שטח מרוצף, בריכה …) is not a room. Rubel's
+  garden is drawn, not labelled, so only the size guard catches it. **Rubel ground interior is still not a room** (open).
+* Achituv ground: the 28 m² "כניסה" of round 1 was the entrance *deck* (outdoor); with the rule above it is gone,
+  kitchen + living 62.2 m² and ממ"ד 8.6 m² stay.
+* **Fixtures → canonical rooms** (`boq/aggregate._room_fixtures`, marked): a fixture with no room on its own sheet, or
+  whose room the area match cannot pair, is located by registration (`FloorLocator`). Fallback only — the old path is
+  unchanged where it worked.
+Tests: `tests/test_sprint11_rooms.py` now 18 cases (pier facade, open-ground labels, fixture by registration).
+
+### Sprint 11 symbols — steps 1 + 2 (11.11, re-detection on stored `warmfix_cold` text + the by-eye GT; no full run yet)
+| step | cause on the drawing | fix | test |
+| --- | --- | --- | --- |
+| 1 power / 3-phase (Achituv 4.04 / 4.21) | power = half disc + stem + TWO ticks, 3-phase = THREE; the fit is a coin flip (0.870 / 0.867); stacked sockets share one long pair of ticks | new `symbols/ticks.py`: tick signature of a legend drawing (equal parallel stroke-only lines), count at the posed candidate, swap to the sibling drawing whose count the plan shows (`detect.py` hook after `spot`) | `test_tick_count_decides_between_power_and_three_phase` |
+| 1 switch split (Achituv 4.34 / 4.36 / 4.37) | every changed switch is right on the GT except the cross switches: "מחלף" = dot + 2 hooked tails, "מצלב" = 3; the two legend rows were ONE family (the dot's exploded fill hid the third tail) and "מצלב" was classed `switch_2way` | `template._unexplained_share` on distinct ink; `legend/classes.py`: "מצלב" → `switch_cross` (marked keep) | `test_cross_switch_is_its_own_class_and_its_own_drawing` |
+| 1 Yahav 4.47 fans 4 → 3 | the drawing has 2 fans (GT covers all three lighting sheets); the BOQ says 6 — **dispute**, not a regression | — | — |
+| 1 Rubel 4.36 7 → 2 | the 5 lost "two-way switches" came from the broken legend of the ground lighting sheet (step 2); no switch of that sheet is in the GT (sheet not annotated) — not checked by eye | — | — |
+| 2 Rubel ground lighting f1b6df02 (and ground electrical 61f36c68) | a note boxed right above the legend, drawn 0.3 mm out of level: its long sides were not "rules", the box became a symbol group centred between the two symbol columns and chained them into one (rows 42 mm wide, alarm row = fan row, a bogus "…לכל המאווררים" fan row) | `legend/parse.py` (marked keep): a group ≥ 0.45 × table width is a frame, not a symbol; a letter is as tall as its own span | none yet (needs a table fixture) |
+| 2 luminaires 143 vs 96 | NOT duplicates: one plan (house + yard + pool) with ~98 fittings drawn, most of the excess outdoors; the sheet's own note sends outdoor lighting to the landscape architect's plan — **owner question** whether 4.44 counts outdoor fittings | — | — |
+GT, TP / FP / FN (before = Data/QA `warmfix_cold` → now): micro P 0.829 → **0.907**, R 0.775 → **0.880** (TP 625 → 709, FP 129 →
+73, FN 181 → 97). switch_2way 1/0/28 → 26/5/3; switch_cross 0/0/9 → 6/3/3; switch_single 71/37/6 → 67/2/10; camera 7/0/24 →
+31/1/0; luminaire_ceiling 103/19/23 → 123/14/3; luminaire_wall 57/13/28 → 60/1/25; ceiling_fan 6/15/0 → 6/7/0; socket_3phase
+7/3/6 → 9/0/4; socket_power 20/6/1 → 21/5/0; socket_power_double 8/0/3 → 9/0/2; socket_single 112/1/25 → 116/1/21; speaker
+23/0/2 → 25/0/0. Noah: re-detection on the stored cold AND warm text of `acc11` identical on every sheet.
+Verified by full run: only the earlier state (`acc11`, before ticks / cross / legend-frame). Everything in this table is
+re-detection only; the orchestrator's `s11fin` snapshot predates it too.
