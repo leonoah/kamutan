@@ -348,3 +348,15 @@ def test_real_words_are_not_fuzzy_room_names():
     for w in ("מדפסת", "מסנן", "שירות", "עבור"):
         assert match_room_name(w) is None, w
     assert match_room_name("מרפסח").name == "מרפסת"  # a misread letter still matches
+
+
+def test_point_in_a_dry_living_room_is_where_a_note_only_basin_is_the_kitchen_sink():
+    """Yahav basement: the kitchenette's water point (a note, no drawn basin) stands in the family room."""
+    from kamutan_drawing.rooms.crosssheet import in_dry_kitchen_or_living
+
+    canon, plumb = _floor("con"), _floor("pl", dx=62.5, dy=-41.0, types=("other",) * 3)
+    loc = FloorLocator({"con": canon, "pl": plumb}, canon, {"con": 50, "pl": 50})
+    assert in_dry_kitchen_or_living(loc, "pl", "first", 150 + 62.5, 200 - 41.0)  # the living room
+    assert not in_dry_kitchen_or_living(loc, "pl", "first", 120 + 62.5, 125 - 41.0)  # the bathroom
+    assert not in_dry_kitchen_or_living(loc, "pl", "first", 180 + 62.5, 130 - 41.0)  # a bedroom
+    assert not in_dry_kitchen_or_living(loc, "pl", "ground", 150.0, 200.0)  # floor without a model: no guess

@@ -267,6 +267,13 @@ class FloorLocator:
         return inside >= TRUST_MIN_SHARE * len(points)
 
 
+def in_dry_kitchen_or_living(locator: FloorLocator, sheet_id: str, floor: str | None, x: float, y: float) -> bool:
+    """Whether the point stands, by registration, in a canonical kitchen / living room that is not wet — where a wash
+    basin read from a water-point note is the kitchen(ette) sink, not a bathroom basin."""
+    room = locator.locate(sheet_id, floor, x, y)[1]
+    return room is not None and room.type in ("kitchen", "living") and not bool(getattr(room, "wet", False))
+
+
 def remap_room_floors(sheet_doc: Mapping[str, Any], room_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rooms of a sheet that ``classify.project`` moved to another floor (``floorCheck``): the floor they got from the
     title block at ingest is replaced in memory (single floor → single floor; never on a confirmed sheet) — the same

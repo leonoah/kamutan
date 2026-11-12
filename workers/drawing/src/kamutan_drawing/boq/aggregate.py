@@ -912,6 +912,18 @@ def aggregate(
         res = resolve(None, desc, False, params, unit)
         return res.item if res is not None else None
 
+    # Sprint 11 (Worker-Rooms) — keep: a wash basin read from a water-point note stands, by registration, in a canonical
+    # kitchen / living room that is not wet → it is the kitchen(ette) sink (Yahav basement family room), not a bathroom
+    # basin. Shape-detected basins and basins of bathrooms are untouched
+    from ..rooms.crosssheet import FloorLocator as _Loc
+    from ..rooms.crosssheet import in_dry_kitchen_or_living
+
+    R_TEXT_ONLY = "זוהה מכיתוב בלבד"  # fixtures: read from its note, no drawn shape
+    _loc0 = _Loc(rooms_by_sheet, canonical_rooms(rooms_by_sheet), scales)
+    for _i, _d in enumerate(all_dets):
+        note_basin = _d.cls == "fixture_basin" and _d.dropped_by is None and R_TEXT_ONLY in _d.reasons
+        if note_basin and in_dry_kitchen_or_living(_loc0, _d.sheet_id, _d.floor, _d.x, _d.y):
+            all_dets[_i] = replace(_d, cls="fixture_kitchen_sink")
     p_units, p_stats = plumbing_units(all_dets, rules, room_index, scales, labeler, resolvable, resolve_desc)
     for u in p_units:
         add_unit(u)
