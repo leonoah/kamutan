@@ -318,3 +318,128 @@ def test_same_code_item_with_another_target_does_not_win_by_code():
     assert res is not None and res.item.code == "3.01"
     # a same-code item without a conflict still wins by code
     assert lib().resolve("3.02", "נק' מים חמים קרים וניקוז לכיור, לרבות התקנת ברז קיר").item.code == "3.02"
+
+
+# ----------------------------------------------------------------------------- tiling lines split by location
+RUBEL_TILING = [
+    ("5.05", 'פנים קרקע: ריצוף בטיט אריחי גרניט פורצלן בגודל 120/120 ס"מ', "05"),
+    ("5.08", 'ריצפות חדרי רחצה הורים+מרתף+אורחים: ריצוף בטיט אריחי גרניט פורצלן בגודל 120/120 ס"מ', "05"),
+    ("5.09", 'חיפוי קירות חדרי רחצה אורחים: חיפוי באריחים בגודל 120/120 ס"מ', "05"),
+    ("5.10", 'חיפוי קירות חדר רחצה הורים: חיפוי באריחים מדוקקים בגודל 120/240 ס"מ', "05"),
+    ("5.11", 'ריצפות חדרי ילדים: ריצוף בטיט אריחי גרניט פורצלן בגודל 120/120 ס"מ', "05"),
+    ("5.12", 'ריצפת חדר כביסה: ריצוף בטיט אריחי גרניט פורצלן בגודל 60/120 ס"מ', "05"),
+    ("5.13", 'חיפוי קירות חדרי רחצה ילדים: חיפוי באריחים בגודל 120/120 ס"מ', "05"),
+    ("5.14", "ריצפת מרפסת קומה א': ריצוף בטיט אריחי גרניט פורצלן בגודל עד 60/60 ס\"מ", "05"),
+    ("5.17", 'חיפוי אבן ע"ג קירות חוץ: ביצוע חיפוי קירות חוץ באבן בעובי 2 ס"מ', "05"),
+    ("5.24", "חדר רחצה אורחים קרקע: ביצוע ריצוף סוג ב'. תשתית לאריח מדוקק", "05"),
+    ("3.06", "נק' למקלחון יח' הורים הכוללת: הזנת חמים+קרים, התקנת שלוש יח' אינטרפוץ 3 דרך, שתי נק' מים+מזלף, ראש גשם והתקנת תעלת ניקוז", "03"),
+]  # fmt: skip
+
+
+def _area_lib(rows):
+    from kamutan_drawing.boq.rules import Library
+
+    from .test_boq import lib_rows
+
+    docs = lib_rows(rows)
+    for _, d in docs:
+        if d["code"].startswith("5."):
+            d["unit"] = 'מ"ר'
+    return Library.from_docs(docs)
+
+
+def test_item_locations_and_choice():
+    from kamutan_drawing.boq import locations as L
+
+    lb = _area_lib(RUBEL_TILING)
+    loc = {i.code: L.item_loc(i.description, i.unit) for i in lb.items}
+    assert loc["5.08"].kind == "floor" and loc["5.08"].owners == {"parents", "guests"} and "basement" in loc["5.08"].levels
+    assert loc["5.11"].kind == "floor" and loc["5.11"].owners == {"children"} and not loc["5.11"].wet
+    assert loc["5.12"].dry == {"laundry"} and loc["5.14"].dry == {"terrace"} and loc["5.14"].levels == {"first"}
+    assert loc["5.10"].kind == "cladding" and loc["5.17"].kind is None and loc["5.24"].kind is None  # stone / substrate
+    assert loc["5.05"].kind == "floor" and not loc["5.05"].wet and not loc["5.05"].owners  # the generic indoor floor
+    items = list(lb.items)
+
+    def pick(kind, **kw):
+        r = L.choose_wet(items, kind, **kw)
+        return r and (r[0].code, r[1])
+
+    known = {"parents", "guests"}
+    assert pick("floor", owner="parents", floor="first", known_owners=known) == ("5.08", L.R_BY_LOCATION)
+    assert pick("floor", owner=None, floor="basement", known_owners=known) == ("5.08", L.R_BY_LOCATION)
+    assert pick("cladding", owner="guests", floor="ground", known_owners=known) == ("5.09", L.R_BY_LOCATION)
+    # nobody names the children's bathrooms: the one line whose owner no room carries
+    assert pick("floor", owner=None, floor="first", known_owners=known) == ("5.11", L.R_BY_ELIMINATION)
+    assert pick("cladding", owner=None, floor="first", known_owners=known) == ("5.13", L.R_BY_ELIMINATION)
+    assert pick("cladding", owner=None, floor="first", known_owners={"guests"}) is None  # parents or children? ambiguous
+    assert L.choose_dry_floor(items, "laundry", "first").code == "5.12"
+    assert L.choose_dry_floor(items, "terrace", "first").code == "5.14"
+    assert L.choose_dry_floor(items, "terrace", "ground") is None  # the line says first floor
+    assert L.choose_dry_floor(items, "courtyard", "basement") is None
+    assert L.owner_from_texts([(0, 0), (10, 0), (10, 10), (0, 10)], [{"text": "ש.אורחים", "bboxMm": [2, 2, 8, 4]}]) == "guests"
+    assert L.owner_from_texts([(0, 0), (10, 0), (10, 10), (0, 10)], [{"text": "הורים", "bboxMm": [20, 2, 28, 4]}]) is None
+
+
+def test_tiling_goes_to_the_clients_line_of_the_rooms_location():
+    guest = room("r_1", "שירותים", 0, 0, 40, 60)  # 6 m², "ש.אורחים" written inside
+    parents = room("r_2", "חדר רחצה", 100, 0, 140, 60)  # holds the shower resolved to "מקלחון יח' הורים"
+    kid1 = room("r_3", "חדר רחצה", 200, 0, 240, 60)
+    kid2 = room("r_4", "חדר רחצה", 300, 0, 340, 60)
+    laundry = room("r_5", "חדר כביסה", 0, 100, 40, 140)  # 4 m²
+    co = psheet("co", "construction", [], [guest, parents, kid1, kid2, laundry],
+                texts=[{"text": "ש.אורחים", "bboxMm": [10, 10, 30, 14]}])  # fmt: skip
+    sh = det(1, "fixture_shower", 120, 30, roomId="r_2", level="yellow",
+             annotations=["אינטרפוץ 3 דרך x3", "נק' מים מאחז x2", "ראש גשם", "תעלת ניקוז"])  # fmt: skip
+    pl = psheet("pl", "plumbing", [sh], [guest, parents, kid1, kid2, laundry])
+    ln = lines(aggregate([co, pl], default_rules(), _area_lib(RUBEL_TILING)))
+    assert ln["3.06"].qty == 1
+    assert ln["5.08"].qty == 12  # floors: guests 6 + parents 6
+    assert ln["5.11"].qty == 12  # floors: the two bathrooms nobody names → the children's line
+    assert ln["5.12"].qty == 4  # the laundry room has its own floor line
+    # an outline that did not close and leaked (25 m² "laundry") is not that room's area: no unit; a small one still is
+    leaked = {**room("r_5", "חדר כביסה", 0, 100, 100, 200), "reasons": ["חדר לא סגור"]}
+    co2 = psheet("co", "construction", [], [guest, parents, kid1, kid2, leaked])
+    assert "5.12" not in lines(aggregate([co2, pl], default_rules(), _area_lib(RUBEL_TILING)))
+    small_open = {**laundry, "reasons": ["חדר לא סגור"]}
+    co3 = psheet("co", "construction", [], [guest, parents, kid1, kid2, small_open])
+    assert lines(aggregate([co3, pl], default_rules(), _area_lib(RUBEL_TILING)))["5.12"].qty == 4
+    assert ln["5.09"].qty > 0 and ln["5.10"].qty > 0 and ln["5.13"].qty == 2 * ln["5.10"].qty
+    assert "5.05" not in ln or ln["5.05"].qty == 0  # the generic indoor floor takes no bathroom
+    assert not [c for c in ln if c.startswith(("X-5-01", "X-5-02"))]
+
+
+def test_one_line_per_measure_library_is_resolved_as_before():
+    # Noah-style library (one cladding line, one floor line): the rule resolves, the location logic never runs
+    co = psheet("co", "construction", [], [room("r_1", "שירותים", 0, 0, 40, 60), room("r_5", "חדר כביסה", 0, 100, 40, 140)],
+                texts=[{"text": "ש.אורחים", "bboxMm": [10, 10, 30, 14]}])  # fmt: skip
+    res = aggregate([co], default_rules(), lib())
+    ln = lines(res)
+    assert ln["5.02"].qty == 6 and ln["5.01"].qty > 0
+    assert res.stats["tiling"]["byLocation"] == 0 and res.stats["tiling"]["dedicatedFloors"] == 0
+
+
+def test_personal_name_bathroom_is_the_childrens_and_open_waterproofing_line():
+    from kamutan_drawing.boq import locations as L
+
+    sq = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    inside = {"bboxMm": [2, 2, 8, 4]}
+    assert L.owner_from_texts(sq, [{"text": "ח.רחצה עמית", **inside}], personal=True) == "children"
+    assert L.owner_from_texts(sq, [{"text": "ח.רחצה עמית", **inside}]) is None  # no children's line in the library
+    for t in ("ח.רחצה הורים", "חדר רחצה ראשי"):
+        assert L.owner_from_texts(sq, [{"text": t, **inside}], personal=True) in (None, "parents")
+    assert L.personal_owner("ח.כביסה ושירות") is None and L.personal_owner("חדר רחצה נלי") == "children"
+    lb = _area_lib([("5.13", 'ביצוע איטום מרפסת פתוחה ע"י יריעות ביטומניות מולחמות', "05"),
+                    ("5.14", 'ביצוע איטום פטיו ע"י יריעות ביטומניות מולחמות', "05"),
+                    ("5.15", "ביצוע איטום לחדר רחצה רטוב בשתי שכבות", "05")])  # fmt: skip
+    wp, wp2, bath = lb.items
+    assert L.choose_dry_waterproof([wp, wp2, bath], "terrace", "first") is wp
+    assert L.choose_dry_waterproof([wp, wp2, bath], "patio", "ground") is wp2
+    assert L.choose_dry_waterproof([wp, wp2, bath], "laundry", "first") is None
+
+
+def test_a_bathroom_larger_than_any_bathroom_gets_no_wet_tiling():
+    small = room("r_1", "שירותים", 0, 0, 40, 60)  # 6 m²
+    merged = room("r_2", "חדר רחצה / חדר כביסה", 100, 0, 230, 100)  # 32.5 m²: two rooms merged into one outline
+    co = psheet("co", "construction", [], [small, merged], texts=[])
+    res = aggregate([co], default_rules(), lib())
+    assert lines(res)["5.02"].qty == 6 and res.stats["tiling"]["implausibleWet"] >= 1

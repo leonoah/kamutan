@@ -40,6 +40,8 @@ from .rules import (
     R_NO_RULE,
     R_NOT_FOR_TOTAL,
     R_RELABELED,
+    R_ROOM_DEFAULTS,
+    R_ROOM_OPEN,
     R_SHARED,
     R_SWITCH_LINK,
     R_TEMPLATE,
@@ -946,9 +948,13 @@ def aggregate(
     t_units, t_stats = tiling_units(
         rules, canon, rs, tiling_params, ceilings=ceilings, room_fixtures=room_fx, fixture_floors=fx_floors
     )
+    # Sprint 11 (Worker-Areas) — keep: tiling lines the client's library splits by location (boq.locations)
+    t_units, loc_stats = _tiling_by_location(
+        t_units, canon, library, resolve, {s.sheet_id: s.texts for s in sheets if s.texts}, p_units, locator, rules
+    )
     for u in t_units:
         add_unit(u)
-    stats["tiling"] = {**t_stats, "canonicalRooms": len(canon), "settingsMatched": len(rs)}
+    stats["tiling"] = {**t_stats, "canonicalRooms": len(canon), "settingsMatched": len(rs), **loc_stats}
 
     # --- manual quantities (measure / count corrections)
     c2i = [r for r in rules if r.kind == "class_to_item"]
@@ -1143,6 +1149,103 @@ def aggregate(
     for lv in ("green", "yellow", "red"):
         stats[lv] = sum(1 for ln in lines if ln.level == lv)
     return Result(lines, stats)
+
+
+WET_ROOM_MAX_M2 = (
+    30.0  # Sprint 11 (Worker-Areas) — keep: no bathroom / WC is larger (Achituv merged 81.7 m² "חדר רחצה / חדר כביסה")
+)
+OPEN_ROOM_MAX_M2 = 12.0  # Sprint 11 (Worker-Areas) — keep: an unclosed outline of a small room is still that room
+
+
+def _tiling_by_location(
+    t_units: list[Unit],
+    canon: list[Room],
+    library: Library,
+    resolve: Any,
+    texts: dict[str, list[dict[str, Any]]],
+    p_units: list[Unit],
+    locator: Any,
+    rules: list[Rule],
+) -> tuple[list[Unit], dict[str, int]]:
+    """Sprint 11 (Worker-Areas): see :mod:`.locations`. A wet room's floor / wall-tiling unit whose rule resolves to no
+    library item (the client has one line per location) takes the line of its room's owner / floor; a named dry room
+    with a dedicated floor line in the library gets a floor unit. Units whose rule resolves are untouched."""
+    from . import locations as loc
+    from .units import room_det
+
+    stats = {"byLocation": 0, "byElimination": 0, "dedicatedFloors": 0}
+    rooms = {r.key: r for r in canon}
+    items = list(library.items)
+    all_owners = {o for i in items if (il := loc.item_loc(i.description, i.unit)).kind for o in il.owners}
+    owner: dict[str, str] = {}
+    for r in canon:
+        o = loc.owner_from_texts(r.polygon, texts.get(r.sheet_id, []), personal="children" in all_owners)
+        if o:
+            owner[r.key] = o
+    for u in p_units:  # the client's line of a fixture names the owner of the room it stands in
+        own = loc.owners_in(u.item.description) if u.item is not None else set()
+        if len(own) != 1 or not u.members:
+            continue
+        d = u.members[0][0]
+        try:
+            _, cr = locator.locate(d.sheet_id, d.floor, d.x, d.y)
+        except Exception:  # noqa: BLE001 - registration is best effort
+            cr = None
+        if cr is not None and cr.key in rooms:
+            owner.setdefault(cr.key, next(iter(own)))
+    wet_keys = {cr0.key for cr0 in canon if cr0.type in ("bathroom", "wc") or cr0.wet}
+    known = {o for k, o in owner.items() if k in wet_keys}  # a suite title in the wardrobe room names no bathroom
+    measure = {"tiling_floor": "floor", "tiling_cladding": "cladding"}
+    t_units = list(t_units)
+    for u in list(t_units):  # a "bathroom" larger than any bathroom is a merged / leaked outline: no wet tiling from it
+        ev0 = u.members[0][0] if u.members else None
+        r0 = rooms.get(f"{ev0.sheet_id}__{ev0.id}") if ev0 is not None else None
+        if (u.rule is not None and u.rule.kind in ("tiling_floor", "tiling_cladding", "tiling_corner") and r0 is not None
+                and r0.type in ("bathroom", "wc") and r0.area_m2 > WET_ROOM_MAX_M2):  # fmt: skip
+            t_units.remove(u)
+            stats["implausibleWet"] = stats.get("implausibleWet", 0) + 1
+    for u in t_units:
+        tr = u.rule
+        if tr is None or tr.kind not in measure or u.user_code is not None or u.item is not None or not u.members:
+            continue
+        if tr.kind == "tiling_cladding" and tr.match.get("mode") != "full":
+            continue
+        if resolve(tr.item_code, tr.description, tr.source == "custom", None, tr.unit or None) is not None:
+            continue
+        ev = u.members[0][0]
+        room = rooms.get(f"{ev.sheet_id}__{ev.id}")
+        if room is None:
+            continue
+        pick = loc.choose_wet(items, measure[tr.kind], owner=owner.get(room.key), floor=room.floor, known_owners=known,
+                              all_owners=all_owners)  # fmt: skip
+        if pick is None:
+            continue
+        u.item = pick[0]
+        u.reasons = [*u.reasons, pick[1]]
+        if u.level == "green":
+            u.level = "yellow"
+        stats["byElimination" if pick[1] == loc.R_BY_ELIMINATION else "byLocation"] += 1
+    floor_rule = next((r for r in rules if r.kind == "tiling_floor"), None)
+    tiled = {f"{u.members[0][0].sheet_id}__{u.members[0][0].id}" for u in t_units
+             if u.rule is not None and u.rule.kind == "tiling_floor" and u.members}  # fmt: skip
+    extra: list[Unit] = []
+    if floor_rule is not None:
+        for room in canon:
+            val = loc.dry_room_value(room.name)
+            if val is None or room.type in ("bathroom", "wc") or room.area_m2 <= 0:
+                continue
+            if R_ROOM_OPEN in room.reasons and room.area_m2 > OPEN_ROOM_MAX_M2:
+                continue  # an outline that did not close leaked into its neighbours (Achituv laundry 30 m²)
+            ev = room_det(room)
+            q = round(room.area_m2, 4)
+            floor_it = None if room.key in tiled else loc.choose_dry_floor(items, val, room.floor)
+            for it in (floor_it, loc.choose_dry_waterproof(items, val, room.floor)):
+                if it is None:
+                    continue
+                extra.append(Unit(floor_rule, [(ev, None)], q, [R_ROOM_DEFAULTS, loc.R_DEDICATED_FLOOR], "yellow",
+                                  item=it, floor=room.floor, ev_qty={ev.key: q}))  # fmt: skip
+                stats["dedicatedFloors"] += 1
+    return [*t_units, *extra], stats
 
 
 def _manual_unit(mq: ManualQty, c2i: list[Rule], discipline: str) -> Unit:

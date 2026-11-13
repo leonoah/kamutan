@@ -4272,3 +4272,211 @@ GT, TP / FP / FN (before = Data/QA `warmfix_cold` → now): micro P 0.829 → **
 23/0/2 → 25/0/0. Noah: re-detection on the stored cold AND warm text of `acc11` identical on every sheet.
 Verified by full run: only the earlier state (`acc11`, before ticks / cross / legend-frame). Everything in this table is
 re-detection only; the orchestrator's `s11fin` snapshot predates it too.
+
+### Sprint 11 Worker-Rooms — rounds 3–5 (measured; `rooms11_r4` vs the orchestrator's `s11int`, Noah vs `warmfix_cold`)
+| project | exact / within | 4.08 (truth) | other lines moved by rooms |
+| --- | --- | --- | --- |
+| noah | 61 / 63 → 61 / 63, no line differs (both variants) | – | – |
+| yahav | 40 / 41 → 40 / 41 | 15 → **26** (28) | – |
+| achituv | 35 → 39 (the four gained lines are 4.04, 4.21, 4.34, 4.37 — symbol-side, not rooms) | 13 → **10** (16) | 3.01 / 3.02 / 5.06 unchanged after the round-3 regressions were fixed |
+| rubel | 37 → 37 | 10 → 10 (25) | – |
+
+Round 3–4 changes: `register_outlines` (fallback when no two rooms have equal areas: overlay of the room outlines, floor
+area IoU ≥ 0.6) — Achituv first floor and ground now register; `outdoor_trusted` = ≥ 2 canonical rooms, ≥ 30 m², the
+majority of the sheet's accessories inside; sanitary fixtures type a room only up to 25 m² (`rooms/types`, and the same
+bound in `det_room_type`); a storage label (מזווה, ארונות) does not name a face > 25 m²; real words are never fuzzy room
+names (מדפסת ≠ מרפסת, מסנן ≠ מחסן, שירות ≠ שירותים); fixtures → canonical room by registration first, area match second.
+Round-3 regressions caught by the eval and fixed in round 4: Achituv 4.08 = 36 (the 62 m² kitchen / living room became
+"bathroom" because the guest WC is inside it), 3.01 5 / 3.02 0 (plumbing-sheet open plan named "מזווה" → storage → the
+kitchen sink became a basin), 5.06 2 → 1 (two bathrooms of 5.0 / 5.4 m² swapped under the area match).
+
+**Achituv 4.08: why 13 → 10 (read on the ground electrical sheet, per accessory).** The 13 of `s11int` held **9 false
+ones**: the ground electrical sheet's only room was the ממ"ד, named "מרפסת" from the word "מדפסת" (printer) in the
+study → type `balcony` → every socket inside the shelter counted as waterproof. With the name fixed they are gone.
+What counts now on the ground floor (5): gate-feed socket (23, 185), the two parking / irrigation sockets (131, 249 /
+254), the doorbell push (314, 225), the south-east corner socket (501, 364); + basement 3 + first floor 2 = 10.
+Still missed by the drawing: the terrace socket by the living-room wall end (located inside the not-closed 62 m² room,
+which spills onto the terrace) and the filter socket in the ממ"ד window niche (inside the shelter's wall band). Six
+kitchen-wall sockets (y ≈ 235–241) are geometrically "outside" the canonical room because the light-grey "סינר גבס" strip
+is taken as wall; they are saved only by their own sheet's room — fragile (open issue). Truth 16 − 10: the rest is not
+explained by sockets / switches outdoors; cameras (5), alarm detectors (2–3) and the siren are drawn outside and are
+not hosts of the rule → **owner question** whether they are priced as "אביזר מוגן מים".
+
+**Rubel 4.08 stays 10:** the ground floor still has no building model (house leaks into the walled plot: the purple
+top vitrine is a highlight-colour rectangle, the west side is a shutter-box line bundle wider than 0.4 m, the pivot
+door has no swing arc). 48 of 54 ground accessories are "outside", so the floor is rightly not trusted. Not fixed.
+
+**Round 5 (eval `rooms11_r5` pending):** Yahav basement kitchenette — the sink is a note-only water point ("H=50",
+`זוהה מכיתוב בלבד`) classed `fixture_basin` at (156, 258) of the basement plumbing sheet, whose own room there is
+"חדר כביסה / other 31.3 m²"; the canonical room is the family room (סלון, 31.1 m²). `boq/aggregate.py` (marked): a
+note-only basin that stands, by registration, in a canonical kitchen / living room that is not wet becomes
+`fixture_kitchen_sink` (`crosssheet.in_dry_kitchen_or_living`). Expected 3.01 5 → 4, 3.02 1 → 2.
+
+**Tiling / area lines, truth vs ours (`s11int`), and the cause per group** — none of these is a room-geometry gap any more:
+* Rubel 5.01–5.24: every line 0. The BOQ splits tiling by location in its descriptions ("ריצפות חדרי רחצה הורים + מרתף +
+  אורחים", "חדרי ילדים", "חדר כביסה") — the default tiling rules do not resolve to these items (description matching /
+  rule side, `boq/`), although the bathrooms exist as canonical rooms (waterproofing 5.22 = 5 exact).
+* Bathroom floors / walls: Achituv 14.59 / 17.5 and 62.6 / 72.5; Yahav 14.99 / 15.5 and 72.6 / 70.5 (within tolerance).
+  Achituv is short by one wet room: the ground-floor guest WC is not a separate room (its partition is thin new
+  gypsum the open-plan face swallows).
+* Laundry-room floors (Achituv 5.04 5.0, Rubel 5.12 4.5, Yahav 5.06 13.5 with the balcony): no rule tiles a laundry room.
+* Outdoor paving / balconies / patio (Achituv 5.01 21.5; Yahav 5.01–5.03 178, 5.07, 5.09, 5.13, 5.14; Rubel 5.01, 5.02,
+  5.14, 5.16–5.18): there is no outdoor polygon — outdoors is a yes / no per point (`FloorLocator`).
+
+### Sprint 11 symbols — step 3 (a)–(c) (12.11; GT numbers = re-detection on stored `warmfix_cold` text; full run `acc12` queued)
+| item | cause on the drawing | fix | test |
+| --- | --- | --- | --- |
+| (a) wall light read as fan (6; Achituv 4.41) | "point + fan" replaced a wall light when 57–62 % of its added ink (box + cross arms) fell on the wall light's own line and bar; a real fan has ~100 % | `match.EXTRA_ON_INK` 0.6 → 0.8 | existing `test_a_containing_drawing_replaces_only_when_its_added_strokes_are_drawn` |
+| (a) wall light read as ceiling point (14) | ceiling point = disc + cross through the centre; wall light = disc + one line through the centre + a bar TANGENT to the disc on the wall side; fits differ by < 0.01 | `symbols/ticks.py`: `disc_signature` (lines through the centre / tangent bars, relative to the solid disc) of each legend drawing, read at the candidate (`disc_lines_at`, the disc's own filled pieces only), swap to the sibling drawing the plan shows (`resolve_by_disc_lines`, hook in `detect.py`) | `test_lines_across_the_disc_tell_a_ceiling_point_from_a_wall_light` |
+| (b) switch_single recall | came back with the 0.8 threshold (a single switch beside a line was replaced by two-way / cross): 67 / 2 / 10 → 71 / 3 / 6 | same | same |
+| (b) Rubel deep boxes 4.36 (truth 26, now 2) | not done: Rubel's sheets draw no switch glyphs on the ground lighting plan (orange dots + circuit boxes, per the coordinator's look); counting boxes from circuit tags is Worker-Lighting's input — not examined by me | — | — |
+| (c) purple AC socket (17 singles) | found, NOT fixed: the glyph is the socket redrawn in purple (166, 79, 238 — no legend row's colour) as FILLED outline polygons (fill mode 2, 109 segments), with a leader. `propose()` makes no pose at all (the template's arc anchor has no arc to hold on a polygonal outline); the colour veto would reject it as well. A colour exemption alone changed nothing and was reverted | — | — |
+| legend-frame fix (step 2) | — | — | `test_a_note_box_against_the_legend_is_a_frame_not_a_symbol` (fails without the fix: rows 44 mm wide) |
+GT TP / FP / FN, step 1 + 2 state → now: micro P 0.907 → **0.937**, R 0.880 → **0.909** (TP 709 → 733, FP 73 → 49, FN 97 → 73):
+luminaire_wall 60/1/25 → 79/0/6; luminaire_ceiling 123/14/3 → 124/2/2; ceiling_fan 6/7/0 → 6/1/0; switch_single 67/2/10 →
+71/3/6; switch_2way 26/5/3 → 26/3/3; switch_cross 6/3/3 → 6/0/3. Noah: re-detection on stored cold and warm text unchanged.
+
+**Round 5 measured (`rooms11_r5`, Achituv `rooms11_r5b`) vs `rooms11_r4`:** Noah identical on every line, both variants
+(vs `warmfix_cold`). Yahav 3.01 5 → **4 ✔**, 3.02 1 → **2 ✔** (exact 40 → 42, within 43). Achituv: no room line moved
+(4.08 stays 10); exact 39 → 40 through 4.41 (not a room line). Rubel 37 → 37. The first Achituv run of the round lost
+the basement electrical sheet ("understanding failed (file_unreadable)") while `symbols/` had another agent's
+uncommitted edits; the repeat run ingested all sheets and is the one reported.
+
+## Sprint 11 Worker-Areas (b) — chapter 05 tiling by location (DONE, round c below)
+
+Task: Rubel 5.01–5.24 all 0 although the rooms exist. **Cause (verified on `rooms11_r5`):** the tiling units ARE computed
+per room (cladding 105.8 m², floors 19.9 m², corners 5.2 m') but land on "X-5-01 / X-5-02 / X-5-03 אין פריט בספרייה":
+Rubel's library has one line per LOCATION ("חיפוי קירות חדר רחצה הורים / ילדים / אורחים", "ריצפות חדרי רחצה
+הורים+מרתף+אורחים", "ריצפות חדרי ילדים", "ריצפת חדר כביסה", "ריצפת מרפסת קומה א'"), the generic rule description fits
+several and differs from each only in the owner it does not state → `Library.resolve` returns None (ambiguous, by design).
+Achituv / Yahav have ONE bathroom-walls and ONE bathroom-floors line → they resolve (that is why they had quantities).
+
+**Fix (general, `boq/locations.py` + marked hook `aggregate._tiling_by_location`):** only for a floor / full-cladding unit
+whose rule resolves to no item, the room decides — owner word written inside the room on its sheet ("ש.אורחים"), else the
+owner stated by the client's line of a fixture located in the room (shower → "מקלחון יח' הורים"), basement floor ↔ a line
+naming מרתף, elimination only when exactly one owner of the library's tiling lines is carried by no wet room; a named dry
+room (laundry / terrace / courtyard / patio / entrance) gets a floor unit when the library has a floor line dedicated to
+it (never a line that also names bathrooms → Noah's "חדרי רחצה וחצר אנגלית" pulls nothing). Lines stay yellow with a
+reason chip. Libraries with one line per measure are resolved exactly as before (the hook never fires).
+
+Rubel result (BOQ-only on the `rooms11_r5` ingest): 5.08 floors 0 → 4.97 (guests only; truth 11.4), 5.09 guests' walls
+0 → 23.97 (21), 5.12 laundry floor 0 → 4.98 (4.5). Parents / children stay 0: the drawing names the parents' suite only in
+the wardrobe room ("יח' הורים") and the parents' shower on the plumbing sheet; the plumbing first-floor sheet is not
+registered onto the construction sheet (`FloorLocator.locate` → unknown; its scale is classified 1:25 from the elevation
+detail title, the title block says 1:50 — **classify / Worker-Rooms**). Probe with the parents' bathroom given by hand:
+5.08 11.06 (11.4), 5.10 26.7 (23.5), 5.11 8.80 (9.0), 5.13 55.15 (48) — floors within 3 %, walls +12–15 % (default
+cladding height 2.6 m / ceiling; the BOQ walls are lower — not tuned).
+**Full run `acc12` (12.11, final code of (a)–(c), under the eval lock) vs the committed `s11c`:** Noah cold 61 / 63 and warm
+61 / 63, every one of the 77 lines identical to `s11c` and cold = warm. Achituv exact 39 → 40: 4.41 fans 5 → **0** (truth
+0), 4.40 fixtures 80 → 85 (62; the former fans are luminaires; the all-floors master sheet still doubles the count).
+Yahav 40 → 42 (the two new exact lines are chapter 03, another agent's): 4.47 fans 3 → 2 (drawing 2, BOQ 6 — dispute),
+4.46 70 → 71 (58). Rubel 37 → 37: 4.45 fans 9 → 7 (6), 4.44 143 → 145 (96; outdoor fittings — owner question).
+
+### Sprint 11 Worker-Areas (c) — orchestrator review of (b); evals `areas11c_*` (BOQ-only rebuild on the `areas11b_final` ingest)
+**Achituv 5.02 / 5.03 over-count (14.59 → 88.92, 62.6 → 193.6): NOT the location matching.** The 5.02/5.03 lines carry no
+"סעיף לפי מיקום" reason (my hook never fired there: one bathroom-floor line, the rule resolves). Cause: Worker-Rooms' round 6
+merged the first-floor construction sheet from 6 rooms (bathrooms 5.37 and 4.6, laundry, bedroom …) into ONE room
+"חדר רחצה / חדר כביסה" of **81.72 m²** typed bathroom (`rooms.json` of `noah-cc2f0e81`, `rooms11_r5b` vs `areas11b_final`);
+the default tiling unit follows the room. Guard (general, marked, `aggregate._tiling_by_location`): a bathroom / WC outline
+> `WET_ROOM_MAX_M2` = 30 m² is a merged or leaked outline and gets no floor / cladding / corner unit (stat `implausibleWet`).
+Achituv 5.02 → 7.2 (truth 17.5, committed 14.59), 5.03 → 27.9 (72.5, committed 62.6): an under-count now, and it stays one
+until Rooms restores the two first-floor bathrooms (**request to Worker-Rooms: do not merge rooms whose names differ — the
+"כמה שמות בחלל אחד" case — into one typed bathroom; Achituv first floor was 6 rooms, 5.37 + 4.6 m² bathrooms**).
+5.06 waterproofing rooms 2 → 1 is the same merge (one bathroom room left).
+**Rubel — causes of the 0 lines, fixed where general:**
+* children's and parents' bathrooms had no owner: the plan labels them by first name ("ח.רחצה עמית / נלי / מיה") and the
+  parents' suite only by the "יח' הורים" title in the wardrobe room. New `locations.personal_owner`: a bathroom labelled with a
+  first name is the children's — read only when the library has a children's tiling line. With children + guests known,
+  elimination gives the parents' bathroom (the one unnamed owner). 5.08 4.97 → 11.06 (11.4), 5.10 0 → 26.70 (23.5),
+  5.11 0 → 8.80 (9.0), 5.13 0 → 55.15 (48).
+* laundry 5.12: the room is "חדר לא סגור" (4.64 m²) and my skip of open rooms was too wide → `OPEN_ROOM_MAX_M2` = 12: a small
+  unclosed outline is still that room; a leaked one (Achituv 30 m²) is not. 5.12 4.98 → 4.64 (4.5).
+* one lone wet line of a kind never goes by location (a single partial-wall line is not "the" line): `choose_wet` needs ≥ 2
+  candidate lines (fixes `test_boq_s6::test_room_settings_tiling_wins…`).
+* New `locations.choose_dry_waterproof`: the membrane waterproofing line (איטום … יריעות ביטומניות, m²) dedicated to an open
+  dry room (balcony / patio / English yard) takes the room's area: Yahav 5.14 patio 0 → 12.39 (12.0).
+* Still 0 and why: 5.01–5.03/5.16 outdoor paving (no outdoor polygons — rooms are indoor outlines; Yahav 5.01 12.39 is the
+  patio only), 5.03/5.24/5.08(Y) "סוג ב'" substrate and 5.05(A) complete (no quantity source), 5.06/5.07/5.23 and Yahav
+  5.11/5.12 m' lines (no perimeter source for skirting/coping), 5.15 stairs, 5.17/5.09(Y) stone cladding (elevations),
+  5.18/5.13(Y) open balconies and 5.14(R) terrace (balcony rooms are not rooms on the construction sheet), Yahav 5.06
+  laundry + balcony (the named "חדר כביסה" rooms are on non-construction sheets / the 31 m² basement one is a leaked
+  outline), Achituv 5.01/5.04 (outdoor; the laundry outline is 30 m² open → skipped, truth 5.0).
+**Truth vs ours, chapter 05 (before = committed baseline `rooms11_r5` / `rooms11_r5b` / `acc12_cold`; after =
+`areas11c_final` Rubel, Yahav and `areas11c_ach2` Achituv; "within" = the kbench tolerance; ae = absolute error):**
+| line | unit | truth | before | after | ae after |
+|---|---|---|---|---|---|
+| Rubel 5.08 | m² | 11.4 | 0 | 11.06 | 0.34 |
+| Rubel 5.09 | m² | 21.0 | 0 | 23.97 | 2.97 |
+| Rubel 5.10 | m² | 23.5 | 0 | 26.70 | 3.20 |
+| Rubel 5.11 | m² | 9.0 | 0 | 8.80 | 0.20 |
+| Rubel 5.12 | m² | 4.5 | 0 | 4.64 | 0.14 |
+| Rubel 5.13 | m² | 48.0 | 0 | 55.15 | 7.15 |
+| Rubel 5.19 / 5.20 / 5.22 | | 1 / 1 / 5 | exact | exact | 0 |
+| Rubel 5.01 5.02 5.03 5.05 5.06 5.07 5.14 5.15 5.16 5.17 5.18 5.23 5.24 | | 120 25 63 95 19 23 4.5 3 1.5 72 4.5 21 4.5 | 0 | 0 | = truth |
+| Achituv 5.02 | m² | 17.5 | 14.59 | 7.2 | 10.3 |
+| Achituv 5.03 | m² | 72.5 | 62.63 | 27.9 | 44.6 |
+| Achituv 5.06 | rooms | 3 | 2 | 1 | 2 |
+| Achituv 5.01 5.04 5.05 | | 21.5 5.0 1 | 0 | 0 | = truth |
+| Yahav 5.04 | m² | 15.5 | 14.99 | 14.99 | 0.51 |
+| Yahav 5.05 | m² | 70.5 | 72.56 (within) | 72.56 (within) | 2.06 |
+| Yahav 5.07 | m² | 5.0 | 0 | 4.62 | 0.38 |
+| Yahav 5.14 | m² | 12.0 | 0 | 12.39 | 0.39 |
+| Yahav 5.01 | m² | 117 | 0 | 12.39 | 104.6 |
+| Yahav 5.15 | rooms | 3 | exact | exact | 0 |
+| Yahav 5.02 5.03 5.06 5.08–5.13 | | 31 30 13.5 1 19 2.5 29 13 13 | 0 | 0 | = truth |
+Exact / within totals (kbench): Noah 61/77, 63 within — **every line identical to `warmfix_cold`** (checked on
+`areas11c_final` and again on the final code `areas11c_noah2`); Rubel 37/115 (37 within, unchanged: the new lines are
+measured and outside tolerance — walls +12–15 % from the default cladding height, floors 3 %); Achituv 40/85; Yahav 41/110
+(42 within; baseline `acc12_cold` 42 — the −1 is 3.01 4 → 3 / 3.02 2 → 3 in plumbing and 4.08 changes on all three projects:
+from Worker-Rooms' round 6 room changes / Accuracy's electrical, not from the tiling hook, which touches chapter 05 only).
+Gates on the final code: ruff check / format clean, mypy (CI way) 174 files clean, pytest 17 in `test_sprint11_areas.py`; the
+full suite (934 passed, 27 skipped) ran before the last guard — the guard's focused tests and the boq tests pass after it;
+bandit -ll reports only the existing nosec warnings. Evals were BOQ-only rebuilds on the `areas11b_final` ingest (the
+changes are all in boq/); no full ingest was run for round (c).
+**Round (d), full ingest of the committed Rooms round 6 + my uncommitted hunks (`areas11d_*`):** Achituv 5.02 14.59 / 5.03
+62.63 / 5.06 2 — identical to HEAD (the 82 m² merged room is gone; the 30 m² guard did not fire, kept as a general sanity
+guard); Achituv 40/85, Yahav 43/110 (3.01, 3.02, 4.08 exact), Rubel 37/115, Noah 61/77 + 63 within, all 77 lines
+identical to `warmfix_cold`. Rubel 5.12 is 4.98 here (room not "open" in this ingest), other Rubel lines as in (c).
+Not done: chapter 07 (gypsum ceilings / partitions / סינר) — no budget left.
+
+### Sprint 11 Worker-Rooms — round 6 (eval `rooms11_r6` running; numbers below are offline `segment()` on stored primitives)
+**Rubel ground floor — the three unbridged openings, each debugged on the vectors:**
+* *Top (north) vitrine*: four parallel frame lines (y 196.6–200.6, x 304–380 mm) plus a purple and a black frame ring;
+  both ends sit on red new-wall fills. The bundle is 0.41 m wide in total against the 0.4 m limit → `BAND_TOTAL_M` 0.5.
+* *West facade*: two 4-line window bundles (x 170.6–174.6) with an outlined, unfilled, unhatched pier between them
+  (0.38 mm pen), and a long neighbouring line running on past the opening. The bundle-first detector measured the
+  merged blob (5.8 m, its end not on a wall) → new **gap-first** detector `closure._bands_h`: along every pixel row,
+  the gap between two wall runs is glazed when a stroke bundle runs in it and the rows of one gap together span it.
+  The bundle-first detector stays as `_bands_blob` (two wall ends that share no pixel row: Rubel's south vitrines);
+  duplicates are merged.
+* *Entrance*: "דלת פיבוט" 1.5 m, no swing arc (the 0.49 m side-leaf arc is under the 0.5 m door minimum, the pivot leaf
+  is dashed) → **doorways**: a gap ≤ 1.6 m between two wall ends that face each other over a wall's thickness
+  (0.08–0.5 m of rows; two parallel walls a corridor apart face each other over metres) is a soft closure.
+* Result: Rubel ground construction has the house as a closed room — **מטבח / פינת אוכל / סלון 93.2 m²** (+ WC 5.0).
+  The same bands also close pieces of the walled plot (carport 48.7, yards 88.6 / 23.1 / 16.5 m²): a face that exists
+  only thanks to soft evidence, larger than 15 m², on a sheet that labels its rooms, needs the label of an indoor room
+  (`segment._indoor_marks`; a height mark is no evidence — garden walls carry "H=35" too) — those four are dropped.
+* Yahav ground construction gains the **פטיו (courtyard, 12.4 m², closed)** and the living floor is closed (87.9 m²).
+**Achituv "סינר גבס" strip**: fill (209, 209, 209), 6.2 × 0.42 m — wall-thick, attached to the kitchen wall, so it was
+a wall and the six kitchen sockets on the real wall were outside the room. `walls._drawn_over`: a secondary-colour
+fill with ≥ 8 strokes drawn inside it (cupboards, notes) is a zone, not a wall. Dominant-colour walls are untouched.
+**`det_room_type`** (marked): outdoors on a trusted floor now wins over a face the accessory's own sheet closed there
+(MEP sheets keep their unlabelled garden faces).
+Noah `segment()` snapshot vs committed code: 2 of 15 sheets differ — the ground **master** sheet gains one unnamed
+4.9 m² room (borrowed walls), the ground **demolition** sheet's living room 70.13 → 70.53 m²; construction sheets (the
+canonical room source) are identical. To be confirmed line by line by the Noah eval, cold and warm.
+Not done this round: Rubel basement electrical registration (one room), Achituv guest WC / stair hall as rooms, the
+terrace and filter sockets, outdoor polygons for paving / balcony area lines (item 3).
+Concurrent work in the tree while `rooms11_r6` runs: Worker-Areas' in-progress `_tiling_by_location`
+(`boq/aggregate.py`, `boq/locations.py`; `tests/test_boq_s6.py::test_room_settings_tiling_wins…` fails on it) and
+uncommitted `symbols/` edits — chapter-05 and symbol lines of this run are not attributable to rooms.
+Tests: `tests/test_sprint11_rooms.py` 24 cases (+ doorway, drawn-over zone).
+
+### Sprint 11 Worker-Rooms — round 6 isolated measurement (`rooms11_iso2`)
+HEAD d29ff44 + only my round-6 files (isolated copy, not the shared tree). First isolated run (`rooms11_iso`) showed a real
+regression of round 6: the "drawn-over fill is a zone, not a wall" rule (`_drawn_over`) dropped 0.1 m partitions and 0.5-0.9 m
+hatched structural walls with linework on them (Achituv first floor merged into one 82 m2 bathroom: 4.08 58, 5.02 88.9, 5.03 193.6).
+Fixed: the rule now needs a small plain strip 0.3-0.45 m thick (`ZONE_MAX_M2`, `ZONE_RECT_FILL`, `ZONE_THICK_M`); test added.
+Measured vs rooms11_r5: Noah cold 61/63 identical on all 77 lines, nors 59/60, warm identical; Yahav exact 42 -> 43 (4.08 26 -> 28 = truth);
+Achituv 40 -> 40 (4.08 10 -> 12, truth 16); Rubel 37 -> 37 (4.08 10 -> 11, truth 25). Rubel ground floor is still NOT trusted
+(locprobe: shift matched 4, trusted False). Chapter-05 lines in acc12/areas11b labels came from Worker-Areas' uncommitted code, not HEAD.
