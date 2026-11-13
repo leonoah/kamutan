@@ -4525,3 +4525,31 @@ Final shape of (2): the foreign-vivid strokes are NOT merged into the main scene
 only where no main detection lies within 2 mm. Full runs `acc14`: Noah cold 61/77 = warm 61/77, identical to acc12 on all
 77 lines; Rubel 4.01 35 -> 43 (truth 42), exact 37 -> 37; Achituv 4.01 32 -> 37 (truth 34; the new singles are in the
 by-eye GT, so this is a drawing-vs-BOQ disagreement - dispute), exact 40 -> 40; Yahav exact 42 -> 43 (4.08 28 exact).
+
+### Sprint 11 — symbols, items (4)–(5) and Rubel 4.37 (Worker-Accuracy)
+
+**(4) Leader notes re-classing sockets — done for the 3-phase notes.** On Yahav the three 3-phase sockets are two-tick
+power glyphs named only by a note 10-30 mm away, whose words the reader splits ("תלת" / "פאזי" / "ש.תלת"; one word is
+often lost), beyond the 12 mm reach of the label refinement, and `suggest_class` needs two words. `_annotate` now lets
+a span containing "תלת" re-class the nearest socket (a socket on the note's line counts half the distance, reach 25 mm
+effective) when that socket is a `socket_power`; a nearer socket of another kind owns the note. Test:
+`test_a_leader_note_naming_three_phase_reclasses_the_socket_it_points_at`. Re-detection: yahav socket_3phase TP 0 -> 3
+(1 left), socket_power FP 5 -> 1; Noah / Rubel / Achituv: no change. Full run acc15: Yahav 4.03 12 -> 9 (truth 8),
+exact 43 -> 43; Noah cold = warm = acc14 on all 77 lines (61 exact); Rubel 37, Achituv 40 identical to acc14.
+(The 4th GT 3-phase point, "EV charger feed", keeps its class: its note has "תלת" 22 mm away but a single socket is nearer.)
+
+**(5) Not fixed — what the drawings show:**
+* shutter switch 0/4: the plan glyph (red box + two dots) is drawn 1.18 x the legend's; the line anchor tolerance is
+  +-12 % so no pose is proposed. Widening to 20 % finds them as switch_single but costs Noah +1 tv_point and Achituv +8
+  cameras (re-detection): reverted. Needs a per-template scale (legend vs plan size), not a looser tolerance.
+* garden spikes 0/3 (luminaire_outdoor): the plan symbol is a yellow disc on a red stake; the legend's "דוקרן" is a
+  black stake. Geometry fits (fwd 0.04, cov 1.0) but reverse fit / fill disagree (q 0), and the colour veto also
+  rejects it. It is a different symbol from the legend one: a composite rule (disc + stake), not a template fix.
+* panels 0/9: the GT point is a wall niche where the leaders end; the red hatched rectangle the label detector finds
+  stands ~20 mm away (H=220). Not decided by eye which one the designer counts: dispute.
+* D18 box (socket_box_6) 0/3: no legend row; the text "D18" is read on one of three sheets only (Rubel "D180").
+* intercom 0/2: Achituv "circle-א" and an existing intercom line — no legend row, not examined further.
+* `unknown` FP 26: left (repeated unexplained clusters; the GT lists nothing for them).
+* Rubel 4.36 / 4.37: both come from switch positions the Rubel plans do not draw as glyphs (4.37 is the lighting
+  module's "נק' מאור בודדה" topology line); no symbol-side cause.
+Gates: ruff, format, mypy clean; pytest 938 passed / 27 skipped (the sandbox fork-bomb test fails here, alone too: known environment flake, not related to symbols).

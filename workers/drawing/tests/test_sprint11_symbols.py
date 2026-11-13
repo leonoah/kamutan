@@ -291,3 +291,25 @@ def test_a_vivid_colour_no_legend_symbol_uses_is_kept_and_not_vetoed() -> None:
     legend = {(237, 31, 36), (147, 39, 143)}
     rgb = np.array([(166, 79, 238), (237, 31, 36), (150, 40, 140), (102, 93, 87), (0, 0, 0), (255, 255, 10)])
     assert foreign_vivid(rgb, legend).tolist() == [True, False, False, False, False, True]
+
+
+def test_a_leader_note_naming_three_phase_reclasses_the_socket_it_points_at() -> None:
+    """Yahav: "שקע תלת פאזי לג'קוזי" stands 10-25 mm from its two-tick socket and the reader drops a word of it."""
+    from kamutan_drawing.ocr.dictionary import TextSpan
+    from kamutan_drawing.symbols import detect as D
+
+    def sock(cls: str, x: float, y: float) -> D.Detection:
+        return D.Detection(cls, (x, y), (x - 1.5, y - 1.5, x + 1.5, y + 1.5), source="vector")
+
+    def span(text: str, cx: float, cy: float) -> TextSpan:
+        return TextSpan("s", (cx - 3.0, cy - 1.0, cx + 3.0, cy + 1.0), text, 0.95, 2.0, 0, len(text))
+
+    a, other = sock("socket_power", 100.0, 100.0), sock("socket_power", 100.0, 140.0)
+    D._annotate([a, other], D.TextIndex([span("תלת", 75.0, 100.0)]), [])  # 22 mm along the line, the other far away
+    assert a.cls == "socket_3phase" and other.cls == "socket_power"
+    b = sock("socket_power", 100.0, 100.0)
+    D._annotate([b], D.TextIndex([span("תלת", 40.0, 100.0)]), [])  # 55 mm: out of reach
+    assert b.cls == "socket_power"
+    c, near = sock("socket_power", 100.0, 100.0), sock("socket_single", 80.0, 110.0)
+    D._annotate([c, near], D.TextIndex([span("תלת", 76.0, 106.0)]), [])  # a nearer socket of another kind owns the note
+    assert c.cls == "socket_power" and near.cls == "socket_single"

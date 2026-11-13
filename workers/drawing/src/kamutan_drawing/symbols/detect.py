@@ -126,6 +126,8 @@ REFINES: dict[str, set[str]] = {
     "switch_single": {"switch_2way", "switch_fan"},
 }
 TEXT_ANCHOR_CLASSES = {"fixture_wc_concealed", "fixture_wc_monoblock", "faucet_wall", "faucet_basin", "fixture_basin"}
+THREE_PHASE_RE = re.compile(r"תלת")
+THREE_PHASE_REACH_MM = 25.0  # nearest-socket distance (a line along the note counts half), so up to 50 mm in line
 H_RE = re.compile(r"H\s*=\s*(\d{2,3})", re.IGNORECASE)
 IP_RE = re.compile(r"IP\s*(\d{2})", re.IGNORECASE)
 # Sprint 10: accessory add-ons written beside a socket — "+TYPE C" / "USB" (BOQ "תוספת עבור שקע USB+TYPE C"),
@@ -1054,10 +1056,10 @@ def _annotate(dets: list[Detection], tix: TextIndex, markers: list[tuple[Candida
     for si, s in enumerate(tix.spans):
         toks = annotation_tokens(s.text)
         cls_txt, _ = suggest_class(s.text, s.conf) if len(s.text) <= 40 else (None, 0.0)
-        if not toks and not cls_txt:
+        if not toks and not cls_txt and not THREE_PHASE_RE.search(s.text):
             continue
         cx, cy = tix.xy[si]
-        for di in tree.query_ball_point([cx, cy], 25.0):
+        for di in tree.query_ball_point([cx, cy], 25.0 + (THREE_PHASE_REACH_MM if THREE_PHASE_RE.search(s.text) else 0.0)):
             d = dets[di]
             b = d.bbox
             dx = max(b[0] - s.bbox[2], 0.0, s.bbox[0] - b[2])
@@ -1080,6 +1082,26 @@ def _annotate(dets: list[Detection], tix: TextIndex, markers: list[tuple[Candida
             # Sprint 10: "הזנה לוונטה" / "הזנה לתריס" name a ventilator / shutter feed, which has its own symbol (the V
             # / M ring); the keyword rules' "ונטה" → heater feed must not turn the socket beside it into a heater feed
             cls_txt = None
+        if cls_txt is None and THREE_PHASE_RE.search(block or s.text) and len(s.text) <= 40:
+            # Sprint 11 (Worker-Accuracy): a leader note ("שקע תלת פאזי לג'קוזי", "ש.תלת פאזי לכיריים") sits further
+            # from its glyph than a label (10-25 mm) and the reader often drops a word of it: "תלת" alone re-classes
+            # the socket it points at — the nearest socket, a line along the note counting half — when that is a
+            # two-tick power socket
+            def reach(di: int, g: float, s: TextSpan = s) -> float:
+                b = dets[di].bbox
+                inline = min(max(b[1] - s.bbox[3], 0.0, s.bbox[1] - b[3]), max(b[0] - s.bbox[2], 0.0, s.bbox[0] - b[2])) <= 3.0
+                return g * 0.5 if inline else g
+
+            socks = [(di, reach(di, g)) for di, g in lst if dets[di].cls.startswith("socket") and dets[di].source != "text"]
+            if socks:
+                di, r = min(socks, key=lambda q: q[1])
+                if (
+                    dets[di].cls == "socket_power"
+                    and r <= THREE_PHASE_REACH_MM
+                    and not any(x == R_REFINED for x in dets[di].reasons)
+                ):
+                    dets[di].cls = "socket_3phase"
+                    dets[di].reasons.append(R_REFINED)
         if cls_txt:
             ok = [
                 (di, g)
