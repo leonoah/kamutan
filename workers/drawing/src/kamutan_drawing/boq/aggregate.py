@@ -1154,6 +1154,7 @@ def aggregate(
 WET_ROOM_MAX_M2 = (
     30.0  # Sprint 11 (Worker-Areas) — keep: no bathroom / WC is larger (Achituv merged 81.7 m² "חדר רחצה / חדר כביסה")
 )
+R_SCALE_CONFLICT_ROOM = "קנה מידה סותר"  # classify.sheet.R_SCALE_CONFLICT: a big area there is the scale's fault, kept red
 OPEN_ROOM_MAX_M2 = 12.0  # Sprint 11 (Worker-Areas) — keep: an unclosed outline of a small room is still that room
 
 
@@ -1201,7 +1202,8 @@ def _tiling_by_location(
         ev0 = u.members[0][0] if u.members else None
         r0 = rooms.get(f"{ev0.sheet_id}__{ev0.id}") if ev0 is not None else None
         if (u.rule is not None and u.rule.kind in ("tiling_floor", "tiling_cladding", "tiling_corner") and r0 is not None
-                and r0.type in ("bathroom", "wc") and r0.area_m2 > WET_ROOM_MAX_M2):  # fmt: skip
+                and r0.type in ("bathroom", "wc") and r0.area_m2 > WET_ROOM_MAX_M2
+                and R_SCALE_CONFLICT_ROOM not in r0.reasons):  # fmt: skip
             t_units.remove(u)
             stats["implausibleWet"] = stats.get("implausibleWet", 0) + 1
     for u in t_units:
