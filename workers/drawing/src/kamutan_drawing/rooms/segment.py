@@ -42,6 +42,7 @@ MIN_WIDTH_M = 0.5
 MAX_OPEN_SHARE = 0.15  # of the perimeter not bounded by walls -> exterior, dropped
 MAX_ROOM_SHARE = 0.6  # of the region area -> exterior / background
 MAX_OPEN_ROOM_M2 = 150.0  # a not-closed face above this is not a room
+SOFT_UNMARKED_MAX_M2 = 15.0  # a larger face closed only by bands / doorways needs indoor evidence
 OPEN_PLAN_M2 = 25.0  # above this a storage label (pantry, wardrobe) names a piece of furniture, not the room
 OUTDOOR_MIN_LABELS = 2  # open-ground labels inside a not-closed face that make it a garden, not a room
 TEXT_CONF_DEFAULT = 0.7  # text items without a confidence (raw OCR TextLine)
@@ -60,6 +61,7 @@ class _Face:
     poly: Polygon
     closed: bool
     open_share: float
+    soft: bool = False  # exists only thanks to the glazing bands / doorways (Sprint 11)
 
 
 def _bbox_xyxy(t: Any) -> tuple[float, float, float, float] | None:
@@ -106,7 +108,7 @@ def _to_wall_faces(faces: list[_Face], ws: WallSet, walls: BaseGeometry) -> list
             out.append(f)
             continue
         best = max(polys, key=lambda p: p.intersection(f.poly).area)
-        out.append(_Face(Polygon(best.exterior), f.closed, f.open_share))
+        out.append(_Face(Polygon(best.exterior), f.closed, f.open_share, f.soft))
     return out
 
 
@@ -158,6 +160,8 @@ def _faces(ws: WallSet, bx: Polygon, mm_per_m: float) -> tuple[list[_Face], Base
                 cut_faces.extend(open_faces(piece, True))
             else:
                 cut_faces.append(_Face(piece, True, 0.0))
+        for c in cut_faces:
+            c.soft = True
         if any(c.poly.area >= room_mm2 and (c.closed or c.open_share <= MAX_OPEN_SHARE) for c in cut_faces):
             out.extend(cut_faces)
         else:
@@ -180,6 +184,19 @@ def _names_in(p: Polygon, texts: list[tuple[Point, str, float]]) -> list[tuple[N
             found.append((m, m.score * conf))
     found.sort(key=lambda t: -t[1])
     return found
+
+
+def _indoor_marks(p: Polygon, texts: list[tuple[Point, str, float]]) -> bool:
+    """A room label of an indoor room inside the face. (A height mark is no evidence: garden walls and planters carry
+    "H=35" / "H=204" too.)"""
+    pp = shapely.prepared.prep(p)
+    for pt, text, _ in texts:
+        if len(text) > 40 or not pp.contains(pt):
+            continue
+        m = match_room_name(text)
+        if m is not None and m.score >= 0.8 and type_from_name(m.name) not in ("courtyard", "balcony"):
+            return True
+    return False
 
 
 def _outdoor_labels(p: Polygon, texts: list[tuple[Point, str, float]]) -> int:
@@ -268,6 +285,8 @@ def segment(
         reg_area = bx.area
         env = envelope_of(shapely.union_all([ws.walls, *ws.bridges]) if ws.bridges else ws.walls, mm_per_m)
         borrowed_zone = ws.borrowed.buffer(0.5) if ws.borrowed is not None else None
+        # a sheet that labels its rooms at all (construction, furniture; not a bare MEP sheet)
+        labelled = any(f.soft and _indoor_marks(f.poly, texts) for f in faces)
         kept: list[tuple[_Face, float]] = []
         for f in faces:
             a_m2 = f.poly.area / (mm_per_m**2)
@@ -276,6 +295,11 @@ def segment(
             if not _width_ok(f.poly, mm_per_m):
                 continue
             if not f.closed and f.open_share > MAX_OPEN_SHARE:
+                continue
+            if labelled and f.soft and a_m2 > SOFT_UNMARKED_MAX_M2 and not _indoor_marks(f.poly, texts):
+                # Sprint 11: the bands that close the house also close pieces of the walled plot beside it (Rubel:
+                # carport 49 m², side yards 89 / 23 m²). A large piece is a room only with indoor evidence — the
+                # label of an indoor room — on a sheet that labels its rooms; without it the piece stays open ground
                 continue
             if not f.closed and a_m2 > MAX_OPEN_ROOM_M2:
                 continue  # Sprint 11: larger than any open-plan floor — a plot inside its garden walls (Rubel 315 m²)

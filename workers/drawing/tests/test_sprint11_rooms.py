@@ -360,3 +360,65 @@ def test_point_in_a_dry_living_room_is_where_a_note_only_basin_is_the_kitchen_si
     assert not in_dry_kitchen_or_living(loc, "pl", "first", 120 + 62.5, 125 - 41.0)  # the bathroom
     assert not in_dry_kitchen_or_living(loc, "pl", "first", 180 + 62.5, 130 - 41.0)  # a bedroom
     assert not in_dry_kitchen_or_living(loc, "pl", "ground", 150.0, 200.0)  # floor without a model: no guess
+
+
+# ----------------------------------------------------------------------------------------------- round 6
+def test_doorway_between_two_facing_wall_ends_closes_a_leaking_room():
+    """Rubel entrance: a 1.5 m pivot door has no swing arc; the two wall ends face each other across it."""
+
+    def draw(c, ps):
+        _shell(c, ps, east=False)
+        _rect(c, ps, RX1 - T, RY0, RX1, 119.0)  # east wall with a 1.5 m doorway (119..149)
+        _rect(c, ps, RX1 - T, 149.0, RX1, RY1)
+
+    rooms = segment(_vs(draw), [SimpleText((130, 130, 150, 134), "סלון", 0.95)], [REGION], 50)
+    assert [r.name for r in rooms] == ["סלון"] and 11.0 < rooms[0].area_m2 < 13.0
+
+
+def test_light_zone_with_things_drawn_on_it_is_not_a_wall():
+    """Achituv kitchen: the light-grey "סינר גבס" strip (wall-thick) carries the cupboards drawn on it."""
+    grey = (209 / 255, 209 / 255, 209 / 255)
+
+    def draw(c, ps, busy):
+        _shell(c, ps)
+        _rect(c, ps, RX0 + T, RY0 + T, RX1 - T, RY0 + T + 8.0, rgb=grey)  # 0.4 m strip under the top wall
+        if busy:
+            for k in range(12):
+                x = RX0 + T + 6.0 + k * 6.0
+                stroke_line(c, (x, RY0 + T + 1.0), (x, RY0 + T + 7.0), ps, 0.08)
+
+    busy = segment(_vs(lambda c, ps: draw(c, ps, True)), [], [REGION], 50)
+    plain = segment(_vs(lambda c, ps: draw(c, ps, False)), [], [REGION], 50)
+    assert len(busy) == len(plain) == 1
+    assert busy[0].area_m2 > plain[0].area_m2 + 1.0  # the strip belongs to the room when it is drawn over
+
+
+def test_drawn_over_only_applies_to_a_valance_strip_not_to_hatched_walls_or_partitions():
+    """Achituv first floor: 0.1 m partitions and 0.5-0.9 m structural walls carry hatch lines too; they stay walls."""
+    import numpy as np
+
+    from kamutan_drawing.rooms.walls import _drawn_over
+
+    mm = 20.0  # mm of paper per metre (1:50)
+
+    def strips(thick_m: float, n: int = 12):
+        s = []
+        for k in range(n):
+            x = 5.0 + k * 6.0
+            s.append((x, 1.0, x, 1.0 + thick_m * mm - 2.0))
+        return s
+
+    class _VS:
+        def __init__(self, thick_m: float) -> None:
+            lines = strips(thick_m)
+            self.segs = np.array(lines, dtype=float)
+            self.n_segs = len(lines)
+            self.seg_path = np.zeros(len(lines), dtype=int)
+            self.path_stroked = np.array([True])
+
+    from shapely.geometry import box
+
+    inbox = np.array([True])
+    for thick, expect in ((0.42, True), (0.1, False), (0.6, False)):
+        g = box(0.0, 0.0, 80.0, thick * mm)
+        assert _drawn_over(_VS(thick), inbox, g, mm) is expect  # type: ignore[arg-type]

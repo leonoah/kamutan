@@ -976,9 +976,11 @@ def aggregate(
         if cr is not None:
             by_fx = cr.area_m2 <= WET_BY_FIXTURES_M2 and bool(room_fx.get(cr.key, frozenset()) & wet_fx)
             return "bathroom" if cr.type not in ("bathroom", "wc") and by_fx else cr.type
+        if where == OUTDOOR and outdoor_ok.get((d.sheet_id, d.floor)):
+            return "courtyard"  # outside the building of a trusted floor model, whatever face its own sheet closed there
         r = room_index.get((d.sheet_id, d.room_id)) if d.room_id else None
         if r is None:
-            return "courtyard" if where == OUTDOOR and outdoor_ok.get((d.sheet_id, d.floor)) else None
+            return None
         c = r if r.key in {x.key for x in canon} else (match_room(r, canon) or r)
         return c.type
 

@@ -32,9 +32,11 @@ BAND_PX_PER_MM = 4.0
 BAND_MIN_LEN_M = 0.5  # shortest glazing band
 BAND_MAX_LEN_M = 9.0
 BAND_MAX_M = 0.2  # the leaves / frame lines of one glazing lie within this width
-BAND_TOTAL_M = 0.4  # … and the whole bundle (sills at both wall faces) within this
+BAND_TOTAL_M = 0.5  # … and the whole bundle (sills at both wall faces) within this
 BAND_STROKE_MIN_M = 0.3  # a stroke shorter than this is not a frame line
 BAND_REACH_M = 0.12  # a band end this close to a wall touches it
+DOORWAY_MAX_M = 1.6  # a gap between two facing wall ends up to this is a doorway
+DOORWAY_T_M = (0.08, 0.5)  # … when they face each other over a wall's thickness
 BAND_MAX_PX = 60_000_000
 
 
@@ -100,7 +102,81 @@ def hatched_walls(
 
 
 def _bands_h(lines: np.ndarray, walls: np.ndarray, px_per_m: float) -> list[tuple[int, int, int, int]]:
-    """Horizontal glazing bands ``(x0, y0, x1, y1)`` (pixel box, exclusive ends) of a horizontal-stroke raster."""
+    """Horizontal glazing bands ``(x0, y0, x1, y1)`` (pixel box, exclusive ends) of a horizontal-stroke raster.
+
+    Gap first: along every pixel row, a gap between two wall runs of ``BAND_MIN_LEN_M``–``BAND_MAX_LEN_M`` is *glazed*
+    when a stroke bundle (merged across the band width and across small breaks) runs in it; consecutive such rows of
+    one gap form a band when together they span the gap. Anchoring on the wall gap — not on the stroke bundle — keeps a neighbouring line that runs on
+    past the opening (a plot line, a shutter box) from spoiling the band (Rubel ground floor, west facade)."""
+    from scipy import ndimage
+
+    gap = max(2, round(BAND_MAX_M * px_per_m))
+    reach = max(2, round(BAND_REACH_M * px_per_m))
+    lo, hi = BAND_MIN_LEN_M * px_per_m, BAND_MAX_LEN_M * px_per_m
+    max_rows = round(BAND_TOTAL_M * px_per_m) + 2
+    # the outline strokes of the walls themselves are not glazing
+    lines = lines & ~ndimage.binary_dilation(walls, structure=np.ones((3, 3), bool))
+    # strokes closer than the band width (across) merge into one blob; along the band small breaks (mullions) close
+    blob = ndimage.binary_closing(np.pad(lines, gap), structure=np.ones((gap, 1), bool))[gap:-gap, gap:-gap]
+    blob = ndimage.binary_closing(np.pad(blob, reach), structure=np.ones((1, reach), bool))[reach:-reach, reach:-reach]
+    # glazed gaps per row: {(xa, xb) snapped to 2 px: [rows]}
+    found: dict[tuple[int, int], list[tuple[int, int, int]]] = {}
+    doors: dict[tuple[int, int], list[tuple[int, int, int]]] = {}
+    door_hi = DOORWAY_MAX_M * px_per_m
+    for y in np.where(walls.any(axis=1))[0].tolist():
+        wr = np.flatnonzero(np.diff(np.concatenate([[0], walls[y].astype(np.int8), [0]])))
+        ends, starts = wr[1::2], wr[0::2]  # wall runs are [starts[i], ends[i])
+        for xa, xb in zip(ends[:-1].tolist(), starts[1:].tolist(), strict=True):
+            n = xb - xa
+            if not (lo <= n <= hi):
+                continue
+            if n <= door_hi:
+                doors.setdefault((xa // 2, xb // 2), []).append((y, xa, xb))
+            if n <= 2 * reach + 2 or blob[y, xa + reach : xb - reach].mean() < 0.2:
+                continue  # no stroke bundle along this row of the gap
+            found.setdefault((xa // 2, xb // 2), []).append((y, xa, xb))
+    out: list[tuple[int, int, int, int]] = []
+    for rows in found.values():
+        rows.sort()
+        start = 0
+        for k in range(1, len(rows) + 1):
+            if k < len(rows) and rows[k][0] == rows[k - 1][0] + 1:
+                continue
+            grp = rows[start:k]
+            start = k
+            y0, y1 = grp[0][0], grp[-1][0] + 1
+            xa, xb = min(g[1] for g in grp), max(g[2] for g in grp)
+            if not (2 <= y1 - y0 <= max_rows):
+                continue
+            # the bundle as a whole spans the gap (staggered sliding leaves each cover a part of it)
+            if blob[y0:y1, xa + reach : xb - reach].any(axis=0).mean() < 0.85:
+                continue
+            strong = lines[y0:y1, xa:xb].sum(axis=1) >= 0.3 * (xb - xa)
+            if int(strong.sum()) < 2:
+                continue  # a single line: a furniture edge, a dimension line
+            out.append((xa - 1, y0, xb + 1, y1))
+    # doorways: a gap of at most ``DOORWAY_MAX_M`` between two wall ends that face each other over a wall's thickness
+    # (a few rows — two parallel walls a corridor apart face each other over metres). The pivot / sliding entrance of
+    # a villa has no swing arc to bridge it (Rubel ground floor: "דלת פיבוט", 1.5 m)
+    t_lo, t_hi = max(2, round(DOORWAY_T_M[0] * px_per_m)), round(DOORWAY_T_M[1] * px_per_m)
+    for rows in doors.values():
+        rows.sort()
+        start = 0
+        for k in range(1, len(rows) + 1):
+            if k < len(rows) and rows[k][0] == rows[k - 1][0] + 1:
+                continue
+            grp = rows[start:k]
+            start = k
+            y0, y1 = grp[0][0], grp[-1][0] + 1
+            if t_lo <= y1 - y0 <= t_hi and grp[0][2] - grp[0][1] >= lo:
+                # the rows just outside the group must be free on at least one side over the gap (a jamb pair, not
+                # the inside of a notch in one wall)
+                out.append((min(g[1] for g in grp) - 1, y0, max(g[2] for g in grp) + 1, y1))
+    return out
+
+
+def _bands_blob(lines: np.ndarray, walls: np.ndarray, px_per_m: float) -> list[tuple[int, int, int, int]]:
+    """Bundle first (complements :func:, whose two wall ends must share a pixel row): horizontal glazing bands ``(x0, y0, x1, y1)`` (pixel box, exclusive ends) of a horizontal-stroke raster."""
     from scipy import ndimage
 
     h, w = lines.shape
@@ -193,12 +269,20 @@ def glazing_bands(
 
     out: list[Polygon] = []
     if hor.any():
-        for bx0, by0, bx1, by1 in _bands_h(draw(np.where(hor)[0]), wall_mask, px_per_m):
+        hl = draw(np.where(hor)[0])
+        for bx0, by0, bx1, by1 in [*_bands_h(hl, wall_mask, px_per_m), *_bands_blob(hl, wall_mask, px_per_m)]:
             out.append(box(x0 + bx0 / ppm, y0 + by0 / ppm, x0 + bx1 / ppm, y0 + by1 / ppm))
     if ver.any():
-        for bx0, by0, bx1, by1 in _bands_h(draw(np.where(ver)[0]).T, wall_mask.T, px_per_m):
+        vl = draw(np.where(ver)[0]).T
+        for bx0, by0, bx1, by1 in [*_bands_h(vl, wall_mask.T, px_per_m), *_bands_blob(vl, wall_mask.T, px_per_m)]:
             out.append(box(x0 + by0 / ppm, y0 + bx0 / ppm, x0 + by1 / ppm, y0 + bx1 / ppm))
-    return out
+    # the two detectors often find the same opening: keep one box per opening (the larger)
+    out.sort(key=lambda g: -g.area)
+    kept: list[Polygon] = []
+    for g in out:
+        if not any(g.intersection(k).area >= 0.7 * g.area for k in kept):
+            kept.append(g)
+    return kept
 
 
 __all__ = ["glazing_bands", "hatched_walls"]

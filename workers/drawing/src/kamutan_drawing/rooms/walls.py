@@ -182,6 +182,8 @@ def extract_walls(
             # other colours (new / demolished walls, black columns): wall-like and attached to the walls,
             # or clearly a wall on its own (long, wall-thick)
             if _is_wall_like(g, mm_per_m) and (g.intersects(near) or g.length > 1.5 * mm_per_m):
+                if _drawn_over(vs, inbox, g, mm_per_m):
+                    continue  # Sprint 11: a ceiling / valance zone (things are drawn on it), not a wall
                 parts.append(g)
         stats["fillPaths"] = float(len(parts))
         stats["dominantFill"] = float(dom[0] * 65536 + dom[1] * 256 + dom[2])
@@ -263,6 +265,36 @@ def extract_walls(
             ws.borrowed = closing if ws.borrowed is None else ws.borrowed.union(closing)
             ws.stats["borrowedClosures"] = float(len(keep))
     return ws
+
+
+ZONE_MAX_M2 = 4.0  # a ceiling / valance strip is small (Achituv: 6.2 x 0.42 m = 2.6 m2) ...
+ZONE_THICK_M = (0.3, 0.45)  # thicker than a partition, thinner than a structural wall (Achituv strip 0.42 m)
+ZONE_RECT_FILL = 0.85  # ... and a plain rectangle; a merged wall network is neither
+ZONE_MIN_STROKES = 8  # strokes drawn inside a secondary-colour fill that make it a zone, not a wall
+
+
+def _drawn_over(vs: VectorSheet, inbox: np.ndarray, g: BaseGeometry, mm_per_m: float) -> bool:
+    """Whether linework is drawn *inside* the filled shape ``g`` (≥ ``ZONE_MIN_STROKES`` stroke mid-points more than
+    0.4 mm from its edge). A wall fill is empty; the light-grey strip of a lowered ceiling / "סינר גבס" over the
+    kitchen units (Achituv ground: 6.2 × 0.42 m, wall-thick) has the cupboards, sockets and notes drawn on it."""
+    if (
+        g.area > ZONE_MAX_M2 * mm_per_m**2
+        or g.area < ZONE_RECT_FILL * g.minimum_rotated_rectangle.area
+        or not ZONE_THICK_M[0] * mm_per_m <= 2 * g.area / max(g.length, 1e-9) <= ZONE_THICK_M[1] * mm_per_m
+    ):
+        return False  # only a small plain strip 0.3-0.45 m thick: a partition (0.1 m), a structural wall (hatched) or a merged network has linework on it too
+    core = g.buffer(-0.4)
+    if core.is_empty or vs.n_segs == 0:
+        return False
+    x0, y0, x1, y1 = core.bounds
+    s = vs.segs
+    mx, my = (s[:, 0] + s[:, 2]) / 2, (s[:, 1] + s[:, 3]) / 2
+    sel = (mx >= x0) & (mx <= x1) & (my >= y0) & (my <= y1) & inbox[vs.seg_path] & vs.path_stroked[vs.seg_path]
+    idx = np.where(sel)[0]
+    if len(idx) < ZONE_MIN_STROKES:
+        return False
+    inside = shapely.contains_xy(core, mx[idx].astype(np.float64), my[idx].astype(np.float64))
+    return int(inside.sum()) >= ZONE_MIN_STROKES
 
 
 def _dominant_wall_colour(
