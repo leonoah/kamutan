@@ -263,3 +263,31 @@ def test_a_note_box_against_the_legend_is_a_frame_not_a_symbol() -> None:
     entries = [e for lg in leg.legends for e in lg.entries]
     assert sorted(e.label for e in entries) == sorted(labels)
     assert all(abs((e.symbol_bbox[2] - e.symbol_bbox[0]) - 4.0) < 0.3 for e in entries)
+
+
+def test_a_filled_outline_of_a_stroked_line_is_not_a_solid_for_a_stroke_only_symbol() -> None:
+    """Rubel's purple AC socket: a stroked arc plus its 0.05 mm wide "filled" outline. The stroke-only legend socket
+    must not be charged 2 mm² of extra fill for it — but a real solid beside it still counts."""
+    s = Sheet()
+    s.line([(10.0, 10.0), (14.0, 10.0), (14.0, 13.0)], RED)  # 0: the stroked ink
+    s.fill([(10.0, 10.02), (14.02, 10.02), (14.02, 13.0), (14.0, 13.0), (14.0, 10.04), (10.0, 10.04)], RED)  # 1: its outline
+    for k in range(3):  # 2..: a real solid elsewhere (a filled square), sitting on no stroke
+        s.rect(50.0 + 0.0 * k, 50.0, 53.0, 53.0, RED)
+    vs = s.build()
+    scene = MA.build_scene(vs, [])
+    assert scene.fill_outline is not None and scene.fill_outline.sum() >= 1
+    stroke_only = _tpl(vs, [0], "stroke", fill_area=0.0, fill_pieces=0)
+    on_line = MA.fill_difference(stroke_only, scene, np.array([12.0, 11.5]), np.eye(2), 1.0)
+    on_solid = MA.fill_difference(stroke_only, scene, np.array([51.5, 51.5]), np.eye(2), 1.0)
+    assert on_line == 0.0
+    assert on_solid > 0.2
+
+
+def test_a_vivid_colour_no_legend_symbol_uses_is_kept_and_not_vetoed() -> None:
+    """The colour mask dropped Rubel's purple AC sockets with the furniture; a colour the legend never uses names
+    nothing (neither for nor against), a legend colour of ANOTHER symbol still does."""
+    from kamutan_drawing.symbols.detect import foreign_vivid
+
+    legend = {(237, 31, 36), (147, 39, 143)}
+    rgb = np.array([(166, 79, 238), (237, 31, 36), (150, 40, 140), (102, 93, 87), (0, 0, 0), (255, 255, 10)])
+    assert foreign_vivid(rgb, legend).tolist() == [True, False, False, False, False, True]

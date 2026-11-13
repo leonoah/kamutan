@@ -40,6 +40,8 @@ CAP_MM = 0.6
 MAX_POSES = 60_000
 CHUNK_POINTS = 1_500_000
 MIN_FWD_COV = 0.72
+OUTLINE_TOL = 0.12  # mm: a filled path whose edges lie this close to stroked ink is that ink's outline, not a solid
+OUTLINE_SHARE = 0.8
 TERMINATOR_MM = 0.8  # a filled path this small is a leader's dot / arrowhead, not symbol ink
 RUN_ON_MM = 1.0  # a leader's path reaches at least this far past the posed symbol box
 # Sprint 11 (Worker-Accuracy): a "more specific" drawing may replace a kept one only when the strokes it adds are
@@ -66,6 +68,7 @@ class Scene:
     fill_xy: np.ndarray = field(default_factory=lambda: np.zeros((0, 2)))  # centroids of filled paths
     fill_area: np.ndarray = field(default_factory=lambda: np.zeros(0))
     fill_tree: cKDTree | None = None
+    fill_outline: np.ndarray | None = None  # Sprint 11: filled path = outline of stroked ink (see _outline_fills)
     # Sprint 8: per kept segment — part of a leader terminator (tiny filled path); a straight segment of a
     # straight-line path that ends on a terminator (a leader's last leg); its path's bbox. None = every ink counts
     seg_terminator: np.ndarray | None = None
@@ -75,6 +78,29 @@ class Scene:
     @property
     def n(self) -> int:
         return len(self.segs)
+
+
+def _outline_fills(vs: VectorSheet, fp: np.ndarray, ids: np.ndarray, pts: np.ndarray, pt_seg: np.ndarray) -> np.ndarray:
+    """Sprint 11 (Worker-Accuracy) — keep: per filled path, is it only the polygon outline of a stroked line that is
+    drawn beside it (Rubel's purple AC socket: a stroked arc plus its 0.05 mm wide "filled" outline, 2 mm² in all)?
+    Such a path adds no solid to the symbol; a stroke-only legend drawing must not be charged for it."""
+    out = np.zeros(len(fp), bool)
+    if len(fp) == 0 or len(pts) == 0:
+        return out
+    stroke_pt = vs.path_fill_mode[vs.seg_path[ids[pt_seg]]] <= 0
+    if not stroke_pt.any():
+        return out
+    tree = cKDTree(pts[stroke_pt])
+    pos = {int(p): i for i, p in enumerate(fp.tolist())}
+    segs = np.where(np.isin(vs.seg_path, fp))[0]
+    mid = np.column_stack([(vs.segs[segs, 0] + vs.segs[segs, 2]) / 2, (vs.segs[segs, 1] + vs.segs[segs, 3]) / 2]).astype(
+        np.float64
+    )
+    d, _ = tree.query(mid, k=1, distance_upper_bound=OUTLINE_TOL)
+    owner = np.array([pos[int(p)] for p in vs.seg_path[segs]], dtype=np.int64)
+    near = np.bincount(owner, weights=np.isfinite(d).astype(float), minlength=len(fp))
+    tot = np.bincount(owner, minlength=len(fp))
+    return near >= OUTLINE_SHARE * np.maximum(tot, 1)
 
 
 def build_scene(vs: VectorSheet, exclude: list[BBox], *, keep_mask: np.ndarray | None = None) -> Scene:
@@ -96,6 +122,7 @@ def build_scene(vs: VectorSheet, exclude: list[BBox], *, keep_mask: np.ndarray |
     fp = fp[areas[fp] < 50.0]  # walls are filled too; symbols are small
     pb = vs.path_bbox[fp].astype(np.float64)
     fxy = np.column_stack([(pb[:, 0] + pb[:, 2]) / 2, (pb[:, 1] + pb[:, 3]) / 2]) if len(fp) else np.zeros((0, 2))
+    fdup = _outline_fills(vs, fp, ids, pts, pt_seg)
     # leader terminators / straight polylines (Sprint 8, see :func:`reverse`)
     box = vs.path_bbox.astype(np.float64)
     dim = np.maximum(box[:, 2] - box[:, 0], box[:, 3] - box[:, 1])
@@ -123,6 +150,7 @@ def build_scene(vs: VectorSheet, exclude: list[BBox], *, keep_mask: np.ndarray |
         list(exclude),
         fill_xy=fxy,
         fill_area=areas[fp],
+        fill_outline=fdup,
         fill_tree=cKDTree(fxy) if len(fp) else None,
         seg_terminator=terminator[sp],
         seg_leader_end=leader_end,
@@ -313,6 +341,8 @@ def fill_difference(tpl: Template, scene: Scene, center: np.ndarray, mat: np.nda
             idx = np.asarray(idx)
             q = (scene.fill_xy[idx] - center) @ np.linalg.inv(mat).T
             inside = (np.abs(q[:, 0]) <= tpl.w / 2 + 0.1) & (np.abs(q[:, 1]) <= tpl.h / 2 + 0.1)
+            if tpl.fill_area <= 0 and scene.fill_outline is not None:
+                inside &= ~scene.fill_outline[idx]  # a stroke-only symbol is not charged for stroke outlines
             found = float(scene.fill_area[idx][inside].sum()) / max(scale * scale, 1e-9)
             pieces = int(inside.sum())
     diff = abs(found - tpl.fill_area)

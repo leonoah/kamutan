@@ -4480,3 +4480,48 @@ Fixed: the rule now needs a small plain strip 0.3-0.45 m thick (`ZONE_MAX_M2`, `
 Measured vs rooms11_r5: Noah cold 61/63 identical on all 77 lines, nors 59/60, warm identical; Yahav exact 42 -> 43 (4.08 26 -> 28 = truth);
 Achituv 40 -> 40 (4.08 10 -> 12, truth 16); Rubel 37 -> 37 (4.08 10 -> 11, truth 25). Rubel ground floor is still NOT trusted
 (locprobe: shift matched 4, trusted False). Chapter-05 lines in acc12/areas11b labels came from Worker-Areas' uncommitted code, not HEAD.
+
+### Sprint 11 — symbols, items (1)–(3) (Worker-Accuracy)
+
+**(2) Purple AC-socket glyph (Rubel 170e522f, 17 missed singles) — cause found on the drawing, fixed.**
+The hypothesis "no pose for a polygon outline" was wrong: the glyph's stroke (path 4998, r 1.63, 248 deg) is a bezier and
+`extract_arcs` finds it. Two other things dropped it, in this order:
+1. `_colour_mask` keeps only strokes in a legend symbol's colour. The legend socket is red (237,31,36); the plan glyph
+   is purple (166,79,238) (the A/C layer), a colour no legend symbol uses -> the strokes were not in the scene at all.
+   Fix: a small (<= 12 mm) vivid (chroma >= 60) stroke in a colour no legend symbol uses is kept (`foreign_vivid`), and
+   `colour_share` counts such ink as consistent (a colour the legend never uses names nothing).
+2. With the strokes present the fit was q 0.50 (< 0.6): the plan glyph also has three "filled" paths that are only the
+   0.05 mm wide polygon outline of the stroked arc (2 mm^2), charged as extra fill to the stroke-only legend socket
+   (fill_diff 0.11). Fix: `Scene.fill_outline` (a filled path whose edges lie within 0.12 mm of stroked ink is an outline);
+   `fill_difference` ignores those for a template with no fill. q -> 0.89. (A first "thin width" test broke cameras and
+   luminaires, whose exploded solids are also thin: reverted — the width does not tell outline from solid, the
+   stroke next to it does.)
+Tests: `test_a_filled_outline_of_a_stroked_line_is_not_a_solid_for_a_stroke_only_symbol`, `test_a_vivid_colour_no_legend_symbol_uses_is_kept_and_not_vetoed`.
+Re-detection vs GT (gtscore, not a full run): micro P 0.937 -> 0.932, R 0.909 -> 0.926; socket_single FN 17 -> 8.
+
+**(1) Luminaire over-count — drawn vs priced (GT point fittings, strips excluded; BOQ truth is the one "גוף תאורה פשוט" line)**
+| project | GT drawn | plain | outdoor/garden | existing | profile/strip feed | built-in switch | other feed / pendant | BOQ truth | pred |
+|---|---|---|---|---|---|---|---|---|---|
+| Achituv | 85 | 57 | 12 | 4 | 10 | 2 | 0 | 62 | 85 |
+| Yahav | 79 | 55 | 9 | 0 | 6 | 5 | 4 | 58 | 71 |
+| Rubel (basement + first only) | 50 | 19 | 0 | 0 | 19 | 3 | 8 + 1 | 96 (whole project) | 145 |
+Findings: (a) there is NO double count — Achituv pred by floor 13 + 25 + 47 = the three per-floor sheets, the master
+sheet adds nothing; detections match the GT (luminaire_ceiling 124/126, wall 79/85 TP). (b) The over-count is a pricing
+definition: the designer's line holds roughly the plain fittings (Achituv 57 + 2 built-in + ~3; Yahav 55 + 3) while the
+drawing also shows garden/outdoor fittings, "existing" fittings, and feeds to LED profiles (priced as profiles, 4.42/4.43,
+4.48-4.53, where pred is 0 because strips/profiles are not detected). (c) Rubel: ground lighting plan f1b6df02 is mostly
+a garden plan (D1/D2... labelled outdoor fittings, 95 counted); it is not in the GT, so its per-type split is unverified.
+Truth 96 for the whole project vs 95 on the ground sheet alone: the designer evidently prices the garden fittings
+elsewhere or not at all. Not changed in code: **dispute for the owner** — does 4.4x include garden, existing and
+profile-feed points? Detection-side classes that already exist (luminaire_outdoor) stay out of the line.
+
+**(3) Rubel 4.36 deep boxes (2 vs 26):** `r_deep_boxes` counts every live new switch detection; Rubel's detections hold
+one switch per sheet (the annotated GT agrees: 1 + 1). The ground lighting plan draws no switch glyph the matcher knows
+(small orange marks + circuit boxes). So the 26 are not on a symbol; needs a lighting-side rule (switch from circuit
+tag) — not done, not a symbol-matching fault.
+
+Final shape of (2): the foreign-vivid strokes are NOT merged into the main scene (that lost 3 Noah switches: 4.09/4.11/
+4.14/4.16, 61 -> 57). They get a second scene (`_foreign_mask`, >= 30 strokes) and a second `spot`; its poses are added
+only where no main detection lies within 2 mm. Full runs `acc14`: Noah cold 61/77 = warm 61/77, identical to acc12 on all
+77 lines; Rubel 4.01 35 -> 43 (truth 42), exact 37 -> 37; Achituv 4.01 32 -> 37 (truth 34; the new singles are in the
+by-eye GT, so this is a drawing-vs-BOQ disagreement - dispute), exact 40 -> 40; Yahav exact 42 -> 43 (4.08 28 exact).

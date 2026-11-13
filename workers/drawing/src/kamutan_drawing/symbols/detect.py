@@ -519,6 +519,34 @@ def _is_marker(t: Template) -> bool:
     return all(e.suggested_class is None for e in t.entries)
 
 
+FOREIGN_MAX_MM = 12.0
+FOREIGN_MIN_SEGS = 30
+FOREIGN_MERGE_MM = 2.0  # a foreign-colour pose this close to a main-scene detection is the same thing
+VIVID_CHROMA = 60
+
+
+def foreign_vivid(rgb: np.ndarray, legend_cols: set[tuple[int, ...]]) -> np.ndarray:
+    """Strokes (rows of RGB) that are vivid (not black / grey / white) and in no legend colour."""
+    rgb = np.asarray(rgb, dtype=np.int32).reshape(-1, 3)
+    out = (rgb.max(axis=1) - rgb.min(axis=1)) >= VIVID_CHROMA
+    for c in legend_cols:
+        out &= np.abs(rgb - np.array(c)).sum(axis=1) > COLOUR_TOL
+    return out
+
+
+def _foreign_mask(vs: VectorSheet, legend_cols: set[tuple[int, ...]]) -> np.ndarray | None:
+    """Sprint 11 (Worker-Accuracy) — keep: small strokes in a vivid colour no legend symbol uses (Rubel's purple AC
+    sockets, drawn in the A/C layer colour). They get a scene of their own, so they cannot add stray ink to the main
+    scene (a first attempt that merged them lost three Noah switches)."""
+    if vs.n_segs == 0 or not legend_cols:
+        return None
+    rgb = vs.path_stroke_rgba[vs.seg_path, :3].astype(np.int32)
+    box = vs.path_bbox[vs.seg_path].astype(np.float64)
+    small = np.maximum(box[:, 2] - box[:, 0], box[:, 3] - box[:, 1]) <= FOREIGN_MAX_MM
+    keep = foreign_vivid(rgb, legend_cols) & small
+    return keep if int(keep.sum()) >= FOREIGN_MIN_SEGS else None
+
+
 def _colour_mask(vs: VectorSheet, templates: list[Template]) -> np.ndarray | None:
     """Scene strokes drawn in a colour of some legend symbol (furniture is grey, symbols black)."""
     if not templates or vs.n_segs == 0:
@@ -574,7 +602,13 @@ def unique_colour_templates(tpl_colours: dict[str, dict[tuple[int, int, int], in
     return out
 
 
-def colour_share(c: Candidate, scene: Scene, vs: VectorSheet, colours: dict[tuple[int, int, int], int]) -> float:
+def colour_share(
+    c: Candidate,
+    scene: Scene,
+    vs: VectorSheet,
+    colours: dict[tuple[int, int, int], int],
+    legend_cols: set[tuple[int, ...]] | None = None,
+) -> float:
     """Sprint 10: share (by ink length) of the scene strokes under the posed template drawn in one of the legend
     drawing's colours. This designer colour-codes the catalogue (sockets red, switches purple, luminaires yellow,
     cameras orange…), so a yellow wall-light template posed on an orange camera is told apart by colour even when
@@ -602,6 +636,8 @@ def colour_share(c: Candidate, scene: Scene, vs: VectorSheet, colours: dict[tupl
     fill = vs.path_fill_mode[paths] > 0
     rgb[fill] = vs.path_fill_rgba[paths[fill], :3].astype(np.int32)
     ok = (np.abs(rgb[:, None, :] - pal[None, :, :]).sum(axis=2) <= COLOUR_TOL).any(axis=1)
+    if legend_cols is not None:  # Sprint 11 (Worker-Accuracy) — keep: a colour the legend never uses names nothing
+        ok |= foreign_vivid(rgb, legend_cols)
     w = scene.seg_len[segs]
     return float(w[ok].sum() / max(w.sum(), 1e-9))
 
@@ -657,12 +693,13 @@ def detect_symbols(
     res.templates = len(templates)
     scene: Scene = build_scene(vs, exclude, keep_mask=_colour_mask(vs, templates))
     tpl_colours = {t.id: template_colours(t, vs) for t in templates}
+    legend_cols: set[tuple[int, ...]] = {c for cs in tpl_colours.values() for c in cs}
     # Sprint 10: a pose whose ink is mostly in colours the legend drawing never uses is vetoed before NMS
     sp = (
         spot(
             templates,
             scene,
-            accept=lambda c: colour_share(c, scene, vs, tpl_colours.get(c.tpl.id, {})) >= COLOUR_MIN_SHARE,
+            accept=lambda c: colour_share(c, scene, vs, tpl_colours.get(c.tpl.id, {}), legend_cols) >= COLOUR_MIN_SHARE,
             passive=frozenset(t.id for t in templates if _is_marker(t)),  # markers never suppress a real symbol
         )
         if templates
@@ -673,6 +710,24 @@ def detect_symbols(
         # Sprint 11: power (two ticks) vs 3-phase (three) — the count is read on the plan, not left to the fit
         resolve_by_ticks(cands, templates, scene, vs)
         resolve_by_disc_lines(cands, templates, scene, vs)  # ceiling point (cross) vs wall light (tangent bar)
+    fmask = _foreign_mask(vs, legend_cols) if templates else None
+    if fmask is not None:
+        fscene = build_scene(vs, exclude, keep_mask=fmask)
+        fsp = spot(
+            templates,
+            fscene,
+            accept=lambda c: colour_share(c, fscene, vs, tpl_colours.get(c.tpl.id, {}), legend_cols) >= COLOUR_MIN_SHARE,
+            passive=frozenset(t.id for t in templates if _is_marker(t)),
+        )
+        extra = [
+            c
+            for c in fsp.detections
+            if not any(math.hypot(c.center[0] - m.center[0], c.center[1] - m.center[1]) < FOREIGN_MERGE_MM for m in cands)
+        ]
+        if extra:
+            resolve_by_ticks(extra, templates, fscene, vs)
+            resolve_by_disc_lines(extra, templates, fscene, vs)
+        cands = cands + extra
     if sp is not None:
         res.scale, res.scale_estimated = sp.scale, sp.scale_estimated
     scale_uncertain = res.scale_estimated or scale_den is None
