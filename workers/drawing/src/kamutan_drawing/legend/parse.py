@@ -488,6 +488,12 @@ def parse_legends(
             kind = "symbols"
         if not entries:
             continue
+        # Sprint 12 (Accuracy) — keep: a ruled strip of the plan is not a legend. Without a "מקרא:" title and with no row
+        # reading as a known symbol it is a plan region (Yahav ground lighting: the garden strip x285-322 read as a
+        # 3-row table whose "symbols" are 25-40 mm walls, and the A4 wall lights / garden spikes inside it were masked
+        # as legend ink); every real legend of the four projects has a title or a classed row
+        if not title and not any(e.suggested_class for e in entries):
+            continue
         if title:
             conf = min(0.98, conf + 0.05)
         res.legends.append(

@@ -97,3 +97,40 @@ def fixture_attributes(
                 used.add(i)
                 out[did] = PROFILE_FEED
     return out
+
+
+R_BOX_NO_GLYPH = "מיקום מפסק ללא סמל מפסק"
+
+
+def glyphless_switch_boxes(sheet: Any) -> list[Any]:
+    """Detections (class ``switch_single``) standing for the switch boxes of one lighting sheet that the circuits read
+    from their tag lists but where no switch glyph was detected (``positions`` without ``switchIds``). A sheet that
+    compiles several floors is skipped — its boxes are the floor sheets' own."""
+    from ..boq.dedup import Det
+
+    circ = sheet.circuits if isinstance(sheet.circuits, dict) else {}
+    floors = list(getattr(sheet, "floors", None) or [])
+    if len(floors) > 1:
+        return []
+    out: list[Any] = []
+    for pos in circ.get("positions") or []:
+        if pos.get("switchIds"):
+            continue
+        b = pos.get("boxMm") or pos.get("bboxMm") or {}
+        out.append(
+            Det(
+                sheet.sheet_id,
+                sheet.version_id,
+                f"box:{pos.get('id')}",
+                "switch_single",
+                float(b.get("x", 0.0)) + float(b.get("w", 0.0)) / 2,
+                float(b.get("y", 0.0)) + float(b.get("h", 0.0)) / 2,
+                "yellow",
+                [R_BOX_NO_GLYPH],
+                floors[0] if floors else None,
+                "new",
+                None,
+                sheet.discipline,
+            )
+        )
+    return out

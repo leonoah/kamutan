@@ -382,3 +382,24 @@ def test_ambiguous_attachment_and_lone_rings():
     kinds = np.ones(len(ring), np.int8)
     digit = np.array([[0.0, -0.4, 0.0, 0.4]])
     assert _circle_with_contents(np.vstack([ring * 1.5, digit]), np.concatenate([kinds, [0]]))  # a circled number
+
+
+def test_untitled_table_without_a_classed_row_is_a_plan_region_not_a_legend(sheet, monkeypatch):
+    """Sprint 12 (Accuracy): a ruled strip of the plan (Yahav garden strip) has no title and no row that reads as a symbol."""
+    from kamutan_drawing.legend import parse as P
+
+    _, vs, spans = sheet
+    assert len(parse_legends(vs, spans).legends) == 1  # the real legend
+    real = P._parse_symbol_table
+
+    def unclassed(*a, **k):
+        entries, conf = real(*a, **k)
+        for e in entries:
+            e.suggested_class = None
+        return entries, conf
+
+    monkeypatch.setattr(P, "_parse_symbol_table", unclassed)
+    monkeypatch.setattr(P, "_title_near", lambda *_a, **_k: None)
+    assert parse_legends(vs, spans).legends == []
+    monkeypatch.setattr(P, "_title_near", lambda *_a, **_k: ("מקרא", 0.9))
+    assert len(parse_legends(vs, spans).legends) == 1  # a titled table stays

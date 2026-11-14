@@ -4712,3 +4712,27 @@ accessory outdoors; the marker symbol is Accuracy's). Noah cold 61/63 and nors 6
 * Outdoor polygons: surfaces (paved terrace, lawn, parking) have no walls, only coloured/teal outlines and dotted hatch, and the plot
   rectangle; the paved area is plot - house - pool - lawn. No BOQ consumer yet either (Worker-Areas' `item_loc` excludes outdoor lines),
   so a polygon alone would not move 5.01 (Rubel 120 / Achituv 21.5 / Yahav 117). Not started.
+
+### Sprint 12 (Accuracy) — timer-note reader, false legend strip, glyph-less switch boxes (in progress)
+
+**(1) Timer-note reader — no change needed; the cause was elsewhere.** Yahav reads A1 / A3 / A4 as timer circuits from
+"הזנה לתאורת דוקרנים (שעון שבת)" + the tag rows, which matches the BOQ (4.43 three points, 4.44 six points, 4.45 one):
+A4 was short because 4 outdoor wall lights (289, 471 / 481 / 605 / 615) and 5 garden switches (298-305, 553-566) were never
+detected — not even as pre-NMS candidates. Cause on the drawing: legend finder `lg1` (conf 0.544, no "מקרא:" title, 3 rows
+of "שעון שבת" plan labels whose "symbols" are 25-40 mm wall lines) took the garden strip of the plan for a symbol table, and
+everything inside a legend box is masked from detection. Fix (legend/parse.py, "Sprint 12 (Accuracy) — keep"): a table with
+no title and no row that reads as a known symbol is a plan region, not a legend. Every real legend of the four projects has
+a title or a classed row (lowest real confidence 0.93; dropped: Yahav 268f72d6 lg1, Rubel f30f761d lg0 + lg1). Test:
+`test_untitled_table_without_a_classed_row_is_a_plan_region_not_a_legend`.
+Yahav acc17 -> acc18: 9 new detections, all in the GT (4 wall lights exactly on the GT points, 5 switches C1 B1 B3 B2 C4);
+exact 43 -> 43: 4.38 3 -> 4 and 4.45 2 -> 1 become exact; 4.42 1 -> 2 (was exact) and 4.08 28 -> 33 (was exact) break;
+4.35 31 -> 30, 4.36 4 -> 0, 4.37 6 -> 7. **4.08 conflict:** the 5 real garden switches are now hosts of the waterproof
+add-on rule, but the designer's 28 does not include them — a rule question for 4.08 (the designer's wording / outdoor
+switches), not a detection error; left open for the coordinator.
+**(2) Rubel 4.36 (deep boxes):** the lighting plans write the switch plate as a tag list in a box (no switch glyph): 25
+positions `without glyph` in the circuits. `lighting.attributes.glyphless_switch_boxes` feeds them to the count-only
+deep-box rule (aggregate.py, marked). Rubel 4.36 2 -> 27 (truth 26); Yahav / Noah have none, Achituv's library has no
+deep-box item. Test `test_switch_box_read_from_tags_without_glyph_is_a_deep_box`. 4.37 (57 vs 46) not touched yet.
+**Blocked:** the volume holding /tmp and the data dir is full (72 MB free) — Achituv and Noah acc18 evals died in the
+kbench step, so Noah cold/warm identity with these two changes is NOT verified, and the full gates were not rerun.
+**Not started:** (3) shutter switch per-template scale, (4) panels.

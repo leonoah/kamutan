@@ -974,7 +974,13 @@ def aggregate(
 
     # --- Sprint 10: count-only class rules (switch boxes, fan installs) and marker add-ons (waterproof / USB) over every
     # live new detection, consumed or not
-    for u in count_only_units(all_dets, rules, labeler, resolvable):
+    # Sprint 12 (Accuracy) — keep: a switch box read from circuit tags without a drawn switch glyph (Rubel: the lighting
+    # plans write the switch plate as a tag list in a box) is still a switch box with a deep box (lighting/attributes.py)
+    from ..lighting.attributes import glyphless_switch_boxes
+
+    box_dets = [b for sh in sheets if isinstance(sh.circuits, dict) for b in glyphless_switch_boxes(sh)]
+    stats["glyphlessSwitchBoxes"] = len(box_dets)
+    for u in count_only_units([*all_dets, *box_dets], rules, labeler, resolvable):
         add_unit(u)
 
     # Sprint 11 (Worker-Rooms) — keep: the room type of an accessory comes from the canonical room it stands in (its
