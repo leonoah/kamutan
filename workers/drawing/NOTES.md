@@ -4553,3 +4553,38 @@ exact 43 -> 43; Noah cold = warm = acc14 on all 77 lines (61 exact); Rubel 37, A
 * Rubel 4.36 / 4.37: both come from switch positions the Rubel plans do not draw as glyphs (4.37 is the lighting
   module's "נק' מאור בודדה" topology line); no symbol-side cause.
 Gates: ruff, format, mypy clean; pytest 938 passed / 27 skipped (the sandbox fork-bomb test fails here, alone too: known environment flake, not related to symbols).
+
+### Sprint 11 — owner decisions of 14.11 (Worker-Accuracy): analysis, NOT implemented (no code change kept)
+
+**(1) "התקנת גוף תאורה" excludes outdoor / existing / profile-feed fixtures.** Measured on the by-eye GT against the
+stored detections (acc15): none of the three exclusions can be derived from the detections or the drawing in a way that
+holds on all projects, so nothing was changed in `lighting/boq.py` / the rules:
+* outdoor/garden: not geometric — distance to the nearest room polygon puts GT-garden fixtures at 7-147 mm (Achituv) and
+  7-322 mm (Yahav) but GT-*plain* terrace fixtures at 4-254 mm too; `roomId == None` holds for 12/12 garden and also for
+  17 plain Yahav fixtures. The only drawn evidence is the timer-circuit note (Achituv "D6 D3": D6 = 13 fixtures, the
+  GT garden points; D3 = 7, of which GT calls 3 "existing") — on Yahav the timer circuits read A1 (1), A3 (3), A4 (1)
+  while the GT garden points are A4 / A7, so the circuit tag alone does not carry over; Rubel has no timer note on the
+  ground sheet, only the banner "for development lighting see the landscape architect's plan" (f1b6df02): 46 of its 95
+  fixtures lie >= 20 mm from every room, 21 within 20 mm, 30 inside — a cut anywhere in that range is fitting.
+* existing: only 1 of 4 GT "existing" points has lifecycle existing (a leader "קיים" is not read near the others).
+* profile feed: the point that feeds an LED profile is told only by the leader note "הזנה לשנאי עבור פרופיל לד A1"
+  (circuits.py reads it for the strips themselves, not for the feeding fixture).
+Counts that would result by GT category: Achituv 85 -> 85-12 garden-4 existing-10 profile = 59 (truth 62), Yahav 71 -> ~59
+(58). Needs per-fixture attributes (outdoor / existing / profile-feed) in the detections first; Data/QA's GT has them,
+the detector does not. Proposal: Data/QA marks the same three attributes on the Rubel ground sheet f1b6df02 (not in
+the GT) and the timer-note reader is generalised (Worker-Lighting) before any quantity rule is changed.
+
+**(2) Panel = the wall niche.** The niche is a thin rectangle cut into the wall with a red lightning bolt inside (Rubel
+170e522f (254.7, 281.1), Achituv 634431e4 (298.6, 235.2)); the red *hatched* rectangle with a zig-zag and "H=220" beside
+it (Achituv (337, 232), Yahav (217, 319) ...) is another object. A detector for "thin rectangle with red ink inside"
+finds the real niche on 2 of 9 GT panels but also all the hatched rectangles (same size, red, zig-zag inside); the
+two differ only by the bolt vs the repeated zig-zag, and the Rubel bolt is an exploded fill of 15 pieces. Yahav's and
+two other panels have no bolt niche at the GT point at all. Not kept: it would add false panels. Needs the owner to
+say what the hatched H=220 rectangle is (a sub-panel? the "ג.ע" box?) so it can be excluded by class, not by shape.
+
+**(3) 4.08 "אביזר מוגן מים".** Already clean: its hosts are sockets, switches and comms points only
+(`r_addon_waterproof`); the evidence of acc15 holds no camera, alarm detector or siren (Achituv 12 = 7 sockets + 2
+switches + ..., Rubel 14, Yahav 28 exact — unchanged). No `waterproof_marker` detection exists on any project: the
+count comes from the words "מוגן מים" / IP next to a host and from hosts in wet rooms (bathroom, wc, balcony,
+courtyard). The missing ones (Achituv 4, Rubel 11) cannot be found from the GT: it carries no water-protection mark.
+Needs Data/QA to mark them by eye (or the owner to list them).
