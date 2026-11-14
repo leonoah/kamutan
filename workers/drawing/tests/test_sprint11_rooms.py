@@ -422,3 +422,14 @@ def test_drawn_over_only_applies_to_a_valance_strip_not_to_hatched_walls_or_part
     for thick, expect in ((0.42, True), (0.1, False), (0.6, False)):
         g = box(0.0, 0.0, 80.0, thick * mm)
         assert _drawn_over(_VS(thick), inbox, g, mm) is expect  # type: ignore[arg-type]
+
+
+def test_floor_trust_is_judged_on_wiring_accessories_only():
+    """Rubel ground floor: 13 outdoor cameras and 16 unclassified marks outside the house made 48 % of the points
+    "outside", so the floor was not trusted and its outdoor sockets were not seen as outdoors."""
+    from kamutan_drawing.rooms.crosssheet import is_wiring_accessory
+
+    assert all(is_wiring_accessory(c) for c in ("socket_single", "socket_3phase", "switch_shutter", "tv_point", "data_point"))
+    assert not any(
+        is_wiring_accessory(c) for c in ("camera", "speaker", "conduit", "unknown", "alarm_detector", "fixture_wc_concealed")
+    )

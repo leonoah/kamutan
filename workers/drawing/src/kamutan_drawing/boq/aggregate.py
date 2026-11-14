@@ -951,7 +951,7 @@ def aggregate(
     rs = settings_by_room(room_settings or {}, rooms_by_sheet, canon)
     ceilings = ceiling_heights(canon, {s.sheet_id: s.texts for s in sheets if s.texts}, scales)
     # Sprint 11 (Worker-Rooms) — keep: one locator for the build (fixtures → canonical rooms, accessories → room type)
-    from ..rooms.crosssheet import OUTDOOR, FloorLocator
+    from ..rooms.crosssheet import OUTDOOR, FloorLocator, is_wiring_accessory
 
     locator = FloorLocator(rooms_by_sheet, canon, scales)
     room_fx, fx_floors = _room_fixtures(all_dets, room_index, canon, locator)
@@ -985,7 +985,7 @@ def aggregate(
     for d in all_dets:
         # Sprint 12 (Worker-Rooms) — keep: trust is judged on the wiring accessories (a house holds most of its sockets
         # switches and outlets); cameras, garden speakers, conduits and unclassified marks lie outside it by nature
-        if d.dropped_by is None and d.cls.startswith(("socket_", "switch_", "tv_", "data_", "phone_")):
+        if d.dropped_by is None and is_wiring_accessory(d.cls):
             pts_by[(d.sheet_id, d.floor)].append((d.x, d.y))
     outdoor_ok = {k: locator.outdoor_trusted(k[0], k[1], v) for k, v in pts_by.items()}
 

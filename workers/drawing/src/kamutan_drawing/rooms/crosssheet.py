@@ -267,6 +267,15 @@ class FloorLocator:
         return inside >= TRUST_MIN_SHARE * len(points)
 
 
+WIRING_PREFIXES = ("socket_", "switch_", "tv_", "data_", "phone_")
+
+
+def is_wiring_accessory(cls: str) -> bool:
+    """Sprint 12: the accessories whose position tells whether a floor model is trusted — a house holds most of its
+    sockets, switches and outlets; cameras, garden speakers, conduits and unclassified marks lie outside it by nature."""
+    return cls.startswith(WIRING_PREFIXES)
+
+
 def in_dry_kitchen_or_living(locator: FloorLocator, sheet_id: str, floor: str | None, x: float, y: float) -> bool:
     """Whether the point stands, by registration, in a canonical kitchen / living room that is not wet — where a wash
     basin read from a water-point note is the kitchen(ette) sink, not a bathroom basin."""
@@ -294,6 +303,7 @@ __all__ = [
     "FloorLocator",
     "Shift",
     "building_outline",
+    "is_wiring_accessory",
     "register",
     "register_outlines",
     "remap_room_floors",

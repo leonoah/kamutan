@@ -4692,3 +4692,23 @@ fixtures; the outdoor class alone flags nothing).
 (unchanged; only 4.40 / 4.46 / 4.44 moved from this rule — Achituv 7.03, Rubel 4.08 / 7.01 are other owners' work).
 Gates: ruff, format, mypy (175 files), drawing pytest 923 passed (test_sandbox fork test deselected, known flake),
 benchmark/tests 152 passed, benchmark/acceptance 12 passed. bandit is not installed in this venv (not run).
+
+## Sprint 12 Worker-Rooms — round 1
+**Rubel ground floor trusted (4.08).** Cause (rendered `61f36c68` + counted): the floor model was fine (closed 93.2 m2 house + WC) but
+`outdoor_trusted` judged "most points inside the outline" on ALL non-fixture detections, and the villa ground plan carries 13 outdoor
+cameras + 16 unclassified marks + garden speakers: 51 of 106 inside = 48 % < 50 %, floor untrusted, its 14 garden sockets never read
+as outdoors. Fix: the share is taken over wiring accessories only (`crosssheet.is_wiring_accessory`: socket/switch/tv/data/phone;
+aggregate.py hunk marked "Sprint 12 (Worker-Rooms) — keep"; the hunk was already carried into commit bbe3cdc by another agent). Not tuned
+to a count: the same rule on Achituv / Yahav / Noah (held out) changes nothing there.
+Measured (BOQ rebuild on the same ingest, `rooms12_base` = HEAD vs `rooms12_a`; before-fix `rooms11_iso2`): Rubel 4.08 11 -> 30 (truth 25;
+ground 2 -> 21). Overshoots by 5: outdoor sockets on covered terrace / pergola probably carry no IP marker (open: rule counts every
+accessory outdoors; the marker symbol is Accuracy's). Noah cold 61/63 and nors 61/63 identical to HEAD, warm identical to cold on all
+77 lines; Achituv and Yahav lines unchanged (leave-one-project-out: derived on Rubel, held out Achituv/Yahav/Noah = no change).
+**Not done (causes found):**
+* Rubel basement electrical `a595be66`: its own segmentation closes ONE room, so no registration (no equal-area pair; outline of one room
+  cannot match). Needs walls-based registration (reference walls of the construction basement) - not started.
+* Achituv ground guest WC / stair hall: the construction sheet `e433407c` draws no wall fills inside the new house (open plan, one 95 m2 face,
+  stair + WC only as thin lines and door arcs); needs the architecture-sheet partitions as reference walls - not started.
+* Outdoor polygons: surfaces (paved terrace, lawn, parking) have no walls, only coloured/teal outlines and dotted hatch, and the plot
+  rectangle; the paved area is plot - house - pool - lawn. No BOQ consumer yet either (Worker-Areas' `item_loc` excludes outdoor lines),
+  so a polygon alone would not move 5.01 (Rubel 120 / Achituv 21.5 / Yahav 117). Not started.
