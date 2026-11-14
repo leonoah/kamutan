@@ -24,6 +24,7 @@ from . import marks as MK
 from . import sections as SEC
 from . import stairs as S
 from .prims import (
+    GREEN,
     HIGHLIGHTS,
     NEUTRAL,
     bbox_json,
@@ -235,6 +236,13 @@ def analyze(
     all_rooms = _rooms_of(rooms)
     segs = stroked_segments(vs, min_len=0.25)
     hl_fills = fills(vs)
+    # Sprint 12 (Worker-Areas) — keep: the designer's construction legend paints "גבס חדש / בניה קלה" GREEN (the swatch
+    # sits in the legend box; its label is often garbled by the SHX text, the colour is not). Green fills of such a
+    # sheet are new light partitions; elsewhere green stays landscape (never a work category).
+    if discipline == "construction" and _has_green_swatch(vs):
+        green = fills(vs, classes=(GREEN,))
+        hl_fills = [*hl_fills, *green]
+        legend_colours = {**{hex_colour(f.rgb): "new" for f in green}, **(legend_colours or {})}
     notes_all = L.notes(vs, spans)
     tokens = S.number_tokens(spans)
     levels = L.level_values(spans)
@@ -289,6 +297,23 @@ def analyze(
     doc["stats"]["heights"] = _height_stats(doc, notes_all, n_marks)
     doc["stats"]["seconds"] = round(time.monotonic() - t_start, 3)
     return doc
+
+
+GREEN_SWATCH_MM = (8.0, 25.0, 2.0, 8.0)  # legend swatch box: width min/max, height min/max (paper mm); 16 x 3.7 drawn
+
+
+def _has_green_swatch(vs: VectorSheet) -> bool:
+    """A legend swatch (small filled rectangle) of the green class: the sheet's legend assigns green a work meaning."""
+    if vs.n_paths == 0:
+        return False
+    for i in np.where((vs.path_fill_mode > 0) & (vs.path_fill_rgba[:, 3] > 0))[0].tolist():
+        if colour_class(tuple(int(c) for c in vs.path_fill_rgba[i, :3])) != GREEN:
+            continue
+        b = vs.path_bbox[i]
+        w, h = float(b[2] - b[0]), float(b[3] - b[1])
+        if GREEN_SWATCH_MM[0] <= w <= GREEN_SWATCH_MM[1] and GREEN_SWATCH_MM[2] <= h <= GREEN_SWATCH_MM[3] and w >= 2.5 * h:
+            return True
+    return False
 
 
 DRAWN_SOURCES = ("label", "section", "opening_mark", "other_sheet")

@@ -1007,7 +1007,12 @@ def _circuits(
         for lg in legend.get("legends") or []:
             b = lg.get("bboxMm") or {}
             exclude.append((float(b["x"]), float(b["y"]), float(b["x"]) + float(b["w"]), float(b["y"]) + float(b["h"])))
-        return circuits_for_sheet(vs, spans, dets_json, sheet_id=sheet_id, regions=regions, exclude=exclude)
+        doc = circuits_for_sheet(vs, spans, dets_json, sheet_id=sheet_id, regions=regions, exclude=exclude)
+        # Sprint 12 (Accuracy) — keep: garden / profile-feed fixtures, read from the drawing (lighting/attributes.py)
+        from ..lighting.attributes import fixture_attributes
+
+        doc["fixtureAttributes"] = fixture_attributes(vs, spans, dets_json, doc)
+        return doc
     except Exception:  # best effort
         log.warning("lighting circuits failed", exc_info=True)
         return None

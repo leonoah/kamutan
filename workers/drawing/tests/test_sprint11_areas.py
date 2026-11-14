@@ -443,3 +443,29 @@ def test_a_bathroom_larger_than_any_bathroom_gets_no_wet_tiling():
     co = psheet("co", "construction", [], [small, merged], texts=[])
     res = aggregate([co], default_rules(), lib())
     assert lines(res)["5.02"].qty == 6 and res.stats["tiling"]["implausibleWet"] >= 1
+
+
+def test_gypsum_ceiling_line_naming_its_rooms_takes_their_floor_areas():
+    from kamutan_drawing.boq import locations as L
+    from kamutan_drawing.boq.rules import Library
+
+    from .test_boq import lib_rows
+
+    docs = lib_rows([("7.01", "בניית תקרות גבס בכל חדרי רחצה וחדר כביסה", "07"), ("7.09", 'בניית תקרת גבס ע"פ תכנית', "07")])
+    for _, d in docs:
+        d["unit"] = 'מ"ר'
+    lb = Library.from_docs(docs)
+    named = next(i for i in lb.items if i.code == "7.01")
+    plan = next(i for i in lb.items if i.code == "7.09")
+    sc = L.ceiling_scope(named.description, named.unit)
+    assert sc is not None and sc[0] and sc[1] == {"laundry"}
+    assert L.ceiling_scope(plan.description, plan.unit) is None  # names no room: the ceiling plan decides
+    assert L.ceiling_room_matches(sc, "bathroom", None) and L.ceiling_room_matches(sc, "wc", "שירותים")
+    assert L.ceiling_room_matches(sc, "other", "חדר כביסה") and not L.ceiling_room_matches(sc, "bedroom", "חדר שינה")
+    bath = room("r_1", "חדר רחצה", 0, 0, 40, 60)  # 6 m²
+    wc = room("r_2", "שירותים", 100, 0, 140, 40)  # 4 m²
+    bed = room("r_3", "חדר שינה", 200, 0, 300, 100)
+    laundry = room("r_4", "חדר כביסה", 0, 100, 40, 140)  # 4 m²
+    co = psheet("co", "construction", [], [bath, wc, bed, laundry], texts=[])
+    res = aggregate([co], default_rules(), lb)
+    assert lines(res)["7.01"].qty == 14 and res.stats["tiling"]["ceilingRooms"] == 3

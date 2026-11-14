@@ -556,3 +556,27 @@ def test_understand_writes_and_reports_the_geometry_artifact(tmp_path: Path) -> 
         out_dir=tmp_path / "e", detect=False, links=False, fixtures=False, text_items=False,
     )  # fmt: skip
     assert "geometryFile" not in res2
+
+
+GREEN = (107, 214, 41)
+GREEN_SWATCH = (19, 155, 72)
+
+
+def test_green_partitions_need_the_green_legend_swatch_of_a_construction_sheet() -> None:
+    """Sprint 12 (Worker-Areas): the designer's legend paints "גבס חדש / בניה קלה" green. A green strip is a new
+    partition only on a construction sheet whose legend has a green swatch; without it green stays landscape."""
+
+    def sheet(swatch: bool) -> Sheet:
+        s = house(Sheet())
+        s.rect(150, 100, 230, 102, GREEN)  # 4.0 m x 0.10 m strip in the plan
+        s.rect(130, 120, 134, 124, GREEN)  # a plant symbol: not a strip
+        if swatch:
+            s.rect(340, 40, 356, 43.7, GREEN_SWATCH)  # the legend swatch (16 x 3.7 mm)
+        return s
+
+    doc = run(sheet(True).build())
+    gyp = by_kind(doc["wallRuns"], "gypsum_single")
+    assert len(gyp) == 1 and gyp[0]["lengthM"] == pytest.approx(4.0, rel=0.03) and gyp[0]["lifecycle"] == "new"
+    assert measure(doc, "gypsum_partition_area")["qty"] == pytest.approx(4.0 * 2.6, rel=0.03)  # type: ignore[index]
+    assert not by_kind(run(sheet(False).build())["wallRuns"], "gypsum_single")  # no swatch: green is landscape
+    assert not by_kind(run(sheet(True).build(), discipline="electrical")["wallRuns"], "gypsum_single")

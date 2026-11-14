@@ -887,6 +887,13 @@ def aggregate(
         add_unit(u)
 
     # --- lighting install count
+    # Sprint 12 (Accuracy) — keep: garden / profile-feed fixtures (lighting/attributes.py) are priced on other lines
+    excluded_attr = 0
+    fixture_attr = {
+        s.sheet_id: {k for k, v in (s.circuits.get("fixtureAttributes") or {}).items() if v in ("garden", "profile_feed")}
+        for s in sheets
+        if isinstance(s.circuits, dict)
+    }
     install_rules = [r for r in rules if r.kind == "install_count"]
     consumed: set[str] = set(SWITCH_CLASSES)
     for rule in install_rules:
@@ -899,6 +906,9 @@ def aggregate(
             if d.dropped_by is not None or d.cls not in rule.classes or d.cls in ex_c:
                 continue
             if d.lifecycle in ex_l or (d.supply in ex_s if d.supply else False):
+                continue
+            if d.id in fixture_attr.get(d.sheet_id, ()):
+                excluded_attr += 1
                 continue
             add(rule, [(d, None)], 1, [])
 
@@ -973,7 +983,9 @@ def aggregate(
     wet_fx = {"fixture_shower", "fixture_bath", "fixture_wc_concealed", "fixture_wc_monoblock"}
     pts_by: dict[tuple[str, str | None], list[tuple[float, float]]] = defaultdict(list)
     for d in all_dets:
-        if d.dropped_by is None and d.cls not in FIXTURE_CLASSES:
+        # Sprint 12 (Worker-Rooms) — keep: trust is judged on the wiring accessories (a house holds most of its sockets
+        # switches and outlets); cameras, garden speakers, conduits and unclassified marks lie outside it by nature
+        if d.dropped_by is None and d.cls.startswith(("socket_", "switch_", "tv_", "data_", "phone_")):
             pts_by[(d.sheet_id, d.floor)].append((d.x, d.y))
     outdoor_ok = {k: locator.outdoor_trusted(k[0], k[1], v) for k, v in pts_by.items()}
 
@@ -1022,6 +1034,7 @@ def aggregate(
         else:
             add(rule, [(d, None)], 1, [])
     stats["excludedByLifecycle"] = excluded_lifecycle
+    stats["excludedByFixtureAttribute"] = excluded_attr
     stats["unmapped"] = unmapped
     stats["skipped"] = dict(sorted(skipped.items()))
 
@@ -1247,6 +1260,22 @@ def _tiling_by_location(
                 extra.append(Unit(floor_rule, [(ev, None)], q, [R_ROOM_DEFAULTS, loc.R_DEDICATED_FLOOR], "yellow",
                                   item=it, floor=room.floor, ev_qty={ev.key: q}))  # fmt: skip
                 stats["dedicatedFloors"] += 1
+    # a gypsum-ceiling area line that names its rooms ("תקרות גבס בכל חדרי רחצה וחדר כביסה") = those rooms' floor areas
+    if floor_rule is not None:
+        for it in items:
+            sc = loc.ceiling_scope(it.description, it.unit)
+            if sc is None:
+                continue
+            for room in canon:
+                if room.area_m2 <= 0 or not loc.ceiling_room_matches(sc, room.type, room.name):
+                    continue
+                if room.area_m2 > WET_ROOM_MAX_M2 or (R_ROOM_OPEN in room.reasons and room.area_m2 > OPEN_ROOM_MAX_M2):
+                    continue
+                ev = room_det(room)
+                q = round(room.area_m2, 4)
+                extra.append(Unit(floor_rule, [(ev, None)], q, [R_ROOM_DEFAULTS, loc.R_CEILING_OF_ROOMS], "yellow", item=it,
+                                  floor=room.floor, ev_qty={ev.key: q}))  # fmt: skip
+                stats["ceilingRooms"] = stats.get("ceilingRooms", 0) + 1
     return [*t_units, *extra], stats
 
 

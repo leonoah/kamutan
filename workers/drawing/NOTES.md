@@ -4618,3 +4618,77 @@ Marks are in `gt/<p>/s12/<sha8>.geojson` (sheet-GT format, outside git). Everyth
 - Marked (new): Achituv 2 (ground 275.5,337.0; first 298.5,235.0) + 1 existing (basement 100,136). Rubel 2 (ground 208.4,274.1; first 254.6,280.9). Yahav 3 (ground 284.6,462.3; first 133.6,212.7; basement 160.5,383.2 "with secondary meter") + existing meter (ground 287.3,522.1).
 - BOQ check (matches): Achituv main 1 + secondary 1 + comms 2 = two labelled symbols. Rubel main 1 + secondary 1 + comms main 1 + comms secondary 1 = two symbols. Yahav main 1 + secondary 2 + comms 2 + secondary meter 1 = ground, first, basement (the basement one has no comms) + the meter.
 - Rule: boards = for each "לוח חשמל ותקשורת" symbol one electrical board (main on the entry floor, secondary elsewhere) and one comms board; a symbol without "תקשורת" gives only the electrical board. Fits all three; not tested on Noah (no panel line checked).
+
+## Sprint 12 Worker-Areas — chapter 07, partitions, ceilings, leftover chapter 05 (round 1 done)
+Findings so far (all from the drawings / BOQ texts, none tuned to a number):
+* **Designer rounds measured areas to 0.5 m².** Truth of the m² lines: Rubel 16 of 17, Achituv 7 of 8, Yahav 14 of 14,
+  Noah 8 of 11 are multiples of 0.5 (11.4 and 44.1 the only odd ones). Our measure is exact to the centimetre, the eval
+  tolerance is 2 % (floors) / 3 % (walls): 4.5 m² ± 0.09 can never be met by a measured value that is 4.64 or 4.98. This is
+  why Rubel 5.08–5.13 and Yahav 5.07 / 5.14 stay "within but not exact". No rounding rule fits all (Noah 5.01 57.19 → 57.0 is
+  nearest, Noah 2.01 10.57 → 11.0 is up), so none is implemented. **Owner decision wanted: measured m² lines exact within
+  ±0.5 m² absolute (the designer's rounding), instead of 2–3 %.**
+* **Green fill = new gypsum partition (legend of the designer's construction sheets).** The legend box of Rubel / Achituv / Yahav
+  paints "גבס חדש / בניה קלה" green (the swatch (19,155,72); the plan strips are (107,214,41)); the label is garbled by the
+  SHX text, the colour is not. `geometry/analyze.py` (marked "Sprint 12 (Worker-Areas) — keep") now reads green fills as
+  work fills on a construction sheet that has a green legend swatch; Noah has no such swatch (verified) → unchanged. Result on
+  the stored sheets: gypsum runs Achituv 28.6 m free + 32.4 m lining, Yahav 25.1 m, Rubel 27.3 m (before: Achituv 0, Yahav 8.6 +
+  1.9 m², Rubel 3.5 m²). Strips are told from plants by the wall-run thickness / length test only.
+* **Partition quantity convention differs from Noah's.** Noah's rule counts both faces (owner decision 05.11). Single face
+  (length × storey height) gives Yahav 63 m² against a BOQ 70 (white 32 + blue 38); both faces would give 126. Achituv
+  single-face 158 against 130. The white / blue split (blue = wet rooms; "כל מחיצות הגבס בחדרים הרטובים יהיו מגבס כחול" is
+  printed on every construction sheet) by the rooms a run touches gives Yahav blue 29.6 / white 33.5 (BOQ 38 / 32). Not wired
+  into the BOQ: no convention reproduces the three projects within tolerance and Noah's would break — open question.
+* **Gypsum ceilings:** Rubel 7.01 text names its rooms ("תקרות גבס בכל חדרי רחצה וחדר כביסה", 25 m²); the wet rooms + laundry of
+  the construction plan are 24.5 m². New `locations.ceiling_scope` / `ceiling_room_matches` + marked hook in
+  `aggregate._tiling_by_location`: a gypsum-ceiling area line that NAMES its rooms takes their floor areas. Lines that name no
+  room ("בניית תקרת גבס ע"פ תכנית": Achituv 16.5, Yahav 77) are not touched: wet rooms give Achituv 16.2 but Yahav 14.5 (BOQ 77,
+  and Yahav has no ceiling sheet at all) → the rule does not hold out and is rejected for unnamed lines.
+* **STR profile (7.05 / 7.08):** BOQ Rubel 25 m', Achituv 20.5, Yahav 10; wet-room perimeters 41.4 / 27.2 / 30.8 → ratios
+  0.60 / 0.75 / 0.32, no common rule (the sheet draws the STR only where the gypsum ceiling meets a wall). Not implemented.
+
+**Round 1 result (`areas12a_*`: partial re-ingest of the construction sheets of Achituv / Yahav / Rubel on the `areas11d`
+ingest + BOQ rebuild; Noah BOQ-only on `areas11d_noah`):** Rubel 7.01 0 → 24.84 (BOQ 25, 0.64 %, within, not exact: the BOQ
+number is the designer's rounding); Achituv 40/85 and Yahav 43/110 unchanged, every other line identical (the new green
+partition runs reach no BOQ line yet — the area rule resolves to Noah's 7.06 description, ambiguous in the white / blue
+libraries, so nothing is emitted); Noah cold 61/77 + 63 within, all 77 lines identical to `warmfix_cold` (warm not rerun: no
+Noah sheet has a green swatch and no Noah library line names its ceiling rooms). Rubel 4.08 11 → 30 in that run is the
+concurrent electrical work, not these hunks. Tests: `test_sprint11_areas.py::test_gypsum_ceiling_line_naming_its_rooms…`,
+`test_geometry.py::test_green_partitions_need_the_green_legend_swatch…` (swatch needed, plant symbol ignored, other
+disciplines unchanged). Gates: ruff, mypy (175 files), focused pytest green.
+**Not done / open (needs an owner decision or a source):** (1) partition convention (faces) and the white / blue / thickness
+split of 7.01–7.03 (see above); (2) block walls: Yahav 2.01 "קיר בלוק שחור" 31 m² against our block runs 27.9 m²
+(single face, storey height, −10 %) — `block_wall_area` is wired to Noah's "סגירת פתח בבלוק" only, one project cannot validate a
+new-block-wall rule; (3) סינר lengths (Achituv 6.2 / 2.2, Yahav 4.5): `valance_length` 4.76 exists on one Achituv sheet, the
+library has one line per room (kitchen / laundry) — needs the room of the strip; (4) lighting profile lengths (Achituv 4.42 / 4.43,
+Yahav 4.48–4.53 per length, Rubel 4.46–4.48): lighting/ is Worker-Accuracy's; (5) remaining plumbing lines are lumps read from
+notes (irrigation feeds, manifolds, pool / sauna / fire hose reel feeds) with 3–6 occurrences per sheet against BOQ counts of
+1–3 — no rule validates across two projects.
+
+## Sprint 12 (Accuracy) — per-fixture attributes for the install-luminaire lines
+
+**Rule (lighting/attributes.py, `fixtureAttributes` in `circuits.json.gz`, skipped in the `install_count` loop of
+boq/aggregate.py — marked "Sprint 12 (Accuracy) — keep"):** the install line prices plain indoor fixtures. Two attributes
+are read from the drawing, nothing is tuned to a count:
+* `garden` — the fixture is on a **timer circuit** (note "תאורות שנדלקות ע"י שעון שבת: …") of which at least half the
+  fixtures stand outside every room; or a landscape-architect banner is on the sheet and the fixture is outside every room.
+* `profile_feed` — a pale-yellow thin filled bar (the LED profile, >= 12 mm long, <= 1.2 mm wide) ends within 25 mm of the
+  fixture; one feed per bar, nearest first.
+* `existing` is NOT excluded: Achituv's existing D3 points stay in the designer's 62 (BOQ arithmetic), so the lifecycle
+  filter that already exists is the whole rule.
+* The `luminaire_outdoor` class is NOT a garden mark. First version excluded it; Noah (which draws 11 outdoor fixtures and
+  prices all 43 on 9.01) fell 43 -> 33 — a held-out failure caught on the project the rule was not developed on.
+
+**Per line, before -> after (truth)** (acc17, final): Achituv 4.40 85 -> 67
+(62), Yahav 4.46 71 -> 55 (58), Rubel 4.44 145 -> 130 (96). Absolute error 23 -> 5, 13 -> 3, 49 -> 33; no line exact yet.
+Remaining gaps: Achituv +5 (bar recall: 6 bars found for 10 feeds), Yahav -3 (greedy nearest-fixture assignment takes a
+plain fixture next to a bar end), Rubel +33 (ground sheet f1b6df02: no timer note, only the banner, and the room data of that
+sheet is unreliable — needs Worker-Rooms' ground-floor fix; unvalidated).
+**Held out:** garden-by-timer was developed on Achituv + Yahav (both have the note) and Noah (no timer circuit with
+roomless fixtures) is untouched by it; profile-feed was developed on Achituv + Yahav and fires on Rubel (13 feeds) and not on
+Noah. Data/QA's `s12/` marks hold panels and sockets only — no per-fixture marks yet, so per-fixture precision is unmeasured.
+Test: `tests/test_sprint12_attributes.py` (timer circuit without rooms; indoor timer circuit; banner flags only roomless
+fixtures; the outdoor class alone flags nothing).
+**Verification (acc17):** Noah 61/77 cold = warm, all 77 lines identical and equal to acc15; Achituv 40, Yahav 43, Rubel 37 exact
+(unchanged; only 4.40 / 4.46 / 4.44 moved from this rule — Achituv 7.03, Rubel 4.08 / 7.01 are other owners' work).
+Gates: ruff, format, mypy (175 files), drawing pytest 923 passed (test_sandbox fork test deselected, known flake),
+benchmark/tests 152 passed, benchmark/acceptance 12 passed. bandit is not installed in this venv (not run).

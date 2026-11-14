@@ -30,6 +30,7 @@ from .rules import Item
 R_BY_LOCATION = "סעיף לפי מיקום החדר (בעלים / קומה)"
 R_BY_ELIMINATION = "שיוך לסעיף הנותר — בעל החדר לא כתוב בשרטוט"
 R_DEDICATED_FLOOR = "ריצוף לפי סעיף ייעודי לחדר בספרייה"
+R_CEILING_OF_ROOMS = "תקרת גבס לפי החדרים שהסעיף מונה (שטח הרצפה שלהם)"
 
 OWNERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("parents", re.compile(r"הורימ")),
@@ -215,3 +216,27 @@ def choose_dry_waterproof(items: Sequence[Item], room_value: str, floor: str | N
             continue
         hits.append(i)
     return hits[0] if len(hits) == 1 else None
+
+
+_CEILING = re.compile(r"תקרות? גבס")
+
+
+def ceiling_scope(description: str, unit: str | None) -> tuple[bool, frozenset[str]] | None:
+    """(wet rooms named?, dry rooms named) of a gypsum-ceiling area line that NAMES the rooms it covers ("תקרות גבס בכל
+    חדרי רחצה וחדר כביסה"); None for any other line (a ceiling "ע"פ תכנית" names no room: only the ceiling plan can say)."""
+    if (unit or "").strip() not in AREA_UNITS:
+        return None
+    t = descmatch.canon(description)
+    if not _CEILING.search(t):
+        return None
+    loc = item_loc(description, unit)
+    wet = bool(_BATH.search(t))
+    return (wet, loc.dry) if wet or loc.dry else None
+
+
+def ceiling_room_matches(scope: tuple[bool, frozenset[str]], room_type: str | None, room_name: str | None) -> bool:
+    wet, dry = scope
+    if wet and room_type in WET:
+        return True
+    val = dry_room_value(room_name)
+    return val is not None and val in dry
