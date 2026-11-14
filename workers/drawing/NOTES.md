@@ -4588,3 +4588,33 @@ switches + ..., Rubel 14, Yahav 28 exact — unchanged). No `waterproof_marker` 
 count comes from the words "מוגן מים" / IP next to a host and from hosts in wet rooms (bathroom, wc, balcony,
 courtyard). The missing ones (Achituv 4, Rubel 11) cannot be found from the GT: it carries no water-protection mark.
 Needs Data/QA to mark them by eye (or the owner to list them).
+
+## Sprint 12 Data/QA findings (by eye, for Worker-Accuracy to validate)
+
+Marks are in `gt/<p>/s12/<sha8>.geojson` (sheet-GT format, outside git). Everything below is read from the drawings and BOQ text. Open items are marked.
+
+### 1. "תוספת עבור אביזר מוגן מים" (4.08: Achituv 16, Rubel 25, Yahav 28)
+- No drawing marker exists for it. The electrical legends have no water symbol, and no sheet text says "IP" or "מוגן מים" for sockets. The purple boxed glyph and note ("מיקום מדויק שקע מזגן יסומן בשטח ע"י קבלן") read **מזגן** (air conditioner), not water. It is the AC-socket glyph, not a water-protected accessory.
+- So the rule is by location. A lower bound is the new sockets and switches outside the building envelope (garden, pool, terrace, driveway, outbuildings): **Achituv 5, Rubel 13, Yahav 10** on the ground sheets (4 / 9+4 three-phase / 6+2+1+1 per sheet; see the s12 files). The rest of the BOQ number (11 / 12 / 18) should be the sockets and switches in wet rooms (bathroom, WC, laundry, pool equipment room); that is NOT marked, because it needs room names and the electrical sheets carry none. Worker-Rooms' wet-room polygons are the input.
+- Proposed rule to validate leave-one-project-out: water-protected = new socket or switch (not comms) whose room is wet or outdoor. Outdoor = outside the building footprint, including covered terraces and pergolas. Check on any two projects, hold out the third. The outdoor-only subset fits none of them, so do not ship it alone.
+- Caveat: the envelope rectangles are rough (read off a 2.2 px/mm render). Right-hand covered terrace of Achituv ground (x>460 mm) was counted as outdoor.
+
+### 2. Outdoor / existing / profile-feed on lighting sheets (Rubel f1b6df02 and others)
+- Not annotated per fixture (f1b6df02 is an A1 sheet with about 200 fixtures; not started).
+- Drawn causes, usable for the attribute reader:
+  - Outdoor/garden fixtures carry the D-family tags (D1 H=60 on garden and east-wall posts, D2 with "צינור חופשי מהריצפה" leader notes at the plot edge, D3 H=180, D5 etc.). Indoor families are A, B, C, E, T on the same sheet. The tags are repeated in the boxed circuit notes ("D1,D2,D3,D4 / B1,B2,B3 / ..."), which map tag -> switch/circuit.
+  - Legend family glyphs: ceiling light (yellow circle, crosshair), ceiling+fan (circle with four boxes), wall light (circle with bar), spike "דוקרן" (black cross with triangle, outdoor only).
+  - Profile feeds are leader notes "הזנה לשנאי", "פרופיל לד / שקוע / חיצוני / מוגן מים" ("מוהן מים" in OCR); about 10 on Rubel ground at x 95..437, y 145..472 mm. They feed a transformer, not a luminaire.
+  - Existing: "קיים" / "הקיימים" leaders appear on Achituv ground electrical and lighting (timer "גטיימר" note on f499f0f6 and f06e0f38); dashed grey lifecycle needs a render check, not done.
+- Detector note: on Rubel f1b6df02 the warm-fix run calls 29 plain luminaires ceiling_fan, so counts by detected class are unreliable there.
+
+### 3. The red hatched "H=220" rectangle
+- It is the legend glyph **"תנור חימום לחדר רחצה"** (bathroom heater feed): a red rectangle with a zigzag inside, with "H=220" as its mounting height. It is NOT a panel. Legend row on all lighting and electrical sheets; plan instance found at Achituv first floor (337.0, 232.4).
+- "H=220" is also the height of fridge/freezer sockets (Yahav ground, x 124, y 584..611), so the text alone proves nothing; only the zigzag rectangle does.
+- BOQ: Achituv 4.10 = 3 (4.44 installs 3), Yahav 4.11 = 3 (4.54 installs 3), Rubel 4.16 = 0. Drawn instances I could confirm: Achituv 1 of 3, Yahav 0 of 3 (glyph not located). OPEN: find the other heaters (probably the same glyph at a different size, or drawn as a note only).
+
+### 4. Panels per project
+- Panel glyph in plan = small rectangle with a lightning arrow ("לוח חשמל / לוח תקשורת"), usually labelled "לוח חשמל ותקשורת". One symbol can be two BOQ boards (electrical plus comms).
+- Marked (new): Achituv 2 (ground 275.5,337.0; first 298.5,235.0) + 1 existing (basement 100,136). Rubel 2 (ground 208.4,274.1; first 254.6,280.9). Yahav 3 (ground 284.6,462.3; first 133.6,212.7; basement 160.5,383.2 "with secondary meter") + existing meter (ground 287.3,522.1).
+- BOQ check (matches): Achituv main 1 + secondary 1 + comms 2 = two labelled symbols. Rubel main 1 + secondary 1 + comms main 1 + comms secondary 1 = two symbols. Yahav main 1 + secondary 2 + comms 2 + secondary meter 1 = ground, first, basement (the basement one has no comms) + the meter.
+- Rule: boards = for each "לוח חשמל ותקשורת" symbol one electrical board (main on the entry floor, secondary elsewhere) and one comms board; a symbol without "תקשורת" gives only the electrical board. Fits all three; not tested on Noah (no panel line checked).
