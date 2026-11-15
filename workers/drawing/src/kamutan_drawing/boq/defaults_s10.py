@@ -141,6 +141,15 @@ labeled(
     "r_panel_sub", ["panel"], ["משני", "משנה"], "4.50", "אספקה והתקנת לוח חשמל משני", exclude=["תקשורת", "מונה"], priority=112
 )
 labeled("r_panel_submeter", ["panel"], ["מונה"], "4.51", "אספקה והתקנת מונה משני בלוח חשמל", count_only=True)
+# Sprint 12 (Accuracy) — keep: a panel read from its leader note is one electrical board (+ one comms board when the note says
+# "תקשורת"); the role (main / secondary) is given by `labeled.assign_panel_roles` when the library tells the two apart
+labeled("r_panel_role_main", ["panel"], ["rolemain"], "4.49", "אספקה והתקנת לוח חשמל ראשי", priority=114)
+labeled("r_panel_role_sub", ["panel"], ["rolesub"], "4.50", "אספקה והתקנת לוח חשמל משני", priority=114)
+labeled("r_panel_comms_main", ["panel"], ["commsmain"], "4.25", "אספקה והתקנת לוח תקשורת ראשי", count_only=True)
+labeled("r_panel_comms_sub", ["panel"], ["commssub"], "4.25", "אספקה והתקנת לוח תקשורת משני", count_only=True)
+labeled(
+    "r_panel_comms", ["panel"], ["comms"], "4.25", "אספקה והתקנת לוח תקשורת", exclude=["commsmain", "commssub"], count_only=True
+)
 # deep switch boxes (one per switch box) or the smart-home קומפלט variant (the org's library wording decides)
 _rule("r_deep_boxes", "class_to_item", {"classes": SWITCHES, "countOnly": True}, "4.52",
       "קופסת עומק למפסקים כוללת קו אפס נוסף", U_COUNT, 100)  # fmt: skip

@@ -182,6 +182,30 @@ def pick_class_rule(d: Det, c2i: list[Rule], labeler: Labeler, resolvable: Resol
     return ClassPick(None, [], None)
 
 
+def assign_panel_roles(dets: list[Det], rules: list[Rule], item_of: Callable[[Rule], Any]) -> int:
+    """Sprint 12 (Accuracy) — keep: panels read from a leader note (annotation ``panelnote``) that name no role. The
+    designer's one symbol "לוח חשמל ותקשורת" is one electrical board and one comms board; when the org's library tells a
+    main and a secondary electrical board apart (two different items) the first board of the project (key order) is the
+    main one and every other is secondary — the drawings never say which is which, the library's counts do (Yahav 1 + 2,
+    Achituv 1 + 1, Rubel 1 + 1). The role goes on the detection as annotations the default rules read: ``rolemain`` /
+    ``rolesub`` for the electrical board and ``commsmain`` / ``commssub`` next to ``comms``. Returns the panels set."""
+    by = {r.id: r for r in rules if r.source == "default"}
+    rm, rs = by.get("r_panel_role_main"), by.get("r_panel_role_sub")
+    if rm is None or rs is None:
+        return 0
+    im, is_ = item_of(rm), item_of(rs)  # library resolutions (``.item``)
+    if im is None or is_ is None or im.item.id == is_.item.id:
+        return 0
+    panels = sorted((d for d in dets if d.cls == "panel" and _live_new(d) and "panelnote" in d.annotations), key=lambda d: d.key)
+    for n, d in enumerate(panels):
+        role = "main" if n == 0 else "sub"
+        extra = [f"role{role}"]
+        if "comms" in d.annotations:
+            extra.append(f"comms{role}")
+        d.annotations = (*d.annotations, *extra)
+    return len(panels)
+
+
 def count_only_units(dets: list[Det], rules: list[Rule], labeler: Labeler, resolvable: Resolvable | None = None) -> list[Unit]:
     """Units of ``class_to_item`` rules with ``countOnly`` over every live new detection of their classes (consumed or
     not — a switch grouped into a lighting point still has its box). Default rules only when the library has the item."""

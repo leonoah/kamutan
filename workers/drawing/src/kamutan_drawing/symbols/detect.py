@@ -801,6 +801,7 @@ def detect_symbols(
     # ---- "see note" marks named by the text next to them; panels named by their label
     dets.extend(_note_items(markers, tix, dets))
     dets.extend(_panels_from_labels(vs, exclude, tix, dets))
+    dets.extend(_panels_from_notes(tix, dets))  # Sprint 12 (Accuracy) — keep
 
     # ---- text-anchored items (plumbing: no symbol legend)
     if discipline == "plumbing" or (not sym_entries and discipline in ("plumbing", None)):
@@ -1017,6 +1018,66 @@ def _panels_from_labels(vs: VectorSheet, exclude: list[BBox], tix: TextIndex, de
                 )
             )  # fmt: skip
             break
+    return out
+
+
+A_PANEL_NOTE = "panelnote"  # annotation tokens the BOQ label rules read (ASCII: the OCR label of a note never has them)
+A_PANEL_COMMS = "comms"
+A_PANEL_EXISTING = "panelexisting"
+PANEL_NOTE_REACH_MM = 5.0  # the words of one note ("לוח" / "חשמל" / "ותקשורת") are lines this far apart
+PANEL_NOTE_COMMS_REACH_MM = 8.0
+PANEL_NOTE_DEDUP_MM = 30.0
+_PANEL_WORD_RE = re.compile(r"^(?:ל\.?)?לוח(?:[ /].{0,10})?$")
+_PANEL_COMMS_RE = re.compile(r"ו?ת[קכל]שורת")
+_PANEL_BOTH_RE = re.compile(r"^(?:ל\.?\s*)?חשמל\s*ו?ת[קכל]שורת$")  # "לוח" lost to the reader: "ל.חשמל ותקשורת" on one line
+_PANEL_EXISTING_RE = re.compile(r"(?<![א-ת])[קכל]ייי?מ(?![א-ת])")  # "קיים" (final מ folded) and the reader's slips
+_PANEL_NOT_RE = re.compile(r"הזנ|מלוח|בלוח|ללוח")
+
+
+def _panels_from_notes(tix: TextIndex, dets: list[Detection]) -> list[Detection]:
+    """Panel written as a leader note (Sprint 12, Accuracy): the designer draws the board as a wall niche with a
+    lightning mark (a different drawing in every project, never the legend's hatched bar) and names it in an orange
+    note "לוח חשמל (ו)תקשורת" / "לוח חשמל עם מונה משני". The note is the evidence: its word "לוח" next to "חשמל" is one
+    board; "תקשורת" in the same note adds the comms annotation, "מונה" / "משני" the sub-meter ones (the label rules of
+    chapter 04 read them). The detection sits on the note (the niche is the end of its leader). Feed notes
+    ("הזנה מלוח …", "שקע בלוח …") never start a board."""
+    out: list[Detection] = []
+    for i, sp in enumerate(tix.spans):
+        t = norm_label(sp.text).strip()
+        both = bool(_PANEL_BOTH_RE.match(t))
+        if not both and (len(t) > 14 or not _PANEL_WORD_RE.match(t) or _PANEL_NOT_RE.search(t)):
+            continue
+        close = [
+            n for j, g in tix.near(sp.bbox, PANEL_NOTE_REACH_MM) if j != i for n in [tix.spans[j]] if g <= PANEL_NOTE_REACH_MM
+        ]
+        words = " ".join(norm_label(n.text) for n in [sp, *close])
+        if "חשמל" not in words and not both:
+            continue
+        c = ((sp.bbox[0] + sp.bbox[2]) / 2, (sp.bbox[1] + sp.bbox[3]) / 2)
+        if any(d.cls == "panel" and math.dist(c, d.center) < PANEL_NOTE_DEDUP_MM for d in dets + out):
+            continue
+        x0 = min(n.bbox[0] for n in [sp, *close])
+        y0 = min(n.bbox[1] for n in [sp, *close])
+        x1 = max(n.bbox[2] for n in [sp, *close])
+        y1 = max(n.bbox[3] for n in [sp, *close])
+        # the words of the note's other lines ("תקשורת" / "מונה משני" / "קיים") are read from the note's own box
+        near = [tix.spans[j] for j, _ in tix.near((x0, y0, x1, y1), PANEL_NOTE_COMMS_REACH_MM) if tix.spans[j] is not sp]
+        around = " ".join(norm_label(n.text) for n in [sp, *near])
+        notes: list[str] = [A_PANEL_NOTE]
+        if _PANEL_COMMS_RE.search(around):
+            notes.append(A_PANEL_COMMS)
+        if "מונה" in around:
+            notes.append("מונה")
+        if "משני" in around or "משנה" in around:
+            notes.append("משני")
+        if _PANEL_EXISTING_RE.search(around):
+            notes.append(A_PANEL_EXISTING)
+        out.append(
+            Detection(
+                cls="panel", center=c, bbox=(x0, y0, x1, y1), quality=0.7, margin=0.3, source="text", class_conf=0.6,
+                reasons=[R_TEXT_ONLY], annotations=notes,
+            )
+        )  # fmt: skip
     return out
 
 

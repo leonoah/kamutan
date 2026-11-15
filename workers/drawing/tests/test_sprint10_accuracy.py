@@ -545,3 +545,47 @@ def test_the_combos_row_is_the_multiplier_row_however_its_mark_reads(tmp_path: o
     assert ref[1] == [("2X", 2)]
     assert run("20") == ref
     assert run("3O")[1] == [("3X", 3)]
+
+
+# ------------------------------------------------------------------ Sprint 12: per-template legend-vs-plan scale
+def _shutter_box(s: Sheet, cx: float, cy: float, k: float, rgb: tuple[int, int, int] = RED) -> None:
+    """The designer's shutter-switch glyph: a flat box with two dots and slanted strokes, drawn k x the legend size."""
+    w, h = 3.7 * k, 1.5 * k
+    s.line(
+        [
+            (cx - w / 2, cy - h / 2),
+            (cx + w / 2, cy - h / 2),
+            (cx + w / 2, cy + h / 2),
+            (cx - w / 2, cy + h / 2),
+            (cx - w / 2, cy - h / 2),
+        ],
+        rgb,
+    )
+    for dx, dy in ((-0.9, 0.6), (0.2, 0.5), (0.9, -0.6)):
+        s.line([(cx + dx * k, cy + dy * k), (cx + (dx + 0.5) * k, cy + (dy - 0.5) * k)], rgb)
+
+
+def test_a_template_that_found_nothing_gets_a_wider_anchor_tolerance_only_on_strong_poses() -> None:
+    def build(*plan: float) -> tuple[object, object]:
+        s = Sheet()
+        _shutter_box(s, 20.0, 20.0, 1.0)  # legend (paths 0-3)
+        for k, x in zip(plan, (100.0, 140.0), strict=False):
+            _shutter_box(s, x, 100.0, k)
+        _square(s, 180.0, 100.0, RED, 3.0)  # an unrelated square with a 6 mm side: not this glyph at any scale
+        vs = s.build()
+        t = _plain_template(vs, [0, 1, 2, 3], "shutter")
+        t.complexity = 0.9
+        return t, MA.build_scene(vs, [(0.0, 0.0, 40.0, 40.0)])  # the legend box is excluded, as on a sheet
+
+    def near(res: MA.SpotResult, x: float) -> bool:
+        return any(abs(c.center[0] - x) < 1.5 and c.quality >= 0.75 for c in res.detections)
+
+    t, scene = build(1.18)  # plan glyph 1.18 x the legend: outside the +-12 % anchor tolerance
+    res = MA.spot([t], scene)
+    assert near(res, 100.0) and not near(res, 180.0)
+    assert round(res.detections[0].scale, 2) == 1.18  # the pose carries its own scale
+    t.complexity = 0.3
+    assert not near(MA.spot([t], scene), 100.0)  # a plain template never gets the wide pass
+    t, scene = build(1.18, 1.0)  # the template DID find a glyph of its own size: no wide pass, the odd one stays out
+    res = MA.spot([t], scene)
+    assert near(res, 140.0) and not near(res, 100.0)

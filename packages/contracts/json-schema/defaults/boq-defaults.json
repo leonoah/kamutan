@@ -2747,6 +2747,108 @@
       "defaultsVersion": 9
     },
     {
+      "id": "r_panel_role_main",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ],
+        "labelPatterns": [
+          "rolemain"
+        ]
+      },
+      "itemCode": "4.49",
+      "itemDescription": "אספקה והתקנת לוח חשמל ראשי",
+      "unit": "יחידה",
+      "priority": 114,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_panel_role_sub",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ],
+        "labelPatterns": [
+          "rolesub"
+        ]
+      },
+      "itemCode": "4.50",
+      "itemDescription": "אספקה והתקנת לוח חשמל משני",
+      "unit": "יחידה",
+      "priority": 114,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_panel_comms_main",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ],
+        "labelPatterns": [
+          "commsmain"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.25",
+      "itemDescription": "אספקה והתקנת לוח תקשורת ראשי",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_panel_comms_sub",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ],
+        "labelPatterns": [
+          "commssub"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.25",
+      "itemDescription": "אספקה והתקנת לוח תקשורת משני",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
+      "id": "r_panel_comms",
+      "kind": "class_to_item",
+      "match": {
+        "classes": [
+          "panel"
+        ],
+        "labelPatterns": [
+          "comms"
+        ],
+        "excludeLabelPatterns": [
+          "commsmain",
+          "commssub"
+        ],
+        "countOnly": true
+      },
+      "itemCode": "4.25",
+      "itemDescription": "אספקה והתקנת לוח תקשורת",
+      "unit": "יחידה",
+      "priority": 110,
+      "enabled": true,
+      "source": "default",
+      "defaultsVersion": 9
+    },
+    {
       "id": "r_deep_boxes",
       "kind": "class_to_item",
       "match": {

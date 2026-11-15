@@ -19,7 +19,7 @@ from .contracts import LinkGroup
 from .corrections import Correction, ManualQty, OldDetections, apply_corrections
 from .dedup import Det, SheetMeta, dedup
 from .geometry import GeoItem, geometry_units, parse_geometry
-from .labeled import count_only_units, make_labeler, marker_units, pick_class_rule, text_lines
+from .labeled import assign_panel_roles, count_only_units, make_labeler, marker_units, pick_class_rule, text_lines
 from .plumbing import combination_units, consumed_classes, plumbing_units, suggestion_units
 from .rules import (
     CLASS_HE,
@@ -978,6 +978,9 @@ def aggregate(
     # plans write the switch plate as a tag list in a box) is still a switch box with a deep box (lighting/attributes.py)
     from ..lighting.attributes import glyphless_switch_boxes
 
+    stats["panelRoles"] = assign_panel_roles(
+        all_dets, rules, lambda r: resolve(r.item_code, r.description, r.source == "custom", None, r.unit or None)
+    )
     box_dets = [b for sh in sheets if isinstance(sh.circuits, dict) for b in glyphless_switch_boxes(sh)]
     stats["glyphlessSwitchBoxes"] = len(box_dets)
     for u in count_only_units([*all_dets, *box_dets], rules, labeler, resolvable):

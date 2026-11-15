@@ -40,6 +40,14 @@ CAP_MM = 0.6
 MAX_POSES = 60_000
 CHUNK_POINTS = 1_500_000
 MIN_FWD_COV = 0.72
+SCALE_PASS_LINE_TOL = 0.30  # Sprint 12: anchor-line tolerance of the per-template scale pass
+SCALE_PASS_MIN_QUALITY = 0.75
+SCALE_PASS_PREFILTER_POSES = 300
+SCALE_PASS_PREFILTER_SHARE = 0.9
+SCALE_PASS_STAGE1_SHARE = 0.7
+SCALE_PASS_MAX_POSES = 600
+LINE_TOL = 0.12
+SCALE_PASS_MIN_COMPLEXITY = 0.8
 OUTLINE_TOL = 0.12  # mm: a filled path whose edges lie this close to stroked ink is that ink's outline, not a solid
 OUTLINE_SHARE = 0.8
 TERMINATOR_MM = 0.8  # a filled path this small is a leader's dot / arrowhead, not symbol ink
@@ -212,8 +220,11 @@ def _rot_angle(a_deg: float) -> np.ndarray:
     return np.array([[math.cos(t), -math.sin(t)], [math.sin(t), math.cos(t)]])
 
 
-def propose(tpl: Template, scene: Scene, scale: float, scale_tol: float = 0.2) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Candidate poses: (centres (P,2), matrices (P,2,2), scales (P,))."""
+def propose(
+    tpl: Template, scene: Scene, scale: float, scale_tol: float = 0.2, line_tol: float = 0.12
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Candidate poses: (centres (P,2), matrices (P,2,2), scales (P,)). ``line_tol``: how far a segment's length may
+    differ from the template's anchor line (Sprint 12 (Accuracy): wider only in the per-template scale pass of :func:`spot`)."""
     an = tpl.anchor
     mirrors = [False] if tpl.symmetric else [False, True]
     centers: list[np.ndarray] = []
@@ -242,23 +253,29 @@ def propose(tpl: Template, scene: Scene, scale: float, scale_tol: float = 0.2) -
                     mats.append(m)
                     scales.append(k)
     else:
-        lo, hi = an.length * scale * (1 - 0.12), an.length * scale * (1 + 0.12)
+        lo, hi = an.length * scale * (1 - line_tol), an.length * scale * (1 + line_tol)
         cand = np.where((scene.seg_len >= lo) & (scene.seg_len <= hi))[0]
-        for i in cand:
-            sg = scene.segs[i]
-            d = np.array([sg[2] - sg[0], sg[3] - sg[1]])
-            ln = float(np.linalg.norm(d))
-            d /= max(ln, 1e-9)
-            mid = np.array([(sg[0] + sg[2]) / 2, (sg[1] + sg[3]) / 2])
-            k = ln / an.length
-            for us in (d, -d):
-                for mir in mirrors:
-                    mm = _MIR if mir else np.eye(2)
-                    r = _rot_to(mm @ an.mid, us)
-                    m = k * (r @ mm)
-                    centers.append(mid - m @ an.center)
-                    mats.append(m)
-                    scales.append(k)
+        if len(cand):
+            # Sprint 12 (Accuracy): vectorised (was a Python loop per segment, the largest cost of the wide scale pass);
+            # same poses in the same order: segment, direction (d, -d), mirror
+            sg = scene.segs[cand].astype(np.float64)
+            dv = sg[:, 2:4] - sg[:, 0:2]
+            ln = np.linalg.norm(dv, axis=1)
+            dv = dv / np.maximum(ln, 1e-9)[:, None]
+            mid = (sg[:, 0:2] + sg[:, 2:4]) / 2
+            ks = ln / an.length
+            us = np.stack([dv, -dv], axis=1)  # (n, 2 directions, 2)
+            mms = np.stack([_MIR if mir else np.eye(2) for mir in mirrors])  # (m, 2, 2)
+            vv = np.einsum("mij,j->mi", mms, an.mid)  # (m, 2)
+            cs = np.einsum("mj,nuj->num", vv, us)
+            sn = vv[None, None, :, 0] * us[:, :, None, 1] - vv[None, None, :, 1] * us[:, :, None, 0]
+            rot = np.stack([np.stack([cs, -sn], axis=-1), np.stack([sn, cs], axis=-1)], axis=-2)  # (n, 2, m, 2, 2)
+            mat = ks[:, None, None, None, None] * np.einsum("numij,mjk->numik", rot, mms)
+            cen = mid[:, None, None, :] - np.einsum("numij,j->numi", mat, an.center)
+            nm = len(mirrors)
+            centers.extend(cen.reshape(-1, 2))
+            mats.extend(mat.reshape(-1, 2, 2))
+            scales.extend(np.repeat(ks, 2 * nm).tolist())
     if not centers:
         return np.zeros((0, 2)), np.zeros((0, 2, 2)), np.zeros(0)
     c = np.asarray(centers)
@@ -364,13 +381,33 @@ def quality(fwd: float, cov: float, rev: float, rev_cov: float, fill_diff: float
 
 
 def spot_template(
-    tpl: Template, scene: Scene, scale: float = 1.0, accept: Callable[[Candidate], bool] | None = None
+    tpl: Template,
+    scene: Scene,
+    scale: float = 1.0,
+    accept: Callable[[Candidate], bool] | None = None,
+    line_tol: float = LINE_TOL,
 ) -> list[Candidate]:
     """``accept`` (Sprint 10 (Perf)): the pose veto of :func:`spot`, applied before the reverse fit — it may only
     read the pose (``tpl``, ``center``, ``mat``, ``scale``) and the forward fit (``fwd``, ``cov``)."""
-    centers, mats, scales = propose(tpl, scene, scale)
+    centers, mats, scales = propose(tpl, scene, scale, line_tol=line_tol)
     if len(centers) == 0:
         return []
+    if line_tol > LINE_TOL and len(centers) > SCALE_PASS_PREFILTER_POSES:
+        # Sprint 12 (Accuracy): the wide pass proposes thousands of poses on a busy sheet (the CPU limit of the parser
+        # sandbox was hit); a few template points on ink decide which of them are worth the full forward fit
+        tol_pt = 0.12 + 0.02 * tpl.size
+        for n_pts, floor in ((8, SCALE_PASS_STAGE1_SHARE), (32, SCALE_PASS_PREFILTER_SHARE)):  # cheap look first, then closer
+            pick = np.linspace(0, len(tpl.pts) - 1, min(len(tpl.pts), n_pts)).astype(np.int64)
+            q = np.einsum("pij,nj->pni", mats, tpl.pts[pick]) + centers[:, None, :]
+            d, _ = scene.tree.query(q.reshape(-1, 2), k=1, distance_upper_bound=CAP_MM * min(3.0, float(scales.max())))
+            share = ((d.reshape(-1, len(pick)) / scales[:, None]) <= tol_pt).mean(axis=1)
+            keep = np.flatnonzero(share >= floor)
+            keep = keep[np.argsort(-share[keep], kind="stable")][:SCALE_PASS_MAX_POSES]
+            centers, mats, scales = centers[keep], mats[keep], scales[keep]
+            if len(centers) == 0:
+                return []
+        if len(centers) == 0:
+            return []
     fwd, cov = forward(tpl, scene, centers, mats, scales)
     ok = np.where(cov >= MIN_FWD_COV)[0]
     out: list[Candidate] = []
@@ -565,5 +602,18 @@ def spot(
             alt = run(k)
             if sum(1 for c in alt if c.quality >= 0.7) > strong:
                 cands, res.scale, res.scale_estimated = alt, k, True
+    # Sprint 12 (Accuracy) — keep: per-template legend-vs-plan scale. A line-anchored template that found nothing on this
+    # sheet gets one more pass with a wide anchor tolerance (the shutter switch is drawn 1.18 x its legend box), and
+    # only its strong poses are taken. Widening the tolerance for every template added false TV points / cameras.
+    seen = {c.tpl.id for c in cands if c.quality >= min_quality}
+    for t in templates:
+        if t.id in seen or t.anchor.kind != "line" or t.complexity < SCALE_PASS_MIN_COMPLEXITY or t.id in passive:
+            continue
+        wide = [
+            c
+            for c in spot_template(t, scene, res.scale, accept, line_tol=SCALE_PASS_LINE_TOL)
+            if c.quality >= SCALE_PASS_MIN_QUALITY and abs(c.scale / max(res.scale, 1e-9) - 1.0) > 0.12
+        ]
+        cands = cands + wide
     res.detections = _nms(cands, min_quality, passive, scene)
     return res

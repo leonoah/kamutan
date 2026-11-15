@@ -4736,3 +4736,34 @@ deep-box item. Test `test_switch_box_read_from_tags_without_glyph_is_a_deep_box`
 **Blocked:** the volume holding /tmp and the data dir is full (72 MB free) — Achituv and Noah acc18 evals died in the
 kbench step, so Noah cold/warm identity with these two changes is NOT verified, and the full gates were not rerun.
 **Not started:** (3) shutter switch per-template scale, (4) panels.
+
+### Sprint 12 (Accuracy) — shutter switch per-template scale, panel notes, panel roles (Worker-Accuracy)
+Everything is uncommitted; marker comments read "Sprint 12 (Accuracy) — keep". Dev projects: Yahav and Achituv only;
+Rubel and Noah were used as held-out false-positive checks (leave-one-project-out).
+**(1) Shutter switch (`symbols/match.py`).** The plan draws the legend glyph about 1.18x. The line anchor allows +-12 %,
+so it was never found. Widening that globally (0.12 -> 0.2) added a false `tv_point` on Noah and 8 false cameras on
+Achituv, so it stays 0.12. Instead `spot()` runs a wide pass (`SCALE_PASS_LINE_TOL` 0.30) only for a template that
+(a) is line-anchored, (b) is complex (>= 0.8) and (c) found NO candidate at normal scale; only strong poses
+(quality >= 0.75, scale differing > 12 %) are kept. A two-stage ink prefilter (8 then 32 template points, floors 0.7 / 0.9)
+and a pose cap (`SCALE_PASS_MAX_POSES` 600) keep it cheap. `propose` line branch is vectorised (array-for-array equal to
+the old loop on 23 line templates of Rubel f1b6df02 and Yahav 268f72d6). Perf lesson: the first version made Rubel
+f1b6df02 hit the 120 s sandbox limit (`parse_cpu_limit`; detect CPU 83 s without the pass, 90 s with floor 0.8); floor 0.9
+gives 83.7 s. A cap of 250 or 400 poses loses the real Yahav (156,347) switch — do not lower the cap.
+Result: Yahav (156,347), (153,405) and Achituv (186,263) found; the second stacked Yahav switch is not (3 of 4). No new
+detection on any GT sheet of Noah or Rubel. No BOQ line changed from them. Test:
+`test_a_template_that_found_nothing_gets_a_wider_anchor_tolerance_only_on_strong_poses`.
+**(2) Panels (`symbols/detect.py` `_panels_from_notes`, `pipeline/understand.py`, `boq/labeled.py`, `boq/defaults_s10.py`).**
+The legend zigzag bar never appears on plans (plans draw a niche with a lightning mark), so panels are read from the
+note: "לוח" + "חשמל" (or the combined "ל.חשמל ותקשורת"), measured from the whole note box. Feed notes ("הזנה", "מלוח",
+"בלוח") never start a board; comms ("ותקשורת" incl. OCR variants), "מונה", "משני" and the existing word ("קיים" incl. "כיים")
+are read within 8 mm of the box; de-duplicated against existing panels within 30 mm. An existing board is set to
+`lifecycle=existing`. `assign_panel_roles` (aggregate, marked): when the library maps `r_panel_role_main` and
+`r_panel_role_sub` (4.49 / 4.50) to different items, live new panels carrying the note annotation are sorted by key; the
+first is main and the rest sub; the comms rules (4.25 main / sub / plain, count-only) follow. Tests:
+`tests/test_sprint12_panels.py` (6).
+**Results acc18 -> acc22 (cold full ingest, no `parse_cpu_limit`):** Yahav exact 43 -> 47 (4.31, 4.32, 4.33, 4.34 now
+exact); Achituv 40 -> 44 (4.17 5 -> 4, 4.27 0 -> 2, 4.28 2 -> 1, 4.29 0 -> 1); Rubel 37 -> 41 (4.30, 4.31, 4.32, 4.35
+0 -> 1); nothing that was exact got worse, 4.42 included. Noah cold = warm = acc18 on all 77 lines (61 exact; the
+`nors` variant's cold/warm difference on 5.01 / 5.03 / 5.06 / 5.07 is the same as in acc18).
+**Open:** Yahav 4.08 (33 vs 28: the 5 garden switches are real hosts, the designer's 28 excludes them — a rule question);
+Yahav 4.42 (designer vs GT); Rubel 4.37 (draft GT) not touched; the second stacked Yahav shutter switch.

@@ -46,7 +46,7 @@ from ..legend.parse import LegendEntry, LegendResult, parse_legends
 from ..links import LINK_DISCIPLINES, link_sheet
 from ..links.floors import apply_confirmed_floors
 from ..ocr.dictionary import TextSpan
-from ..symbols.detect import Detection, DetectResult, detect_symbols, score_detection
+from ..symbols.detect import A_PANEL_EXISTING, Detection, DetectResult, detect_symbols, score_detection
 from ..symbols.geometry import BBox, bbox_dict, stroke_signatures
 from .artifacts import decode_primitives, decode_text
 
@@ -471,6 +471,11 @@ def understand(
                     d.supply = "existing"
         except Exception:
             log.warning("lifecycle.classify failed", exc_info=True)
+    # Sprint 12 (Accuracy) — keep: "קיים" in a panel's own note (the reader slips: "כיים" / "ליים") is what the lifecycle
+    # classifier, which reads the plan's pens and exact words, cannot see
+    for d in all_dets:
+        if d.cls == "panel" and A_PANEL_EXISTING in d.annotations:
+            d.lifecycle, d.supply = "existing", "existing"
     # Sprint 4: a fixture on a plan is what will be installed — on renovation plans the existing one drawn in the
     # demolition pen is replaced at the same spot (plumbing points are priced as new); only "existing" (kept) stays
     for d in fx_dets:
