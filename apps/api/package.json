@@ -16,11 +16,11 @@
     "test:emulator": "firebase emulators:exec --only firestore,storage,pubsub --project demo-kamutan \"vitest run test/integration\""
   },
   "dependencies": {
-    "@google-cloud/pubsub": "^6.3.1",
-    "@nestjs/common": "^12.3.2",
-    "@nestjs/core": "^12.3.2",
-    "@nestjs/platform-express": "^12.3.2",
-    "@nestjs/swagger": "^12.0.5",
+    "@google-cloud/pubsub": "^6.4.1",
+    "@nestjs/common": "^12.5.0",
+    "@nestjs/core": "^12.5.0",
+    "@nestjs/platform-express": "^12.5.0",
+    "@nestjs/swagger": "^12.1.1",
     "@nestjs/throttler": "^6.7.1",
     "exceljs": "4.4.0",
     "express": "^5.2.1",
@@ -38,17 +38,17 @@
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
-    "@nestjs/testing": "^12.3.2",
+    "@nestjs/testing": "^12.5.0",
     "@swc-node/register": "^1.10.9",
-    "@swc/core": "^1.16.21",
+    "@swc/core": "^1.16.22",
     "@types/express": "^5.0.6",
     "@types/node": "^22.10.0",
     "@types/supertest": "^7.2.1",
     "esbuild": "^0.28.2",
-    "supertest": "^7.0.0",
+    "supertest": "^7.3.2",
     "typescript": "^5.6.3",
     "unplugin-swc": "^2.0.0",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "engines": {
     "node": "22"
