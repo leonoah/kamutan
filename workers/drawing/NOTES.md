@@ -4767,3 +4767,85 @@ exact); Achituv 40 -> 44 (4.17 5 -> 4, 4.27 0 -> 2, 4.28 2 -> 1, 4.29 0 -> 1); R
 `nors` variant's cold/warm difference on 5.01 / 5.03 / 5.06 / 5.07 is the same as in acc18).
 **Open:** Yahav 4.08 (33 vs 28: the 5 garden switches are real hosts, the designer's 28 excludes them — a rule question);
 Yahav 4.42 (designer vs GT); Rubel 4.37 (draft GT) not touched; the second stacked Yahav shutter switch.
+
+## Sprint 13 (Accuracy) — named feeds / points: how the drawings mark them (by eye, BEFORE coding)
+Dev projects: Yahav and Achituv (renders of the electrical plans). Rubel was only text-searched (same words exist) and is
+the held-out project. All plan text is SHX strokes read by the OCR reader **word by word** (one span per word, right to
+left on a row), with systematic slips: ק -> ל / כ, ג -> ה ("לה'קוזי", "פרהולה", "מזהן", "לבלן", "אינדוכציה").
+The existing note blocks (`textitems`) scramble these words, and the BOQ labeler reads only text within 10 mm of a glyph.
+Three kinds of marking were found:
+**(a) leader note -> glyph.** Orange text on an underline shelf that runs on (straight, or with one bend) to a filled
+arrowhead at the glyph, 20-70 mm away; or a red boxed note with a diagonal leader from the box corner.
+  - Yahav ground 111b8ba3: "שקע תלת פאזי לג'קוזי" -> 3-phase socket (144.5, 252.9); "ש.תלת פאזי לכיריים" -> (210.7, 644.1);
+    "הזנה תלת פאזית לשקע טעינה / לרכב חשמלי" -> (252.7, 778.1). All three glyphs ARE detected as `socket_3phase`
+    with no annotation and land in the unassigned line X-4-21 (qty 3).
+  - Yahav basement 92c7caa4: red box "תלת פאזי / עבור מכשירי חימום מים היתרו / מיקום מדויק ..." -> 3-phase socket.
+  - Yahav ground: "הזנה לפרגולה חשמלית צמוד לתקרה / ללא מפסק (יופעל ע"י שלט)" -> the M ring (139.7, 470.1), today counted
+    as a shutter feed (4.12 = 4 is exact only because of it). "מפסק תריס בריכה" -> a switch dot (no M ring): the pool
+    cover's shutter is marked by its switch only.
+  - Achituv ground 4ae7bc0d: "ש.תלת פאזי לאינדוקציה" -> 3-phase socket (already 4.21 = 1 via the 10 mm label); a second
+    note beside it, "צינורות חופשיים מהריצפה 200 ס"מ עבור: - תלת פאזי לאינדוקציה - שקעי שירות", is about floor conduits
+    and points at a floor dot next to the same socket (must not count a second induction socket).
+**(b) free note, no glyph.**
+  - Roof feeds (Yahav / Achituv / Rubel, repeated on every electrical AND plumbing sheet): boxed list "יש לבצע הזנות בגג:
+    1. הזנה לדוד 2. הזנה למכשיר חימום מים בגז בצמוד לדוד 3. צינור 32 מ"מ מלוח חשמל ראשי ועד הגג ...". One instruction for
+    the building, not one per sheet.
+  - Yahav ground: list "הזנות לבריכה ע"פ קבלן בריכות: 1. הזנה תלת פאזית 2. צינור מריחב 20 מ"מ מלוח חשמל עד חדר מכונות
+    כולל חוט משיכה 3. הזנה לתאורה" (pool machine room, 4.28).
+  - Achituv ground: big red note "יש לבצע הזנה תלת פאזי לרכב חשמלי - תוואי יקבע בשטח ..." (EV, 4.23); red cloud
+    "[צינו]ר חופשי עבור תלת פאזי לגקוזי - מיקום מדויק יסומן בשטח ע"י חשמלאי" (jacuzzi, 4.22).
+**(c) own glyph, not a note.**
+  - D18 (Achituv 4.12, Rubel 4.18): a small red box with the SHX text "D18" on the plan (OCR: "|18", Rubel "218" / "118");
+    no legend row.
+  - Cobra (Achituv 4.18 / 4.19, Yahav 4.20 / 4.21, Rubel 4.25): a dashed double arc between two rings with the label
+    "קוברה 50 מ"מ" along it; the legend glyph is a solid single arc. Not detected at all on Yahav / Achituv
+    (0 `conduit_cobra`); Rubel has 3 detections with no label. The BOQ line also needs the run's length bucket.
+    Yahav also writes a cobra inside a conduit note ("שני צינורות חופשיים ... 2. קוברה 50 מ"מ מלוח חשמל").
+**No mark found:** "פקט תלת פאזי למזגן" (Achituv 4.20, Yahav 4.23). The plans only have single sockets with the note
+"מיקום מדויק שקע מזגן יסומן בשטח ע"י קבלן מ.א" and a general note about AC feeds; no "תלת" / "פקט" next to any AC word on
+any sheet of the two projects. BOQ-only knowledge — left alone. Pop-up socket (Rubel 4.27) and sauna (Rubel 4.15) exist
+only on the held-out project.
+
+## Sprint 13 Worker-Areas — LED lighting-profile lines (finished by Worker-S13)
+**Convention read on the drawings (by-eye marks in `gt/<p>/s13/profiles_by_eye.json`), developed on Achituv + Yahav:**
+* a profile is a thin pale-yellow filled bar drawn at true length (`attributes.profile_bars`); bars meeting end to end
+  (an L along two walls) are ONE profile (Yahav kitchen 3.23 + 5.00 = BOQ "800 ס"מ");
+* the kind is written beside the bar, parallel to it: "פרופיל שקוע (בגבס)" → recessed, "פרופיל חיצוני" → surface; a bar
+  with no label is a surface profile (Achituv ground, Yahav);
+* a sheet showing several floors (Achituv "תאורה - כל הקומות") repeats the floor sheets → not counted;
+* library: per metre (one line per kind) or per unit with a nominal length in the text ("באורך 800 ס"מ"): each such line
+  takes ONE profile of its kind, nearest drawn length first, within 10 % (the designer rounds 8.24 → 800, 3.15 → 300).
+  Profiles with no line stay out (Yahav: the two 5.61 m profiles under the aluminium pergola are not in the BOQ).
+**Held out — Rubel, first pass:** surface 29.6 (BOQ 17), recessed 3.8 (16), water 0 (10): the convention did NOT hold.
+Causes on the Rubel sheets: (1) bars are tagged with the single word "שקוע" right at the bar; (2) water-protected profiles
+and LED tapes are named by notes with LEADERS ("פרופיל מוגן מים בניתוק", "הזנה לשנאי עבור סרט לד סמוי בארון"); (3) on the
+ground floor many profiles are DASHED yellow lines, not bars. (1) and (2) were then implemented on Rubel and checked back
+on Achituv / Yahav (their profiles are unchanged; the bare-word tag counts only within 6 mm of a bar, a tape note only
+through its leader — Achituv's "סרט לד" niche notes stand 15–25 mm from a real 3 m profile and must not take it).
+Stored-sheet result after (1) + (2): Rubel surface 16.2 (17), recessed 14.4 (16), water 1.66 (10); Achituv surface 14.85
+(15), recessed 1.85 (1.8); Yahav all six per-unit lines 1. (3) is open.
+Code: `lighting/profiles.py` (bars → profiles, labels, leaders), `boq/profiles.py` (library lines, quantities, pure),
+marked hunks in `pipeline/understand.py` (`circuits.json.gz` → `profiles`) and `boq/aggregate.py` (`_profile_units`).
+No new library rule (the unit rides on `r_suggest_profile_surface`), so nothing to mirror in packages/contracts.
+
+## Sprint 13 (Worker-S13) — result, what was kept, what is open
+**Kept** (all general: they read a note / a legend class / a drawn bar, no per-project constants):
+`symbols/feednotes.py` (named feeds from notes: leader notes name the glyph at the arrow tip, free notes become text-only
+detections with annotation `feednote`), `lighting/profiles.py` + `boq/profiles.py` (profile lines), `dedupe_feed_notes`
+(a free note repeated on every sheet is one feed per project, keyed by the feed word — the label relabeler may change the
+class of one copy), the `r_feed_awning` rule now also takes `shutter_feed` (the "M" ring named "פרגולה חשמלית" — mirrored in
+`packages/contracts/src/library.ts` + `boq-defaults.json`).
+**Fixes found while evaluating (Sprint 13 — keep):** (1) a feed read from a note is no host of the water-protected add-on
+(`marker_units` skips `feednote` detections — Achituv 4.08 went 12 -> 13 and Yahav 33 -> 34 before); (2) a free feed note is
+always new work (`understand.py`: the lifecycle classifier read "קיים" in "לא לפגוע בריצוף קיים" inside Achituv's EV note and
+marked the note existing).
+**Exact lines vs acc22 (rs build):** Noah 61/77 (identical on all 77 lines, cold and warm), Achituv 44 -> 48, Yahav 47 -> 60,
+Rubel (held out) 41 -> 46. Nothing that was exact got worse on any project, patched or `_orig` library.
+**Not exact yet:** profile quantities are measured (Achituv 4.42 1.85 vs 1.8, 4.43 14.85 vs 15; Rubel 4.46 16.2 vs 17, 4.47 14.4
+vs 16, 4.48 1.66 vs 10 — the water-protected profiles are mostly drawn dashed / named by leader notes we do not follow yet).
+**Open, not marked on the drawings as read here:** AC three-phase "פקט" (4.20 / 4.23 / 4.11) — BOQ-only knowledge; Rubel pool
+machine room 4.13 — its note says "הזנות לבריכה לחדר מכונות ע"פ הנחיות קבלן בריכות" with no "תלת", so it is not read as a
+three-phase socket; Rubel pop-up socket 4.27 — no word on any sheet. **Not done:** D18 (the OCR reads the small boxed "D18"
+as "|18" / "218" / "118" — matching those would be tuning to the reader's slips) and the cobra conduits (4.18/4.19, 4.20/4.21,
+4.25: a dashed double arc between two rings is not detected at all; needs its own glyph + length-bucket work).
+

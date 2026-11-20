@@ -37,6 +37,7 @@ from ..legend.classes import suggest_class as _suggest_class
 from ..legend.parse import LegendEntry, LegendResult, clean_qualifier
 from ..ocr.dictionary import TextSpan
 from ..ocr.textutil import levenshtein, normalize
+from .feednotes import A_FEED_NOTE, read_named_feeds
 from .geometry import BBox, bbox_dict, groups_of, in_box, seg_lengths, segment_components, stroke_signature
 from .legend_extra import SHUTTER_FEED, SHUTTER_SWITCH_ANNOTATION, VENTILATOR_FEED, extra_class, is_shutter_switch, refine_entries
 from .marks import GlyphLibrary, build_library, qualifier_clouds, read_marks_near, read_qualifier
@@ -810,6 +811,8 @@ def detect_symbols(
     # ---- annotations, markers, refinements (each text token goes to its nearest detection)
     _annotate(dets, tix, markers)
     _read_marks(vs, dets, build_library(vs, plan_spans, entries))
+    if discipline == "electrical":
+        dets.extend(_named_feeds(vs, plan_spans, dets, text_paths or set()))  # Sprint 13 (Accuracy) — keep
 
     # ---- unknown clusters
     if unknown and discipline in ("electrical", "lighting", "plumbing"):
@@ -1078,6 +1081,42 @@ def _panels_from_notes(tix: TextIndex, dets: list[Detection]) -> list[Detection]
                 reasons=[R_TEXT_ONLY], annotations=notes,
             )
         )  # fmt: skip
+    return out
+
+
+def _named_feeds(vs: VectorSheet | None, spans: list[TextSpan], dets: list[Detection], text_paths: set[int]) -> list[Detection]:
+    """Sprint 13 (Accuracy): the named feeds of the sheet (:mod:`.feednotes`). A leader note puts its canonical word on
+    the glyph it points at (and makes a power socket named "תלת" a three-phase socket); a free note — a boxed list, a
+    cloud, a remark that points at no glyph — becomes a text-only detection carrying :data:`A_FEED_NOTE`."""
+    out: list[Detection] = []
+    view = [(d.cls, d.bbox, d.source != "text") for d in dets]
+    for nf in read_named_feeds(spans, view, vs, text_paths):
+        if nf.det is not None:
+            d = dets[nf.det]
+            if nf.feed.key == "shutter":
+                continue  # the glyph is counted as what it is; only a shutter with no glyph needs the note
+            if nf.feed.canon not in d.annotations:
+                d.annotations.append(nf.feed.canon)
+            if nf.reclass:
+                d.cls = "socket_3phase"
+                if R_REFINED not in d.reasons:
+                    d.reasons.append(R_REFINED)
+            continue
+        if nf.feed.text_cls is None:
+            continue
+        b = nf.note.bbox
+        out.append(
+            Detection(
+                cls=nf.feed.text_cls,
+                center=((b[0] + b[2]) / 2, (b[1] + b[3]) / 2),
+                bbox=b,
+                quality=0.7,
+                class_conf=0.6,
+                source="text",
+                reasons=[R_TEXT_ONLY],
+                annotations=[A_FEED_NOTE, nf.feed.canon],
+            )
+        )
     return out
 
 

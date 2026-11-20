@@ -46,7 +46,7 @@ from ..legend.parse import LegendEntry, LegendResult, parse_legends
 from ..links import LINK_DISCIPLINES, link_sheet
 from ..links.floors import apply_confirmed_floors
 from ..ocr.dictionary import TextSpan
-from ..symbols.detect import A_PANEL_EXISTING, Detection, DetectResult, detect_symbols, score_detection
+from ..symbols.detect import A_FEED_NOTE, A_PANEL_EXISTING, Detection, DetectResult, detect_symbols, score_detection
 from ..symbols.geometry import BBox, bbox_dict, stroke_signatures
 from .artifacts import decode_primitives, decode_text
 
@@ -476,6 +476,11 @@ def understand(
     for d in all_dets:
         if d.cls == "panel" and A_PANEL_EXISTING in d.annotations:
             d.lifecycle, d.supply = "existing", "existing"
+    # Sprint 13 (Accuracy) — keep: a feed read from a free note ("יש לבצע הזנה ...") is an instruction to build it; a word
+    # like "קיים" inside the same note ("לא לפגוע בריצוף קיים") is about something else, so the note is new work
+    for d in all_dets:
+        if A_FEED_NOTE in d.annotations:
+            d.lifecycle, d.supply = "new", None
     # Sprint 4: a fixture on a plan is what will be installed — on renovation plans the existing one drawn in the
     # demolition pen is replaced at the same spot (plumbing points are priced as new); only "existing" (kept) stays
     for d in fx_dets:
@@ -1017,6 +1022,10 @@ def _circuits(
         from ..lighting.attributes import fixture_attributes
 
         doc["fixtureAttributes"] = fixture_attributes(vs, spans, dets_json, doc)
+        # Sprint 13 (Areas) — keep: the drawn LED-profile bars (lighting/profiles.py) for the profile BOQ lines
+        from ..lighting.profiles import profile_runs
+
+        doc["profiles"] = profile_runs(vs, spans)
         return doc
     except Exception:  # best effort
         log.warning("lighting circuits failed", exc_info=True)

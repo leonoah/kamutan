@@ -19,7 +19,15 @@ from .contracts import LinkGroup
 from .corrections import Correction, ManualQty, OldDetections, apply_corrections
 from .dedup import Det, SheetMeta, dedup
 from .geometry import GeoItem, geometry_units, parse_geometry
-from .labeled import assign_panel_roles, count_only_units, make_labeler, marker_units, pick_class_rule, text_lines
+from .labeled import (
+    assign_panel_roles,
+    count_only_units,
+    dedupe_feed_notes,
+    make_labeler,
+    marker_units,
+    pick_class_rule,
+    text_lines,
+)
 from .plumbing import combination_units, consumed_classes, plumbing_units, suggestion_units
 from .rules import (
     CLASS_HE,
@@ -637,6 +645,7 @@ def aggregate(
     }
     dd = dedup(all_dets, metas, rules)
     stats["duplicatesRemoved"] = dd.dropped
+    stats["feedNotesFolded"] = dedupe_feed_notes(all_dets)  # Sprint 13 (Accuracy) — keep
     stats["secondaryKept"] = dd.secondary_kept
     stats["alignFailed"] = dd.align_failed
     stats["alignments"] = dd.alignments
@@ -966,6 +975,11 @@ def aggregate(
         add_unit(u)
     stats["tiling"] = {**t_stats, "canonicalRooms": len(canon), "settingsMatched": len(rs), **loc_stats}
 
+    # Sprint 13 (Areas) — keep: LED lighting-profile lines from the drawn profile bars (lighting/profiles.py → boq.profiles)
+    pf_units, stats["lightingProfiles"] = _profile_units(sheets, library, rules)
+    for u in pf_units:
+        add_unit(u)
+
     # --- manual quantities (measure / count corrections)
     c2i = [r for r in rules if r.kind == "class_to_item"]
     disc = {s.sheet_id: s.discipline for s in sheets}
@@ -1286,6 +1300,38 @@ def _tiling_by_location(
                                   floor=room.floor, ev_qty={ev.key: q}))  # fmt: skip
                 stats["ceilingRooms"] = stats.get("ceilingRooms", 0) + 1
     return [*t_units, *extra], stats
+
+
+def _profile_units(sheets: list[SheetInput], library: Library, rules: list[Rule]) -> tuple[list[Unit], dict[str, int]]:
+    """Sprint 13 (Areas) — keep: one unit per library profile line (metres of its kind, or one profile of its nominal
+    length); the evidence is the drawn bars. Libraries without profile lines and sheets without bars give nothing."""
+    from . import profiles as pf
+
+    by_id = {s.sheet_id: s for s in sheets}
+    docs = [
+        {"sheetId": s.sheet_id, "floors": s.floors, "scale": s.scale, "profiles": s.circuits.get("profiles") or []}
+        for s in sheets
+        if s.discipline == "lighting" and isinstance(s.circuits, dict)
+    ]
+    qs, stats = pf.profile_quantities(docs, list(library.items))
+    carrier = next((r for r in rules if r.id == "r_suggest_profile_surface"), None) or next(iter(rules), None)
+    out: list[Unit] = []
+    if carrier is None:
+        return out, stats
+    for q in qs:
+        dets: list[tuple[Det, str | None]] = []
+        ev: dict[str, float] = {}
+        per = q.qty / len(q.members) if q.item.unit.strip() in pf.COUNT_UNITS else None
+        for sid, pid, length in q.members:
+            sh = by_id[sid]
+            run: dict[str, Any] = next((p for p in sh.circuits.get("profiles") or [] if p.get("id") == pid), {})
+            c = run.get("centerMm") or {}
+            d = Det(sid, sh.version_id, str(pid), "lighting_profile", float(c.get("x") or 0.0), float(c.get("y") or 0.0),
+                    "yellow", [], sh.floors[0] if sh.floors else None, "new", None, sh.discipline, 1.0)  # fmt: skip
+            dets.append((d, None))
+            ev[d.key] = round(per if per is not None else length, 4)
+        out.append(Unit(carrier, dets, q.qty, list(q.reasons), "yellow", item=q.item, origin="geometry", ev_qty=ev))
+    return out, stats
 
 
 def _manual_unit(mq: ManualQty, c2i: list[Rule], discipline: str) -> Unit:

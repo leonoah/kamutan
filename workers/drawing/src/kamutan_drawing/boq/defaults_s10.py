@@ -113,7 +113,8 @@ _rule("r_addon_usb", "marker_addon", {"hostClasses": SOCKETS, "markerPatterns": 
 labeled("r_feed_shutter", ["heater_feed", "switch_shutter"], ["תריס"], "4.31", "הזנה לתריס חשמלי")
 labeled("r_feed_smoke", ["heater_feed"], ["גלאי ?עשנ", "גלאי"], "4.32", "הזנה לגלאי עשן")
 labeled("r_supply_smoke", ["heater_feed"], ["גלאי ?עשנ", "גלאי"], "4.33", "אספקה והתקנת גלאי עשן", count_only=True)
-labeled("r_feed_awning", ["heater_feed"], ["סוככ", "פרגולה חשמלית"], "4.34", "הזנה לסוכך חשמלי")
+# Sprint 13 (Accuracy) — keep: the awning's feed is drawn as the "M" feed ring with a leader note (symbols.feednotes)
+labeled("r_feed_awning", ["heater_feed", "shutter_feed"], ["סוככ", "פרגולה חשמלית"], "4.34", "הזנה לסוכך חשמלי")
 labeled("r_feed_solar_boiler", ["heater_feed", "water_heater_feed"], ["דוד ?שמש", "(?:דוד|חימומ).{0,20}(?:גג|גז)"], "4.35",
         "הזנה משולבת לדוד שמש ולמכשיר חימום מים על הגג כולל פקט ומפסק", priority=112)  # fmt: skip
 labeled("r_supply_heater", ["heater_feed"], ["תנור"], "4.36", "התקנת תנור חימום בחדר רחצה", count_only=True)

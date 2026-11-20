@@ -206,6 +206,32 @@ def assign_panel_roles(dets: list[Det], rules: list[Rule], item_of: Callable[[Ru
     return len(panels)
 
 
+FEED_NOTE = "feednote"  # symbols.feednotes.A_FEED_NOTE: a named feed read from a note that points at no glyph
+
+
+def dedupe_feed_notes(dets: list[Det]) -> int:
+    """Sprint 13 (Accuracy) — keep: a named feed read from a free note (annotation ``feednote`` + the feed's word) is
+    an instruction for the building, and the designer repeats such notes on every sheet ("יש לבצע הזנות בגג: ..." stands
+    on each electrical plan). One feed word is counted once per project (the first sheet's note, key order), and not at
+    all when a drawn glyph anywhere in the project already carries the same word (the note explains that glyph).
+    Returns the notes dropped."""
+    notes = [d for d in dets if FEED_NOTE in d.annotations and _live_new(d)]
+    if not notes:
+        return 0
+    drawn = {a for d in dets if FEED_NOTE not in d.annotations and _live_new(d) for a in d.annotations}
+    seen: set[tuple[str, ...]] = set()  # keyed by the feed word: the label relabeler may change a note's class per sheet
+    n = 0
+    for d in sorted(notes, key=lambda q: q.key):
+        words = tuple(a for a in d.annotations if a != FEED_NOTE)
+        k = words
+        if k in seen or any(w in drawn for w in words):
+            d.dropped_by = "feednote:duplicate"
+            n += 1
+        else:
+            seen.add(k)
+    return n
+
+
 def count_only_units(dets: list[Det], rules: list[Rule], labeler: Labeler, resolvable: Resolvable | None = None) -> list[Unit]:
     """Units of ``class_to_item`` rules with ``countOnly`` over every live new detection of their classes (consumed or
     not — a switch grouped into a lighting point still has its box). Default rules only when the library has the item."""
@@ -251,8 +277,8 @@ def marker_units(
             continue
         stats["rules"] += 1
         for d in sorted(dets, key=lambda d: d.key):
-            if d.cls not in hosts or not _live_new(d):
-                continue
+            if d.cls not in hosts or not _live_new(d) or FEED_NOTE in d.annotations:
+                continue  # Sprint 13 (Accuracy) — keep: a feed read from a note has no box on the plan to be waterproof
             mark: Det | None = None
             if markers:
                 cands = [

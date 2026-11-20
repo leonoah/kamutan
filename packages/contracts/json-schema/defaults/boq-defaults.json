@@ -2363,7 +2363,8 @@
       "kind": "class_to_item",
       "match": {
         "classes": [
-          "heater_feed"
+          "heater_feed",
+          "shutter_feed"
         ],
         "labelPatterns": [
           "סוככ",
