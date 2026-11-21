@@ -104,6 +104,10 @@ def evaluate_boq_lines(
             "ae": round(ae, 6),
             "pe": round(ae / max(q, 1.0), 6),
             "exact": ae < 1e-9,
+            # Designer BOQ areas are multiples of 0.5 m2 while ours are measured to the cm: an area line is
+            # "exact within designer rounding" when our value rounds to the designer's 0.5 grid onto the truth.
+            # Reported next to ``exact`` and never replaces it (owner decision: m2 lines are not loosened).
+            "exact_rounded": (ae < 1e-9) or (kind == "area" and abs(round(qh * 2) / 2 - q) < 1e-9),
             "measured": measured,
             "tolerance_pe": tol,
             "within_tol": (pe_area <= tol + 1e-9) if measured else ae < 1e-9,
@@ -156,6 +160,7 @@ def evaluate_boq_lines(
         return {
             "n_lines": len(rs),
             "exact_match": _rate(sum(r["exact"] for r in rs), len(rs)),
+            "exact_within_designer_rounding": _rate(sum(r["exact_rounded"] for r in rs), len(rs)),
             "within_tolerance": _rate(sum(r["within_tol"] for r in rs), len(rs)),
             "sum_ae": round(sum(r["ae"] for r in rs), 6),
             "median_pe": percentile(pes, 50),
@@ -220,13 +225,13 @@ def render_boq_markdown(m: dict[str, Any]) -> str:
         "",
         f"gt_version: {m.get('gt_version')} · model: {m.get('model_version')} · scope: {', '.join(b['scope'])}",
         "",
-        "| set | lines | exact match | within tol | ΣAE | median PE | P90 PE | lines AE>0 | not proposed |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| set | lines | exact match | exact within designer rounding | within tol | ΣAE | median PE | P90 PE | lines AE>0 | not proposed |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for name, s in (("gated", g), ("disputed (not gated)", d)):
         wt = r(s["within_tolerance"]) if "within_tolerance" in s else "-"
         out.append(
-            f"| {name} | {s['n_lines']} | {r(s['exact_match'])} | {wt} | {s['sum_ae']} | {s['median_pe']} | {s['p90_pe']} | "
+            f"| {name} | {s['n_lines']} | {r(s['exact_match'])} | {r(s['exact_within_designer_rounding'])} | {wt} | {s['sum_ae']} | {s['median_pe']} | {s['p90_pe']} | "
             f"{s['n_ae_gt_0']} | {', '.join(s['not_proposed']) or '-'} |"
         )
     out += [

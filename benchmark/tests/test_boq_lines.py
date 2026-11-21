@@ -123,3 +123,24 @@ def test_cli_eval_boq(tmp_path: Path) -> None:
     assert m["boq_lines"]["gated"]["n_lines"] == 4
     assert main(["eval-boq", "--truth", str(t), "--pred-lines", str(pl), "--scope", "9.", "--out", str(out)]) == 0
     assert json.loads(out.read_text())["boq_lines"]["gated"]["n_lines"] == 2
+
+
+def test_area_exact_within_designer_rounding() -> None:
+    """Areas round onto the designer's 0.5 m2 grid; counts and lengths are never loosened."""
+    truth = Project.__new__(Project)
+    rows = {
+        "5.01": ('מ"ר', 12.5, 12.39),  # rounds to 12.5 -> counts
+        "5.02": ('מ"ר', 12.5, 12.2),  # rounds to 12.0 -> does not
+        "4.01": ("יח'", 3.0, 3.2),  # count: never loosened
+    }
+    truth.boq_lines = lambda: [  # type: ignore[method-assign]
+        {"code": c, "unit": u, "quantity": q, "description": c} for c, (u, q, _) in rows.items()
+    ]
+    truth.open_dispute_codes = lambda: set()  # type: ignore[method-assign]
+    pred = [{"code": c, "qty": v, "level": "red"} for c, (_, _, v) in rows.items()]
+    b = evaluate_boq_lines(truth, pred, scope=("4.", "5."))["boq_lines"]
+    by = {r["code"]: r for r in b["lines"]}
+    assert by["5.01"]["exact_rounded"] and not by["5.01"]["exact"]
+    assert not by["5.02"]["exact_rounded"] and not by["4.01"]["exact_rounded"]
+    assert b["gated"]["exact_match"]["k"] == 0
+    assert b["gated"]["exact_within_designer_rounding"]["k"] == 1
