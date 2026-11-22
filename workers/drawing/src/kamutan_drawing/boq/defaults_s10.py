@@ -15,6 +15,9 @@ from typing import Any
 R_TEMPLATE = "הצעה – לאשר ידנית"
 NEEDS_MEASURE = "לא נמצאה כמות בשרטוט – להשלמה ידנית"
 NOT_DETECTED = "לא זוהה בשרטוט – להשלמה ידנית"
+# Sprint 16: single-install lines (one feed / one panel / one three-phase outlet per project): suggested with quantity 1
+# instead of an empty cell; still yellow, never green, a person approves or excludes it.
+NOT_DETECTED_ONE = "לא זוהה בשרטוט – הוצעה כמות 1, יש לאשר"
 ELEC = ["electrical", "lighting"]
 BUILD = ["architecture", "architecture_master", "construction", "demolition", "ceiling"]
 SOCKETS = [
@@ -230,6 +233,13 @@ for code, desc, unit in (
 # no symbol class of their own) are still present with the right unit when the org's BOQ has them (never when another
 # rule produced the item). Lines a symbol produces (sockets, fixtures, drains, fans, bells) get NO fallback: no symbol
 # on the plan means no line.
+# Sprint 16 — keep: lines that are one install per project by nature (a feed, a panel, a three-phase outlet).
+# Counts that vary with the house (shutters, smoke detectors, bells, vents, conduits, D18, deep boxes) stay empty.
+SINGLE_INSTALL = frozenset({
+    "r_fb_solar_boiler", "r_fb_3ph_ac", "r_fb_3ph_induction", "r_fb_3ph_jacuzzi", "r_fb_3ph_ev", "r_fb_3ph_hydro",
+    "r_fb_3ph_sauna", "r_fb_3ph_pool", "r_fb_solar_conduit", "r_fb_panel_main", "r_fb_panel_sub", "r_fb_panel_comms",
+    "r_fb_submeter", "r_fb_popup",
+})  # fmt: skip
 for rid, code, desc in (
     ("r_fb_waterproof", "4.29", "תוספת עבור אביזר מוגן מים"),
     ("r_fb_usb", "4.30", "תוספת עבור שקע USB + TYPE C בקופסא קיימת"),
@@ -260,7 +270,10 @@ for rid, code, desc in (
     ("r_fb_d18", "4.71", "אביזר D18 הכולל 6 שקעים ושלושה צינורות נוספים עם חוט משיכה עד לארון תקשורת"),
     ("r_fb_popup", "4.57", "אספקה והתקנת שקע קופץ באי מטבח"),
 ):
-    suggest(rid, SHEETS_ELEC, code, desc, U_COUNT, reason=NOT_DETECTED, quick="count")
+    if rid in SINGLE_INSTALL:
+        suggest(rid, SHEETS_ELEC, code, desc, U_COUNT, fixed=1, reason=NOT_DETECTED_ONE, quick="count")
+    else:
+        suggest(rid, SHEETS_ELEC, code, desc, U_COUNT, reason=NOT_DETECTED, quick="count")
 for rid, code, desc in (
     ("r_fb_irrigation", "3.25", "נק' הזנה למערכת השקיה"),
     ("r_fb_heater_water", "3.35", "הזנת מים למכשיר חימום מים / היתרו"),

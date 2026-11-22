@@ -47,7 +47,7 @@ describe('Sprint 10 — rule kinds, item / line fields, defaults v9 / library v3
   });
 
   it('defaults: v9 rules parse, unique ids, every Sprint-10 rule code has a default item; library v3 codes unique', () => {
-    expect(DEFAULT_BOQ_RULES_VERSION).toBe(9);
+    expect(DEFAULT_BOQ_RULES_VERSION).toBe(10);
     expect(DEFAULT_ITEM_LIBRARY_VERSION).toBe(3);
     for (const r of DEFAULT_BOQ_RULES) expect(BoqRuleSchema.safeParse({ ...defaultRuleDoc(r), updatedAt: null }).success, r.id).toBe(true);
     const ids = DEFAULT_BOQ_RULES.map((r) => r.id);

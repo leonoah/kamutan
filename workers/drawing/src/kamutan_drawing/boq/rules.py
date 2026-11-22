@@ -850,7 +850,7 @@ SPRINT6_RULE_IDS = frozenset(r["id"] for r in _SPRINT6_RULES)
 
 
 # contracts DEFAULT_BOQ_RULES_VERSION: bump with every change of DEFAULT_RULES (outdated default docs are replaced)
-DEFAULT_RULES_VERSION = 9  # contracts rules v9 (Sprint 10: the designer's full catalogue, SPRINT10_RULES)
+DEFAULT_RULES_VERSION = 10  # contracts rules v10 (Sprint 16: single-install fallbacks suggest qty 1)
 DEFAULT_DOC_FIELDS: dict[str, Any] = {"enabled": True, "source": "default", "defaultsVersion": DEFAULT_RULES_VERSION}
 
 # Sprint 10 (Worker-Lighting, `lighting/boq.py` DEFAULT_RULE_DOC): the one `lighting_circuit` rule (wording auto);
