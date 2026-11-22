@@ -50,6 +50,7 @@ import { ProjectStateService } from '../project-state/project-state.service';
 import { buildBoqDocument } from './boq-document';
 import { buildBoqWorkbook, floorsOf, type EvidenceGroup } from './excel';
 import { priceLines, totalsOf } from './pricing';
+import { listActiveLines } from './exclusions';
 
 const validId = (s: string) => DocIdSchema.safeParse(s).success;
 /** Sprint 7: role of a line rename / library rewrite = the role of a library item edit (LibraryService.patchItem). */
@@ -149,7 +150,7 @@ export class BoqService {
   // ------------------------------------------------------------------ view
   async view(user: AuthContext, projectId: string, q: GetBoqQuery): Promise<BoqView> {
     const { orgId } = await this.access.requireProjectRole(user, projectId, 'viewer');
-    const [project, org, all] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
+    const [project, org, all] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), listActiveLines(this.boq, orgId, projectId)]);
     if (!project) throw notFound('project');
     await this.syncApprovalAudits(orgId, projectId, project);
     // Sprint 8: effective prices (override ?? library) + totals over ALL lines; library prices are read live.
@@ -450,7 +451,7 @@ export class BoqService {
    * export writes its main sheet from it. Lines = all project lines (≤ 5000), sorted like everywhere else.
    */
   private async prepareDocument(orgId: string, projectId: string, opts: { templateId?: string | undefined; split: 'summed' | 'byFloor'; markDraft: boolean; includeConfidence: boolean; chapters?: readonly string[] | null | undefined; includePrices?: boolean }) {
-    const [project, org, all, items] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId), this.boq.listLibraryItems(orgId, { active: true })]);
+    const [project, org, all, items] = await Promise.all([this.repo.getProject(orgId, projectId), this.repo.getOrg(orgId), listActiveLines(this.boq, orgId, projectId), this.boq.listLibraryItems(orgId, { active: true })]);
     if (!project) throw notFound('project');
     await this.syncApprovalAudits(orgId, projectId, project);
     const lines = priceLines(all, items).sort(compareLines);

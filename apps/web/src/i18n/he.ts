@@ -1,5 +1,6 @@
 import { sprint8He } from "./he.sprint8";
 import { sprint9He } from "./he.sprint9";
+import { sprint15He } from "./he.sprint15";
 /** Hebrew UI strings (default locale). Micro-copy follows docs/spec/05_ux.md §מיקרו-קופי verbatim where it exists. */
 const he = {
   app: {
@@ -534,6 +535,7 @@ const he = {
   boq: {
     tabBoq: "כתב כמויות",
     tabCounts: "ספירה לפי סוג",
+    tabMissing: "סעיפים שלא זוהו",
     tabsLabel: "תצוגת הפאנל",
     build: "בנה כתב כמויות",
     rebuild: "בנו מחדש",
@@ -1319,6 +1321,7 @@ const he = {
       boqRules: "כללים",
       similarSearches: "חיפוש דומים",
       boqComparisons: "השוואת גרסאות",
+      boqExclusions: "סעיף שלא זוהה",
     },
     /** API audit vocabulary (entity + verb); shown next to the entity column. */
     actions: {
@@ -1340,6 +1343,8 @@ const he = {
       batch: "פעולה קבוצתית",
       revert: "ביטול פעולה",
       revert_batch: "ביטול פעולה קבוצתית",
+      exclude: "סימון כלא רלוונטי",
+      restore: "החזרה לכתב הכמויות",
       read: "צפייה",
       download: "הורדה",
       view: "צפייה בקישור",
@@ -1718,6 +1723,8 @@ const he = {
   ...sprint8He,
   // Sprint 9: input-quality gate (src/i18n/he.sprint9.ts)
   quality: sprint9He.quality,
+  // Sprint 15: "סעיפים שלא זוהו" (src/i18n/he.sprint15.ts)
+  missing: sprint15He.missing,
 };
 
 export default he;

@@ -1,0 +1,22 @@
+{
+  "$ref": "#/definitions/MissingItemsQuery",
+  "definitions": {
+    "MissingItemsQuery": {
+      "type": "object",
+      "properties": {
+        "filter": {
+          "type": "string",
+          "enum": [
+            "all",
+            "in_project",
+            "not_relevant"
+          ],
+          "default": "all"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://kamutan.app/schemas/MissingItemsQuery.json"
+}

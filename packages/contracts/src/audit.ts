@@ -131,6 +131,7 @@ export const AUDIT_ENTITY_HE: Readonly<Record<string, string>> = Object.freeze({
   boqRules: 'כללי כתב כמויות',
   boqBuilds: 'חישוב כתב כמויות',
   boqLines: 'שורת כתב כמויות',
+  boqExclusions: 'סעיף שלא זוהה',
   exports: 'ייצוא',
   corrections: 'תיקונים',
   roomSettings: 'הגדרות חדר',
@@ -171,6 +172,8 @@ export const AUDIT_ACTION_HE: Readonly<Record<string, string>> = Object.freeze({
   delete: 'מחיקה',
   import_prices: 'ייבוא מחירים',
   update_pricing: 'הנחה / תוספת',
+  exclude: 'סימון כלא רלוונטי בפרויקט',
+  restore: 'החזרה לכתב הכמויות',
 });
 
 const CORRECTION_KIND_HE: Readonly<Record<string, string>> = Object.freeze({
@@ -280,6 +283,10 @@ export function auditSummaryHe(e: Pick<AuditEvent, 'entity' | 'action' | 'entity
       if (e.action === 'import_prices') parts.push(`${fmt(a.applied)} מחירים עודכנו`, `${fmt(a.unmatched)} ללא התאמה`, `${fmt(a.conflicts)} בהתנגשות`);
       break;
     }
+    case 'boqExclusions':
+      // Sprint 15: "לא רלוונטי בפרויקט הזה" / restore (code only — the optional reason is never copied here).
+      parts.push(typeof a.code === 'string' ? `סעיף ${a.code}` : ent, e.action === 'restore' ? 'הוחזר לכתב הכמויות' : 'סומן כלא רלוונטי בפרויקט הזה');
+      break;
     case 'projects':
       parts.push(ent, act);
       if (e.action === 'update_pricing') parts.push(typeof a.to === 'number' && a.to !== 0 ? `${a.to < 0 ? 'הנחה' : 'תוספת'} ${Math.abs(a.to)}%` : 'ללא הנחה / תוספת');

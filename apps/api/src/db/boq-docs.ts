@@ -30,6 +30,9 @@ import {
   normalizeDescriptionInput,
   itemIdFor,
   PRICE_MAX,
+  BoqExclusionSchema,
+  EXCLUSION_REASON_MAX,
+  type BoqExclusion,
 } from '@kamutan/contracts';
 import { anyIso, type Doc } from './mappers';
 import { RepoConflictError } from './repository';
@@ -471,4 +474,53 @@ export function countLines(lines: readonly BoqLine[]) {
     if (l.qtyOverride !== null && l.qtyOverride !== undefined) c.overridden++;
   }
   return c;
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 15: "לא רלוונטי בפרויקט הזה" (orgs/{o}/projects/{p}/boqExclusions/{id})
+// ---------------------------------------------------------------------------
+
+/** Stored exclusion doc → DTO (null when malformed: a bad doc never hides a line). */
+export function toBoqExclusion(id: string, d: Doc): BoqExclusion | null {
+  const r = BoqExclusionSchema.safeParse(
+    isoDeep({
+      id,
+      code: d.code,
+      description: typeof d.description === 'string' ? d.description : '',
+      unit: typeof d.unit === 'string' ? d.unit : '',
+      chapter: typeof d.chapter === 'string' ? d.chapter : '',
+      active: d.active === true,
+      excludedBy: d.excludedBy,
+      excludedAt: d.excludedAt,
+      reason: typeof d.reason === 'string' ? d.reason : null,
+      restoredBy: typeof d.restoredBy === 'string' ? d.restoredBy : null,
+      restoredAt: d.restoredAt ?? null,
+    }),
+  );
+  return r.success ? r.data : null;
+}
+
+export interface ExclusionInput {
+  code: string;
+  excluded: boolean;
+  reason?: string | undefined;
+  /** Display snapshot (library item / line). */
+  description: string;
+  unit: string;
+  chapter: string;
+}
+
+/**
+ * Pure write plan of one idempotent set. `doc: null` = nothing to write (already in the requested state, or a restore
+ * of an item that was never excluded). The audit payload carries the code and unit only — never the free-text reason.
+ */
+export function planExclusionSet(cur: Doc | null, input: ExclusionInput, actorUid: string, now: unknown): { doc: Doc | null; audit: Record<string, unknown> | null; action: 'exclude' | 'restore' } {
+  const action = input.excluded ? 'exclude' : 'restore';
+  const active = cur?.active === true;
+  if (input.excluded === active || (!input.excluded && !cur)) return { doc: null, audit: null, action };
+  const reason = input.reason ? input.reason.slice(0, EXCLUSION_REASON_MAX) : null;
+  const doc: Doc = input.excluded
+    ? { ...(cur ?? {}), code: input.code, description: input.description, unit: input.unit, chapter: input.chapter, active: true, excludedBy: actorUid, excludedAt: now, reason, restoredBy: null, restoredAt: null }
+    : { ...(cur as Doc), active: false, restoredBy: actorUid, restoredAt: now };
+  return { doc, audit: { code: input.code, unit: input.unit }, action };
 }

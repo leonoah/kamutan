@@ -495,3 +495,15 @@ describe('Sprint 8 — deletes, prices, lines snapshots (static)', () => {
     expect(st.allows.filter((a) => a.methods.includes('delete') && !isDenyAll(a.condition))).toEqual([]);
   });
 });
+
+describe('Sprint 15 — boqExclusions (static)', () => {
+  const p = `${DOCS}/orgs/{orgId}/projects/{projectId}/boqExclusions/{exclusionId}`;
+  it('members read, every client write denied (API only; the worker never writes it)', () => {
+    const allows = fs.allows.filter((a) => a.path === p);
+    expect(allows.find((a) => a.methods.includes('read'))?.condition).toBe('isMember(orgId)');
+    const writes = allows.filter((a) => a.methods.some((m) => WRITE_METHODS.has(m)));
+    expect(writes.length).toBeGreaterThan(0);
+    for (const w of writes) expect(isDenyAll(w.condition), `line ${w.line}`).toBe(true);
+    expect(paths.boqExclusion('o', 'p', 'ex_4-10_ab12cd34')).toBe('orgs/o/projects/p/boqExclusions/ex_4-10_ab12cd34');
+  });
+});

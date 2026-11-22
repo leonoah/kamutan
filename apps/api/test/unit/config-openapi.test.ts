@@ -89,12 +89,14 @@ describe('OpenAPI', () => {
           '/api/v1/projects/{projectId}/boq',
           '/api/v1/projects/{projectId}/boq/build',
           '/api/v1/projects/{projectId}/boq/evidence',
+          '/api/v1/projects/{projectId}/boq/exclusions',
           '/api/v1/projects/{projectId}/boq/export',
           '/api/v1/projects/{projectId}/boq/lines/{lineId}',
           '/api/v1/projects/{projectId}/boq/lines/{lineId}/evidence',
           // Sprint 6
           '/api/v1/projects/{projectId}/boq/lines/batch-status',
           '/api/v1/projects/{projectId}/boq/lines/{lineId}/quick-measure',
+          '/api/v1/projects/{projectId}/boq/missing-items',
           // Sprint 7
           '/api/v1/projects/{projectId}/boq/document',
           '/api/v1/projects/{projectId}/sheet-sets/{sheetSetId}',

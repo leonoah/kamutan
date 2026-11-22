@@ -1612,6 +1612,61 @@ export interface PatchMemberRequest {
   role: Role;
 }
 
+/* ---------- Sprint 15: "סעיפים שלא זוהו" (contracts missing-items.ts) ---------- */
+export type MissingItemFilter = "all" | "in_project" | "not_relevant";
+/** contracts BoqExclusion: orgs/{o}/projects/{p}/boqExclusions/{id} — "לא רלוונטי בפרויקט הזה" (soft: restore keeps the doc). */
+export interface BoqExclusion {
+  id: string;
+  code: string;
+  description: string;
+  unit: string;
+  chapter: string;
+  active: boolean;
+  excludedBy: string;
+  excludedAt: string;
+  reason?: string | null;
+  restoredBy?: string | null;
+  restoredAt?: string | null;
+}
+export interface MissingItem {
+  id: string;
+  code: string;
+  chapter: string;
+  chapterTitle: string;
+  description: string;
+  unit: string;
+  /** `no_line` = no line in the BOQ; `zero_line` = a line whose effective quantity is 0. */
+  origin: "no_line" | "zero_line";
+  lineId: string | null;
+  itemId: string | null;
+  state: "open" | "not_relevant";
+  /** The tool "סמן בשרטוט" starts; null = lump sum (nothing to mark). */
+  markKind: Exclude<BoqQuickActionKind, "confirm"> | null;
+  /** Symbol classes a rule maps to the item (non-empty = symbol-based → "למד" after a count). */
+  classes: string[];
+  exclusion: BoqExclusion | null;
+}
+export interface MissingItemCounts {
+  all: number;
+  inProject: number;
+  notRelevant: number;
+}
+export interface MissingItemsView {
+  built: boolean;
+  filter: MissingItemFilter;
+  counts: MissingItemCounts;
+  items: MissingItem[];
+}
+export interface SetBoqExclusionRequest {
+  code: string;
+  excluded: boolean;
+  reason?: string;
+}
+export interface SetBoqExclusionResponse {
+  exclusion: BoqExclusion;
+  changed: boolean;
+}
+
 /* ---------- Stage 10: which item library the BOQ uses (A-LIVE-01), derived from the library items' `source` ---------- */
 export type LibrarySource = "imported" | "default" | "none";
 
@@ -1652,6 +1707,10 @@ export interface ApiClient {
   exportBoq(projectId: string, req: ExportBoqRequest): Promise<ExportBoqResponse>;
   /** Sprint 7: the BOQ document model (same layout as the Excel) for the preview. */
   getBoqDocument(projectId: string, q: BoqDocumentQuery): Promise<BoqDocumentModel>;
+  /** Sprint 15: library items the pipeline did not find (no line / quantity 0), with the project's "לא רלוונטי" decisions. */
+  getMissingItems(projectId: string, filter?: MissingItemFilter): Promise<MissingItemsView>;
+  /** Sprint 15: mark an item "לא רלוונטי בפרויקט הזה" (`excluded: true`) or restore it (`false`); idempotent, audited. */
+  setBoqExclusion(projectId: string, req: SetBoqExclusionRequest): Promise<SetBoqExclusionResponse>;
   /* Sprint 3 — org library, templates, rules */
   listLibraryItems(orgId: string, q?: ListLibraryQuery): Promise<LibraryItemPage>;
   patchLibraryItem(orgId: string, itemId: string, req: PatchLibraryItemRequest): Promise<LibraryItem>;

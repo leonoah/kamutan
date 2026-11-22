@@ -45,6 +45,14 @@ import {
   BoqBuildListSchema,
   type BoqBuildList,
   type BoqBuildListQuery,
+  MissingItemsQuerySchema,
+  MissingItemsViewSchema,
+  SetBoqExclusionRequestSchema,
+  SetBoqExclusionResponseSchema,
+  type MissingItemsQuery,
+  type MissingItemsView,
+  type SetBoqExclusionRequest,
+  type SetBoqExclusionResponse,
 } from '@kamutan/contracts';
 import type { Request } from 'express';
 import type { AuthContext } from '../auth/auth-context';
@@ -55,6 +63,7 @@ import { ApiErrors, ApiZodBody, ApiZodQuery, ApiZodResponse } from '../common/zo
 import { zodPipe } from '../common/zod-validation.pipe';
 import { BoqService } from './boq.service';
 import { CompareService } from './compare.service';
+import { MissingItemsService } from './missing-items.service';
 
 const project = { from: 'project-param', key: 'projectId' } as const;
 
@@ -66,6 +75,7 @@ export class BoqController {
   constructor(
     private readonly svc: BoqService,
     private readonly cmp: CompareService,
+    private readonly missing: MissingItemsService,
   ) {}
 
   /** Creates boqBuilds/{id} + `boq.build` job (deduplicated while one is queued/running). Audited. */
@@ -117,6 +127,34 @@ export class BoqController {
   @ApiErrors(400, 401, 403, 404, 429)
   batchStatus(@Param('projectId') projectId: string, @Body(zodPipe(BatchLineStatusRequestSchema)) body: BatchLineStatusRequest, @CurrentUser() user: AuthContext): Promise<BatchLineStatusResponse> {
     return this.svc.batchStatus(user, projectId, body);
+  }
+
+  /**
+   * Sprint 15 "סעיפים שלא זוהו": library / template items the pipeline did not find (no line, or quantity 0), by chapter
+   * then code, with the project's "לא רלוונטי" decisions. `?filter=all|in_project|not_relevant`. Empty before a build.
+   */
+  @Get('missing-items')
+  @RequireRole('viewer', project)
+  @ApiZodQuery(MissingItemsQuerySchema)
+  @ApiZodResponse(200, MissingItemsViewSchema)
+  @ApiErrors(400, 401, 404, 429)
+  missingItems(@Param('projectId') projectId: string, @Query(zodPipe(MissingItemsQuerySchema)) q: MissingItemsQuery, @CurrentUser() user: AuthContext): Promise<MissingItemsView> {
+    return this.missing.view(user, projectId, q);
+  }
+
+  /**
+   * Sprint 15: mark an item "לא רלוונטי בפרויקט הזה" (`excluded: true`) or restore it (`false`) — editor+, idempotent,
+   * audited. Stored per project apart from the lines, so a rebuild keeps it; the BOQ view / preview / Excel / share
+   * leave the line out while it has no quantity.
+   */
+  @Post('exclusions')
+  @HttpCode(200)
+  @RequireRole('editor', project)
+  @ApiZodBody(SetBoqExclusionRequestSchema)
+  @ApiZodResponse(200, SetBoqExclusionResponseSchema)
+  @ApiErrors(400, 401, 403, 404, 429)
+  setExclusion(@Param('projectId') projectId: string, @Body(zodPipe(SetBoqExclusionRequestSchema)) body: SetBoqExclusionRequest, @CurrentUser() user: AuthContext): Promise<SetBoqExclusionResponse> {
+    return this.missing.set(user, projectId, body);
   }
 
   /** The detections behind a line (from the build's evidence.json.gz). */

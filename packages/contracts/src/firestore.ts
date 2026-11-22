@@ -31,6 +31,9 @@ export const fsPaths = Object.freeze({
   similarSearch: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/similarSearches/${id}`,
   boqLines: (o: string, p: string) => `orgs/${o}/projects/${p}/boqLines`,
   boqLine: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqLines/${id}`,
+  /** Sprint 15: "לא רלוונטי בפרויקט הזה" decisions per item code (API-only writes; the worker never touches them). */
+  boqExclusions: (o: string, p: string) => `orgs/${o}/projects/${p}/boqExclusions`,
+  boqExclusion: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqExclusions/${id}`,
   /** Sprint 3: aggregation runs (API creates `queued`; worker runs). */
   boqBuild: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqBuilds/${id}`,
   /** Sprint 3: Excel export records (API). */

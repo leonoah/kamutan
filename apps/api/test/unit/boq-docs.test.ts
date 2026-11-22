@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyRebuild, BOQ_LINE_STATUSES, BOQ_LINE_TRANSITIONS, exportBlockingLines, needsReapproval, type BoqLine, type BoqLineStatus } from '@kamutan/contracts';
-import { countLines, planLinePatch, toBoqLine } from '../../src/db/boq-docs';
+import { countLines, planExclusionSet, planLinePatch, toBoqExclusion, toBoqLine } from '../../src/db/boq-docs';
 import { RepoConflictError } from '../../src/db/repository';
 import { groupEvidence } from '../../src/boq/boq.service';
 
@@ -124,5 +124,33 @@ describe('rebuild semantics (API side)', () => {
   it('toBoqLine tolerates worker docs with odd fields', () => {
     const l = toBoqLine('x', { code: '4.10', qty: 'NaN', level: 'purple', status: 'weird', byFloor: { '': 3, a: 'x', b: 2 }, sourceVersions: [{ sheetId: 's' }], reasons: [1, 'ok'] });
     expect(l).toMatchObject({ qty: 0, level: 'red', status: 'draft', byFloor: { b: 2 }, sourceVersions: [], reasons: ['ok'] });
+  });
+});
+
+describe('Sprint 15: planExclusionSet / toBoqExclusion (the "לא רלוונטי" doc)', () => {
+  const input = { code: '4.10', excluded: true, reason: 'סיבה', description: 'שקע', unit: "יח'", chapter: '04' };
+  const doc = (over: Record<string, unknown> = {}) => ({ code: '4.10', description: 'שקע', unit: "יח'", chapter: '04', active: true, excludedBy: 'u1', excludedAt: NOW, reason: null, restoredBy: null, restoredAt: null, ...over });
+
+  it('exclude writes who / when / reason; the audit payload has the code and unit only', () => {
+    const p = planExclusionSet(null, input, 'u1', NOW);
+    expect(p.action).toBe('exclude');
+    expect(p.doc).toMatchObject({ active: true, excludedBy: 'u1', excludedAt: NOW, reason: 'סיבה', restoredBy: null, restoredAt: null });
+    expect(p.audit).toEqual({ code: '4.10', unit: "יח'" });
+  });
+  it('is idempotent: same state → no write, no audit; a restore of a never-excluded item is a no-op too', () => {
+    expect(planExclusionSet(doc() as never, input, 'u2', NOW).doc).toBeNull();
+    expect(planExclusionSet(doc({ active: false }) as never, { ...input, excluded: false }, 'u2', NOW).doc).toBeNull();
+    expect(planExclusionSet(null, { ...input, excluded: false }, 'u2', NOW).doc).toBeNull();
+  });
+  it('restore keeps the exclusion history and stamps who / when; a later exclude clears the restore stamps', () => {
+    const r = planExclusionSet(doc() as never, { ...input, excluded: false }, 'u2', NOW);
+    expect(r).toMatchObject({ action: 'restore', doc: { active: false, excludedBy: 'u1', restoredBy: 'u2', restoredAt: NOW } });
+    const again = planExclusionSet(r.doc, { ...input, reason: undefined }, 'u3', NOW);
+    expect(again.doc).toMatchObject({ active: true, excludedBy: 'u3', restoredBy: null, restoredAt: null, reason: null });
+  });
+  it('toBoqExclusion maps a stored doc and drops a malformed one (a bad doc never hides a line)', () => {
+    expect(toBoqExclusion('ex_4-10_x', doc() as never)).toMatchObject({ id: 'ex_4-10_x', code: '4.10', active: true, excludedAt: NOW.toISOString() });
+    expect(toBoqExclusion('ex_bad', { code: 'not valid!', active: true, excludedBy: 'u1', excludedAt: NOW })).toBeNull();
+    expect(toBoqExclusion('ex_bad', { code: '4.10', active: true })).toBeNull();
   });
 });

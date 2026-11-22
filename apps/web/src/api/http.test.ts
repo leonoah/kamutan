@@ -330,3 +330,22 @@ describe("REST client: Sprint 8 routes (contracts prices / compare / housekeepin
     expect(DeleteProjectRequestSchema.parse(calls[9]!.body)).toEqual({ confirmName: "בית" });
   });
 });
+
+describe("Sprint 15: missing items over HTTP", () => {
+  it("GET /boq/missing-items?filter= and POST /boq/exclusions hit the API's routes", async () => {
+    const view = { built: true, filter: "not_relevant", counts: { all: 3, inProject: 2, notRelevant: 1 }, items: [] };
+    const res = { exclusion: { id: "ex_4-04_x", code: "4.04", active: true }, changed: true };
+    const responses = [view, view, res];
+    const fetchImpl = vi.fn(async () => json(responses.shift()));
+    const api = createHttpClient(async () => "t", "/api/v1", fetchImpl as unknown as typeof fetch);
+    expect(await api.getMissingItems("p1")).toEqual(view);
+    await api.getMissingItems("p1", "not_relevant");
+    expect(await api.setBoqExclusion("p1", { code: "4.04", excluded: true, reason: "אין בפרויקט" })).toEqual(res);
+    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
+    expect(calls.map(([u, i]) => [u, i.method ?? "GET", i.body ? JSON.parse(i.body as string) : null])).toEqual([
+      ["/api/v1/projects/p1/boq/missing-items?filter=all", "GET", null],
+      ["/api/v1/projects/p1/boq/missing-items?filter=not_relevant", "GET", null],
+      ["/api/v1/projects/p1/boq/exclusions", "POST", { code: "4.04", excluded: true, reason: "אין בפרויקט" }],
+    ]);
+  });
+});

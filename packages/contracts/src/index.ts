@@ -17,6 +17,7 @@ export * from './boq-document.js';
 export * from './library.js';
 export * from './prices.js';
 export * from './compare.js';
+export * from './missing-items.js';
 export * from './housekeeping.js';
 export { sha256Hex } from './sha256.js';
 export * from './share.js';

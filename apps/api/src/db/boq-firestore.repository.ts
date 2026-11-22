@@ -5,9 +5,11 @@ import {
   planDefaultLibrarySeed,
   templateNeedsUpgrade,
   defaultRuleDoc,
+  exclusionIdFor,
   fsPaths,
   ruleNeedsReseed,
   JOB_TYPES,
+  type BoqExclusion,
   type BoqExport,
   type BoqLine,
   type BoqRule,
@@ -26,14 +28,17 @@ import { FieldPath, FieldValue, Timestamp, type DocumentData, type DocumentRefer
 import {
   approvalInvalidatedAudit,
   approvalsInvalidatedOf,
+  type ExclusionInput,
   importPricesAudit,
   importedPriceSkip,
   isBoqExportDoc,
   priceApplyBlocker,
   planBatchStatus,
   planLibraryItemPatch,
+  planExclusionSet,
   planLinePatch,
   samePrice,
+  toBoqExclusion,
   toBoqBuild,
   toBoqExport,
   toBoqLine,
@@ -475,6 +480,29 @@ export class FirestoreBoqRepository implements BoqRepository {
       await batch.commit();
     }
     return snap.size;
+  }
+
+  // --- exclusions (Sprint 15) ------------------------------------------------------
+  async listExclusions(orgId: string, projectId: string): Promise<BoqExclusion[]> {
+    const snap = await this.db.collection(fsPaths.boqExclusions(orgId, projectId)).limit(MAX_BOQ_LINES).get();
+    return snap.docs.map((d) => toBoqExclusion(d.id, d.data())).filter((e): e is BoqExclusion => e !== null);
+  }
+
+  async setExclusion(orgId: string, projectId: string, input: ExclusionInput, actorUid: string): Promise<{ exclusion: BoqExclusion | null; changed: boolean } | null> {
+    const pRef = this.db.doc(fsPaths.project(orgId, projectId));
+    const id = exclusionIdFor(input.code);
+    const ref = this.db.doc(fsPaths.boqExclusion(orgId, projectId, id));
+    return this.db.runTransaction(async (tx) => {
+      const [p, cur] = await Promise.all([tx.get(pRef), tx.get(ref)]);
+      if (!p.exists || (p.data() as Doc).deletingAt) return null;
+      const curDoc = cur.exists ? (cur.data() as Doc) : null;
+      const plan = planExclusionSet(curDoc, input, actorUid, Timestamp.now());
+      if (!plan.doc) return { exclusion: curDoc ? toBoqExclusion(id, curDoc) : null, changed: false };
+      const head = await this.core.auditHead(tx, orgId);
+      tx.set(ref, plan.doc);
+      this.core.writeAudit(tx, orgId, head, { actorId: actorUid, entity: 'boqExclusions', entityId: id, action: plan.action, after: plan.audit });
+      return { exclusion: toBoqExclusion(id, plan.doc), changed: true };
+    });
   }
 
   // --- lines -----------------------------------------------------------------------

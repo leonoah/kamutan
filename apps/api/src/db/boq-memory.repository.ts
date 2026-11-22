@@ -5,10 +5,12 @@ import {
   planDefaultLibrarySeed,
   templateNeedsUpgrade,
   defaultRuleDoc,
+  exclusionIdFor,
   fsPaths,
   ruleNeedsReseed,
   JOB_TYPES,
   type BoqBuild,
+  type BoqExclusion,
   type BoqExport,
   type BoqLine,
   type BoqRule,
@@ -32,8 +34,10 @@ import {
   priceApplyBlocker,
   planBatchStatus,
   planLibraryItemPatch,
+  planExclusionSet,
   planLinePatch,
   samePrice,
+  toBoqExclusion,
   toBoqBuild,
   toBoqExport,
   toBoqLine,
@@ -42,6 +46,7 @@ import {
   toRule,
   toTemplate,
 } from './boq-docs';
+import type { ExclusionInput } from './boq-docs';
 import { BATCH_STATUS_CHUNK, MAX_BOQ_LINES, MAX_LIBRARY_ITEMS, type BatchStatusResult, type BoqRepository, type BulkPriceResult, type ImportedPriceResult } from './boq-repository';
 import { autoId, type InMemoryRepository } from './in-memory.repository';
 import type { Doc } from './mappers';
@@ -446,6 +451,28 @@ export class InMemoryBoqRepository implements BoqRepository {
   async getLine(orgId: string, projectId: string, lineId: string): Promise<BoqLine | null> {
     const d = this.docs.get(fsPaths.boqLine(orgId, projectId, lineId));
     return d ? toBoqLine(lineId, d) : null;
+  }
+
+  // --- exclusions (Sprint 15) ------------------------------------------------------
+  async listExclusions(orgId: string, projectId: string): Promise<BoqExclusion[]> {
+    return this.core
+      .children(fsPaths.boqExclusions(orgId, projectId))
+      .map(([k, d]) => toBoqExclusion(idOf(k), d))
+      .filter((e): e is BoqExclusion => e !== null);
+  }
+
+  setExclusion(orgId: string, projectId: string, input: ExclusionInput, actorUid: string) {
+    return this.core.tx((): { exclusion: BoqExclusion | null; changed: boolean } | null => {
+      if (!this.docs.get(fsPaths.project(orgId, projectId))) return null;
+      const id = exclusionIdFor(input.code);
+      const path = fsPaths.boqExclusion(orgId, projectId, id);
+      const cur = this.docs.get(path) ?? null;
+      const plan = planExclusionSet(cur, input, actorUid, this.core.now());
+      if (!plan.doc) return { exclusion: cur ? toBoqExclusion(id, cur) : null, changed: false };
+      this.docs.set(path, plan.doc);
+      this.core.appendAuditSync(orgId, { actorId: actorUid, entity: 'boqExclusions', entityId: id, action: plan.action, after: plan.audit });
+      return { exclusion: toBoqExclusion(id, plan.doc), changed: true };
+    });
   }
 
   patchLine(orgId: string, projectId: string, lineId: string, req: PatchBoqLineRequest, actorUid: string) {

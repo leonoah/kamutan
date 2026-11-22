@@ -624,6 +624,8 @@ export const paths = {
   roomSettings: (o: string, p: string, sheetId: string, roomId: string) => `orgs/${o}/projects/${p}/roomSettings/${sheetId}__${roomId}`,
   similarSearch: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/similarSearches/${id}`,
   boqLine: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqLines/${id}`,
+  /** Sprint 15 (API only): "לא רלוונטי בפרויקט הזה" decisions, doc id `exclusionIdFor(code)`. */
+  boqExclusion: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/boqExclusions/${id}`,
   shareLink: (o: string, p: string, id: string) => `orgs/${o}/projects/${p}/shareLinks/${id}`,
   itemLibrary: (o: string, id: string) => `orgs/${o}/itemLibrary/${id}`,
   boqTemplate: (o: string, id: string) => `orgs/${o}/boqTemplates/${id}`,

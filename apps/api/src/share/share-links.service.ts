@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { listActiveLines } from '../boq/exclusions';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DocIdSchema,
@@ -161,7 +162,7 @@ export class ShareLinksService {
     const project = await this.repo.getProject(orgId, projectId);
     if (!project) throw notFound('project');
     // Stage 10 (A-API-04): a share link hands the contractor a frozen BOQ → same blockExportOnRed gate as the export.
-    const [org, allLines] = await Promise.all([this.repo.getOrg(orgId), this.boq.listLines(orgId, projectId)]);
+    const [org, allLines] = await Promise.all([this.repo.getOrg(orgId), listActiveLines(this.boq, orgId, projectId)]);
     assertExportAllowed(org, allLines, 'share link');
     // F-3: with hideTitleBlock, a sheet whose title block was not detected cannot be masked → excluded (fail closed)
     // unless the editor explicitly opts in. No guessed fallback strip anywhere.

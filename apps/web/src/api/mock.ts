@@ -32,6 +32,7 @@ import { createUnderstandingMock } from "./mockUnderstanding";
 import { createBoqMock } from "./mockBoq";
 import { createReviewMock } from "./mockReview";
 import { createSprint5Mock, MOCK_ACTOR } from "./mockSprint5";
+import { createMissingMock } from "./mockSprint15";
 import { buildBoqDocument } from "./mockSprint7";
 import { baseCorrection } from "@/features/corrections/model";
 import { getAuthService, hasRecentLogin } from "@/features/auth/authService";
@@ -260,6 +261,8 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
     libraryMode: opts.libraryMode ?? "imported",
     ...(opts.seedPrices === false ? { seedPrices: false } : {}),
     actorUid: () => actor().uid,
+    // Sprint 15: "לא רלוונטי בפרויקט הזה" decisions hide their zero-quantity lines from every BOQ read.
+    exclusions: (projectId) => missing.exclusions(projectId),
     // Sprint 8: "history in audit" — every price change of the org price list is one event.
     // API (boq-docs planLibraryItemPatch): `itemLibrary/update {fields, active, code, price {from, to, source}, batchId?}`
     onLibraryPrice: (item, before, after, batchId) =>
@@ -323,6 +326,19 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
       return a.getSession() ? hasRecentLogin(a) : true;
     },
     actor,
+  });
+  // Sprint 15: "סעיפים שלא זוהו" (the list is contracts' computeMissingItems; decisions live apart from the lines).
+  const missing = createMissingMock({
+    lines: (projectId) => boq.rawLines(projectId),
+    built: (projectId) => Boolean(boq.state(projectId)?.latestBuildId),
+    library: () => boq.listItems({}).items,
+    rules: () => boq.rules(),
+    chapters: () => (boq.templates().find((t) => t.default) ?? boq.templates()[0])?.chapters ?? [],
+    role: () => orgs[0]?.role ?? "viewer",
+    actorUid: () => actor().uid,
+    audit: (projectId, action, entityId, after, summary) =>
+      s5.appendAudit({ action, entity: "boqExclusions", entityId, projectId, after, summary }, projects.get(projectId)?.orgId ?? DEMO_ORG_ID),
+    emit: () => emit(),
   });
   if (opts.blockExportOnRed) s5.setBlockExportOnRed(orgs[0]?.id ?? DEMO_ORG_ID, true);
   if (opts.projectQuotaBytes) s5.setProjectQuota(orgs[0]?.id ?? DEMO_ORG_ID, opts.projectQuotaBytes);
@@ -801,6 +817,16 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
           }),
         );
       },
+      // Sprint 15: the missing-items worklist + "לא רלוונטי בפרויקט הזה" (contracts missing-items.ts).
+      getMissingItems: async (projectId, filter = "all") => {
+        mustGet(projectId);
+        return delay(missing.view(projectId, filter));
+      },
+      setBoqExclusion: async (projectId, req) => {
+        s5.assertProjectActive(projectId);
+        mustGet(projectId);
+        return delay(missing.set(projectId, req));
+      },
       listLibraryItems: async (_orgId, q = {}) => delay(boq.listItems(q)),
       patchLibraryItem: async (_orgId, itemId, req) => delay(boq.patchItem(itemId, req)),
       createLibraryImport: async (orgId, req) => {
@@ -992,6 +1018,7 @@ export function createMockBackend(opts: MockOptions = {}): Backend & { emit(): v
         sheets.delete(projectId);
         for (const j of jobs) if (j.projectId === projectId && (j.status === "queued" || j.status === "running")) j.status = "cancelled";
         boq.dropProject(projectId);
+        missing.dropProject(projectId);
         s5.appendAudit({ action: "delete", entity: "projects", entityId: projectId, projectId, after: { name: p.name, releasedBytes, revokedShareLinks } }, p.orgId);
         emit();
         return delay({ projectId, deleted: { docs, objects: docs }, releasedBytes, revokedShareLinks });

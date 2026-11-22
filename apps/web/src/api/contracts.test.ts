@@ -3,6 +3,9 @@ import {
   BoqBuildListSchema,
   BoqCompareExportResponseSchema,
   BoqComparisonSchema,
+  BoqExclusionSchema,
+  MissingItemsViewSchema,
+  SetBoqExclusionResponseSchema,
   BoqTotalsSchema,
   BulkLibraryPriceResponseSchema,
   DeleteProjectResponseSchema,
@@ -156,5 +159,17 @@ describe("Sprint 9: mock input-quality data parses with the contracts schemas", 
     const reject = (await rowsOf(b, "p-web")).find((r) => r.version?.quality?.status === "reject")!;
     const mr = await b.api.getOverlay("p-web", reject.sheet.id, reject.version!.id);
     expect(mr.detections).toBeNull();
+  });
+});
+
+describe("Sprint 15: missing-items mock responses parse with the contracts schemas", () => {
+  it("getMissingItems (every filter) and setBoqExclusion (exclude + restore) are exact DTOs", async () => {
+    const b = await built();
+    for (const f of ["all", "in_project", "not_relevant"] as const) ok(MissingItemsViewSchema, await b.api.getMissingItems("p-noah", f));
+    const code = (await b.api.getMissingItems("p-noah")).items[0]!.code;
+    const ex = ok(SetBoqExclusionResponseSchema, await b.api.setBoqExclusion("p-noah", { code, excluded: true, reason: "לא בתכנון" }));
+    ok(BoqExclusionSchema, ex.exclusion);
+    ok(MissingItemsViewSchema, await b.api.getMissingItems("p-noah", "not_relevant"));
+    ok(SetBoqExclusionResponseSchema, await b.api.setBoqExclusion("p-noah", { code, excluded: false }));
   });
 });

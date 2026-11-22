@@ -115,8 +115,11 @@ import { LassoCard, ShortcutsDialog } from "./ReviewDialogs";
 import { LearnPanel } from "./LearnPanel";
 import { BulkBar, BulkConfirmDialog, skipList, type BulkTarget } from "@/features/boq/BulkBar";
 import { QuickConfirmDialog } from "@/features/boq/QuickConfirmDialog";
+import { MissingPanel } from "@/features/missing/MissingPanel";
+import { useMissingItems } from "@/features/missing/queries";
+import { MARK_UNIT, canLearnAfterMark } from "@/features/missing/model";
 import { QUICK_TOOL, QUICK_UNIT, evidenceShapeFeatures, quickActionOf, shapeBoxesOn } from "@/features/boq/sprint6";
-import type { BoqLineStatus, BoqQuickActionKind } from "@/api/types";
+import type { BoqLineStatus, BoqQuickActionKind, MissingItem } from "@/api/types";
 import { bboxCenter, candidateFeatures, manualItemFeatures, nearestWall, padBBox, roomAt, roomFeatures as selectedRoomFeatures } from "./overlay";
 
 /** Picker state: what the chosen class is for. */
@@ -198,7 +201,7 @@ export function ReviewPage() {
   // Sheet analysis opens on the components map; the project review on the BOQ.
   const defaultTab: PanelTab = locked ? "counts" : "boq";
   const panelParam = params.get("panel");
-  const tab: PanelTab = panelParam === "counts" ? "counts" : panelParam === "boq" ? "boq" : defaultTab;
+  const tab: PanelTab = panelParam === "counts" ? "counts" : panelParam === "boq" ? "boq" : panelParam === "missing" && !locked ? "missing" : defaultTab;
   const setTab = (v: PanelTab) =>
     updateParams((next) => {
       if (v === defaultTab) next.delete("panel");
@@ -711,6 +714,7 @@ export function ReviewPage() {
   };
 
   /* ---------- Sprint 6: a suggested line's quick action — the measure / count tool bound to the line and its sheet ---------- */
+  const missingAll = useMissingItems(projectId, "all", state?.latestBuildId, !locked && role !== null);
   const [quick, setQuick] = useState<{ lineId: string; code: string; kind: BoqQuickActionKind } | null>(null);
   const [confirmLine, setConfirmLine] = useState<BoqLine | null>(null);
   const quickMeasure = useQuickMeasure(projectId);
@@ -734,6 +738,51 @@ export function ReviewPage() {
   const cancelQuick = () => {
     setQuick(null);
     setTool("select");
+  };
+  /* ---------- Sprint 15: "סמן בשרטוט" on a missing item — the count / measure tool bound to the item's code ---------- */
+  const [mark, setMark] = useState<{ code: string; kind: "count" | "measure_area" | "measure_length"; classes: string[] } | null>(null);
+  const startMark = (it: MissingItem) => {
+    if (!it.markKind) return;
+    if (!canEditQty(role)) return toast({ title: t("missing.notAllowed"), tone: "error" });
+    const sheetId = row?.sheet.id ?? ready[0]?.sheet.id ?? null;
+    if (!sheetId) return toast({ title: t("missing.markNoSheet"), tone: "error" });
+    if (sheetId !== row?.sheet.id) pick(sheetId);
+    setQuick(null);
+    setMark({ code: it.code, kind: it.markKind, classes: it.classes });
+    setTool(QUICK_TOOL[it.markKind]!);
+    say(t(`missing.markBanner.${it.markKind}`) + " " + it.code);
+  };
+  const cancelMark = () => {
+    setMark(null);
+    setTool("select");
+  };
+  /** Saves the marked quantity as a manual, locked correction (same record as the "הקצה לסעיף" flow), then offers "למד". */
+  const saveMark = (kind: "count" | "measure_area" | "measure_length", qty: number, pointsMm: [number, number][], sheetId: string, versionId: string) => {
+    const m = mark;
+    setMark(null);
+    setTool("select");
+    if (!m) return;
+    const first = pointsMm[0] ?? [0, 0];
+    const req = baseCorrection(
+      kind === "count" ? "count" : "measure",
+      { sheetId, versionId, anchorMm: { x: first[0], y: first[1] } },
+      {
+        itemCode: m.code,
+        quantity: qty,
+        unit: MARK_UNIT[kind],
+        floor: floorOfSheet(sheetId),
+        geometry: { type: kind === "count" ? "point" : kind === "measure_area" ? "polygon" : "polyline", mm: pointsMm.map(([x, y]) => ({ x, y })) },
+      },
+    );
+    const label = t("missing.marked", { code: m.code, qty, unit: kind === "count" ? "יחידה" : kind === "measure_area" ? 'מ"ר' : 'מ"א' });
+    void actions.apply([req], { label }).then((ok) => {
+      if (ok === null) return toast({ title: t("missing.markError"), tone: "error" });
+      say(label);
+      toast({ title: label, tone: "success", action: undoAction() });
+      // after one marked instance of a symbol-based item: the existing "למד מהתיקון" offer (with the org-remember checkbox)
+      if (canLearnAfterMark({ markKind: kind, classes: m.classes }))
+        setLearnOffer({ sheetId, versionId, bboxMm: { x: first[0] - 2.5, y: first[1] - 2.5, w: 5, h: 5 }, cls: m.classes[0]!, detectionId: null });
+    });
   };
   const saveQuick = (kind: BoqQuickActionKind, qty: number, pointsMm: [number, number][], sheetId: string | null, versionId: string | null) => {
     const q = quick ?? (confirmLine ? { lineId: confirmLine.id, code: confirmLine.code, kind } : null);
@@ -1086,18 +1135,21 @@ export function ReviewPage() {
   };
   const onCount = (r: CountResult) => {
     if (!row?.version) return;
+    if (mark?.kind === "count") return saveMark("count", r.pointsMm.length, r.pointsMm, row.sheet.id, row.version.id);
     if (quick?.kind === "count") return saveQuick("count", r.pointsMm.length, r.pointsMm, row.sheet.id, row.version.id);
     setAssign({ kind: "count", qty: r.pointsMm.length, unit: "יחידה", pointsMm: r.pointsMm, sheetId: row.sheet.id, versionId: row.version.id });
   };
   const onArea = (r: AreaResult) => {
     if (!row?.version) return;
     if (r.areaM2 === null) return toast({ title: t("tools.noScale"), tone: "error" });
+    if (mark?.kind === "measure_area") return saveMark("measure_area", Math.round(r.areaM2 * 100) / 100, r.polygonMm, row.sheet.id, row.version.id);
     if (quick?.kind === "measure_area") return saveQuick("measure_area", Math.round(r.areaM2 * 100) / 100, r.polygonMm, row.sheet.id, row.version.id);
     setAssign({ kind: "area", qty: Math.round(r.areaM2 * 100) / 100, unit: 'מ"ר', pointsMm: r.polygonMm, sheetId: row.sheet.id, versionId: row.version.id });
   };
   const onLength = (r: LengthResult) => {
     if (!row?.version) return;
     if (r.lengthM === null) return toast({ title: t("tools.noScale"), tone: "error" });
+    if (mark?.kind === "measure_length") return saveMark("measure_length", Math.round(r.lengthM * 100) / 100, r.pathMm, row.sheet.id, row.version.id);
     if (quick?.kind === "measure_length") return saveQuick("measure_length", Math.round(r.lengthM * 100) / 100, r.pathMm, row.sheet.id, row.version.id);
     setAssign({ kind: "length", qty: Math.round(r.lengthM * 100) / 100, unit: 'מ"א', pointsMm: r.pathMm, sheetId: row.sheet.id, versionId: row.version.id });
   };
@@ -1336,6 +1388,7 @@ export function ReviewPage() {
       if (code === "Escape") {
         if (pickingWall) return setPickingWall(false), true;
         if (quick) return cancelQuick(), true;
+        if (mark) return cancelMark(), true;
         if (lassoOpen) return setLassoOpen(false), setLassoIds([]), true;
         if (tool !== "select") return setTool("select"), true;
         if (selectedId) return setSelectedId(null), true;
@@ -1494,9 +1547,11 @@ export function ReviewPage() {
     onToolChange: (x: ViewerTool) => {
       setTool(x);
       if (quick && QUICK_TOOL[quick.kind] !== x) setQuick(null);
+      if (mark && QUICK_TOOL[mark.kind] !== x) setMark(null);
       if (x === "add" && !addClass) setPicker({ mode: "add", mm: [NaN, NaN] });
     },
     startQuick: (l: BoqLine) => startQuick(l),
+    startMark: (it: MissingItem) => startMark(it),
     undo: () => void doUndo(),
     redo: () => void doRedo(),
     activate,
@@ -1579,6 +1634,14 @@ export function ReviewPage() {
             {t("boq.quickCancel")}
           </button>
         </span>
+      ) : mark && QUICK_TOOL[mark.kind] === tool ? (
+        <span role="status" data-mark-banner className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-sm border border-primary/40 bg-primary/[0.07] px-2 text-meta text-foreground">
+          <span className="truncate">{t(`missing.markBanner.${mark.kind}`)}</span>
+          <Ltr>{mark.code}</Ltr>
+          <button type="button" onClick={() => cancelMark()} className="rounded-sm px-1 font-medium text-primary hover:bg-primary/10">
+            {t("missing.markCancel")}
+          </button>
+        </span>
       ) : tool === "add" && addClass ? (
         <button
           type="button"
@@ -1589,7 +1652,7 @@ export function ReviewPage() {
         </button>
       ) : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tool, addClass, quick, t],
+    [tool, addClass, quick, mark, t],
   );
   const bulkBar = useMemo(
     () => (
@@ -1829,6 +1892,19 @@ export function ReviewPage() {
           tab={tab}
           onTab={fn.setTab}
           counts={countsEl}
+          missing={
+            locked ? undefined : (
+              <MissingPanel
+                projectId={projectId}
+                latestBuildId={state?.latestBuildId}
+                canExclude={role === "admin" || role === "editor"}
+                canMark={canEditQty(role)}
+                onMark={fn.startMark}
+                markingCode={mark?.code ?? null}
+              />
+            )
+          }
+          missingCount={missingAll.data?.built ? missingAll.data.counts.inProject : null}
           state={state}
           build={build.data ?? null}
           onBuild={fn.onBuild}

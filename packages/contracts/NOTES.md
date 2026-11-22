@@ -682,3 +682,15 @@ BOQ mapping is Worker-BOQ's (requests in `workers/drawing/NOTES.md` "Sprint 10 â
   title's reading and the reasons say both. Confirmed sheets are never moved.
 * `text.json.gz` lines from the PDF text layer carry `src: "pdf"` (SHX readings have no `src`). Additive, no schema.
 * Test: `test/sprint10_classify.test.ts`; `pnpm --filter @kamutan/contracts gen` rerun.
+
+## Sprint 15 published â€” missing items worklist (`src/missing-items.ts`)
+
+* `BoqExclusion` (per-project decision, `projects/{p}/boqExclusions/{id}`, `fsPaths.boqExclusions`), `SetBoqExclusionRequest/Response`,
+  `MissingItem`, `MissingItemsQuery` (`filter`: all | in_project | not_relevant, default all), `MissingItemsView`
+  `{built, filter, counts, items}`. 6 schemas in the registry, json-schema regenerated (213).
+* Pure functions shared by the API and the web mock: `computeMissingItems` (library items with no line / effective qty 0; chapter
+  order then numeric code order), `filterMissing`, `missingCounts`, `isLineExcluded`, `activeExclusionCodes`,
+  `withoutExcludedLines` (an active exclusion hides a line only while its qty is 0).
+* Audit vocabulary: entity `boqExclusions`, actions `exclude` / `restore`, Hebrew summaries in `auditSummaryHe`.
+* `BoqLine` and the worker's preserved-field list are unchanged (the decision is not a line field).
+* Test: `test/sprint15.test.ts` (17).

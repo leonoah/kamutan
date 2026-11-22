@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { hiddenLineIds } from '../boq/exclusions';
 import {
   DocIdSchema,
   REVIEW_QUEUE_KINDS,
@@ -136,7 +137,9 @@ export class ReviewQueueService {
     ]);
     const base = await this.base(orgId, projectId, buildId, versions);
     const active = corrections.filter((c: Correction) => c.revertedAt === null);
-    const all = applyOverlay(base, active, new Set(settingsIds));
+    // Sprint 15: a template suggestion the owner declared "לא רלוונטי" is not a thing to review any more.
+    const hidden = await hiddenLineIds(this.boq, orgId, projectId);
+    const all = applyOverlay(base, active, new Set(settingsIds)).filter((it) => !(it.kind === 'line' && it.lineIds.length > 0 && hidden.has(it.lineIds[0] as string)));
 
     const byKind = Object.fromEntries(REVIEW_QUEUE_KINDS.map((k) => [k, 0])) as Record<ReviewQueueKind, number>;
     const byLevel = { yellow: 0, red: 0 };

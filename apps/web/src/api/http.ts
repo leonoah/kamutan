@@ -643,6 +643,10 @@ export function createHttpClient(getToken: TokenGetter, base = env.apiBase, fetc
     getBoqDocument: async (projectId, q) =>
       normalizeDocument(await request<Parameters<typeof normalizeDocument>[0]>(`/projects/${enc(projectId)}/boq/document?${documentApiQuery(q)}`)),
 
+    // Sprint 15 (contracts missing-items.ts): the missing-items worklist and the "לא רלוונטי בפרויקט הזה" decision.
+    getMissingItems: (projectId, filter = "all") => request(`/projects/${enc(projectId)}/boq/missing-items?filter=${enc(filter)}`),
+    setBoqExclusion: (projectId, req) => post(`/projects/${enc(projectId)}/boq/exclusions`, req),
+
     /* Sprint 3 — org library / templates / rules (`?orgId=` scope, contracts library.ts) */
     listLibraryItems: (orgId, q = {}) => {
       const qs = new URLSearchParams({ orgId });

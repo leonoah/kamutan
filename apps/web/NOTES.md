@@ -1025,3 +1025,18 @@ artifacts, version `ready` + `error.code input_quality_rejected`). Tiles reuse t
 - "העלה קובץ מקורי" re-uploads the whole set (`replacesSheetSetId`); for a multi-page set with one bad page, that is
   the whole file.
 - The hub tile shows the `quality` of the current version only. Superseded versions are not shown.
+
+## Sprint 15 — "סעיפים שלא זוהו"
+
+- Third tab of the review panel (`?panel=missing`, not on the locked single-sheet view): `features/missing/` (`MissingPanel`,
+  `model.ts`, `queries.ts`), strings in `i18n/he.sprint15.ts`. The server owns the list, sort and counts.
+- "סמן בשרטוט" = `mark` state in `ReviewPage` (next to the Sprint 6 `quick` state): the count / area / length tool bound to the
+  item code; the result is saved with `baseCorrection('count' | 'measure', {itemCode, quantity, unit, ...})` through
+  `actions.apply` (manual, locked) with an undo toast. After a count of a symbol-based item (`classes` non-empty) it sets the
+  existing `learnOffer`, so the "זכור לארגון" checkbox of `LearnPanel` is reused as is.
+- "לא רלוונטי" = `useSetExclusion` (`POST /boq/exclusions`), undo toast = the inverse call. It invalidates `boq-lines`,
+  `boq-document`, `review-queue`, `missing-items`, `audit`; `invalidateAfterCorrection` also invalidates `missing-items`.
+- Mock: `api/mockSprint15.ts` (decisions per project, survive `buildBoq`; `mockBoq` filters its lines / totals through
+  contracts `withoutExcludedLines`). The fixture rules use `match.class`; the mock maps it to the contract's `match.classes[]`.
+- Tests: `features/missing/model.test.ts`, `missing.ui.test.tsx`, `api/mockSprint15.test.ts`, plus Sprint 15 blocks in
+  `api/contracts.test.ts` and `api/http.test.ts`.

@@ -32,13 +32,17 @@ function readShowPrices(): boolean {
   }
 }
 
-export type PanelTab = "boq" | "counts";
+export type PanelTab = "boq" | "counts" | "missing";
 
 export interface BoqPanelProps {
   tab: PanelTab;
   onTab: (t: PanelTab) => void;
   /** The Sprint-2 "ספירה לפי סוג" body (secondary tab). */
   counts: ReactNode;
+  /** Sprint 15: the "סעיפים שלא זוהו" worklist (third tab). Absent = no such tab. */
+  missing?: ReactNode;
+  /** Sprint 15: open-item counter shown on the tab. */
+  missingCount?: number | null;
   state: ProjectBoqState | null;
   build: BoqBuild | null;
   onBuild: () => void;
@@ -130,6 +134,7 @@ export const BoqPanel = memo(function BoqPanel(p: BoqPanelProps) {
   const tabs: { id: PanelTab; label: string }[] = [
     { id: "boq", label: t("boq.tabBoq") },
     { id: "counts", label: t("boq.tabCounts") },
+    ...(p.missing !== undefined ? [{ id: "missing" as const, label: t("boq.tabMissing") }] : []),
   ];
   const building = isBuildActive(p.build) || p.buildPending;
 
@@ -150,7 +155,10 @@ export const BoqPanel = memo(function BoqPanel(p: BoqPanelProps) {
               tabIndex={p.tab === x.id ? 0 : -1}
               onClick={() => p.onTab(x.id)}
               onKeyDown={(e) => {
-                if (e.key === "ArrowLeft" || e.key === "ArrowRight") p.onTab(p.tab === "boq" ? "counts" : "boq");
+                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                  const i = tabs.findIndex((y) => y.id === p.tab);
+                  p.onTab(tabs[(i + 1) % tabs.length]!.id);
+                }
               }}
               className={cn(
                 "relative px-2.5 text-dense font-medium text-muted-foreground hover:text-foreground",
@@ -158,6 +166,11 @@ export const BoqPanel = memo(function BoqPanel(p: BoqPanelProps) {
               )}
             >
               {x.label}
+              {x.id === "missing" && p.missingCount ? (
+                <span className="ms-1 rounded-full bg-muted px-1.5 text-meta tabular-nums text-muted-foreground" data-missing-tab-count>
+                  {p.missingCount}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -173,6 +186,10 @@ export const BoqPanel = memo(function BoqPanel(p: BoqPanelProps) {
       {p.tab === "counts" ? (
         <div role="tabpanel" id="panel-counts" aria-labelledby="panel-tab-counts" aria-label={t("boq.tabCounts")} className="flex min-h-0 flex-1 flex-col">
           {p.counts}
+        </div>
+      ) : p.tab === "missing" ? (
+        <div role="tabpanel" id="panel-missing" aria-labelledby="panel-tab-missing" aria-label={t("boq.tabMissing")} className="flex min-h-0 flex-1 flex-col">
+          {p.missing}
         </div>
       ) : (
         <div role="tabpanel" id="panel-boq" aria-labelledby="panel-tab-boq" className="flex min-h-0 flex-1 flex-col">

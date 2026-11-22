@@ -24,6 +24,14 @@ import {
   BoqBuildListQuerySchema,
   BoqBuildSummarySchema,
 } from './compare.js';
+import {
+  BoqExclusionSchema,
+  MissingItemSchema,
+  MissingItemsQuerySchema,
+  MissingItemsViewSchema,
+  SetBoqExclusionRequestSchema,
+  SetBoqExclusionResponseSchema,
+} from './missing-items.js';
 import { DeleteProjectRequestSchema, DeleteProjectResponseSchema, DeleteSheetSetResponseSchema } from './housekeeping.js';
 import { BoqDocumentModelSchema, BoqDocumentQuerySchema, BoqDocumentRowSchema } from './boq-document.js';
 import {
@@ -440,4 +448,11 @@ export const jsonSchemaRegistry: Readonly<Record<string, ZodTypeAny>> = Object.f
   BoqBuildSummary: BoqBuildSummarySchema,
   ApplyImportPricesRequest: ApplyImportPricesRequestSchema,
   ApplyImportPricesResponse: ApplyImportPricesResponseSchema,
+  // Sprint 15 — "סעיפים שלא זוהו"
+  BoqExclusion: BoqExclusionSchema,
+  SetBoqExclusionRequest: SetBoqExclusionRequestSchema,
+  SetBoqExclusionResponse: SetBoqExclusionResponseSchema,
+  MissingItem: MissingItemSchema,
+  MissingItemsQuery: MissingItemsQuerySchema,
+  MissingItemsView: MissingItemsViewSchema,
 });

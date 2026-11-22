@@ -895,3 +895,22 @@ Contract: packages/contracts/NOTES.md "Sprint 9 published" (`InputQuality`, erro
 - `openapi.json` regenerated (`npm run build && npm run openapi`).
 - Tests: `test/e2e/sprint9.e2e.test.ts` (5): sheet list per sheet (ok / warn / reject / absent for vector), full version DTO
   (reject still `ready` with tiles), reprocess, share meta + overlay without quality, mapper tolerance.
+
+## Sprint 15 (Product agent) — "סעיפים שלא זוהו" (docs/spec/11_missing_items_worklist.md)
+
+Contract: packages/contracts/NOTES.md "Sprint 15 published" (`missing-items.ts`).
+- `GET :projectId/boq/missing-items?filter=` (viewer+) and `POST :projectId/boq/exclusions` (editor+, 200) in `BoqController`;
+  logic in `boq/missing-items.service.ts`. The list is computed per request (library items + the latest build's lines +
+  enabled `class_to_item` rules + exclusions) with the contracts' pure `computeMissingItems`; nothing is stored for it.
+- **Exclusions are NOT a `boqLines` field** (the worker rewrites lines and mirrors `BOQ_LINE_PRESERVED_FIELDS`): they live in
+  `projects/{p}/boqExclusions/{ex_<code>_<hash>}` (`BoqRepository.listExclusions` / `setExclusion`, in-memory and Firestore;
+  the Firestore one is a transaction and refuses a project that is being deleted). `planExclusionSet` (db/boq-docs.ts) is
+  idempotent (`changed:false`, no audit) and the audit payload is `{code, unit}` only (the free-text reason stays in the doc).
+- `boq/exclusions.ts` `listActiveLines` hides lines whose code has an active exclusion **while the effective qty is 0**
+  (a quantity always wins). Used by `BoqService.view`, document + export, `compare.service` live snapshot, share-link
+  creation; the review queue drops `line` items of hidden lines after its per-build cache.
+- Audit: entity `boqExclusions`, actions `exclude` / `restore` (hash chain, Hebrew summary in contracts `auditSummaryHe`).
+- `openapi.json`: the two paths were added by hand-merge (a full regenerate re-orders ~6700 unrelated lines); the roles-matrix
+  route table has the two new cases.
+- Tests: `test/e2e/sprint15.e2e.test.ts` (11), `test/unit/boq-docs.test.ts` (+4).
+- Open: `DUMP_COLLECTIONS` (offboarding export) does not include `boqExclusions` yet.

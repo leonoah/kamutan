@@ -41,8 +41,8 @@ import { applyCorrectionDeltas, applyRoomSettingsDeltas, computePlumbing, comput
 import { applySprint6, finalizeSprint6 } from "./mockSprint6";
 import { upsertLibraryWording, validateDescriptionPatch } from "./mockSprint7";
 import { compareSnapshots, comparisonSpreadsheet, demoPriceFile, libraryPriceOf, priceLine, runPriceImport, seedLibraryPrices, seedPreviousSnapshot, snapshotOf } from "./mockSprint8";
-import { COMPARE_NO_EXPORT_HE, COMPARE_NO_PREVIOUS_HE, PRICE_MAX, computeBoqTotals, type BoqLinesSnapshot } from "@kamutan/contracts";
-import type { ApplyPriceImportResponse, BoqBuildSummary, BoqComparison, BoqCompareExportResponse, BoqCompareQuery, BoqTotals, BulkPriceRequest, BulkPriceResponse, ItemPrice } from "./types";
+import { COMPARE_NO_EXPORT_HE, COMPARE_NO_PREVIOUS_HE, PRICE_MAX, computeBoqTotals, withoutExcludedLines, type BoqLinesSnapshot } from "@kamutan/contracts";
+import type { ApplyPriceImportResponse, BoqExclusion, BoqBuildSummary, BoqComparison, BoqCompareExportResponse, BoqCompareQuery, BoqTotals, BulkPriceRequest, BulkPriceResponse, ItemPrice } from "./types";
 import { applyCorrections, applyLinkCorrections } from "@/features/corrections/model";
 import { fetchArtifact } from "@/features/understanding/artifacts";
 import { allowedTransitions } from "@/features/boq/model";
@@ -98,6 +98,8 @@ export interface BoqMockDeps {
   onLibraryPrice?(item: LibraryItem, before: ItemPrice | null, after: ItemPrice | null, batchId?: string): void;
   /** Sprint 8: signed-in user's uid (price `by`). */
   actorUid?(): string;
+  /** Sprint 15: the project's "לא רלוונטי" decisions — the lines they hide (quantity 0) leave every BOQ read. */
+  exclusions?(projectId: string): readonly BoqExclusion[];
 }
 
 const COMPOSITE = new Set(["4.09", "4.10", "4.11", "4.12", "4.14", "4.15", "4.16"]);
@@ -565,10 +567,14 @@ export function createBoqMock(deps: BoqMockDeps) {
       if (!b) throw new ApiError(404, "not_found", "Build not found");
       return { ...b };
     },
+    /** Sprint 15: ALL lines (before the "לא רלוונטי" decisions are applied) — the missing-items list reads these. */
+    rawLines(projectId: string): BoqLine[] {
+      return pricedLines(proj(projectId));
+    },
     listLines(projectId: string): BoqLinesResponse {
       const p = proj(projectId);
       return {
-        items: pricedLines(p),
+        items: withoutExcludedLines(pricedLines(p), deps.exclusions?.(projectId) ?? []),
         boq: p.state ? { ...p.state } : null,
         chapters: (templates.get([...templates.values()].find((t) => t.default)?.id ?? "") ?? DEFAULT_TEMPLATE).chapters,
         blockExportOnRed: blockOnRed(),
@@ -838,7 +844,7 @@ export function createBoqMock(deps: BoqMockDeps) {
     },
     /** Sprint 8: contracts BoqTotals over ALL lines (effective prices, project discount, org VAT). */
     totals(projectId: string, vatRate: number, adjustmentPct: number | null): BoqTotals {
-      const ls = pricedLines(proj(projectId));
+      const ls = withoutExcludedLines(pricedLines(proj(projectId)), deps.exclusions?.(projectId) ?? []);
       return computeBoqTotals({ linesTotal: ls.reduce((x, l) => x + (l.lineTotal ?? 0), 0), adjustmentPct, vatRate, pricedLines: ls.filter((l) => l.unitPrice !== null).length, unpricedLines: ls.filter((l) => l.unitPrice === null).length });
     },
     /** Sprint 8 (deletes): drop a project's BOQ state (project deleted). */

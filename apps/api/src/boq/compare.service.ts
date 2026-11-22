@@ -1,4 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
+import { listActiveLines } from './exclusions';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import {
   BoqLinesSnapshotSchema,
@@ -166,7 +167,7 @@ export class CompareService {
    * from that build), else the union of the lines' own source versions.
    */
   private async liveSnapshot(orgId: string, projectId: string, buildId: string): Promise<BoqLinesSnapshot> {
-    const [lines, items] = await Promise.all([this.boq.listLines(orgId, projectId), this.boq.listLibraryItems(orgId, { active: true })]);
+    const [lines, items] = await Promise.all([listActiveLines(this.boq, orgId, projectId), this.boq.listLibraryItems(orgId, { active: true })]);
     let sheetVersions: Record<string, string> | undefined;
     try {
       sheetVersions = (await this.snapshot(orgId, projectId, buildId, 'to')).sheetVersions;

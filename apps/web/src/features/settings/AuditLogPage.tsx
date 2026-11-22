@@ -11,9 +11,9 @@ import { useOrgId } from "@/features/org/useCurrentOrg";
 import { formatDateTime } from "@/lib/format";
 import { className } from "@/features/understanding/taxonomy";
 
-const ENTITIES = ["boqLines", "shareLinks", "orgs", "exports", "offboardingExports", "corrections", "projects", "sheetSets", "sheets", "legendEntries", "roomSettings", "itemLibrary", "boqBuilds", "members", "invites", "users"] as const;
+const ENTITIES = ["boqLines", "shareLinks", "orgs", "exports", "offboardingExports", "corrections", "projects", "sheetSets", "sheets", "legendEntries", "roomSettings", "itemLibrary", "boqBuilds", "boqExclusions", "members", "invites", "users"] as const;
 /** contracts audit actions are verbs (entity + action), e.g. shareLinks · view. */
-const ACTIONS = ["create", "update", "update_settings", "status", "qtyOverride", "note", "confirm", "upload", "download", "read", "view", "revoke", "revoke_all", "revoke_sessions", "offboard", "deny", "login", "invite", "delete", "replace", "supersede", "update_role", "remove", "accept", "approval_invalidated"] as const;
+const ACTIONS = ["create", "update", "update_settings", "status", "qtyOverride", "note", "confirm", "upload", "download", "read", "view", "revoke", "revoke_all", "revoke_sessions", "offboard", "deny", "login", "invite", "delete", "replace", "supersede", "update_role", "remove", "accept", "approval_invalidated", "exclude", "restore"] as const;
 export const AUDIT_PAGE = 20;
 
 const short = (v: unknown): string => {

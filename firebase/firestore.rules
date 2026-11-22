@@ -257,6 +257,13 @@ service cloud.firestore {
           allow write: if false;
         }
 
+        // Sprint 15: "לא רלוונטי בפרויקט הזה" decisions per item code (POST /v1/projects/:pid/boq/exclusions, editor+).
+        // API only — and the worker never writes them, so a rebuild cannot overwrite a human decision.
+        match /boqExclusions/{exclusionId} {
+          allow read: if isMember(orgId);
+          allow write: if false;
+        }
+
         // Sprint 3: aggregation runs (API creates `queued` + job; worker runs) and export records (API; Sprint 5 also
         // marked PDFs, worker updates status). Readable by project members (= org members); the FILES live in Storage
         // and are only reachable through API-signed URLs (xlsx 2 min, marked PDF 15 min).

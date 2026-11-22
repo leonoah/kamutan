@@ -1,5 +1,6 @@
 import type {
   BoqBuild,
+  BoqExclusion,
   BoqExport,
   BoqLine,
   BoqRule,
@@ -14,6 +15,8 @@ import type {
   ProjectPricing,
   StaleReason,
 } from '@kamutan/contracts';
+
+import type { ExclusionInput } from './boq-docs';
 
 export const BOQ_REPOSITORY = Symbol('BOQ_REPOSITORY');
 
@@ -132,6 +135,17 @@ export interface BoqRepository {
     opts: { includeRed: boolean; allowed: boolean; batchId: string },
     actorUid: string,
   ): Promise<BatchStatusResult>;
+
+  // --- exclusions (Sprint 15) ---------------------------------------------------
+  /** All exclusion docs of the project (active and restored), unsorted. Malformed docs are skipped. */
+  listExclusions(orgId: string, projectId: string): Promise<BoqExclusion[]>;
+  /**
+   * Transaction: idempotent set of the project's "לא רלוונטי" decision for `code` (`planExclusionSet`). Writes the doc and
+   * appends one `boqExclusions/exclude|restore` audit event ONLY when the state changes. `changed: false` = nothing
+   * written (`exclusion` = the current doc, null when a restore finds none). `null` when the project is gone.
+   * Never touches boqLines: a rebuild cannot overwrite the decision.
+   */
+  setExclusion(orgId: string, projectId: string, input: ExclusionInput, actorUid: string): Promise<{ exclusion: BoqExclusion | null; changed: boolean } | null>;
 
   // --- exports ----------------------------------------------------------------
   /** exports/{id} record + audit `exports/create` (one transaction). */

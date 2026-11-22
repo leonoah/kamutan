@@ -35,6 +35,8 @@ export function invalidateAfterCorrection(qc: QueryClient, projectId: string) {
   void qc.invalidateQueries({ queryKey: ["boq-sheet-evidence", projectId] });
   void qc.invalidateQueries({ queryKey: ["boq-evidence", projectId] });
   void qc.invalidateQueries({ queryKey: ["review-queue", projectId] });
+  // Sprint 15: a marked quantity takes the item off "סעיפים שלא זוהו".
+  void qc.invalidateQueries({ queryKey: ["missing-items", projectId] });
 }
 
 /* ---------------- session history (undo / redo) ---------------- */

@@ -123,6 +123,9 @@ export const ROUTES: RouteCase[] = [
   // Sprint 6: bulk review / approve (same role as the single status PATCH) and quick measure of a line (= a correction)
   { route: `POST ${V}/projects/{projectId}/boq/lines/batch-status`, min: 'reviewer', spec: 'reviewer', specRow: ROW.approve, build: (o) => ({ method: 'post', url: `${P(o)}/boq/lines/batch-status`, body: { lineIds: [o.lines.status], to: 'reviewed' } }) },
   { route: `POST ${V}/projects/{projectId}/boq/lines/{lineId}/quick-measure`, min: 'reviewer', spec: 'reviewer', specRow: ROW.fix, build: (o) => ({ method: 'post', url: `${P(o)}/boq/lines/${o.lines.plain}/quick-measure`, body: { kind: 'confirm', sheetId: o.sheet.sheetId, quantity: 1 } }) },
+  // Sprint 15: "סעיפים שלא זוהו" — the list (viewer) and "לא רלוונטי בפרויקט הזה" (editor, like a quantity override)
+  { route: `GET ${V}/projects/{projectId}/boq/missing-items`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/boq/missing-items` }) },
+  { route: `POST ${V}/projects/{projectId}/boq/exclusions`, min: 'editor', spec: 'editor', specRow: 'E2E-11: "עורך משנה את הכמות" (the same decision right: a line leaves the BOQ)', build: (o) => ({ method: 'post', url: `${P(o)}/boq/exclusions`, body: { code: '4.04', excluded: true } }) },
   { route: `GET ${V}/projects/{projectId}/boq/lines/{lineId}/evidence`, min: 'viewer', spec: 'viewer', specRow: ROW.view, build: (o) => ({ method: 'get', url: `${P(o)}/boq/lines/${o.lines.status}/evidence` }) },
   { route: `GET ${V}/projects/{projectId}/boq/lines/{lineId}/history`, min: 'viewer', spec: 'viewer', specRow: `${ROW.view} (A-API-07 fixed)`, build: (o) => ({ method: 'get', url: `${P(o)}/boq/lines/${o.lines.status}/history` }) },
 
