@@ -4849,3 +4849,77 @@ three-phase socket; Rubel pop-up socket 4.27 — no word on any sheet. **Not don
 as "|18" / "218" / "118" — matching those would be tuning to the reader's slips) and the cobra conduits (4.18/4.19, 4.20/4.21,
 4.25: a dashed double arc between two rings is not detected at all; needs its own glyph + length-bucket work).
 
+
+## Sprint 14 — room names and the room-based finish lines (chapters 5 / 7) — investigation + what was kept
+Dev projects: Achituv + Yahav; Rubel and Noah held out. Every hunk is marked "Sprint 14 — keep". Evals `s14_*` (full ingest +
+BOQ, one at a time under `flock /tmp/kamutan-eval.lock`), baseline = `s13_3`.
+
+### Why rooms were unnamed (measured on the stored rooms + text of the four `s13_3` ingests, `rooms/segment.name_of` replayed)
+* **MEP sheets (lighting / electrical / plumbing) carry no room labels at all** — roughly half of every project's detected
+  rooms are theirs and stay `ללא שם` by construction. The names that matter are the construction sheets' (canonical rooms).
+  There is no room / area schedule table on any sheet of the four projects (grepped the text of every sheet), so nothing
+  can be read from a schedule.
+* **A label printed as separate words was never read as a phrase.** Achituv's construction / furniture sheets print
+  "חדר" and "שינה" as two text items on one baseline (gap 2.1 mm at text height 1.3 mm): neither is a name on its own.
+  `rooms/names.stitch_words` chains the words of a baseline right to left (same baseline ±0.4 h, heights within 1.35x, gap
+  <= 2.5 h; maximal chains only, so a note keeps its coverage penalty) and `segment.name_of` matches the phrases as well
+  (used for the names only, not for the "this sheet labels its rooms" test).
+* **False names, all from the dictionary, not from the drawing:** (1) the abbreviation `חד"ש` (חדר שינה) lost its quote in
+  `normalise` and became the word "חדש" — "new", on every construction sheet ("ת.גבס חדש") — so any face holding that word
+  was a bedroom (Yahav first floor: three rooms, one a 21.8 m² living void). It is now matched on the raw text with its quote.
+  (2) The fuzzy match at ratio 0.75 turned common words into names: חלון→סלון, בניה/נישה/נמוך→חניה, ארון/אונו→חדר ארונות,
+  פריסה→חדר עבודה, חדשה/חדשים→חדר שינה, אריחים→שירותים (a 16.7 m² "WC" on Rubel's electrical sheet), משטח→מטבח. Fuzzy now needs
+  a ratio >= 0.85 or one wrong letter in a word of 5+ letters (the OCR-slip case: "מרפסח", "פינת אובל").
+  Yahav first floor: the 4.3 m² room that was "חניה" (its text is "נישה לתמי" — the washing-machine niche) is unnamed again;
+  the right name exists nowhere on the construction sheet (the plumbing sheet's "חדר כביסה" is a water-point note).
+* **"החדר של עמית / נלי / מיה"** (Rubel's children's rooms) is now a bedroom; two of the three were unnamed.
+* `שינה` alone is a bedroom variant (a label read without its "חדר").
+* Not changed: `חלל כפול`, `מקלט` (Yahav only; a probe added it as a ממ"ד name and it also sits inside Rubel's basement patio face, which became
+  a bedroom / patio — dropped), `נישה`.
+**Rooms replay, stored polygons + text, old -> new names:** Noah 82/82 identical; Yahav 4 changes (3 first-floor false
+"חדר שינה", 1 false "חניה"), Achituv 8 (4 gain a name, one merged blob now names its three labels "חדר שינה / חדר כביסה /
+חדר משחקים", 2 lose a false one), Rubel 4 (2 children's rooms named, 2 false names gone).
+**None of the name changes moves a BOQ line** (Yahav, Rubel: every line identical; Achituv: only 5.06 below).
+
+### The fix that does move a line: fixture information of a floor (`boq/aggregate._room_fixtures`)
+Waterproofing (5.06 / 5.09 / 5.05 by project) defaults to rooms that hold a shower or bath ("requireFixtureClasses"). Achituv's
+basement plumbing sheet closes no room of its own (0 rooms), so its shower could not be registered onto the construction
+sheet's bathroom: the floor counted as "has fixture information, this room has no shower" and the 4.62 m² basement bathroom
+got no waterproofing (5.06 = 2, designer 3). A shower / bath that no canonical room can place now makes its floor's fixture
+information incomplete (the floor leaves `fixture_floors`): a bathroom of it is "unknown" and keeps the unknown default
+(bathroom yes, WC no). Floors where every shower is placed are untouched. Held out: Noah, Rubel, Yahav unchanged.
+
+### What the drawings do not give (checked, no general rule — nothing was hacked in)
+* **Outdoor paving (Yahav 5.01-5.03 117/31/30, Rubel 5.01/5.02 120/25, Achituv 5.01 21.5):** no site / landscape sheet exists
+  in any project (Yahav's two pool sheets draw the pool, its sections and the lawn; Rubel's `post_permit` sheet has no rooms).
+  The ground construction sheets do draw the paved areas: teal "קו קצה ריצוף" edge lines (Yahav colour (14,196,186), 15 paths)
+  and the label "אזור מרוצף" with dimensions (690 x 420 ...). The edge lines are open polylines — they close only together with
+  the house walls, the plot line, the pool and the lawn — so `polygonize` of the teal lines gives no area (sum 1.0 m²). Which
+  tile size (60/120 vs 60/60) a paved area has is written in notes, not in the colour. A paved-area reader would need the
+  plot boundary and the lawn / pool hatch polygons: not general with one project showing the marks; left 0.
+* **Achituv guest WC / stair hall (5.02 14.59 vs 17.5 = 14.59 + 2.9):** the ground construction sheet draws the new house as
+  one 95 m² face (the WC and stairs are thin lines and door arcs, no wall fill; the red face also swallows the entrance deck),
+  the ground furniture sheet labels "שירותים" inside a 71 m² open face, the plumbing sheet closes only a 0.75 m strip (1.97 m²).
+  No sheet holds a WC polygon. The first-floor 2.92 m² unnamed room is the attic hatch ("פתח עליה"), not a bathroom.
+* **Achituv first floor blob (30.3 m², "חדר לא סגור"):** laundry, hall, family room and a bedroom are one face: the partitions
+  between them are not walls to the wall pass (seen on the overlay: only a short light-green piece closes the laundry's south side).
+  Splitting it needs partition closure by the green "גבס חדש" swatch colour — not attempted (wall extraction is shared by
+  every sheet; one project shows it).
+* **Partitions 7.01-7.03 (Achituv 30.5 / 44.1 / 55 = 129.6 vs our single-face 147; Yahav 32 white + 38 blue = 70):** the three
+  projects split the same quantity differently (white 10/15 cm, blue by wet rooms, white 10 cm "per plan") and Noah counts two
+  faces; no convention reproduces them. Not wired. Ceilings 7.03/7.04 (Yahav 77, Achituv 16.5) name no rooms and Yahav has no
+  ceiling sheet. STR profile 7.05/7.08: ratio to wet-room perimeter 0.60 / 0.75 / 0.32 — no rule.
+* **Lump-sum partition lines (Rubel 7.02 / 7.03 "קומפלט"):** the drawing's mark is the text "גבס דו קרומי" / "דאבל פלטה"
+  (Rubel only) — one project cannot validate a text rule, so it stays 0.
+
+### Result (final label `s14_2`, patched and `_orig` libraries; baseline `s13_3`)
+| project | exact before -> after | lines changed |
+| --- | --- | --- |
+| Noah | 61/77 -> 61/77 (cold and warm identical to each other and to `s13_3` on all 77 lines) | none |
+| Achituv (dev) | 48/85 -> 49/85 | 5.06 waterproofed rooms 2 -> 3 (exact) |
+| Yahav (dev) | 60/110 -> 60/110 | none |
+| Rubel (held out) | 46/115 -> 46/115 | none |
+No previously exact line got worse in any project (patched or `_orig`). `exact_within_designer_rounding`: Noah 64, Achituv 49,
+Yahav 60, Rubel 48. Tests: `tests/test_sprint14_rooms.py`.
+**Open:** the 5/7 lines above that need a source the drawings do not give in a form that one general rule can read (outdoor paving
+polygons, the Achituv guest WC and first-floor partitions, the partition convention, lump-sum partition lines).

@@ -13,7 +13,6 @@ ROOM_NAMES: dict[str, tuple[str, ...]] = {
     "פינת אוכל": ("פינת אוכל", "פ. אוכל", "פינת אכילה", "חדר אוכל"),
     "חדר שינה": (
         "חדר שינה",
-        'חד"ש',
         "חדר הורים",
         "חדר שינה הורים",
         "יחידת הורים",
@@ -21,6 +20,7 @@ ROOM_NAMES: dict[str, tuple[str, ...]] = {
         "סוויטה",
         "חדר ילדים",
         "חדר ילד",
+        "שינה",  # Sprint 14 — keep: a label read without its "חדר"
     ),
     'ממ"ד': ('ממ"ד', "ממד", "מרחב מוגן", "מרחב מוגן דירתי"),
     "שירותים": ("שירותים", "ש. אורחים", "שירותי אורחים", "שרותים"),
@@ -56,9 +56,32 @@ _VARIANTS: list[tuple[str, str]] = sorted(
     key=lambda p: -len(p[0]),
 )
 _HEB = re.compile(r"[א-ת]")
+# Sprint 14 — keep: the abbreviation חד"ש (חדר שינה) loses its quote in ``normalise`` and then reads "חדש" — "new", the most
+# common word of a construction sheet ("ת.גבס חדש", "חדשה") — so it is matched on the raw text, with its quote
+_BEDROOM_ABBREV = re.compile(r"(^|\s)חד[\"״]ש(\s|$)")
+# Sprint 14 — keep: "החדר של עמית" / "חדר של נלי": the room of a child — how the children's rooms are labelled when they are named after the child
+_OWNED_ROOM = re.compile(r"^\s*ה?חדר\s+של\s+[א-ת\"'׳״\-]{2,}\s*$")
 _ABBREV = re.compile(r"(^|\s)ח\s*[.׳']\s*")  # "ח.שינה" / "ח. רחצה" = חדר ...
 _DIGITS = re.compile(r"[0-9]+")
 _QUALIFIERS = {normalise(w) for w in ("כללי", "הורים", "ילדים", "ראשי", "ראשית", "משפחתי", "קיים", "חדש", "קטן", "גדול")}
+
+
+# Sprint 14 — keep: an OCR slip is one wrong letter of a word of 5+ letters (or a ratio of 0.85); at 0.75 the common words of a drawing matched room names
+# (חלון→סלון, בניה→חניה, נישה→חניה, חדשה→חדר שינה, ארון→חדר ארונות) and named faces nobody had labelled
+FUZZY_MIN = 0.85
+
+
+def _one_edit(a: str, b: str) -> bool:
+    """Whether ``a`` and ``b`` differ by one inserted, deleted or substituted letter."""
+    if abs(len(a) - len(b)) > 1 or a == b:
+        return False
+    i = 0
+    while i < min(len(a), len(b)) and a[i] == b[i]:
+        i += 1
+    if len(a) == len(b):
+        return a[i + 1 :] == b[i + 1 :]
+    s, t = (a, b) if len(a) < len(b) else (b, a)
+    return s[i:] == t[i + 1 :]
 
 
 _NOT_NAMES = {normalise(w) for w in ("מדפסת", "מסנן", "שירות", "עבור", "מקרר", "מדיח", "מיקרו", "מזגן", "מחשב", "מסך")}
@@ -98,6 +121,10 @@ def match_room_name(text: str) -> NameMatch | None:
     """
     if not text or not _HEB.search(text):
         return None
+    if _BEDROOM_ABBREV.search(text):
+        return NameMatch("חדר שינה", 1.0 if len(normalise(text)) <= 5 else 0.5, text)
+    if _OWNED_ROOM.match(text):
+        return NameMatch("חדר שינה", 0.9, text)
     t = _ABBREV.sub(r"\1חדר ", text)
     n = _DIGITS.sub("", normalise(t))
     if len(n) < 3:
@@ -126,7 +153,7 @@ def match_room_name(text: str) -> NameMatch | None:
         if len(v) < 3 or abs(len(v) - len(core)) > max(2, len(v) // 3):
             continue
         sim = SequenceMatcher(None, v, core).ratio()
-        if sim >= 0.75 and (best is None or sim > best.score):
+        if (sim >= FUZZY_MIN or (len(v) >= 5 and _one_edit(v, core))) and (best is None or sim > best.score):
             best = NameMatch(canon, sim * 0.9, text)
     return best
 
@@ -144,3 +171,71 @@ def is_outdoor_label(text: str) -> bool:
     n = _DIGITS.sub("", normalise(text))
     bounds = _word_bounds(text)
     return any(_at_word_bounds(n, w, bounds) for w in OUTDOOR_WORDS)
+
+
+# Sprint 14 — keep: a label printed as separate words ("חדר" | "שינה": two text items on one baseline, as the SHX / CAD
+# text of the construction sheets comes) is read as the phrase it is. Words of one line are chained right to left
+# (Hebrew reading order) when they share a baseline and a text height and the gap is a word space.
+STITCH_BASELINE_H = 0.4  # baseline offset allowed, in text heights
+STITCH_GAP_H = 2.5  # gap between two words of one label, in text heights
+STITCH_HEIGHT_RATIO = 1.35
+STITCH_MAX_WORDS = 8
+
+
+@dataclass(frozen=True)
+class WordBox:
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    text: str
+    conf: float
+
+
+def stitch_words(words: list[WordBox]) -> list[WordBox]:
+    """Phrases of two or more neighbouring words on one baseline (maximal chains only, right to left)."""
+    ws = [w for w in words if _HEB.search(w.text) and len(w.text) <= 25 and (w.y1 - w.y0) > 0.2]
+    ws.sort(key=lambda w: -w.x1)
+    used_next: set[int] = set()
+    nxt: dict[int, int] = {}
+    for i, a in enumerate(ws):
+        ha = a.y1 - a.y0
+        best: tuple[float, int] | None = None
+        for j, b in enumerate(ws):
+            if j == i or j in used_next:
+                continue
+            hb = b.y1 - b.y0
+            if max(ha, hb) / max(min(ha, hb), 1e-6) > STITCH_HEIGHT_RATIO:
+                continue
+            if abs((a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2) > STITCH_BASELINE_H * max(ha, hb):
+                continue
+            gap = a.x0 - b.x1
+            if gap < -0.3 * max(ha, hb) or gap > STITCH_GAP_H * max(ha, hb):
+                continue
+            if b.x1 > a.x1:
+                continue  # b must lie to the left of a
+            if best is None or gap < best[0]:
+                best = (gap, j)
+        if best is not None:
+            nxt[i] = best[1]
+            used_next.add(best[1])
+    heads = [i for i in range(len(ws)) if i not in used_next]
+    out: list[WordBox] = []
+    for h in heads:
+        chain = [h]
+        while chain[-1] in nxt and len(chain) < STITCH_MAX_WORDS:
+            chain.append(nxt[chain[-1]])
+        if len(chain) < 2:
+            continue
+        parts = [ws[k] for k in chain]
+        out.append(
+            WordBox(
+                min(p.x0 for p in parts),
+                min(p.y0 for p in parts),
+                max(p.x1 for p in parts),
+                max(p.y1 for p in parts),
+                " ".join(p.text for p in parts),
+                min(p.conf for p in parts),
+            )
+        )
+    return out

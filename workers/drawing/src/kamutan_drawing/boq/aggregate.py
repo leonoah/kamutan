@@ -554,6 +554,9 @@ def _room_outlines(s: SheetInput) -> list[tuple[str | None, list[tuple[float, fl
     return out
 
 
+STRANDED_FIXTURES = frozenset({"fixture_shower", "fixture_bath"})
+
+
 def _room_fixtures(
     dets: list[Det], room_index: dict[tuple[str, str], Room], canon: list[Room], locator: Any = None
 ) -> tuple[dict[str, frozenset[str]], set[str]]:
@@ -561,6 +564,7 @@ def _room_fixtures(
     included: they tell what the room holds) and the floors that have fixture information at all."""
     out: dict[str, set[str]] = defaultdict(set)
     floors: set[str] = set()
+    stranded: set[str] = set()
     ckeys = {c.key for c in canon}
     for d in dets:
         if d.cls not in FIXTURE_CLASSES or d.cls == "ac_unit":
@@ -578,7 +582,12 @@ def _room_fixtures(
             c = match_room(r, canon)
         if c is not None:
             out[c.key].add(d.cls)
-    return {k: frozenset(v) for k, v in out.items()}, floors
+        elif d.floor and d.cls in STRANDED_FIXTURES:
+            stranded.add(d.floor)
+    # Sprint 14 — keep: a shower / bath the canonical rooms could not place (its sheet registers onto no room: a
+    # plumbing sheet that closes no room of its own) leaves the floor's fixture information incomplete — a room of the
+    # floor without a shower is then "unknown", not "has none"
+    return {k: frozenset(v) for k, v in out.items()}, floors - stranded
 
 
 def _floor_of(members: list[Det]) -> str | None:

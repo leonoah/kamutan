@@ -28,7 +28,7 @@ from shapely.geometry.base import BaseGeometry
 from ..ingest.pdf_vector import VectorSheet
 from ..types_sprint2 import Region, Room, level_for
 from .geometry import envelope_of, room_geometry
-from .names import NameMatch, is_outdoor_label, match_room_name
+from .names import NameMatch, WordBox, is_outdoor_label, match_room_name, stitch_words
 from .niches import NICHE_TYPE, R_NICHE_FIXTURES, R_NICHE_SHAPE, NicheCandidate, niche_candidates, niche_evidence, shape_hits_in
 from .reference import ReferenceWalls, align_reference
 from .types import is_laundry, room_type, type_from_name
@@ -213,6 +213,34 @@ def _simplify(p: Polygon) -> list[tuple[float, float]]:
     return coords
 
 
+def name_of(p: Polygon, texts: list[tuple[Point, str, float]], a_m2: float) -> tuple[str | None, float, list[str], float | None]:
+    """(name, name confidence, reason chips, confidence cap) of one face from the texts inside it.
+
+    Sprint 14 — keep: the former inline block of :func:`segment`, unchanged, so the names can be replayed on stored rooms."""
+    reasons: list[str] = []
+    names = _names_in(p, texts)
+    if a_m2 > OPEN_PLAN_M2:
+        # Sprint 11: "מזווה" / "ארונות" inside an open-plan floor label a cupboard, not the floor
+        names = [n for n in names if type_from_name(n[0].name) != "storage"]
+    distinct: list[tuple[NameMatch, float]] = []
+    for m, c in names:
+        if all(m.name != d[0].name for d in distinct):
+            distinct.append((m, c))
+    if not distinct:
+        return None, 0.0, [R_NO_NAME], 0.7
+    # secondary names only when they are labels themselves (not words inside a note)
+    top = [distinct[0], *[d for d in distinct[1:] if d[0].score >= 0.8 and d[1] >= 0.5 * distinct[0][1]]][:3]
+    name = " / ".join(d[0].name for d in top)
+    name_conf = float(top[0][1]) * (0.9 if len(top) > 1 else 1.0)
+    cap: float | None = None
+    if len(top) > 1:
+        reasons.append(R_NAMES_MERGED)
+    if name_conf < 0.85:
+        reasons.append(R_NAME_UNSURE)
+        cap = 0.8
+    return name, name_conf, reasons, cap
+
+
 def segment(
     prims: VectorSheet,
     text: Sequence[Any],
@@ -240,6 +268,7 @@ def segment(
     ]
     ex = set(exclude_paths) if exclude_paths is not None else set(prims.stats.get("textPaths", []) or [])
     texts: list[tuple[Point, str, float]] = []
+    boxes: list[WordBox] = []
     for t in text:
         bb = _bbox_xyxy(t)
         s = str(getattr(t, "text", "") or "")
@@ -250,6 +279,9 @@ def segment(
             conf = getattr(t, "confidence", None)
         c = float(conf) if conf is not None else TEXT_CONF_DEFAULT
         texts.append((Point((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2), s, min(1.0, max(0.3, c))))
+        boxes.append(WordBox(bb[0], bb[1], bb[2], bb[3], s, min(1.0, max(0.3, c))))
+    # Sprint 14 — keep: labels printed as separate words are read as phrases for the room names (not for the other tests)
+    name_texts = texts + [(Point((w.x0 + w.x1) / 2, (w.y0 + w.y1) / 2), w.text, w.conf) for w in stitch_words(boxes)]
 
     rooms: list[Room] = []
     for reg in regions:
@@ -314,29 +346,10 @@ def segment(
             conf = 0.92 if f.closed else 0.6
             if not f.closed:
                 reasons.append(R_NOT_CLOSED)
-            names = _names_in(f.poly, texts)
-            if a_m2 > OPEN_PLAN_M2:
-                # Sprint 11: "מזווה" / "ארונות" inside an open-plan floor label a cupboard, not the floor
-                names = [n for n in names if type_from_name(n[0].name) != "storage"]
-            distinct: list[tuple[NameMatch, float]] = []
-            for m, c in names:
-                if all(m.name != d[0].name for d in distinct):
-                    distinct.append((m, c))
-            name: str | None = None
-            name_conf = 0.0
-            if distinct:
-                # secondary names only when they are labels themselves (not words inside a note)
-                top = [distinct[0], *[d for d in distinct[1:] if d[0].score >= 0.8 and d[1] >= 0.5 * distinct[0][1]]][:3]
-                name = " / ".join(d[0].name for d in top)
-                name_conf = float(top[0][1]) * (0.9 if len(top) > 1 else 1.0)
-                if len(top) > 1:
-                    reasons.append(R_NAMES_MERGED)
-                if name_conf < 0.85:
-                    reasons.append(R_NAME_UNSURE)
-                    conf = min(conf, 0.8)
-            else:
-                reasons.append(R_NO_NAME)
-                conf = min(conf, 0.7)
+            name, name_conf, name_reasons, name_conf_cap = name_of(f.poly, name_texts, a_m2)
+            reasons.extend(name_reasons)
+            if name_conf_cap is not None:
+                conf = min(conf, name_conf_cap)
             if scale_reasons:
                 reasons.extend(scale_reasons)
                 conf = min(conf, 0.8)
